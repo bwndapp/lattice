@@ -1,0 +1,14 @@
+# data: users' tracks live here, never in git
+data.db
+data-draft.db
+*.db-wal
+*.db-shm
+# build output and publish backups (rebuilt with npm run build / draft, bwnd-publish)
+public/
+public.bak/
+webapp/
+.bwnd/
+src/api-live/
+src/api-live.bak/
+# python caches
+__pycache__/
