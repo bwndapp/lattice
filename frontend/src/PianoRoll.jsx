@@ -45,7 +45,7 @@ function fitCanvas(canvas, w, h, { keepCss = false } = {}) {
  *
  * Getting around long patterns: ctrl/cmd + scroll zooms around the pointer (or −, +,
  * fit), the bar ruler stays on top and jumps to a bar when clicked, the overview strip
- * shows every bar with a draggable view box, middle-drag pans, follow keeps the playhead
+ * shows every bar with a draggable view box, middle-drag or alt + drag pans, follow keeps the playhead
  * in view, and the roll can be dragged taller or opened full screen.
  */
 export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPreview, cursorRef }) {
@@ -307,14 +307,36 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
     onChangeNotes(next)
   }
 
+  // Panning: middle-drag, or alt/option + drag, anywhere in the roll (grid, ruler or keys).
+  // It's handled on the scroll box in the capture phase so it wins over note editing, and
+  // the middle button's mousedown is cancelled so the browser doesn't start its own
+  // auto-scroll instead.
+  const isPan = (e) => e.button === 1 || (e.button === 0 && e.altKey)
+  const startPan = (e) => {
+    const el = scrollRef.current
+    e.preventDefault()
+    e.stopPropagation()
+    el.setPointerCapture(e.pointerId)
+    el.focus({ preventScroll: true })
+    panRef.current = { id: e.pointerId, x: e.clientX, y: e.clientY, left: el.scrollLeft, top: el.scrollTop }
+    el.classList.add('panning')
+  }
+  const movePan = (e) => {
+    const pan = panRef.current
+    if (!pan || e.pointerId !== pan.id) return
+    const el = scrollRef.current
+    el.scrollLeft = pan.left - (e.clientX - pan.x)
+    el.scrollTop = pan.top - (e.clientY - pan.y)
+  }
+  const endPan = () => {
+    if (!panRef.current) return
+    panRef.current = null
+    scrollRef.current?.classList.remove('panning')
+  }
+
   const onDown = (e) => {
     e.currentTarget.setPointerCapture(e.pointerId)
     scrollRef.current?.focus({ preventScroll: true })
-    if (e.button === 1) {
-      e.preventDefault()
-      panRef.current = { x: e.clientX, y: e.clientY, left: scrollRef.current.scrollLeft, top: scrollRef.current.scrollTop }
-      return
-    }
     const h = hit(e)
     if (e.button === 2) {
       const next = h.note ? notes.filter((nt) => nt !== h.note) : notes
@@ -337,12 +359,6 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
   }
 
   const onMove = (e) => {
-    const pan = panRef.current
-    if (pan) {
-      scrollRef.current.scrollLeft = pan.left - (e.clientX - pan.x)
-      scrollRef.current.scrollTop = pan.top - (e.clientY - pan.y)
-      return
-    }
     const d = dragRef.current
     if (!d) return
     const h = hit(e)
@@ -368,7 +384,6 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
   }
 
   const onUp = () => {
-    if (panRef.current) { panRef.current = null; return }
     const d = dragRef.current
     dragRef.current = null
     if (!d) return
@@ -440,7 +455,7 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
           </span>
           <button type="button" className={`node-btn ${follow ? 'on' : ''}`} aria-pressed={follow} onClick={() => setFollow((v) => !v)} title="Keep the playhead in view while playing">follow</button>
           <span className="pr-spacer" />
-          <span className="pr-hint">{barCount} bar{barCount === 1 ? '' : 's'} · ctrl/cmd+scroll zooms · middle-drag pans</span>
+          <span className="pr-hint">{barCount} bar{barCount === 1 ? '' : 's'} · ctrl/cmd+scroll zooms · middle-drag or alt+drag pans</span>
           <button type="button" className={`node-btn ${full ? 'on' : ''}`} onClick={() => setFull((v) => !v)} title="Full screen (F, Esc to close)">{full ? 'close' : 'full screen'}</button>
         </div>
         <canvas
@@ -460,6 +475,13 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
           tabIndex={0}
           onKeyDown={onKey}
           onScroll={drawOverview}
+          onPointerDownCapture={(e) => { if (isPan(e)) startPan(e) }}
+          onPointerMove={movePan}
+          onPointerUp={endPan}
+          onPointerCancel={endPan}
+          onLostPointerCapture={endPan}
+          onMouseDownCapture={(e) => { if (e.button === 1) e.preventDefault() }}
+          onAuxClick={(e) => { if (e.button === 1) e.preventDefault() }}
           aria-label={`${channel.name} piano roll: click to add notes, drag to move, right-click to delete`}
         >
           <div className="pr-inner" style={{ gridTemplateColumns: `${KEY_W}px ${total * colW}px`, gridTemplateRows: `${RULER_H}px ${ROWS * rowH}px` }}>
@@ -495,7 +517,7 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
                   }
                 }}
                 onPointerUp={onUp}
-                onPointerCancel={() => { dragRef.current = null; panRef.current = null; setDraft(null) }}
+                onPointerCancel={() => { dragRef.current = null; setDraft(null) }}
                 onContextMenu={(e) => e.preventDefault()}
                 onAuxClick={(e) => e.preventDefault()}
               />

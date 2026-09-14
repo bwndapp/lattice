@@ -529,6 +529,7 @@ body {
 .pr-keys { position: sticky; left: 0; z-index: 2; display: block; cursor: pointer; border-right: 1px solid var(--line); }
 .pr-grid-wrap { position: relative; }
 .pr-grid { display: block; touch-action: none; }
+.piano-roll.panning, .piano-roll.panning * { cursor: grabbing !important; }
 .pr-backdrop { position: fixed; inset: 0; z-index: 80; background: rgba(0, 0, 0, 0.72); }
 .pr.full .pr-panel { position: fixed; inset: 3vh 2.5vw; z-index: 81; border: 2px solid var(--acid); box-shadow: 0 24px 80px rgba(0, 0, 0, 0.8); }
 .pr.full .piano-roll { flex: 1; height: auto; resize: none; }
