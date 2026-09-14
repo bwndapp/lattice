@@ -12,6 +12,7 @@
  * verify it there with incubator_lib.sso_user().
  */
 import { useEffect, useState } from 'react'
+import { BASE } from './base'
 
 const ISSUER = (import.meta.env.VITE_BWND_SSO_ISSUER || '').replace(/\/$/, '')
 const CLIENT_ID = import.meta.env.VITE_BWND_SSO_CLIENT_ID || ''
@@ -118,7 +119,7 @@ export function currentUser() {
  *  the draft build (the draft has its own routes and its own database, see the
  *  box's CLAUDE.md). `apiUrl('/api/orders')` returns the right one; authFetch
  *  applies it for you. */
-export const API_BASE = `${(import.meta.env.BASE_URL || '/').replace(/\/$/, '')}/api`
+export const API_BASE = `${BASE}/api`
 export function apiUrl(path) { return typeof path === 'string' && (path === '/api' || path.startsWith('/api/')) ? API_BASE + path.slice(4) : path }
 
 /** fetch() with the bearer token attached. A 401 from your own API means the

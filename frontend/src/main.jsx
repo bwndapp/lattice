@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { BrowserRouter, Routes, Route, Link, Navigate, useNavigate } from 'react-router-dom'
 import App from './App.jsx'
 import { handleCallback } from './bwnd'
+import { BASE } from './base'
 import './index.css'
 
 // Where bwnd sign-in lands after the user authenticates. Keep this route.
@@ -16,12 +17,11 @@ function AuthCallback() {
     ran.current = true
     handleCallback()
       .then((next) => {
-        // Sign-in always returns to /auth/callback on the live build; `next` may be a
+        // Sign-in always returns to /auth/callback on the live site; `next` may be a
         // draft page under /preview/, which this router (basename '') can't reach.
-        const base = import.meta.env.BASE_URL.replace(/\/$/, '')
-        const inThisBuild = base ? next.startsWith(`${base}/`) : !next.startsWith('/preview')
+        const inThisBuild = BASE ? next.startsWith(`${BASE}/`) : !/^\/preview(\/|$)/.test(next)
         if (!inThisBuild) window.location.replace(next)
-        else navigate(next.slice(base.length) || '/', { replace: true })
+        else navigate(next.slice(BASE.length) || '/', { replace: true })
       })
       .catch((e) => setError(e.message))
   }, [navigate])
@@ -34,7 +34,7 @@ function AuthCallback() {
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+    <BrowserRouter basename={BASE}>
       <Routes>
         {/* One layout route so the editor (and whatever is playing) survives navigation. */}
         <Route element={<App />}>

@@ -2,6 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      // Relative asset URLs resolve against the mount point (see src/base.js), not deep links like /t/abc.
+      document.write('<base href="' + (/^\/preview(\/|$)/.test(location.pathname) ? '/preview/' : '/') + '">')
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>strudel</title>
   </head>

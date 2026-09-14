@@ -4,15 +4,15 @@ import react from '@vitejs/plugin-react'
 // The incubator serves two dirs (see the FastAPI server):
 //   public/  → the live site at  /            (SPA catch-all serves files + index.html)
 //   webapp/  → the draft at      /preview/
-// So we build to a sibling dir chosen by BUILD_TARGET, with a matching base so
-// the hashed asset URLs resolve at the right path:
-//   npm run build → BUILD_TARGET=public → outDir ../public, base '/'
-//   npm run draft → BUILD_TARGET=webapp → outDir ../webapp, base '/preview/'
+// We build to a sibling dir chosen by BUILD_TARGET:
+//   npm run build → BUILD_TARGET=public → outDir ../public
+//   npm run draft → BUILD_TARGET=webapp → outDir ../webapp
+// bwnd-publish copies webapp/ to public/ unchanged, so the build can't bake in its
+// path: assets are relative ('./') and index.html sets <base href> at load time.
 const target = process.env.BUILD_TARGET === 'webapp' ? 'webapp' : 'public'
-const base = target === 'webapp' ? '/preview/' : '/'
 
 export default defineConfig({
-  base,
+  base: './',
   plugins: [react()],
   // bwnd sign-in: the issuer and this app's client id come from the box's env
   // at build time (see src/bwnd.js). Empty when built outside a box.
