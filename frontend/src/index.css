@@ -176,6 +176,70 @@ body {
   white-space: pre-wrap;
 }
 
+/* ── lanes: the pattern, read ahead of time ───────────── */
+.lanes-dock { --head: 190px; flex-shrink: 0; border-top: 1px solid var(--line); background: var(--panel); }
+.lanes-bar { position: relative; display: flex; justify-content: flex-end; }
+.resize { position: absolute; inset: -4px 0 auto; height: 9px; cursor: row-resize; z-index: 2; }
+.resize:hover, .resize:focus-visible { background: linear-gradient(transparent 3px, var(--acid) 3px, var(--acid) 5px, transparent 5px); outline: none; }
+.lanes-toggle {
+  font: inherit; font-size: 11px; color: var(--muted); background: none; border: 0;
+  padding: 0.3rem 1rem; cursor: pointer;
+}
+.lanes-toggle:hover { color: var(--acid); }
+.lanes { display: flex; flex-direction: column; height: var(--lanes-h); min-height: 0; margin-top: -1.6rem; }
+.lanes-head { display: flex; align-items: baseline; gap: 0.9rem; padding: 0.15rem 7rem 0.5rem 1rem; flex-wrap: wrap; }
+.lanes-title {
+  font-family: var(--display); font-weight: 900; font-stretch: 125%;
+  font-size: 1.5rem; line-height: 1; letter-spacing: -0.03em; color: var(--paper);
+}
+.lanes-window { display: flex; align-items: baseline; gap: 0.2rem; font-size: 12px; }
+.lanes-note { color: var(--muted); font-size: 11px; }
+.lanes-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--head) 1fr;
+  grid-auto-rows: minmax(64px, 1fr);
+  grid-template-rows: 20px;
+  overflow-y: auto;
+  flex: 1;
+  border-top: 1px solid var(--line);
+}
+.lane { display: contents; }
+.lane-head {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.15rem 0.4rem;
+  align-content: center;
+  padding: 0.35rem 0.6rem 0.35rem 1rem;
+  border-bottom: 1px solid var(--line); border-right: 1px solid var(--line);
+  min-width: 0; background: var(--panel);
+}
+.ruler-head { padding-block: 0; }
+.lanes-tip { font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lanes-tip code { color: var(--paper); font: inherit; }
+.ruler { width: 100%; height: 20px; display: block; border-bottom: 1px solid var(--line); }
+.lane-name {
+  font-family: var(--display); font-weight: 800; font-stretch: 112%;
+  font-size: 1.15rem; line-height: 1; letter-spacing: -0.02em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
+}
+.lane-controls { display: inline-flex; gap: 0.2rem; }
+.lane-btn {
+  font: inherit; font-size: 11px; width: 1.6rem; height: 1.35rem;
+  color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 0; cursor: pointer;
+}
+.lane-btn:hover { color: var(--paper); border-color: var(--paper); }
+.lane-btn.on { background: var(--acid); border-color: var(--acid); color: var(--ink); font-weight: 700; }
+.lane-source { flex-basis: 100%; font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lane-canvas { width: 100%; height: 100%; min-height: 64px; display: block; border-bottom: 1px solid var(--line); background: var(--ink); }
+.lane.silent .lane-name { color: var(--muted); text-decoration: line-through; text-decoration-thickness: 2px; }
+.lane.silent .lane-canvas {
+  background: repeating-linear-gradient(-45deg, var(--ink) 0 8px, #11110f 8px 16px);
+}
+.playhead {
+  position: absolute; top: 0; bottom: 0; width: 2px; pointer-events: none;
+  left: calc(var(--head) + (100% - var(--head)) * var(--ph, 0));
+  background: var(--acid); box-shadow: 0 0 0 1px var(--ink);
+}
+
 /* ── browser: the setlist ─────────────────────────────── */
 .browser {
   width: var(--sidebar);
@@ -293,6 +357,10 @@ body {
   .trackbar { padding: 0.5rem 0.75rem; }
   .title-input { flex: 1 1 100%; font-size: 1.35rem; }
   .trackbar .meta { flex-basis: 100%; order: 5; white-space: normal; }
+  .lanes-dock { --head: 104px; }
+  .lanes-head { padding-right: 6.5rem; }
+  .lane-source { display: none; }
+  .lane-name { font-size: 0.95rem; }
   .browser {
     position: absolute; inset: 0 auto 0 0; z-index: 20;
     width: min(var(--sidebar), 88vw);

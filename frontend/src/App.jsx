@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useMatch, useNavigate } from 'react-router-dom'
 import { StrudelMirror } from '@strudel/codemirror'
-import { silence } from '@strudel/core'
+import { Pattern, silence } from '@strudel/core'
 import { getDrawContext } from '@strudel/draw'
 import { transpiler } from '@strudel/transpiler'
 import { getAudioContext, webaudioOutput, initAudioOnFirstClick } from '@strudel/webaudio'
@@ -9,15 +9,24 @@ import { prebake } from '@strudel/repl/prebake.mjs'
 import { useUser } from './bwnd'
 import { api, clearDraft, readDraft, timeAgo, trackUrl, writeDraft } from './api'
 import Browser from './Browser.jsx'
+import Lanes from './Lanes.jsx'
+import { capturePatterns } from './lanes'
 
 const DEFAULT_CODE = `// Strudel — Ctrl/Cmd+Enter to play, Ctrl/Cmd+. to stop
 setcpm(120/4)
 
-stack(
-  s("bd*4, [~ sd]*2, hh*8").bank("RolandTR909").gain(.9),
-  note("<c2 eb2 f2 g2>").s("sawtooth").lpf(sine.range(300, 1800).slow(8)).decay(.2).sustain(0),
-  n("<0 2 4 [6 4]>*2").scale("C4:minor").s("triangle").room(.4).delay(.25)
-)`
+drums: s("bd*4, [~ sd]*2, hh*8").bank("RolandTR909").gain(.9)
+
+bass: note("<c2 eb2 f2 g2>*2").s("sawtooth").lpf(sine.range(300, 1800).slow(8)).decay(.2).sustain(0)
+
+lead: n("<0 2 4 [6 4]>*2").scale("C4:minor").s("triangle").room(.4).delay(.25)`
+
+function readPref(key, fallback) {
+  try { return JSON.parse(localStorage.getItem(key)) ?? fallback } catch { return fallback }
+}
+function writePref(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* storage unavailable */ }
+}
 
 function scratchCode() {
   let legacy = null
@@ -45,6 +54,12 @@ export default function App() {
   const [visibility, setVisibility] = useState('public')
   const [started, setStarted] = useState(false)
   const [evalError, setEvalError] = useState(null)
+  const [activeCode, setActiveCode] = useState('')
+  // the evaluated pattern, each labeled pattern in it, and which track (null = scratch) it belongs to
+  const [evaluated, setEvaluated] = useState({ pattern: null, lanes: new Map(), forId: undefined })
+  const capturedRef = useRef(new Map())
+  const [lanesOpen, setLanesOpen] = useState(() => readPref('strudel:lanes:open', true))
+  const [lanesHeight, setLanesHeight] = useState(() => readPref('strudel:lanes:height', 260))
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
@@ -81,7 +96,10 @@ export default function App() {
         setStarted(state.started)
         setEvalError(state.evalError ? String(state.evalError.message || state.evalError) : null)
         setCode(state.code)
+        setActiveCode(state.activeCode)
       },
+      beforeEval: () => { capturedRef.current = capturePatterns(Pattern) },
+      afterEval: ({ pattern }) => setEvaluated({ pattern, lanes: capturedRef.current, forId: loadedIdRef.current }),
     })
     editorRef.current.setFontFamily('"Martian Mono", ui-monospace, monospace')
     editorRef.current.editor.focus()
@@ -90,6 +108,13 @@ export default function App() {
   const putCode = useCallback((id, text) => {
     editorRef.current.setCode(text)
     loadedIdRef.current = id
+  }, [])
+
+  // Lane buttons edit the code (it stays the source of truth); a playing pattern updates at once.
+  const editCode = useCallback((change) => {
+    const editor = editorRef.current
+    editor.editor.dispatch({ changes: change })
+    if (editor.repl.scheduler.started) editor.evaluate()
   }, [])
 
   const play = useCallback(() => {
@@ -139,6 +164,31 @@ export default function App() {
     if (id && track?.id === id && code === track.code) clearDraft(id)
     else if (code) writeDraft(id, code)
   }, [code, trackId, track])
+
+  // While stopped, evaluate silently so the timeline follows your edits. Only for code you
+  // wrote or already chose to play: opening someone's link must not run their code.
+  const shownId = trackId || null
+  const previewAllowed = isNew || isOwner || countedRef.current.has(shownId)
+  useEffect(() => {
+    const editor = editorRef.current
+    if (started || !editor || !previewAllowed || loadedIdRef.current !== shownId) return
+    if (code === activeCode && evaluated.forId === shownId) return
+    const timer = setTimeout(() => editor.repl.evaluate(editor.code, false), 500)
+    return () => clearTimeout(timer)
+  }, [code, activeCode, started, shownId, previewAllowed, evaluated.forId])
+
+  useEffect(() => writePref('strudel:lanes:open', lanesOpen), [lanesOpen])
+  useEffect(() => writePref('strudel:lanes:height', lanesHeight), [lanesHeight])
+
+  const startResize = (e) => {
+    const startY = e.clientY
+    const startH = lanesHeight
+    const max = window.innerHeight - 220
+    const move = (ev) => setLanesHeight(Math.round(Math.min(max, Math.max(120, startH + startY - ev.clientY))))
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
 
   const save = useCallback(async () => {
     if (!canEdit || busy) return
@@ -330,6 +380,39 @@ export default function App() {
           </div>
           <div className="editor" ref={rootRef} />
           {evalError && <pre className="error">{evalError}</pre>}
+          <div className="lanes-dock" style={{ '--lanes-h': `${lanesHeight}px` }}>
+            <div className="lanes-bar">
+              {lanesOpen && (
+                <div
+                  className="resize"
+                  role="separator"
+                  aria-orientation="horizontal"
+                  aria-label="Resize lanes"
+                  aria-valuenow={lanesHeight}
+                  tabIndex={0}
+                  onPointerDown={startResize}
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowUp') setLanesHeight((h) => Math.min(window.innerHeight - 220, h + 24))
+                    if (e.key === 'ArrowDown') setLanesHeight((h) => Math.max(120, h - 24))
+                  }}
+                />
+              )}
+              <button className="lanes-toggle" aria-expanded={lanesOpen} onClick={() => setLanesOpen((o) => !o)}>
+                {lanesOpen ? 'hide lanes' : 'show lanes'}
+              </button>
+            </div>
+            {lanesOpen && (
+              <Lanes
+                editorRef={editorRef}
+                code={code}
+                pattern={evaluated.forId === shownId ? evaluated.pattern : null}
+                lanePatterns={evaluated.lanes}
+                started={started}
+                stale={started && code !== activeCode}
+                onEditCode={editCode}
+              />
+            )}
+          </div>
         </main>
       </div>
 
