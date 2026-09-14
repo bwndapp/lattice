@@ -10,7 +10,9 @@ const ROW_SIZES = { s: 8, m: 12, l: 18 }
 const MAX_CANVAS = 12000 // px; beyond this browsers start dropping canvas pixels
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
-const same = (a, b) => a && b && a.s === b.s && a.n === b.n
+const keyOf = (note) => `${note.s}:${note.n}`
+// copied notes, relative to their earliest step; shared by every piano roll on the page
+let clipboard = null
 
 function readPref(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback } catch { return fallback }
@@ -41,7 +43,10 @@ function fitCanvas(canvas, w, h, { keepCss = false } = {}) {
 /**
  * Piano roll for a synth channel. Click to add a note (drag right to set its length),
  * drag a note to move it, drag its right edge to resize, right-click to delete. Notes
- * can overlap for chords. Arrow keys nudge the selected note, Delete removes it.
+ * can overlap for chords. ctrl/cmd + A selects all, shift + click adds a note to the
+ * selection, ctrl/cmd + drag draws a selection box, and dragging any selected note moves
+ * them all (ctrl/cmd + drag a note to copy). Arrows nudge the selection, Delete removes
+ * it, ctrl/cmd + C / X / V / D copy, cut, paste and duplicate.
  *
  * Getting around long patterns: ctrl/cmd + scroll zooms around the pointer (or −, +,
  * fit), the bar ruler stays on top and jumps to a bar when clicked, the overview strip
@@ -61,7 +66,9 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
   const [follow, setFollow] = useState(() => readPref('strudel:roll:follow', true))
   const [full, setFull] = useState(false)
   const [draft, setDraft] = useState(null) // notes while dragging
-  const [selected, setSelected] = useState(null)
+  const [selection, setSelection] = useState(() => new Set()) // keys of selected notes
+  const [marquee, setMarquee] = useState(null) // { x0, y0, x1, y1 } in grid px while box-selecting
+  const pasteAt = useRef(null) // where the next paste lands, so repeated pastes line up
   const dragRef = useRef(null)
   const panRef = useRef(null)
   const lastLen = useRef(2)
@@ -211,7 +218,7 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
       const x = note.s * colW + 1
       const y = (HIGH - note.n) * rowH + 1
       const nw = Math.max(2, note.l * colW - 2)
-      const sel = same(note, selected)
+      const sel = selection.has(keyOf(note))
       ctx.fillStyle = sel ? paper : acid
       ctx.fillRect(x, y, nw, rowH - 2)
       if (nw > 8) {
@@ -226,8 +233,21 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
         ctx.fillText(midiToNote(note.n), x + 3, y + (rowH - 2) / 2)
       }
     }
+    if (marquee) {
+      const x = Math.min(marquee.x0, marquee.x1)
+      const y = Math.min(marquee.y0, marquee.y1)
+      ctx.fillStyle = acid
+      ctx.globalAlpha = 0.08
+      ctx.fillRect(x, y, Math.abs(marquee.x1 - marquee.x0), Math.abs(marquee.y1 - marquee.y0))
+      ctx.globalAlpha = 1
+      ctx.setLineDash([5, 4])
+      ctx.strokeStyle = acid
+      ctx.lineWidth = 1
+      ctx.strokeRect(x + 0.5, y + 0.5, Math.abs(marquee.x1 - marquee.x0), Math.abs(marquee.y1 - marquee.y0))
+      ctx.setLineDash([])
+    }
     drawOverview()
-  }, [notes, selected, total, colW, rowH, pattern.stepsPerBar, stepsPerBeat, drawOverview])
+  }, [notes, selection, marquee, total, colW, rowH, pattern.stepsPerBar, stepsPerBeat, drawOverview])
 
   useEffect(() => { draw() }, [draw])
 
@@ -334,10 +354,33 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
     scrollRef.current?.classList.remove('panning')
   }
 
+  const selectedNotes = (list = channel.notes) => list.filter((nt) => selection.has(keyOf(nt)))
+  const selectKeys = (list) => setSelection(new Set(list.map(keyOf)))
+
+  /** Move a group of notes by (ds steps, dn semitones), clamped so none leaves the grid. */
+  const shifted = (group, ds, dn) => {
+    const minS = Math.min(...group.map((x) => x.s))
+    const maxEnd = Math.max(...group.map((x) => x.s + x.l))
+    const minN = Math.min(...group.map((x) => x.n))
+    const maxN = Math.max(...group.map((x) => x.n))
+    const s = clamp(ds, -minS, total - maxEnd)
+    const n = clamp(dn, LOW - minN, HIGH - maxN)
+    return { notes: group.map((x) => ({ ...x, s: x.s + s, n: x.n + n })), ds: s, dn: n }
+  }
+
+  /** Replace `removed` notes with `added` ones, keeping one note per step and pitch. */
+  const merge = (base, removed, added) => {
+    const gone = new Set(removed.map(keyOf))
+    const kept = base.filter((x) => !gone.has(keyOf(x)))
+    const incoming = new Set(added.map(keyOf))
+    return [...kept.filter((x) => !incoming.has(keyOf(x))), ...added]
+  }
+
   const onDown = (e) => {
     e.currentTarget.setPointerCapture(e.pointerId)
     scrollRef.current?.focus({ preventScroll: true })
     const h = hit(e)
+    const mod = e.ctrlKey || e.metaKey
     if (e.button === 2) {
       const next = h.note ? notes.filter((nt) => nt !== h.note) : notes
       dragRef.current = { mode: 'erase', notes: next }
@@ -345,17 +388,42 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
       return
     }
     if (e.button !== 0) return
-    if (h.note) {
-      setSelected(h.note)
-      onPreview(h.note.n)
-      dragRef.current = { mode: h.edge ? 'resize' : 'move', orig: h.note, grab: h.step - h.note.s, grabMidi: h.midi, moved: false }
-    } else {
-      const created = { s: h.step, l: clamp(lastLen.current, 1, total - h.step), n: h.midi }
-      onPreview(h.midi)
-      setSelected(created)
-      dragRef.current = { mode: 'create', orig: created, base: notes }
-      setDraft([...notes, created])
+
+    if (!h.note && (mod || e.shiftKey)) {
+      // box select (shift keeps what's already selected)
+      dragRef.current = { mode: 'marquee', base: e.shiftKey ? new Set(selection) : new Set(), x0: h.x, y0: e.clientY - gridRef.current.getBoundingClientRect().top }
+      setMarquee({ x0: h.x, y0: dragRef.current.y0, x1: h.x, y1: dragRef.current.y0 })
+      if (!e.shiftKey) setSelection(new Set())
+      return
     }
+
+    if (h.note) {
+      const key = keyOf(h.note)
+      let sel = selection
+      if (e.shiftKey) {
+        // shift-click adds or removes a note, without starting a drag
+        sel = new Set(selection)
+        sel.has(key) ? sel.delete(key) : sel.add(key)
+        setSelection(sel)
+        return
+      }
+      if (!sel.has(key)) { sel = new Set([key]); setSelection(sel) }
+      onPreview(h.note.n)
+      const group = channel.notes.filter((nt) => sel.has(keyOf(nt)))
+      if (h.edge) {
+        dragRef.current = { mode: 'resize', group, anchor: h.note }
+      } else {
+        // ctrl/cmd + drag moves copies and leaves the originals where they were
+        dragRef.current = { mode: 'move', group, copy: mod, grabStep: h.step, grabMidi: h.midi, moved: false }
+      }
+      return
+    }
+
+    const created = { s: h.step, l: clamp(lastLen.current, 1, total - h.step), n: h.midi }
+    onPreview(h.midi)
+    setSelection(new Set([keyOf(created)]))
+    dragRef.current = { mode: 'create', orig: created, base: notes }
+    setDraft([...notes, created])
   }
 
   const onMove = (e) => {
@@ -364,22 +432,33 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
     const h = hit(e)
     if (d.mode === 'erase') {
       if (h.note) { d.notes = d.notes.filter((nt) => nt !== h.note); setDraft(d.notes) }
-    } else if (d.mode === 'create' || d.mode === 'resize') {
+    } else if (d.mode === 'marquee') {
+      const y = e.clientY - gridRef.current.getBoundingClientRect().top
+      const box = { x0: d.x0, y0: d.y0, x1: h.x, y1: y }
+      setMarquee(box)
+      const left = Math.min(box.x0, box.x1) / colW
+      const right = Math.max(box.x0, box.x1) / colW
+      const top = HIGH - Math.min(box.y0, box.y1) / rowH
+      const bottom = HIGH - Math.max(box.y0, box.y1) / rowH
+      const inside = channel.notes.filter((nt) => nt.s < right && nt.s + nt.l > left && nt.n + 1 > bottom && nt.n < top)
+      setSelection(new Set([...d.base, ...inside.map(keyOf)]))
+    } else if (d.mode === 'create') {
       const l = clamp(h.step - d.orig.s + 1, 1, total - d.orig.s)
-      const updated = { ...d.orig, l }
-      d.current = updated
-      setSelected(updated)
-      setDraft(d.mode === 'create' ? [...d.base, updated] : channel.notes.map((nt) => (nt === d.orig ? updated : nt)))
+      d.current = { ...d.orig, l }
+      setDraft([...d.base, d.current])
+    } else if (d.mode === 'resize') {
+      const dl = h.step - (d.anchor.s + d.anchor.l - 1)
+      d.current = d.group.map((x) => ({ ...x, l: clamp(x.l + dl, 1, total - x.s) }))
+      setDraft(merge(channel.notes, d.group, d.current))
     } else if (d.mode === 'move') {
-      const s = clamp(h.step - d.grab, 0, total - d.orig.l)
-      const n = clamp(d.orig.n + (h.midi - d.grabMidi), LOW, HIGH)
-      if (s === d.orig.s && n === d.orig.n && !d.moved) return
-      if (n !== (d.current?.n ?? d.orig.n)) onPreview(n)
+      const { notes: moved, ds, dn } = shifted(d.group, h.step - d.grabStep, h.midi - d.grabMidi)
+      if (!ds && !dn && !d.moved) return
+      if (dn !== d.dn && moved[0]) onPreview(moved[0].n)
       d.moved = true
-      const updated = { ...d.orig, s, n }
-      d.current = updated
-      setSelected(updated)
-      setDraft(channel.notes.map((nt) => (nt === d.orig ? updated : nt)))
+      d.dn = dn
+      d.current = moved
+      setDraft(merge(channel.notes, d.copy ? [] : d.group, moved))
+      selectKeys(moved)
     }
   }
 
@@ -387,41 +466,87 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
     const d = dragRef.current
     dragRef.current = null
     if (!d) return
+    if (d.mode === 'marquee') { setMarquee(null); return }
     if (d.mode === 'erase') return commit(d.notes)
     if (d.mode === 'create') {
       const note = d.current ?? d.orig
       lastLen.current = note.l
+      selectKeys([note])
       return commit([...d.base, note])
     }
-    if (d.current) {
-      if (d.mode === 'resize') lastLen.current = d.current.l
-      return commit(channel.notes.map((nt) => (nt === d.orig ? d.current : nt)))
+    if (d.mode === 'resize' && d.current) {
+      lastLen.current = Math.max(...d.current.map((x) => x.l))
+      selectKeys(d.current)
+      return commit(merge(channel.notes, d.group, d.current))
+    }
+    if (d.mode === 'move' && d.current && d.moved) {
+      selectKeys(d.current)
+      return commit(merge(channel.notes, d.copy ? [] : d.group, d.current))
     }
     setDraft(null)
   }
 
   const onKey = (e) => {
-    if (e.key === 'f' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); return setFull((v) => !v) }
-    if (!selected) return
-    const idx = channel.notes.findIndex((nt) => same(nt, selected))
-    if (idx < 0) return
-    const note = channel.notes[idx]
-    let updated = null
-    if (e.key === 'Delete' || e.key === 'Backspace') {
-      e.preventDefault()
-      setSelected(null)
-      return onChangeNotes(channel.notes.filter((_, i) => i !== idx))
+    const mod = e.ctrlKey || e.metaKey
+    const k = e.key.toLowerCase()
+    const done = () => { e.preventDefault(); e.stopPropagation() } // keep keys away from the patch canvas behind
+    if (k === 'f' && !mod) { done(); return setFull((v) => !v) }
+    if (mod && k === 'a') { done(); return selectKeys(channel.notes) }
+    if (k === 'escape' && selection.size) { done(); return setSelection(new Set()) }
+
+    const group = selectedNotes()
+    if (mod && (k === 'c' || k === 'x')) {
+      if (!group.length) return
+      done()
+      const start = Math.min(...group.map((x) => x.s))
+      const span = Math.max(...group.map((x) => x.s + x.l)) - start
+      clipboard = { notes: group.map((x) => ({ ...x, s: x.s - start })), span }
+      pasteAt.current = start + span
+      if (k === 'x') { setSelection(new Set()); onChangeNotes(merge(channel.notes, group, [])) }
+      return
     }
-    if (e.key === 'ArrowUp') updated = { ...note, n: clamp(note.n + (e.shiftKey ? 12 : 1), LOW, HIGH) }
-    else if (e.key === 'ArrowDown') updated = { ...note, n: clamp(note.n - (e.shiftKey ? 12 : 1), LOW, HIGH) }
-    else if (e.key === 'ArrowRight') updated = { ...note, s: clamp(note.s + (e.shiftKey ? pattern.stepsPerBar : 1), 0, total - note.l) }
-    else if (e.key === 'ArrowLeft') updated = { ...note, s: clamp(note.s - (e.shiftKey ? pattern.stepsPerBar : 1), 0, total - note.l) }
+    if (mod && (k === 'v' || k === 'd')) {
+      let source = clipboard
+      let at = pasteAt.current ?? 0
+      if (k === 'd') {
+        if (!group.length) return
+        const start = Math.min(...group.map((x) => x.s))
+        const span = Math.max(...group.map((x) => x.s + x.l)) - start
+        source = { notes: group.map((x) => ({ ...x, s: x.s - start })), span }
+        at = start + span
+      }
+      if (!source) return
+      done()
+      const placed = source.notes
+        .map((x) => ({ ...x, s: x.s + at }))
+        .filter((x) => x.s < total)
+        .map((x) => ({ ...x, l: Math.min(x.l, total - x.s) }))
+      if (!placed.length) return
+      pasteAt.current = at + source.span
+      selectKeys(placed)
+      reveal(placed[0])
+      return onChangeNotes(merge(channel.notes, [], placed))
+    }
+
+    if (!group.length) return
+    if (k === 'delete' || k === 'backspace') {
+      done()
+      setSelection(new Set())
+      return onChangeNotes(merge(channel.notes, group, []))
+    }
+    let ds = 0
+    let dn = 0
+    if (k === 'arrowup') dn = e.shiftKey ? 12 : 1
+    else if (k === 'arrowdown') dn = e.shiftKey ? -12 : -1
+    else if (k === 'arrowright') ds = e.shiftKey ? pattern.stepsPerBar : 1
+    else if (k === 'arrowleft') ds = e.shiftKey ? -pattern.stepsPerBar : -1
     else return
-    e.preventDefault()
-    if (updated.n !== note.n) onPreview(updated.n)
-    setSelected(updated)
-    reveal(updated)
-    onChangeNotes(channel.notes.map((nt, i) => (i === idx ? updated : nt)))
+    done()
+    const { notes: moved } = shifted(group, ds, dn)
+    if (dn && moved[0]) onPreview(moved[0].n)
+    selectKeys(moved)
+    reveal(moved[0])
+    onChangeNotes(merge(channel.notes, group, moved))
   }
 
   // overview: click or drag to move the view
@@ -455,7 +580,8 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
           </span>
           <button type="button" className={`node-btn ${follow ? 'on' : ''}`} aria-pressed={follow} onClick={() => setFollow((v) => !v)} title="Keep the playhead in view while playing">follow</button>
           <span className="pr-spacer" />
-          <span className="pr-hint">{barCount} bar{barCount === 1 ? '' : 's'} · ctrl/cmd+scroll zooms · middle-drag or alt+drag pans</span>
+          {selection.size > 0 && <span className="pr-selected">{selection.size} selected</span>}
+          <span className="pr-hint" title="ctrl/cmd + A selects all · shift + click adds · ctrl/cmd + drag draws a box · drag moves the selection · ctrl/cmd + drag a note copies · ctrl/cmd + C / X / V / D · arrows move · delete removes · ctrl/cmd + scroll zooms · middle-drag or alt + drag pans">{barCount} bar{barCount === 1 ? '' : 's'} · ctrl/cmd+A all · ctrl/cmd+drag box · ctrl/cmd+C/V/D · middle-drag pans</span>
           <button type="button" className={`node-btn ${full ? 'on' : ''}`} onClick={() => setFull((v) => !v)} title="Full screen (F, Esc to close)">{full ? 'close' : 'full screen'}</button>
         </div>
         <canvas

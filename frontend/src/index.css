@@ -514,6 +514,7 @@ body {
 .pr-zoom { min-width: 3.2rem; text-align: center; color: var(--acid); font-variant-numeric: tabular-nums; }
 .pr-spacer { flex: 1; }
 .pr-hint { font-size: 10px; }
+.pr-selected { font-size: 10px; color: var(--ink); background: var(--paper); padding: 0 0.35rem; font-variant-numeric: tabular-nums; }
 .pr .node-btn { color: var(--paper); border-color: var(--line); opacity: 1; }
 .pr .node-btn:hover { border-color: var(--acid); color: var(--acid); }
 .pr .node-btn.on { background: var(--acid); color: var(--ink); border-color: var(--acid); }
