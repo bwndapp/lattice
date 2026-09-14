@@ -98,6 +98,16 @@ body {
   letter-spacing: -0.05em;
   color: var(--acid);
   text-decoration: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.1em;
+}
+.logo-mark {
+  flex: none;
+  width: 0.46em;
+  height: 0.46em;
+  margin: 0.01em 0.04em 0 0.08em;
+  overflow: visible;
 }
 .btn.play {
   font-family: var(--display);

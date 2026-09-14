@@ -548,7 +548,17 @@ export default function App() {
   return (
     <div className="studio">
       <header className="bar">
-        <Link to="/" className="logo" aria-label="lattice, home">lattice</Link>
+        <Link to="/" className="logo" aria-label="lattice, home">
+          {/* the woven mark from the app icon: two strips over two, gaps cut in the header's black */}
+          <svg className="logo-mark" viewBox="14 14 36 36" aria-hidden="true">
+            <g strokeLinecap="square" fill="none">
+              <path d="M14 26 38 50M26 14 50 38" stroke="currentColor" strokeWidth="7" />
+              <path d="M14 38 38 14M26 50 50 26" stroke="var(--ink)" strokeWidth="13" />
+              <path d="M14 38 38 14M26 50 50 26" stroke="currentColor" strokeWidth="7" />
+            </g>
+          </svg>
+          <span>lattice</span>
+        </Link>
         <span className="transport" role="group" aria-label="Transport">
           <button className="btn tport" onClick={toStart} title="Back to the start (Home)" aria-label="Back to the start">|&lt;</button>
           <button className={`btn play ${started ? 'on' : ''} ${preparing ? 'preparing' : ''}`} onClick={play} aria-busy={preparing} title="Play (space) · update while playing (ctrl/cmd + enter)">{started ? 'update' : preparing ? 'loading' : 'play'}</button>
