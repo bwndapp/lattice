@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { hapValue, newLaneCode, parseLanes, pitchOf, queryWindow, soundOf, toggledMute, toggledSolo } from './lanes'
-import { INSTRUMENT_MIME, instrumentChannel, makePattern, makeTrack, newId, placeClip, songLength } from './project'
-import { InstrumentChips, PatternChannels, reshapePattern } from './Rack.jsx'
+import { INSTRUMENT_MIME, instrumentChannel, makePattern, makeTrack, newId, placeClip, reshapePattern, songLength } from './project'
+import { InstrumentChips, PatternChannels } from './Rack.jsx'
 
 const MAIN = '__main__'
 const MIN_BARS = 0.25 // most zoomed in: one beat of 4/4 across the view
@@ -246,7 +246,7 @@ export default function Playlist({
       const d = clipDrag.current
       let clips = row.track.clips
       if (d?.moved && (d.mode === 'move' || d.mode === 'resize')) {
-        clips = clips.filter((c) => c.id !== d.clip.id)
+        if (!d.copy) clips = clips.filter((c) => c.id !== d.clip.id)
         if (d.targetTrack === row.track.id) clips = [...clips, { ...d.clip, bar: d.bar, bars: d.bars, dragging: true }]
       }
       if (d?.mode === 'draw' && d.track === row.track.id) {
@@ -713,7 +713,9 @@ export default function Playlist({
       const rect = e.currentTarget.getBoundingClientRect()
       const edgeX = ((clip.bar + clip.bars - viewRef.current.start) / viewRef.current.bars) * rect.width
       const mode = Math.abs(e.clientX - rect.left - edgeX) <= 8 ? 'resize' : 'move'
-      clipDrag.current = { mode, clip, x0: e.clientX, grab: t - clip.bar, bar: clip.bar, bars: clip.bars, fromTrack: row.track.id, targetTrack: row.track.id, moved: false }
+      // alt / ctrl / cmd + drag leaves the original and moves a copy
+      const copy = mode === 'move' && (e.altKey || e.ctrlKey || e.metaKey)
+      clipDrag.current = { mode, copy, clip, x0: e.clientX, grab: t - clip.bar, bar: clip.bar, bars: clip.bars, fromTrack: row.track.id, targetTrack: row.track.id, moved: false }
     } else if (e.shiftKey && currentPattern) {
       // shift + drag paints copies of the selected pattern
       const bar = Math.max(0, Math.floor(t))
@@ -780,6 +782,7 @@ export default function Playlist({
         const to = p.tracks.find((x) => x.id === d.targetTrack) ?? from
         const clip = from?.clips.find((c) => c.id === d.clip.id)
         if (!clip) return
+        if (d.copy) { placeClip(to, { ...clip, id: newId(), bar: d.bar }); return }
         from.clips = from.clips.filter((c) => c.id !== clip.id)
         placeClip(to, { ...clip, bar: d.bar })
       })
@@ -809,10 +812,10 @@ export default function Playlist({
     onSelectPattern(patternId)
     openEditor(patternId, e)
   }
-  const openEditor = (patternId, e) => {
+  const openEditor = (patternId, e, clipRef = null) => {
     const x = e?.clientX ?? window.innerWidth / 2
     const y = e?.clientY ?? window.innerHeight / 3
-    setEditing({ patternId, x, y })
+    setEditing({ patternId, x, y, ...clipRef })
   }
 
   const dropTarget = (row, e) => {
@@ -844,7 +847,7 @@ export default function Playlist({
         if (pattern) pattern.channels.push(instrumentChannel(key, pattern))
       })
       onSelectPattern(clip.pattern)
-      openEditor(clip.pattern, e)
+      openEditor(clip.pattern, e, { trackId: row.track.id, clipId: clip.id })
     } else {
       createPattern(row.track.id, bar, 1, key, e)
     }
@@ -854,7 +857,7 @@ export default function Playlist({
   const onLaneDoubleClick = (row) => (e) => {
     if (!row.track) return onRevealCode(row.lane ? row.lane.labelFrom : 0)
     const clip = clipAt(row.track, timeAt(e))
-    if (clip) { onSelectPattern(clip.pattern); openEditor(clip.pattern, e) }
+    if (clip) { onSelectPattern(clip.pattern); openEditor(clip.pattern, e, { trackId: row.track.id, clipId: clip.id }) }
   }
   const updateTrack = (id, fn) => onUpdateProject((p) => { const t = p.tracks.find((x) => x.id === id); if (t) fn(t, p) })
 
@@ -966,7 +969,7 @@ export default function Playlist({
       <div className="playlist-grid" ref={gridRef}>
         <div className="channel ruler-head" aria-hidden>
           <span className="lanes-tip">
-            {project ? 'drag empty space: new pattern · click: paint · drag clip: move · edge: resize · right-click: delete · double-click: edit'
+            {project ? 'drag empty space: new pattern · click: paint · drag: move · alt+drag: copy · edge: resize · right-click: delete · double-click: edit'
               : rows[0]?.slot === MAIN ? <>name patterns to split lanes, e.g. <code>bass: note(…)</code></> : 'ctrl/cmd + wheel zooms · drag lanes to pan'}
           </span>
         </div>
@@ -1080,6 +1083,8 @@ export default function Playlist({
           playMode={playMode}
           onUpdateProject={onUpdateProject}
           onOpenRack={() => { setEditing(null); onOpenPattern(editing.patternId) }}
+          clipRef={editing.clipId ? { trackId: editing.trackId, clipId: editing.clipId } : null}
+          onMakeUnique={(copyId) => { onSelectPattern(copyId); setEditing({ ...editing, patternId: copyId }) }}
           onClose={() => setEditing(null)}
         />
       )}
@@ -1102,7 +1107,7 @@ export default function Playlist({
 }
 
 /** A floating pattern editor on the playlist: name, length and the instruments' steps. */
-function PatternPopover({ project, patternId, anchor, transport, started, playMode, onUpdateProject, onOpenRack, onClose }) {
+function PatternPopover({ project, patternId, anchor, transport, started, playMode, onUpdateProject, onOpenRack, onClose, clipRef, onMakeUnique }) {
   const ref = useRef(null)
   const pattern = project.patterns.find((p) => p.id === patternId)
 
@@ -1133,6 +1138,22 @@ function PatternPopover({ project, patternId, anchor, transport, started, playMo
 
   if (!pattern) return null
   const update = (fn) => onUpdateProject((p) => { const pat = p.patterns.find((x) => x.id === patternId); if (pat) fn(pat) })
+  const uses = project.tracks.reduce((sum, t) => sum + t.clips.filter((c) => c.pattern === patternId).length, 0)
+  const makeUnique = () => {
+    const copyId = newId()
+    onUpdateProject((p) => {
+      const src = p.patterns.find((x) => x.id === patternId)
+      const clip = p.tracks.find((t) => t.id === clipRef.trackId)?.clips.find((c) => c.id === clipRef.clipId)
+      if (!src || !clip) return
+      const copy = JSON.parse(JSON.stringify(src))
+      copy.id = copyId
+      copy.name = `${src.name} ${uses}`.slice(0, 40)
+      copy.channels.forEach((c) => { c.id = newId() })
+      p.patterns.push(copy)
+      clip.pattern = copyId
+    })
+    onMakeUnique(copyId)
+  }
 
   return (
     <div className="pattern-pop" ref={ref} role="dialog" aria-label={`Edit ${pattern.name}`} style={{ left: pos.left, top: pos.top }}>
@@ -1144,6 +1165,8 @@ function PatternPopover({ project, patternId, anchor, transport, started, playMo
             {[1, 2, 3, 4, 6, 8, 12, 16].map((b) => <option key={b} value={b}>{b}</option>)}
           </select>
         </label>
+        {uses > 1 && <span className="pop-uses" title="Edits change every clip of this pattern">in {uses} clips</span>}
+        {uses > 1 && clipRef && <button className="btn" onClick={makeUnique} title="Give this clip its own copy of the pattern">make unique</button>}
         <span className="spacer" />
         <button className="btn" onClick={onOpenRack}>open in rack</button>
         <button className="btn ghost" onClick={onClose} aria-label="Close">close</button>

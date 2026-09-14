@@ -299,7 +299,7 @@ body {
 .code-view .editor { flex: 1; min-height: 0; }
 
 /* ── view and mode switches ───────────────────────────── */
-.seg { display: inline-flex; }
+.seg { display: inline-flex; flex-shrink: 0; white-space: nowrap; }
 .seg .btn { border-radius: 0; }
 .seg .btn + .btn { margin-left: -1px; }
 .seg .btn.on { background: var(--acid); border-color: var(--acid); color: var(--ink); position: relative; }
@@ -447,6 +447,70 @@ body {
   .rack-body.compact .ch > .ch-more { grid-area: more; }
 }
 
+/* ── knobs, sound picker, piano roll ──────────────────── */
+.knob { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; width: 44px; }
+.knob svg { cursor: ns-resize; touch-action: none; display: block; }
+.knob svg:focus-visible { outline: 2px solid var(--acid); outline-offset: 1px; border-radius: 50%; }
+.knob-track { fill: none; stroke: var(--line); stroke-width: 4; stroke-linecap: butt; }
+.knob-value { fill: none; stroke: var(--muted); stroke-width: 4; }
+.knob.changed .knob-value { stroke: var(--acid); }
+.knob-hand { stroke: var(--paper); stroke-width: 2; }
+.knob-label { font-size: 9px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.knob.changed .knob-label { color: var(--paper); }
+.sound-btn {
+  display: inline-flex; align-items: baseline; gap: 0.35rem; min-width: 0; flex: 1;
+  font: inherit; font-size: 12px; text-align: left; color: var(--paper); background: var(--ink);
+  border: 1px solid var(--line); border-radius: 0; padding: 0.3rem 0.45rem; cursor: pointer; overflow: hidden;
+}
+.sound-btn:hover { border-color: var(--acid); }
+.sound-name { color: var(--acid); white-space: nowrap; }
+.sound-bank { color: var(--muted); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sound-caret { margin-left: auto; color: var(--muted); font-size: 10px; }
+.mini-roll { height: 2rem; padding: 0; border: 1px solid var(--line); background: #151513; cursor: pointer; min-width: 0; }
+.mini-roll canvas { width: 100%; height: 100%; display: block; }
+.mini-roll:hover, .mini-roll.open { border-color: var(--acid); }
+.ch-fxpanel, .ch-roll { grid-column: 1 / -1; min-width: 0; contain: inline-size; }
+.ch-fxpanel {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.35rem 0.6rem;
+  padding: 0.5rem 0.6rem; background: var(--ink); border: 1px solid var(--line);
+}
+.ch-advanced { display: flex; flex-direction: column; gap: 0.2rem; font-size: 10px; flex: 1 1 14rem; }
+.btn.ch-btn.on { border-color: var(--acid); color: var(--acid); }
+.sound-picker {
+  position: fixed; z-index: 60; width: min(520px, calc(100vw - 24px)); height: min(420px, 70vh);
+  display: flex; flex-direction: column; background: var(--panel); border: 2px solid var(--acid);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+}
+.sp-head { display: flex; gap: 0.4rem; padding: 0.5rem; border-bottom: 1px solid var(--line); align-items: center; }
+.sp-search { flex: 1; font-size: 13px; }
+.sp-head .seg .btn { font-size: 11px; padding: 0.25rem 0.45rem; }
+.sp-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr; }
+.sp-body.with-kits { grid-template-columns: 11rem 1fr; }
+.sp-list { list-style: none; margin: 0; padding: 0.25rem; overflow-y: auto; min-height: 0; }
+.sp-kits { border-right: 1px solid var(--line); }
+.sp-item {
+  display: flex; justify-content: space-between; gap: 0.5rem; width: 100%;
+  font: inherit; font-size: 12px; text-align: left; color: var(--paper); background: none; border: 0; padding: 0.25rem 0.4rem; cursor: pointer;
+}
+.sp-item:hover { background: var(--ink); color: var(--acid); }
+.sp-item.on { background: var(--acid); color: var(--ink); }
+.sp-count { color: var(--muted); font-size: 10px; }
+.sp-item.on .sp-count { color: var(--ink); }
+.sp-empty { color: var(--muted); padding: 1rem; font-size: 12px; }
+.piano-roll {
+  position: relative; height: 18rem; overflow: auto; background: #0a0a09;
+  border: 1px solid var(--line); outline: none;
+}
+.piano-roll:focus-visible { border-color: var(--acid); }
+.pr-inner { display: flex; position: relative; }
+.pr-keys { position: sticky; left: 0; z-index: 2; flex-shrink: 0; cursor: pointer; border-right: 1px solid var(--line); }
+.pr-grid-wrap { position: relative; }
+.pr-grid { display: block; touch-action: none; }
+.pr-cursor { position: absolute; top: 0; bottom: 0; left: 0; background: rgba(242, 240, 230, 0.12); border-left: 2px solid var(--paper); pointer-events: none; }
+.pop-uses { font-size: 11px; color: var(--muted); }
+.seg.history .btn { padding-inline: 0.5rem; }
+@media (max-width: 1280px) { .seg.history { display: none; } }
+
 /* ── browser: the setlist ─────────────────────────────── */
 .browser {
   width: var(--sidebar);
@@ -552,15 +616,22 @@ body {
 }
 
 /* ── mid-size: the toolbar needs the room the wordmark was using ─ */
-@media (max-width: 1440px) {
+@media (max-width: 1720px) {
   .logo { font-size: 58px; margin-right: 0.2rem; }
   .bar { gap: 0.4rem; }
   .lcd-unit { display: none; }
   .btn.loop .loop-range { display: none; }
 }
-@media (max-width: 1100px) {
+@media (max-width: 1400px) {
   .code-word { display: none; }
   .meter { display: none; }
+  .btn.tport { padding-inline: 0.4rem; }
+}
+
+@media (max-width: 1180px) {
+  .logo { font-size: 40px; }
+  .btn.loop, .seg:not(.views), .btn.tport { display: none; } /* loop: drag the ruler · pattern mode: in the rack */
+  .bar { gap: 0.3rem; }
 }
 
 /* ── narrow screens: keep the attitude, drop the collisions ─ */

@@ -1,14 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  BANKS, DRUM_SOUNDS, INSTRUMENTS, INSTRUMENT_MIME, SYNTH_SOUNDS,
-  instrumentChannel, makeChannel, makePattern, midiToNote, newId, noteToMidi, songLength, stepCount,
+  INSTRUMENTS, INSTRUMENT_MIME, PARAMS,
+  instrumentChannel, makeChannel, makePattern, midiToNote, newId, paramValue, paramsFor, reshapePattern, songLength, stepCount,
 } from './project'
+import { previewChannel } from './audio'
+import Knob from './Knob.jsx'
+import SoundPicker from './SoundPicker.jsx'
+import PianoRoll from './PianoRoll.jsx'
 
 const mod = (a, n) => ((a % n) + n) % n
 const BAR_CHOICES = [1, 2, 3, 4, 6, 8, 12, 16]
+const GAIN = PARAMS.find((p) => p.key === 'gain')
 
-/** A text field that applies its value on Enter or blur, not per keystroke (half-typed
- *  notes and effects would otherwise regenerate broken code while you type). */
+/** A text field that applies its value on Enter or blur, not per keystroke. */
 function CommitInput({ value, onCommit, ...props }) {
   const [text, setText] = useState(value)
   useEffect(() => setText(value), [value])
@@ -27,32 +31,8 @@ function CommitInput({ value, onCommit, ...props }) {
   )
 }
 
-/** Resize a step array when a pattern's bars or steps-per-bar change. */
-function resample(steps, from, to) {
-  const out = Array.from({ length: to.bars * to.stepsPerBar }, () => null)
-  const ratio = from.stepsPerBar / to.stepsPerBar
-  for (let i = 0; i < out.length; i++) {
-    const src = i * ratio
-    if (!Number.isInteger(src)) continue
-    // new bars beyond the old length repeat the existing ones
-    out[i] = steps[src % Math.max(1, steps.length)] ?? null
-  }
-  return out
-}
-
-/** Change a pattern's bars / steps-per-bar, keeping its steps. Mutates `pat`. */
-export function reshapePattern(pat, patch) {
-  const from = { bars: pat.bars, stepsPerBar: pat.stepsPerBar }
-  const to = { ...from, ...patch }
-  for (const c of pat.channels) {
-    if (c.kind === 'code') continue
-    c.steps = resample(c.steps, from, to).map((v) => (c.kind === 'synth' ? v || null : v ? 1 : 0))
-  }
-  Object.assign(pat, patch)
-}
-
 /** Which step of `pattern` is sounding at song position `pos`, or -1. */
-function stepAt(project, pattern, pos, mode) {
+export function stepAt(project, pattern, pos, mode) {
   const n = stepCount(pattern)
   if (mode === 'pattern') return Math.floor(mod(pos, pattern.bars) * pattern.stepsPerBar) % n
   const song = songLength(project)
@@ -89,15 +69,57 @@ export function InstrumentChips({ onPick, className = '' }) {
   )
 }
 
+/** A thumbnail of a synth channel's notes; click it to open the piano roll. */
+function MiniRoll({ channel, total, open, onToggle }) {
+  const ref = useRef(null)
+  useEffect(() => {
+    const canvas = ref.current
+    if (!canvas) return
+    const dpr = window.devicePixelRatio || 1
+    const w = canvas.clientWidth
+    const h = canvas.clientHeight
+    canvas.width = Math.round(w * dpr)
+    canvas.height = Math.round(h * dpr)
+    const ctx = canvas.getContext('2d')
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.fillStyle = '#151513'
+    ctx.fillRect(0, 0, w, h)
+    const acid = getComputedStyle(document.documentElement).getPropertyValue('--acid').trim() || '#e4ff1a'
+    if (!channel.notes.length) {
+      ctx.fillStyle = '#7d7d76'
+      ctx.font = '10px "Martian Mono", ui-monospace, monospace'
+      ctx.textBaseline = 'middle'
+      ctx.fillText('empty · click to write notes', 8, h / 2)
+      return
+    }
+    const pitches = channel.notes.map((x) => x.n)
+    const lo = Math.min(...pitches) - 1
+    const hi = Math.max(...pitches) + 1
+    const rowH = Math.max(2, (h - 4) / Math.max(hi - lo + 1, 6))
+    ctx.fillStyle = acid
+    for (const x of channel.notes) ctx.fillRect((x.s / total) * w + 1, 2 + (hi - x.n) * rowH, Math.max(2, (x.l / total) * w - 2), Math.max(2, rowH - 1))
+  }, [channel.notes, total, open])
+  return (
+    <button className={`mini-roll ${open ? 'open' : ''}`} onClick={onToggle} aria-expanded={open} title={open ? 'Close the piano roll' : 'Open the piano roll'}>
+      <canvas ref={ref} aria-hidden />
+    </button>
+  )
+}
+
 /**
- * The channels of one pattern with their step grids. Used by the rack and by the
- * pattern editor that pops up on the playlist. Instruments can be dropped onto it.
+ * The instruments of one pattern: sound, knobs, and steps (drums) or a piano roll
+ * (synths). Used by the rack and by the pattern editor on the playlist. Instruments can
+ * be dropped onto it.
  */
 export function PatternChannels({ project, pattern, onUpdateProject, transport, started, playMode, compact = false }) {
   const gridsRef = useRef(null)
   const paintRef = useRef(null) // value being painted while the pointer is down
   const [dropping, setDropping] = useState(false)
+  const [picker, setPicker] = useState(null) // { channelId, x, y }
+  const [openFx, setOpenFx] = useState(() => new Set())
+  const [openRoll, setOpenRoll] = useState(() => new Set())
 
+  const toggle = (setter, id) => setter((s) => { const next = new Set(s); next.has(id) ? next.delete(id) : next.add(id); return next })
   const update = (fn) => onUpdateProject((p) => {
     const target = p.patterns.find((x) => x.id === pattern.id)
     if (target) fn(target, p)
@@ -106,18 +128,25 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
     const ch = pat.channels.find((c) => c.id === id)
     if (ch) fn(ch, pat)
   })
-  const addInstrument = (key) => update((pat) => { pat.channels.push(instrumentChannel(key, pat)) })
-  const setStep = (ch, i, value) => updateChannel(ch.id, (c) => {
-    c.steps[i] = value ? (c.kind === 'synth' ? (c.steps[i] || c.note || 'c3') : 1) : c.kind === 'synth' ? null : 0
-  })
-  const transpose = (channelId, i, by) => updateChannel(channelId, (c) => {
-    if (c.kind === 'synth' && c.steps[i]) c.steps[i] = midiToNote(noteToMidi(c.steps[i]) + by)
-  })
+  const setParam = (id, key, value) => updateChannel(id, (c) => { c.params = { ...c.params, [key]: value } })
+  const addInstrument = (key) => {
+    const ch = instrumentChannel(key, pattern)
+    update((pat) => { pat.channels.push({ ...ch, name: instrumentChannel(key, pat).name }) })
+    if (ch.kind === 'synth') setOpenRoll((s) => new Set(s).add(ch.id))
+    if (!started) previewChannel(ch)
+  }
+  const setStep = (ch, i, value) => {
+    updateChannel(ch.id, (c) => { c.steps[i] = value ? 1 : 0 })
+    if (value && !started) previewChannel(ch)
+  }
 
-  // live step cursor
+  const cursorRef = useRef(() => -1)
+  cursorRef.current = () => (started ? stepAt(project, pattern, transport.position(), playMode) : -1)
+
+  // live step cursor for the drum grids
   useEffect(() => {
     const grid = gridsRef.current
-    const show = () => grid?.style.setProperty('--now', started ? stepAt(project, pattern, transport.position(), playMode) : -1)
+    const show = () => grid?.style.setProperty('--now', cursorRef.current())
     show()
     if (!started) return
     let frame
@@ -125,20 +154,6 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
     tick()
     return () => cancelAnimationFrame(frame)
   }, [project, pattern, started, transport, playMode])
-
-  // scroll over a synth step to change its note (non-passive so the page doesn't scroll)
-  useEffect(() => {
-    const grid = gridsRef.current
-    if (!grid) return
-    const onWheel = (e) => {
-      const btn = e.target.closest?.('.step.on[data-synth]')
-      if (!btn) return
-      e.preventDefault()
-      transpose(btn.dataset.channel, Number(btn.dataset.index), e.deltaY < 0 ? 1 : -1)
-    }
-    grid.addEventListener('wheel', onWheel, { passive: false })
-    return () => grid.removeEventListener('wheel', onWheel)
-  })
 
   useEffect(() => {
     const up = () => { paintRef.current = null }
@@ -148,6 +163,7 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
 
   const n = stepCount(pattern)
   const stepsPerBeat = Math.max(1, Math.round(pattern.stepsPerBar / project.beats))
+  const pickerChannel = picker && pattern.channels.find((c) => c.id === picker.channelId)
 
   return (
     <div
@@ -170,130 +186,150 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
       }}
     >
       {pattern.channels.length === 0 && (
-        <p className="rack-hint">Empty pattern. Add instruments below, or drag them in, then click steps to make them play.</p>
+        <p className="rack-hint">Empty pattern. Add instruments below (or drag them in), then click steps or write notes.</p>
       )}
-      {pattern.channels.map((ch) => (
-        <div key={ch.id} className={`ch ${ch.mute ? 'muted' : ''}`}>
-          <button
-            className={`led mute ${ch.mute ? 'on' : ''}`}
-            aria-pressed={ch.mute}
-            aria-label={`${ch.mute ? 'Unmute' : 'Mute'} ${ch.name}`}
-            onClick={() => updateChannel(ch.id, (c) => { c.mute = !c.mute })}
-          >m</button>
-          <input className="ch-name" value={ch.name} maxLength={40} aria-label="Channel name" onChange={(e) => { const v = e.target.value; updateChannel(ch.id, (c) => { c.name = v }) }} />
+      {pattern.channels.map((ch) => {
+        const fxOpen = openFx.has(ch.id)
+        const rollOpen = ch.kind === 'synth' && openRoll.has(ch.id)
+        const tweaked = paramsFor(ch.kind).filter((d) => d.key !== 'gain' && paramValue(ch, d.key) !== d.def).length + (ch.fx?.trim() ? 1 : 0)
+        return (
+          <div key={ch.id} className={`ch ${ch.mute ? 'muted' : ''} ch-${ch.kind}`}>
+            <button
+              className={`led mute ${ch.mute ? 'on' : ''}`}
+              aria-pressed={ch.mute}
+              aria-label={`${ch.mute ? 'Unmute' : 'Mute'} ${ch.name}`}
+              onClick={() => updateChannel(ch.id, (c) => { c.mute = !c.mute })}
+            >m</button>
+            <input className="ch-name" value={ch.name} maxLength={40} aria-label="Instrument name" onChange={(e) => { const v = e.target.value; updateChannel(ch.id, (c) => { c.name = v }) }} />
 
-          <div className="ch-sound">
-            {ch.kind === 'code' ? (
-              <span className="ch-kind">code</span>
-            ) : (
-              <>
-                <CommitInput
-                  className="ch-input"
-                  list={ch.kind === 'synth' ? 'synth-sounds' : 'drum-sounds'}
-                  value={ch.sound}
-                  aria-label="Sound"
-                  onCommit={(v) => updateChannel(ch.id, (c) => { c.sound = v })}
-                />
-                {ch.kind === 'drum' ? (
-                  <select className="ch-input" value={ch.bank} aria-label="Drum machine" onChange={(e) => { const v = e.target.value; updateChannel(ch.id, (c) => { c.bank = v }) }}>
-                    {BANKS.map((b) => <option key={b} value={b}>{b || 'default kit'}</option>)}
-                  </select>
-                ) : (
-                  <CommitInput
-                    className="ch-input ch-note"
-                    value={ch.note}
-                    aria-label="Note for new steps"
-                    title="Note for new steps, e.g. c3 or eb2"
-                    onCommit={(v) => updateChannel(ch.id, (c) => { c.note = v })}
-                  />
-                )}
-              </>
-            )}
-          </div>
-
-          {ch.kind === 'code' ? (
-            <CommitInput
-              className="ch-code"
-              value={ch.code}
-              spellCheck={false}
-              aria-label="Strudel code for this channel"
-              title="Any Strudel pattern · Enter to apply"
-              onCommit={(v) => updateChannel(ch.id, (c) => { c.code = v })}
-            />
-          ) : (
-            <div className="steps" role="group" aria-label={`${ch.name} steps`}>
-              {Array.from({ length: n }, (_, i) => {
-                const v = ch.steps[i]
-                const on = !!v
-                const beatGroup = Math.floor(i / stepsPerBeat) % 2
-                return (
+            <div className="ch-sound">
+              {ch.kind === 'code' ? (
+                <span className="ch-kind">code</span>
+              ) : (
+                <>
                   <button
-                    key={i}
-                    className={`step ${on ? 'on' : ''} ${beatGroup ? 'alt' : ''} ${i % pattern.stepsPerBar === 0 ? 'bar-start' : ''}`}
-                    aria-pressed={on}
-                    aria-label={`step ${i + 1}${ch.kind === 'synth' && on ? `, ${v}` : ''}`}
-                    data-channel={ch.id}
-                    data-index={i}
-                    data-synth={ch.kind === 'synth' ? '' : undefined}
-                    title={ch.kind === 'synth' ? (on ? `${v} · scroll or arrow keys to change` : 'click to add a note') : undefined}
-                    onPointerDown={(e) => {
-                      if (e.button === 2) { setStep(ch, i, false); paintRef.current = false; return }
-                      if (e.button !== 0) return
-                      paintRef.current = !on
-                      setStep(ch, i, !on)
-                    }}
-                    onPointerEnter={(e) => { if (paintRef.current !== null && e.buttons) setStep(ch, i, paintRef.current) }}
-                    onContextMenu={(e) => e.preventDefault()}
-                    onClick={(e) => { if (e.detail === 0) setStep(ch, i, !on) /* keyboard */ }}
-                    onKeyDown={(e) => {
-                      if (ch.kind !== 'synth' || !on) return
-                      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                        e.preventDefault()
-                        transpose(ch.id, i, (e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 12 : 1))
-                      }
-                    }}
-                  >{ch.kind === 'synth' && on ? <span className="step-note">{v}</span> : null}</button>
-                )
-              })}
-              <span className="step-cursor" aria-hidden />
+                    className="sound-btn"
+                    onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setPicker({ channelId: ch.id, x: r.left, y: r.bottom }) }}
+                    title="Choose a sound"
+                  >
+                    <span className="sound-name">{ch.sound}</span>
+                    {ch.kind === 'drum' && ch.bank && <span className="sound-bank">{ch.bank}</span>}
+                    <span aria-hidden className="sound-caret">▾</span>
+                  </button>
+                  <button className="btn ghost ch-btn" onClick={() => previewChannel(ch)} title="Hear it" aria-label={`Hear ${ch.name}`}>hear</button>
+                </>
+              )}
             </div>
-          )}
 
-          <div className="ch-more">
-            <label className="ch-gain" title="Volume">
-              <span className="syn">vol</span>
-              <input type="range" min="0" max="1.5" step="0.05" value={ch.gain} aria-label="Volume" onChange={(e) => { const v = Number(e.target.value); updateChannel(ch.id, (c) => { c.gain = v }) }} />
-            </label>
-            {!compact && (
+            {ch.kind === 'code' ? (
               <CommitInput
-                className="ch-input ch-fx"
-                value={ch.fx}
-                placeholder=".room(.3)"
+                className="ch-code"
+                value={ch.code}
                 spellCheck={false}
-                aria-label="Effects, as Strudel code"
-                title="Effects, as Strudel code, e.g. .room(.3).lpf(800) · Enter to apply"
-                onCommit={(v) => updateChannel(ch.id, (c) => { c.fx = v })}
+                aria-label="Strudel code for this instrument"
+                title="Any Strudel pattern · Enter to apply"
+                onCommit={(v) => updateChannel(ch.id, (c) => { c.code = v })}
               />
+            ) : ch.kind === 'synth' ? (
+              <MiniRoll channel={ch} total={n} open={rollOpen} onToggle={() => toggle(setOpenRoll, ch.id)} />
+            ) : (
+              <div className="steps" role="group" aria-label={`${ch.name} steps`}>
+                {Array.from({ length: n }, (_, i) => {
+                  const on = !!ch.steps[i]
+                  const beatGroup = Math.floor(i / stepsPerBeat) % 2
+                  return (
+                    <button
+                      key={i}
+                      className={`step ${on ? 'on' : ''} ${beatGroup ? 'alt' : ''} ${i % pattern.stepsPerBar === 0 ? 'bar-start' : ''}`}
+                      aria-pressed={on}
+                      aria-label={`step ${i + 1}`}
+                      onPointerDown={(e) => {
+                        if (e.button === 2) { setStep(ch, i, false); paintRef.current = false; return }
+                        if (e.button !== 0) return
+                        paintRef.current = !on
+                        setStep(ch, i, !on)
+                      }}
+                      onPointerEnter={(e) => { if (paintRef.current !== null && e.buttons) setStep(ch, i, paintRef.current) }}
+                      onContextMenu={(e) => e.preventDefault()}
+                      onClick={(e) => { if (e.detail === 0) setStep(ch, i, !on) /* keyboard */ }}
+                    />
+                  )
+                })}
+                <span className="step-cursor" aria-hidden />
+              </div>
             )}
-            {!compact && (
-              <button className="btn ghost ch-btn" title="Duplicate channel" aria-label={`Duplicate ${ch.name}`} onClick={() => update((pat) => {
-                const i = pat.channels.findIndex((c) => c.id === ch.id)
-                pat.channels.splice(i + 1, 0, { ...JSON.parse(JSON.stringify(pat.channels[i])), id: newId(), name: `${ch.name} 2`.slice(0, 40) })
-              })}>dup</button>
+
+            <div className="ch-more">
+              <Knob def={GAIN} value={paramValue(ch, 'gain')} onChange={(v) => setParam(ch.id, 'gain', v)} />
+              <button className={`btn ch-btn ${fxOpen ? 'on' : ''}`} aria-expanded={fxOpen} onClick={() => toggle(setOpenFx, ch.id)} title="Sound settings">
+                fx{tweaked ? ` ${tweaked}` : ''}
+              </button>
+              {ch.kind === 'synth' && (
+                <button className={`btn ch-btn ${rollOpen ? 'on' : ''}`} aria-expanded={rollOpen} onClick={() => toggle(setOpenRoll, ch.id)} title="Piano roll">notes</button>
+              )}
+              {!compact && (
+                <button className="btn ghost ch-btn" title="Duplicate" aria-label={`Duplicate ${ch.name}`} onClick={() => update((pat) => {
+                  const i = pat.channels.findIndex((c) => c.id === ch.id)
+                  pat.channels.splice(i + 1, 0, { ...JSON.parse(JSON.stringify(pat.channels[i])), id: newId(), name: `${ch.name} 2`.slice(0, 40) })
+                })}>dup</button>
+              )}
+              <button className="btn ghost danger ch-btn" title="Remove instrument" aria-label={`Remove ${ch.name}`} onClick={() => update((pat) => { pat.channels = pat.channels.filter((c) => c.id !== ch.id) })}>del</button>
+            </div>
+
+            {fxOpen && (
+              <div className="ch-fxpanel">
+                {paramsFor(ch.kind).filter((d) => d.key !== 'gain').map((def) => (
+                  <Knob key={def.key} def={def} value={paramValue(ch, def.key)} onChange={(v) => setParam(ch.id, def.key, v)} />
+                ))}
+                <label className="ch-advanced">
+                  <span className="syn">more, as code</span>
+                  <CommitInput
+                    className="ch-input ch-fx"
+                    value={ch.fx}
+                    placeholder=".vowel('a')"
+                    spellCheck={false}
+                    aria-label="Extra effects as Strudel code"
+                    title="Anything the knobs don't cover, as Strudel code · Enter to apply"
+                    onCommit={(v) => updateChannel(ch.id, (c) => { c.fx = v })}
+                  />
+                </label>
+              </div>
             )}
-            <button className="btn ghost danger ch-btn" title="Remove instrument" aria-label={`Remove ${ch.name}`} onClick={() => update((pat) => { pat.channels = pat.channels.filter((c) => c.id !== ch.id) })}>del</button>
+
+            {rollOpen && (
+              <div className="ch-roll">
+                <PianoRoll
+                  channel={ch}
+                  pattern={pattern}
+                  beats={project.beats}
+                  cursorRef={cursorRef}
+                  onPreview={(midi) => { if (!started) previewChannel(ch, { note: midi }) }}
+                  onChangeNotes={(notes) => updateChannel(ch.id, (c) => { c.notes = notes; if (notes.length) c.note = midiToNote(notes[notes.length - 1].n) })}
+                />
+              </div>
+            )}
           </div>
-        </div>
-      ))}
+        )
+      })}
       <div className="rack-add">
         <span className="syn">add</span>
         <InstrumentChips onPick={addInstrument} />
       </div>
+      {pickerChannel && (
+        <SoundPicker
+          kind={pickerChannel.kind}
+          sound={pickerChannel.sound}
+          bank={pickerChannel.bank}
+          anchor={picker}
+          onPick={({ sound, bank }) => updateChannel(pickerChannel.id, (c) => { c.sound = sound; if (c.kind === 'drum') c.bank = bank })}
+          onClose={() => setPicker(null)}
+        />
+      )}
     </div>
   )
 }
 
-/** The channel rack: pick a pattern, shape it, edit its channels. */
+/** The channel rack: pick a pattern, shape it, edit its instruments. */
 export default function Rack({ project, currentPatternId, onSelectPattern, onUpdateProject, transport, started, playMode, onPlayMode }) {
   const pattern = project.patterns.find((p) => p.id === currentPatternId) ?? project.patterns[0]
 
@@ -388,15 +424,5 @@ export default function Rack({ project, currentPatternId, onSelectPattern, onUpd
         playMode={playMode}
       />
     </section>
-  )
-}
-
-/** Shared datalists for the sound fields (render once per page). */
-export function SoundLists() {
-  return (
-    <>
-      <datalist id="drum-sounds">{DRUM_SOUNDS.map((s) => <option key={s} value={s} />)}</datalist>
-      <datalist id="synth-sounds">{SYNTH_SOUNDS.map((s) => <option key={s} value={s} />)}</datalist>
-    </>
   )
 }

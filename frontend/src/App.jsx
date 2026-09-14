@@ -11,7 +11,7 @@ import { useUser } from './bwnd'
 import { api, clearDraft, readDraft, timeAgo, trackUrl, writeDraft } from './api'
 import Browser from './Browser.jsx'
 import Playlist from './Playlist.jsx'
-import Rack, { SoundLists } from './Rack.jsx'
+import Rack from './Rack.jsx'
 import { capturePatterns, parseLanes, tempoChange } from './lanes'
 import { PROJECT_MARK, demoProject, generateCode, normalizeProject, parseProject, projectFromLanes } from './project'
 import { createTransport, formatBarBeat, parseBarBeat } from './transport'
@@ -168,6 +168,8 @@ export default function App() {
   }, [])
 
   const putCode = useCallback((id, text) => {
+    historyRef.current = { past: [], future: [], lastAt: 0 } // a different track: its own history
+    setHistoryTick((n) => n + 1)
     const p = parseProject(text)
     editorRef.current.setCode(p ? generateCode(p, genRef.current) : text)
     loadedIdRef.current = id
@@ -196,18 +198,60 @@ export default function App() {
     }, 120)
   }, [])
 
+  // Undo history of project snapshots. Edits within half a second (a knob turn, a paint
+  // stroke) count as one step.
+  const historyRef = useRef({ past: [], future: [], lastAt: 0 })
+  const [historyTick, setHistoryTick] = useState(0)
+  const applySnapshot = useCallback((json) => {
+    replaceCode(generateCode(normalizeProject(JSON.parse(json)), genRef.current))
+    liveUpdate()
+  }, [replaceCode, liveUpdate])
+
   /** Change the project: `mutate` edits a copy; the code is regenerated from it. */
   const updateProject = useCallback((mutate) => {
     const editor = editorRef.current
     const base = editor && parseProject(editor.code)
     if (!base) return
-    const draft = JSON.parse(JSON.stringify(base))
-    const next = normalizeProject(mutate(draft) ?? draft)
+    const before = JSON.stringify(base)
+    const draft = JSON.parse(before)
+    const result = mutate(draft)
+    // mutators edit the draft in place; only a returned value that is itself a project replaces it
+    const next = normalizeProject(result && Array.isArray(result.patterns) && Array.isArray(result.tracks) ? result : draft)
     const text = generateCode(next, genRef.current)
     if (text === editor.code) return
+    const h = historyRef.current
+    const now = Date.now()
+    if (JSON.stringify(next) !== before && now - h.lastAt > 500) {
+      h.past.push(before)
+      if (h.past.length > 200) h.past.shift()
+      h.future = []
+      setHistoryTick((n) => n + 1)
+    }
+    h.lastAt = now
     replaceCode(text)
     liveUpdate()
   }, [replaceCode, liveUpdate])
+
+  const undo = useCallback(() => {
+    const editor = editorRef.current
+    const h = historyRef.current
+    const current = editor && parseProject(editor.code)
+    if (!current || !h.past.length) return
+    h.future.push(JSON.stringify(current))
+    applySnapshot(h.past.pop())
+    h.lastAt = 0
+    setHistoryTick((n) => n + 1)
+  }, [applySnapshot])
+  const redo = useCallback(() => {
+    const editor = editorRef.current
+    const h = historyRef.current
+    const current = editor && parseProject(editor.code)
+    if (!current || !h.future.length) return
+    h.past.push(JSON.stringify(current))
+    applySnapshot(h.future.pop())
+    h.lastAt = 0
+    setHistoryTick((n) => n + 1)
+  }, [applySnapshot])
 
   // pattern/song mode and the selected pattern change what the code plays
   useEffect(() => { updateProject((p) => p) }, [playMode, playMode === 'pattern' ? currentPatternId : null, updateProject])
@@ -399,7 +443,7 @@ export default function App() {
   // Page-wide shortcuts (Strudel's own only fire while the editor has focus). Capture
   // phase + stopPropagation so a focused editor doesn't run them a second time.
   const keysRef = useRef({})
-  keysRef.current = { play, save, stop, pause, toStart }
+  keysRef.current = { play, save, stop, pause, toStart, undo, redo, isProject: !!project }
   useEffect(() => {
     const typing = (el) => el?.closest?.('input, textarea, select, button, [contenteditable="true"]')
     const onKeyDown = (e) => {
@@ -413,6 +457,13 @@ export default function App() {
         return
       }
       if (!(mod || e.altKey)) return
+      // undo/redo belongs to text fields while you type in them; everywhere else it's the project's
+      const textEntry = e.target.closest?.('input:not([type=range]), textarea, select') || (e.target.closest?.('[contenteditable="true"]') && !keysRef.current.isProject)
+      if (mod && !e.altKey && e.key.toLowerCase() === 'z' && !textEntry) {
+        e.preventDefault()
+        return e.shiftKey ? keysRef.current.redo() : keysRef.current.undo()
+      }
+      if (mod && e.key.toLowerCase() === 'y' && !textEntry) { e.preventDefault(); return keysRef.current.redo() }
       if (e.key === 'Enter') keysRef.current.play()
       else if (e.key === '.' || e.code === 'Period') keysRef.current.stop()
       else if (mod && e.key.toLowerCase() === 's') keysRef.current.save()
@@ -466,6 +517,12 @@ export default function App() {
           title="Loop the marked bars · drag across the ruler to mark them"
           onClick={() => transport.setLoop({ on: !transport.loop.on })}
         >loop <span className="loop-range">{formatBarBeat(transport.loop.from, transport.beats).replace(/^0+/, '')}–{formatBarBeat(transport.loop.to, transport.beats).replace(/^0+/, '')}</span></button>
+        {project && (
+          <span className="seg history" role="group" aria-label="History">
+            <button className="btn" onClick={undo} disabled={!historyRef.current.past.length} title="Undo (ctrl/cmd + Z)" aria-label="Undo">undo</button>
+            <button className="btn" onClick={redo} disabled={!historyRef.current.future.length} title="Redo (ctrl/cmd + shift + Z)" aria-label="Redo">redo</button>
+          </span>
+        )}
         {project && (
           <span className="seg" role="group" aria-label="Play the song or just the pattern">
             <button className={`btn ${playMode === 'pattern' ? 'on' : ''}`} aria-pressed={playMode === 'pattern'} onClick={() => setPlayMode('pattern')} title="Loop the pattern open in the rack">pat</button>
@@ -606,7 +663,6 @@ export default function App() {
         </main>
       </div>
 
-      <SoundLists />
       {toast && <div className="toast" role="status">{toast}</div>}
     </div>
   )

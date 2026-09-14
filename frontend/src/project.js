@@ -1,12 +1,13 @@
 /**
- * A project is the FL-style structure the UI edits: patterns (a stack of channels, each a
- * step sequence) and tracks (clips of those patterns placed on bars). It lives as JSON on
- * one header line of the track's code, and everything below that line is generated from
- * it, so saving, sharing and remixing keep working and the code still runs as Strudel.
+ * A project is the DAW-style structure the UI edits: patterns (instruments with steps or
+ * notes, plus their sound settings) and tracks (clips of those patterns placed on bars).
+ * It lives as JSON on one header line of the track's code, and everything below that line
+ * is generated from it, so saving, sharing and remixing keep working and the code still
+ * runs as Strudel. Nobody has to read the code; it's how a track travels.
  *
- *   // @project {"v":1,...}
+ *   // @project {"v":2,...}
  *   setcpm(120/4)
- *   const p_beat = stack(s("bd ~ ~ ~ …").bank("RolandTR909"), …)
+ *   const p_beat = stack(s("bd ~ ~ ~ …").bank("RolandTR909").room(0.2), …)
  *   t_main: stack(p_beat.late(0).mask("<1!8>"))
  */
 
@@ -15,6 +16,27 @@ export const PROJECT_MARK = '// @project '
 export const DRUM_SOUNDS = ['bd', 'sd', 'hh', 'oh', 'cp', 'rim', 'lt', 'mt', 'ht', 'cr', 'rd', 'cb', 'sh', 'perc', 'tb']
 export const SYNTH_SOUNDS = ['sawtooth', 'square', 'triangle', 'sine', 'supersaw', 'piano']
 export const BANKS = ['', 'RolandTR909', 'RolandTR808', 'RolandTR707', 'RolandTR606', 'LinnDrum', 'AkaiLinn', 'BossDR110', 'KorgMinipops', 'CasioRZ1', 'EmuDrumulator']
+
+/**
+ * Sound settings every instrument gets as knobs. `kinds` limits a knob to drum or synth
+ * channels. Values equal to `def` are left out of the code.
+ */
+export const PARAMS = [
+  { key: 'gain', label: 'vol', min: 0, max: 1.5, def: 1 },
+  { key: 'pan', label: 'pan', min: 0, max: 1, def: 0.5 },
+  { key: 'lpf', label: 'cutoff', min: 60, max: 20000, def: 20000, log: true, unit: 'hz' },
+  { key: 'lpq', label: 'reso', min: 0, max: 25, def: 0 },
+  { key: 'hpf', label: 'low cut', min: 20, max: 8000, def: 20, log: true, unit: 'hz' },
+  { key: 'room', label: 'reverb', min: 0, max: 1, def: 0 },
+  { key: 'delay', label: 'delay', min: 0, max: 0.9, def: 0 },
+  { key: 'speed', label: 'pitch', min: 0.25, max: 4, def: 1, log: true, kinds: ['drum'], unit: 'x' },
+  { key: 'attack', label: 'attack', min: 0, max: 2, def: 0, kinds: ['synth'], unit: 's' },
+  { key: 'release', label: 'release', min: 0, max: 4, def: 0, kinds: ['synth'], unit: 's' },
+  { key: 'shape', label: 'drive', min: 0, max: 0.9, def: 0 },
+  { key: 'crush', label: 'crush', min: 0, max: 1, def: 0 },
+]
+const PARAM_BY_KEY = Object.fromEntries(PARAMS.map((p) => [p.key, p]))
+export const paramsFor = (kind) => PARAMS.filter((p) => !p.kinds || p.kinds.includes(kind))
 
 let counter = 0
 export const newId = () => `${Date.now().toString(36).slice(-4)}${(counter++).toString(36)}${Math.random().toString(36).slice(2, 5)}`
@@ -31,23 +53,26 @@ export function midiToNote(midi) {
   const n = Math.max(0, Math.min(127, Math.round(midi)))
   return `${NOTE_NAMES[n % 12]}${Math.floor(n / 12) - 1}`
 }
+export const isBlackKey = (midi) => [1, 3, 6, 8, 10].includes(((midi % 12) + 12) % 12)
 
 // keep user text from breaking out of the strings, identifiers and comments it lands in
 const soundToken = (s) => String(s ?? '').replace(/[^\w:.#-]/g, '') || 'bd'
 const noteToken = (s) => (/^[a-g][#b]?-?\d$/i.test(String(s)) ? String(s).toLowerCase() : 'c3')
 const commentText = (s) => String(s ?? '').replace(/\*\/|[\r\n]/g, ' ').slice(0, 40)
 const num = (v, fallback, lo, hi) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : fallback)
+const tidy = (v) => String(Math.round(v * 1000) / 1000)
 
 export function stepCount(pattern) {
   return pattern.bars * pattern.stepsPerBar
 }
 
 export function makeChannel(kind = 'drum', patch = {}) {
-  const base = { id: newId(), kind, name: kind === 'code' ? 'code' : kind === 'synth' ? 'synth' : 'kick', mute: false, gain: 1, fx: '' }
+  const base = { id: newId(), kind, name: kind === 'code' ? 'code' : kind === 'synth' ? 'synth' : 'kick', mute: false, params: {}, fx: '' }
   if (kind === 'drum') Object.assign(base, { sound: 'bd', bank: 'RolandTR909', steps: [] })
-  if (kind === 'synth') Object.assign(base, { sound: 'sawtooth', note: 'c3', steps: [] })
+  if (kind === 'synth') Object.assign(base, { sound: 'sawtooth', note: 'c3', notes: [] })
   if (kind === 'code') Object.assign(base, { code: 's("hh*8").gain(.5)' })
-  return { ...base, ...patch }
+  const { params, ...rest } = patch
+  return { ...base, ...rest, params: { ...(params ?? {}) } }
 }
 
 export function makePattern(name = 'pattern', patch = {}) {
@@ -58,11 +83,16 @@ export function makeTrack(name = 'track', patch = {}) {
   return { id: newId(), name, mute: false, solo: false, clips: [], ...patch }
 }
 
+/** A channel's value for a knob (its default when unset). */
+export function paramValue(ch, key) {
+  return ch.params?.[key] ?? PARAM_BY_KEY[key].def
+}
+
 /** Fill in defaults and drop anything malformed, so a hand-edited header can't crash the UI. */
 export function normalizeProject(raw) {
   if (!raw || typeof raw !== 'object') return null
   const project = {
-    v: 1,
+    v: 2,
     bpm: num(raw.bpm, 120, 10, 400),
     beats: Math.round(num(raw.beats, 4, 2, 8)),
     patterns: [],
@@ -80,21 +110,45 @@ export function normalizeProject(raw) {
     const n = stepCount(pattern)
     for (const c of Array.isArray(p.channels) ? p.channels : []) {
       if (!c || !['drum', 'synth', 'code'].includes(c.kind)) continue
+      const rawParams = { ...(c.params ?? {}) }
+      if (c.gain !== undefined && rawParams.gain === undefined) rawParams.gain = c.gain // v1 kept gain at the top
+      const params = {}
+      for (const def of PARAMS) {
+        if (rawParams[def.key] === undefined) continue
+        const v = num(rawParams[def.key], def.def, def.min, def.max)
+        if (v !== def.def) params[def.key] = v
+      }
       const ch = makeChannel(c.kind, {
-        id: typeof c.id === 'string' ? c.id.replace(/\W/g, '') : newId(),
+        id: typeof c.id === 'string' ? c.id.replace(/\W/g, '') || newId() : newId(),
         name: String(c.name ?? c.kind).slice(0, 40),
         mute: !!c.mute,
-        gain: num(c.gain, 1, 0, 2),
+        params,
         fx: typeof c.fx === 'string' ? c.fx.slice(0, 300) : '',
       })
       if (c.kind === 'code') ch.code = typeof c.code === 'string' ? c.code.slice(0, 2000) : ''
       else {
         ch.sound = soundToken(c.sound)
-        if (c.kind === 'drum') ch.bank = BANKS.includes(c.bank) || /^\w{0,40}$/.test(c.bank ?? '') ? c.bank ?? '' : ''
-        if (c.kind === 'synth') ch.note = noteToken(c.note)
-        const steps = Array.isArray(c.steps) ? c.steps : []
-        ch.steps = Array.from({ length: n }, (_, i) =>
-          c.kind === 'synth' ? (steps[i] ? noteToken(steps[i]) : null) : steps[i] ? 1 : 0)
+        if (c.kind === 'drum') {
+          ch.bank = /^\w{0,40}$/.test(c.bank ?? '') ? c.bank ?? '' : ''
+          const steps = Array.isArray(c.steps) ? c.steps : []
+          ch.steps = Array.from({ length: n }, (_, i) => (steps[i] ? 1 : 0))
+        }
+        if (c.kind === 'synth') {
+          ch.note = noteToken(c.note)
+          // v1 synths had one note name per step; v2 has notes with a start, length and pitch
+          const source = Array.isArray(c.notes)
+            ? c.notes
+            : (Array.isArray(c.steps) ? c.steps : []).map((v, i) => (v ? { s: i, l: 1, n: noteToMidi(v) } : null))
+          const seen = new Set()
+          ch.notes = source
+            .filter((x) => x && Number.isFinite(Number(x.s)) && Number.isFinite(Number(x.n)) && Number(x.s) < n)
+            .map((x) => {
+              const s = Math.round(num(x.s, 0, 0, n - 1))
+              return { s, l: Math.round(num(x.l, 1, 1, n - s)), n: Math.round(num(x.n, 48, 0, 127)) }
+            })
+            .filter((x) => { const k = `${x.s}:${x.n}`; if (seen.has(k)) return false; seen.add(k); return true })
+            .sort((a, b) => a.s - b.s || a.n - b.n)
+        }
       }
       pattern.channels.push(ch)
     }
@@ -111,7 +165,7 @@ export function normalizeProject(raw) {
     })
     for (const c of Array.isArray(t.clips) ? t.clips : []) {
       if (!c || !patternIds.has(c.pattern)) continue
-      track.clips.push({ id: typeof c.id === 'string' ? c.id.replace(/\W/g, '') : newId(), pattern: c.pattern, bar: Math.round(num(c.bar, 0, 0, 4096)), bars: Math.round(num(c.bars, 1, 1, 512)) })
+      track.clips.push({ id: typeof c.id === 'string' ? c.id.replace(/\W/g, '') || newId() : newId(), pattern: c.pattern, bar: Math.round(num(c.bar, 0, 0, 4096)), bars: Math.round(num(c.bars, 1, 1, 512)) })
     }
     track.clips.sort((a, b) => a.bar - b.bar)
     project.tracks.push(track)
@@ -138,24 +192,60 @@ export function songLength(project) {
   return Math.max(1, end)
 }
 
+/** Split notes into voices that never overlap, so each voice is one mini-notation sequence. */
+export function noteVoices(notes) {
+  const voices = []
+  for (const note of [...notes].sort((a, b) => a.s - b.s || a.n - b.n)) {
+    const voice = voices.find((v) => v.end <= note.s)
+    if (voice) { voice.notes.push(note); voice.end = note.s + note.l } else voices.push({ notes: [note], end: note.s + note.l })
+  }
+  return voices.map((v) => v.notes)
+}
+
+const rest = (len) => (len === 1 ? '~' : `~@${len}`)
+
+function sequenceOf(notes, total) {
+  const tokens = []
+  let cursor = 0
+  for (const note of notes) {
+    if (note.s > cursor) tokens.push(rest(note.s - cursor))
+    tokens.push(note.l > 1 ? `${midiToNote(note.n)}@${note.l}` : midiToNote(note.n))
+    cursor = note.s + note.l
+  }
+  if (cursor < total) tokens.push(rest(total - cursor))
+  return tokens.join(' ')
+}
+
+function paramCode(ch) {
+  let out = ''
+  for (const def of paramsFor(ch.kind)) {
+    const v = paramValue(ch, def.key)
+    if (v === def.def) continue
+    if (def.key === 'crush') out += `.crush(${Math.round(16 - v * 14)})` // amount → bits: more crush, fewer bits
+    else if (def.key === 'delay') out += `.delay(${tidy(v)}).delaytime(.1875).delayfeedback(.35)`
+    else out += `.${def.key}(${def.log && v > 10 ? Math.round(v) : tidy(v)})`
+  }
+  return out
+}
+
 function channelCode(ch, pattern) {
+  const total = stepCount(pattern)
   let expr
   if (ch.kind === 'code') {
     expr = ch.code?.trim() || 'silence'
+  } else if (ch.kind === 'synth') {
+    if (!ch.notes?.length) return `/* ${commentText(ch.name)} */ silence`
+    const seq = noteVoices(ch.notes).map((voice) => sequenceOf(voice, total)).join(', ')
+    expr = `note("${seq}").s("${soundToken(ch.sound)}")${pattern.bars > 1 ? `.slow(${pattern.bars})` : ''}`
   } else {
-    const tokens = Array.from({ length: stepCount(pattern) }, (_, i) => {
-      const v = ch.steps?.[i]
-      return !v ? '~' : ch.kind === 'synth' ? noteToken(v) : soundToken(ch.sound)
-    })
+    const tokens = Array.from({ length: total }, (_, i) => (ch.steps?.[i] ? soundToken(ch.sound) : '~'))
     // group steps by bar so the generated code is readable
     const bars = []
     for (let b = 0; b < pattern.bars; b++) bars.push(tokens.slice(b * pattern.stepsPerBar, (b + 1) * pattern.stepsPerBar).join(' '))
     const seq = pattern.bars > 1 ? `<${bars.map((b) => `[${b}]`).join(' ')}>` : bars[0]
-    expr = ch.kind === 'synth'
-      ? `note("${seq}").s("${soundToken(ch.sound)}")`
-      : `s("${seq}")${ch.bank ? `.bank("${String(ch.bank).replace(/\W/g, '')}")` : ''}`
+    expr = `s("${seq}")${ch.bank ? `.bank("${String(ch.bank).replace(/\W/g, '')}")` : ''}`
   }
-  if (ch.gain !== 1) expr += `.gain(${Math.round(ch.gain * 100) / 100})`
+  expr += paramCode(ch)
   if (ch.fx?.trim()) expr += ch.fx.trim().startsWith('.') ? ch.fx.trim() : `.${ch.fx.trim()}`
   return `/* ${commentText(ch.name)} */ ${expr}`
 }
@@ -181,7 +271,7 @@ export function generateCode(project, { mode = 'song', current = null } = {}) {
   const song = songLength(project)
   const lines = [
     `${PROJECT_MARK}${JSON.stringify(project)}`,
-    '// generated from the playlist and channel rack; edit there, or detach to edit as code',
+    '// generated by the strudel studio: open the track there to edit it',
     `setcpm(${project.bpm}/${project.beats})`,
     '',
     `// song: ${song} bar${song === 1 ? '' : 's'}, then it loops`,
@@ -217,17 +307,22 @@ export function demoProject() {
   const beat = makePattern('beat', {
     channels: [
       makeChannel('drum', { name: 'kick', sound: 'bd', steps: on(16, 4) }),
-      makeChannel('drum', { name: 'snare', sound: 'sd', steps: on(16, 8, 4) }),
-      makeChannel('drum', { name: 'hat', sound: 'hh', gain: 0.6, steps: on(16, 2, 2) }),
+      makeChannel('drum', { name: 'snare', sound: 'sd', steps: on(16, 8, 4), params: { room: 0.15 } }),
+      makeChannel('drum', { name: 'hat', sound: 'hh', steps: on(16, 2, 2), params: { gain: 0.6, pan: 0.6 } }),
     ],
   })
-  const bassSteps = Array(16).fill(null)
-  ;[[0, 'c2'], [3, 'c2'], [6, 'eb2'], [8, 'c2'], [11, 'g1'], [14, 'bb1']].forEach(([i, n]) => { bassSteps[i] = n })
   const bass = makePattern('bassline', {
-    channels: [makeChannel('synth', { name: 'bass', sound: 'sawtooth', note: 'c2', steps: bassSteps, fx: '.lpf(900).decay(.2).sustain(0)' })],
+    channels: [makeChannel('synth', {
+      name: 'bass',
+      sound: 'sawtooth',
+      note: 'c2',
+      notes: [[0, 2, 'c2'], [3, 1, 'c2'], [6, 2, 'eb2'], [8, 2, 'c2'], [11, 2, 'g1'], [14, 2, 'bb1']].map(([s, l, n]) => ({ s, l, n: noteToMidi(n) })),
+      params: { lpf: 900, lpq: 6, release: 0.1 },
+      fx: '.decay(.2).sustain(0)',
+    })],
   })
   return normalizeProject({
-    v: 1,
+    v: 2,
     bpm: 120,
     beats: 4,
     patterns: [beat, bass],
@@ -241,7 +336,7 @@ export function demoProject() {
 
 /** Turn labeled code lanes into a project: one code-channel pattern and one track per lane. */
 export function projectFromLanes(lanes, { bpm = 120, beats = 4 } = {}) {
-  const project = { v: 1, bpm, beats, patterns: [], tracks: [] }
+  const project = { v: 2, bpm, beats, patterns: [], tracks: [] }
   lanes.forEach((lane, i) => {
     const name = lane.title ?? `lane ${i + 1}`
     const pattern = makePattern(name, { channels: [makeChannel('code', { name, code: lane.source })] })
@@ -260,20 +355,20 @@ export function placeClip(track, clip) {
   return clip
 }
 
-/** Instruments you can drag into a pattern. Drums and synths start with empty steps. */
+/** Instruments you can drag into a pattern. Drums and synths start empty. */
 export const INSTRUMENTS = [
   { key: 'kick', label: 'kick', kind: 'drum', patch: { sound: 'bd' } },
   { key: 'snare', label: 'snare', kind: 'drum', patch: { sound: 'sd' } },
   { key: 'clap', label: 'clap', kind: 'drum', patch: { sound: 'cp' } },
-  { key: 'hat', label: 'hat', kind: 'drum', patch: { sound: 'hh', gain: 0.7 } },
-  { key: 'openhat', label: 'open hat', kind: 'drum', patch: { sound: 'oh', gain: 0.7 } },
+  { key: 'hat', label: 'hat', kind: 'drum', patch: { sound: 'hh', params: { gain: 0.7 } } },
+  { key: 'openhat', label: 'open hat', kind: 'drum', patch: { sound: 'oh', params: { gain: 0.7 } } },
   { key: 'rim', label: 'rim', kind: 'drum', patch: { sound: 'rim' } },
   { key: 'tom', label: 'tom', kind: 'drum', patch: { sound: 'lt' } },
-  { key: 'crash', label: 'crash', kind: 'drum', patch: { sound: 'cr', gain: 0.6 } },
-  { key: 'bass', label: 'bass', kind: 'synth', patch: { sound: 'sawtooth', note: 'c2', fx: '.lpf(900).decay(.2).sustain(0)' } },
-  { key: 'lead', label: 'lead', kind: 'synth', patch: { sound: 'square', note: 'c4', fx: '.lpf(2400).decay(.15).sustain(.2)', gain: 0.6 } },
-  { key: 'pad', label: 'pad', kind: 'synth', patch: { sound: 'supersaw', note: 'c3', fx: '.attack(.2).release(.8).room(.5)', gain: 0.5 } },
-  { key: 'pluck', label: 'pluck', kind: 'synth', patch: { sound: 'triangle', note: 'c4', fx: '.decay(.12).sustain(0).delay(.25)' } },
+  { key: 'crash', label: 'crash', kind: 'drum', patch: { sound: 'cr', params: { gain: 0.6 } } },
+  { key: 'bass', label: 'bass', kind: 'synth', patch: { sound: 'sawtooth', note: 'c2', params: { lpf: 900, lpq: 6, release: 0.1 }, fx: '.decay(.2).sustain(0)' } },
+  { key: 'lead', label: 'lead', kind: 'synth', patch: { sound: 'square', note: 'c4', params: { lpf: 2400, gain: 0.6, release: 0.2 } } },
+  { key: 'pad', label: 'pad', kind: 'synth', patch: { sound: 'supersaw', note: 'c3', params: { attack: 0.2, release: 0.8, room: 0.5, gain: 0.5 } } },
+  { key: 'pluck', label: 'pluck', kind: 'synth', patch: { sound: 'triangle', note: 'c4', params: { delay: 0.3 }, fx: '.decay(.12).sustain(0)' } },
   { key: 'piano', label: 'piano', kind: 'synth', patch: { sound: 'piano', note: 'c4' } },
   { key: 'code', label: 'code', kind: 'code', patch: {} },
 ]
@@ -286,7 +381,36 @@ export function instrumentChannel(key, pattern) {
   const taken = new Set(pattern.channels.map((c) => c.name))
   let name = preset.label
   for (let n = 2; taken.has(name); n++) name = `${preset.label} ${n}`
-  const ch = makeChannel(preset.kind, { ...preset.patch, name })
-  if (ch.kind !== 'code') ch.steps = Array.from({ length: stepCount(pattern) }, () => (ch.kind === 'synth' ? null : 0))
+  const ch = makeChannel(preset.kind, { ...JSON.parse(JSON.stringify(preset.patch)), name })
+  if (ch.kind === 'drum') ch.steps = Array.from({ length: stepCount(pattern) }, () => 0)
   return ch
+}
+
+/** Resize a pattern (bars / steps per bar), keeping what's in it. Mutates `pat`. */
+export function reshapePattern(pat, patch) {
+  const from = { bars: pat.bars, stepsPerBar: pat.stepsPerBar }
+  const to = { ...from, ...patch }
+  const ratio = to.stepsPerBar / from.stepsPerBar
+  const oldTotal = from.bars * from.stepsPerBar
+  const newTotal = to.bars * to.stepsPerBar
+  for (const c of pat.channels) {
+    if (c.kind === 'drum') {
+      const out = Array.from({ length: newTotal }, () => 0)
+      for (let i = 0; i < newTotal; i++) {
+        const src = i / ratio
+        // new bars beyond the old length repeat the existing ones
+        if (Number.isInteger(src)) out[i] = c.steps[src % Math.max(1, oldTotal)] ? 1 : 0
+      }
+      c.steps = out
+    } else if (c.kind === 'synth') {
+      const scaled = c.notes.map((x) => ({ ...x, s: Math.round(x.s * ratio), l: Math.max(1, Math.round(x.l * ratio)) }))
+      const out = []
+      const period = oldTotal * ratio
+      for (let offset = 0; offset < newTotal; offset += period) {
+        for (const x of scaled) if (x.s + offset < newTotal) out.push({ ...x, s: x.s + offset, l: Math.min(x.l, newTotal - x.s - offset) })
+      }
+      c.notes = out
+    }
+  }
+  Object.assign(pat, patch)
 }
