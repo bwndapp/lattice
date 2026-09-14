@@ -649,6 +649,9 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
 .slot.off .slot-name { opacity: 0.4; text-decoration: line-through; }
 .slot.free .slot-name { color: var(--muted); }
 .slot-ctl { display: inline-flex; gap: 0.2rem; }
+.node-inputs.named { margin: 0 -0.6rem; border-bottom: 1px solid var(--line); }
+.node-inputs.named .slot:last-child { border-bottom: 0; }
+.slot-role { font-size: 10px; color: var(--muted); width: 3.8rem; flex-shrink: 0; }
 .graph-canvas .port { width: 13px; height: 13px; border-radius: 50%; background: var(--ink); border: 2px solid var(--acid); }
 .graph-canvas .port.free { border-color: var(--muted); border-style: dashed; }
 .graph-canvas .port:hover, .graph-canvas .react-flow__handle.connectingto { background: var(--acid); }

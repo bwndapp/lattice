@@ -317,6 +317,23 @@ function StudioNode({ id, selected }) {
 
         {node.type === 'fxrack' && <FxRack node={node} />}
 
+        {Array.isArray(spec.inputs) && (
+          <ul className="node-inputs named">
+            {spec.inputs.map((role, i) => {
+              const handle = `in-${i}`
+              const wire = wires.find((w) => w.targetHandle === handle)
+              const src = wire && ctx.project.nodes.find((n) => n.id === wire.source)
+              return (
+                <li key={handle} className={`slot ${wire ? '' : 'free'}`}>
+                  <Handle type="target" position={Position.Left} id={handle} className={`port in ${wire ? '' : 'free'}`} />
+                  <span className="slot-role">{role}</span>
+                  <span className="slot-name">{wire ? nodeTitle(src, ctx.project) : 'connect'}</span>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+
         {spec.params.length > 0 && (
           <div className="node-params">
             {spec.params.map((p) => <Param key={p.key} node={node} param={p} />)}
@@ -388,6 +405,7 @@ const SEARCH_WORDS = {
   vowel: 'formant voice talk mouth',
   lofi: 'coarse bitcrush downsample grit crush retro',
   fxrack: 'effects chain multiple fx rack bus insert',
+  sidechain: 'duck ducking pump pumping compression compressor side chain kick bass edm',
   stack: 'layer mix together combine sum',
   sequence: 'cat order alternate chain one after another',
   arrange: 'song structure sections order bars intro verse',

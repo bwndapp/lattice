@@ -204,6 +204,27 @@ export const NODE_TYPES = {
     params: [{ key: 'coarse', type: 'int', label: 'grit', min: 1, max: 32, def: 6 }],
     code: (d, [x]) => `${x}.coarse(${d.coarse})`,
   },
+  sidechain: {
+    group: 'effect', label: 'sidechain', blurb: 'Duck the sound every time the trigger hits (kick pumps the bass)',
+    // named inputs: slot 0 is ducked, slot 1 does the ducking
+    inputs: ['sound', 'trigger'],
+    params: [
+      { key: 'depth', type: 'knob', label: 'depth', min: 0, max: 1, def: 0.85 },
+      { key: 'attack', type: 'knob', label: 'attack', min: 0, max: 0.1, def: 0.005, unit: 's' },
+      { key: 'release', type: 'knob', label: 'release', min: 0.02, max: 1, def: 0.25, unit: 's' },
+      { key: 'hear', type: 'select', label: 'trigger', options: ['silent', 'audible'], def: 'silent' },
+    ],
+    // Strudel ducks an audio bus ("orbit"): the sound plays on its own bus, the trigger
+    // ducks that bus. A silent trigger still ducks (postgain 0 only mutes its own sound).
+    code: (d, xs, ctx) => {
+      const sound = xs[ctx.slots.indexOf('in-0')]
+      const trigger = xs[ctx.slots.indexOf('in-1')]
+      if (!sound) return null
+      if (!trigger) return sound
+      const orbit = ctx.orbit
+      return `stack(${sound}.orbit(${orbit}), ${trigger}.duckorbit(${orbit}).duckonset(${tidy(d.attack)}).duckattack(${tidy(d.release)}).duckdepth(${tidy(d.depth)})${d.hear === 'silent' ? '.postgain(0)' : ''})`
+    },
+  },
   fxrack: {
     group: 'effect', label: 'fx rack', blurb: 'Several effects in one box, applied top to bottom',
     inputs: 1,
@@ -320,6 +341,7 @@ export function normalizeGraph(raw, patternIds) {
     const spec = NODE_TYPES[target.type]
     if (!spec.inputs) continue
     const handle = spec.inputs === 1 ? 'in' : `in-${slotIndex(e.targetHandle)}`
+    if (Array.isArray(spec.inputs) && slotIndex(e.targetHandle) >= spec.inputs.length) continue
     const key = `${target.id}:${handle}`
     if (taken.has(key)) continue // one wire per input slot
     taken.add(key)
@@ -342,9 +364,10 @@ export function makesCycle(edges, source, target) {
   return false
 }
 
+/** Keep wires in order, skipping any that would close a loop. Two routes from A to B is fine. */
 function dropCycles(nodes, edges) {
   const kept = []
-  for (const e of edges) if (!makesCycle(kept, e.target, e.source) && !makesCycle(kept, e.source, e.target)) kept.push(e)
+  for (const e of edges) if (!makesCycle(kept, e.source, e.target)) kept.push(e)
   return kept
 }
 
@@ -365,6 +388,8 @@ export function graphCode(project, { solo = null } = {}) {
   const patternIds = new Set(project.patterns.map((p) => p.id))
   const exprs = new Map() // id → variable name, or null when the node makes nothing
   const lines = []
+  // each sidechain gets its own audio bus; bus 1 is where everything else plays
+  const sidechains = nodes.filter((n) => n.type === 'sidechain').map((n) => n.id)
 
   const visit = (id, trail = new Set()) => {
     if (exprs.has(id)) return exprs.get(id)
@@ -381,7 +406,7 @@ export function graphCode(project, { solo = null } = {}) {
       if (v) { inputs.push(v); slots.push(w.targetHandle) }
     }
     if (spec.inputs === 1 && !inputs.length) { exprs.set(id, null); return null }
-    const expr = spec.code(node.data, inputs, { patternIds, slots })
+    const expr = spec.code(node.data, inputs, { patternIds, slots, nodeId: id, orbit: 2 + sidechains.indexOf(id) })
     if (!expr) { exprs.set(id, null); return null }
     const name = nodeVar(id)
     lines.push(`// ${node.data.name ?? spec.label}`, `const ${name} = ${expr}`)
