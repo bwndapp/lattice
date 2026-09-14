@@ -492,6 +492,23 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [])
 
+  // ctrl/cmd + scroll (and trackpad pinch, which browsers send the same way) zooms things
+  // inside the app: the patch, the piano roll. Never let it zoom the page as well. Handlers
+  // on those elements run first, so this only cancels the browser's own zoom. Keyboard zoom
+  // (ctrl/cmd + plus/minus) is left alone for anyone who needs a bigger page.
+  useEffect(() => {
+    const noPageZoom = (e) => { if (e.ctrlKey || e.metaKey) e.preventDefault() }
+    const noPinch = (e) => e.preventDefault() // Safari's own pinch gesture events
+    window.addEventListener('wheel', noPageZoom, { passive: false })
+    document.addEventListener('gesturestart', noPinch)
+    document.addEventListener('gesturechange', noPinch)
+    return () => {
+      window.removeEventListener('wheel', noPageZoom)
+      document.removeEventListener('gesturestart', noPinch)
+      document.removeEventListener('gesturechange', noPinch)
+    }
+  }, [])
+
   return (
     <div className="studio">
       <header className="bar">
