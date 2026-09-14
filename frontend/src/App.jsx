@@ -11,7 +11,7 @@ import { useUser } from './bwnd'
 import { api, clearDraft, readDraft, timeAgo, trackUrl, writeDraft } from './api'
 import Browser from './Browser.jsx'
 import Playlist from './Playlist.jsx'
-import Rack from './Rack.jsx'
+import Rack, { SoundLists } from './Rack.jsx'
 import { capturePatterns, parseLanes, tempoChange } from './lanes'
 import { PROJECT_MARK, demoProject, generateCode, normalizeProject, parseProject, projectFromLanes } from './project'
 import { createTransport, formatBarBeat, parseBarBeat } from './transport'
@@ -606,6 +606,7 @@ export default function App() {
         </main>
       </div>
 
+      <SoundLists />
       {toast && <div className="toast" role="status">{toast}</div>}
     </div>
   )

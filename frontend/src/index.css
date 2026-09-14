@@ -323,7 +323,8 @@ body {
 .rack-hint, .rack-empty { color: var(--muted); padding: 1rem; }
 .ch {
   display: grid;
-  grid-template-columns: 1.6rem 7.5rem 15rem minmax(18rem, 1fr) 15.5rem;
+  grid-template-columns: 1.6rem 7.5rem 15rem minmax(max(18rem, calc(var(--n) * 1.25rem)), 1fr) 15.5rem;
+  min-width: max-content;
   align-items: center;
   gap: 0.5rem 0.6rem;
   padding: 0.55rem 1rem;
@@ -384,11 +385,66 @@ body {
 .rack-add { display: flex; gap: 0.4rem; padding: 0.8rem 1rem; }
 @media (max-width: 1280px) {
   .ch { grid-template-columns: 1.6rem 8rem minmax(0, 1fr); grid-template-areas: "m name sound" "steps steps steps" "more more more"; }
+  .ch > .steps { min-width: calc(var(--n) * 1.25rem); }
   .ch > .led { grid-area: m; }
   .ch > .ch-name { grid-area: name; }
   .ch > .ch-sound { grid-area: sound; }
   .ch > .steps, .ch > .ch-code { grid-area: steps; }
   .ch > .ch-more { grid-area: more; }
+}
+
+/* ── instruments palette, drawing and the pattern popover ─ */
+.playlist { --palette: 0px; }
+.playlist.has-palette { --palette: 9.5rem; }
+.playlist-split { flex: 1; display: flex; min-height: 0; }
+.playlist-split .playlist-grid { flex: 1; min-width: 0; }
+.overview-row { grid-template-columns: var(--head) minmax(0, 1fr) var(--palette); }
+.palette {
+  width: var(--palette); flex-shrink: 0; overflow-y: auto;
+  border-left: 1px solid var(--line); background: var(--panel);
+  padding: 0.6rem 0.6rem 1rem; display: flex; flex-direction: column; gap: 0.4rem;
+}
+.palette-title { font-family: var(--display); font-weight: 900; font-stretch: 112%; font-size: 1rem; }
+.palette-hint { font-size: 10px; color: var(--muted); line-height: 1.4; }
+.instruments { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.instruments.vertical { flex-direction: column; }
+.chip {
+  font: inherit; font-size: 12px; text-align: left;
+  color: var(--paper); background: var(--ink);
+  border: 1px solid var(--line); border-left: 3px solid var(--acid); border-radius: 0;
+  padding: 0.3rem 0.5rem; cursor: grab;
+}
+.chip-synth { border-left-color: var(--paper); }
+.chip-code { border-left-color: var(--muted); }
+.chip:hover { border-color: var(--acid); color: var(--acid); }
+.chip:active { cursor: grabbing; }
+.rack-add { align-items: baseline; flex-wrap: wrap; }
+.rack-body.dropping { outline: 2px dashed var(--acid); outline-offset: -4px; }
+.pattern-pop {
+  position: fixed; z-index: 40;
+  width: min(820px, calc(100vw - 24px)); max-height: min(70vh, 640px);
+  display: flex; flex-direction: column;
+  background: var(--panel); border: 2px solid var(--acid);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+}
+.pop-head { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.pop-name {
+  font-family: var(--display); font-weight: 900; font-stretch: 112%; font-size: 1.3rem;
+  color: var(--acid); background: transparent; border: 0; border-bottom: 1px solid var(--line); padding: 0.1rem 0; min-width: 0; width: 12rem;
+}
+.pop-name:focus { outline: none; border-bottom-color: var(--acid); }
+.pattern-pop .rack-body { overflow: auto; padding-bottom: 0.4rem; }
+.rack-body.compact .ch { grid-template-columns: 1.6rem 6.5rem 12rem minmax(max(12rem, calc(var(--n) * 1.4rem)), 1fr) 7.5rem; padding-inline: 0.75rem; }
+.rack-body.compact .rack-add { padding: 0.6rem 0.75rem; }
+@media (max-width: 1100px) {
+  .playlist.has-palette { --palette: 0px; }
+  .palette { display: none; }
+  .rack-body.compact .ch { grid-template-columns: 1.6rem 8rem minmax(0, 1fr); grid-template-areas: "m name sound" "steps steps steps" "more more more"; }
+  .rack-body.compact .ch > .led { grid-area: m; }
+  .rack-body.compact .ch > .ch-name { grid-area: name; }
+  .rack-body.compact .ch > .ch-sound { grid-area: sound; }
+  .rack-body.compact .ch > .steps, .rack-body.compact .ch > .ch-code { grid-area: steps; }
+  .rack-body.compact .ch > .ch-more { grid-area: more; }
 }
 
 /* ── browser: the setlist ─────────────────────────────── */

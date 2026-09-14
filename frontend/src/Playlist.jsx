@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { hapValue, newLaneCode, parseLanes, pitchOf, queryWindow, soundOf, toggledMute, toggledSolo } from './lanes'
-import { makeTrack, newId, placeClip, songLength } from './project'
+import { INSTRUMENT_MIME, instrumentChannel, makePattern, makeTrack, newId, placeClip, songLength } from './project'
+import { InstrumentChips, PatternChannels, reshapePattern } from './Rack.jsx'
 
 const MAIN = '__main__'
 const MIN_BARS = 0.25 // most zoomed in: one beat of 4/4 across the view
@@ -83,7 +84,9 @@ export default function Playlist({
   const overviewDrag = useRef(null)
   const cacheRef = useRef(new WeakMap()) // pattern → Map(bar → haps)
   const extentRef = useRef(32)
-  const clipDrag = useRef(null) // project mode: painting, moving, resizing or erasing clips
+  const clipDrag = useRef(null) // project mode: drawing, painting, moving, resizing or erasing clips
+  const dropRef = useRef(null) // project mode: where a dragged instrument would land
+  const [editing, setEditing] = useState(null) // { patternId, x, y }: the pattern editor popover
 
   const anySolo = sourceLanes.some((l) => l.soloed)
   const rows = useMemo(() => {
@@ -245,6 +248,38 @@ export default function Playlist({
       if (d?.moved && (d.mode === 'move' || d.mode === 'resize')) {
         clips = clips.filter((c) => c.id !== d.clip.id)
         if (d.targetTrack === row.track.id) clips = [...clips, { ...d.clip, bar: d.bar, bars: d.bars, dragging: true }]
+      }
+      if (d?.mode === 'draw' && d.track === row.track.id) {
+        const from = Math.min(d.bar0, d.bar1)
+        const to = Math.max(d.bar0, d.bar1) + 1
+        const x0 = Math.floor(xOf(from)) + 1
+        const cw = Math.floor(xOf(to)) - 1 - x0
+        ctx.fillStyle = paper
+        ctx.globalAlpha = 0.12
+        ctx.fillRect(x0, 2, cw, h - 4)
+        ctx.globalAlpha = 1
+        ctx.setLineDash([6, 4])
+        ctx.strokeStyle = paper
+        ctx.lineWidth = 2
+        ctx.strokeRect(x0 + 1, 3, cw - 2, h - 6)
+        ctx.setLineDash([])
+        ctx.fillStyle = paper
+        ctx.font = mono(10)
+        ctx.textBaseline = 'top'
+        ctx.fillText(`new pattern · ${to - from} bar${to - from === 1 ? '' : 's'}`, x0 + 6, 8)
+      }
+      const drop = dropRef.current
+      if (drop?.track === row.track.id) {
+        const target = drop.clip
+        const from = target ? target.bar : drop.bar
+        const to = target ? target.bar + target.bars : drop.bar + 1
+        ctx.strokeStyle = acid
+        ctx.lineWidth = 3
+        ctx.strokeRect(Math.floor(xOf(from)) + 2, 3, Math.floor(xOf(to)) - Math.floor(xOf(from)) - 4, h - 6)
+        ctx.fillStyle = acid
+        ctx.font = mono(10)
+        ctx.textBaseline = 'bottom'
+        ctx.fillText(target ? `+ add to ${patternById.get(target.pattern)?.name ?? 'pattern'}` : '+ new pattern', Math.floor(xOf(from)) + 8, h - 8)
       }
       const lastPass = playMode === 'pattern' ? 0 : Math.floor(end / song)
       for (let k = Math.max(0, Math.floor(start / song) - 1); k <= lastPass; k++) {
@@ -679,10 +714,15 @@ export default function Playlist({
       const edgeX = ((clip.bar + clip.bars - viewRef.current.start) / viewRef.current.bars) * rect.width
       const mode = Math.abs(e.clientX - rect.left - edgeX) <= 8 ? 'resize' : 'move'
       clipDrag.current = { mode, clip, x0: e.clientX, grab: t - clip.bar, bar: clip.bar, bars: clip.bars, fromTrack: row.track.id, targetTrack: row.track.id, moved: false }
-    } else if (currentPattern) {
+    } else if (e.shiftKey && currentPattern) {
+      // shift + drag paints copies of the selected pattern
       const bar = Math.max(0, Math.floor(t))
       addClip(row.track.id, bar, currentPattern.bars)
       clipDrag.current = { mode: 'paint', track: row.track.id, next: bar + currentPattern.bars, bars: currentPattern.bars }
+    } else {
+      // a click paints the selected pattern; a drag draws out a new one
+      const bar = Math.max(0, Math.floor(t))
+      clipDrag.current = { mode: 'pending', track: row.track.id, x0: e.clientX, bar0: bar, bar1: bar }
     }
   }
   const onLaneMove = (row) => (e) => {
@@ -701,7 +741,11 @@ export default function Playlist({
       e.currentTarget.style.cursor = cursor
       return
     }
-    if (d.mode === 'paint') {
+    if (d.mode === 'pending' || d.mode === 'draw') {
+      d.bar1 = Math.max(0, Math.floor(t))
+      if (d.mode === 'pending' && (Math.abs(e.clientX - d.x0) > 6 || d.bar1 !== d.bar0)) d.mode = 'draw'
+      if (d.mode === 'draw' && !started) draw()
+    } else if (d.mode === 'paint') {
       while (t >= d.next) { addClip(d.track, d.next, d.bars); d.next += d.bars }
     } else if (d.mode === 'erase') {
       const trackId = trackUnder(e)
@@ -719,12 +763,17 @@ export default function Playlist({
       if (!started) draw()
     }
   }
-  const onLaneUp = () => {
+  const onLaneUp = (e) => {
     if (panDrag.current) return endPan()
     const d = clipDrag.current
     clipDrag.current = null
     if (!d) return
-    if (d.mode === 'move' && !d.moved) onSelectPattern(d.clip.pattern)
+    if (d.mode === 'pending') {
+      if (currentPattern) addClip(d.track, d.bar0, currentPattern.bars)
+    } else if (d.mode === 'draw') {
+      const from = Math.min(d.bar0, d.bar1)
+      createPattern(d.track, from, Math.abs(d.bar1 - d.bar0) + 1, null, e)
+    } else if (d.mode === 'move' && !d.moved) onSelectPattern(d.clip.pattern)
     else if (d.mode === 'move') {
       onUpdateProject((p) => {
         const from = p.tracks.find((x) => x.id === d.fromTrack)
@@ -743,10 +792,69 @@ export default function Playlist({
     }
     if (!started) draw()
   }
+  /** Make a new empty pattern on a track (optionally with a first instrument) and open it. */
+  const createPattern = (trackId, bar, bars, instrument, e) => {
+    const patternId = newId()
+    onUpdateProject((p) => {
+      const track = p.tracks.find((x) => x.id === trackId)
+      if (!track) return
+      const used = new Set(p.patterns.map((x) => x.name))
+      let n = p.patterns.length + 1
+      while (used.has(`pattern ${n}`)) n++
+      const pattern = makePattern(`pattern ${n}`, { id: patternId, bars: clamp(bars, 1, 16) })
+      if (instrument) pattern.channels.push(instrumentChannel(instrument, pattern))
+      p.patterns.push(pattern)
+      placeClip(track, { id: newId(), pattern: patternId, bar, bars })
+    })
+    onSelectPattern(patternId)
+    openEditor(patternId, e)
+  }
+  const openEditor = (patternId, e) => {
+    const x = e?.clientX ?? window.innerWidth / 2
+    const y = e?.clientY ?? window.innerHeight / 3
+    setEditing({ patternId, x, y })
+  }
+
+  const dropTarget = (row, e) => {
+    const t = timeAt(e)
+    return { track: row.track.id, clip: clipAt(row.track, t) ?? null, bar: Math.max(0, Math.floor(t)) }
+  }
+  const onLaneDragOver = (row) => (e) => {
+    if (!row.track || !e.dataTransfer.types.includes(INSTRUMENT_MIME)) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+    const next = dropTarget(row, e)
+    const prev = dropRef.current
+    dropRef.current = next
+    if (!started && (prev?.track !== next.track || prev?.clip?.id !== next.clip?.id || prev?.bar !== next.bar)) draw()
+  }
+  const onLaneDragLeave = () => {
+    dropRef.current = null
+    if (!started) draw()
+  }
+  const onLaneDrop = (row) => (e) => {
+    const key = e.dataTransfer.getData(INSTRUMENT_MIME)
+    dropRef.current = null
+    if (!row.track || !key) return
+    e.preventDefault()
+    const { clip, bar } = dropTarget(row, e)
+    if (clip) {
+      onUpdateProject((p) => {
+        const pattern = p.patterns.find((x) => x.id === clip.pattern)
+        if (pattern) pattern.channels.push(instrumentChannel(key, pattern))
+      })
+      onSelectPattern(clip.pattern)
+      openEditor(clip.pattern, e)
+    } else {
+      createPattern(row.track.id, bar, 1, key, e)
+    }
+    if (!started) draw()
+  }
+
   const onLaneDoubleClick = (row) => (e) => {
     if (!row.track) return onRevealCode(row.lane ? row.lane.labelFrom : 0)
     const clip = clipAt(row.track, timeAt(e))
-    if (clip) onOpenPattern(clip.pattern)
+    if (clip) { onSelectPattern(clip.pattern); openEditor(clip.pattern, e) }
   }
   const updateTrack = (id, fn) => onUpdateProject((p) => { const t = p.tracks.find((x) => x.id === id); if (t) fn(t, p) })
 
@@ -817,7 +925,7 @@ export default function Playlist({
   const zoomText = viewLabel >= 10 ? Math.round(viewLabel) : Math.round(viewLabel * 100) / 100
 
   return (
-    <section className="playlist" aria-label="Playlist">
+    <section className={`playlist ${project ? 'has-palette' : ''}`} aria-label="Playlist">
       <div className="playlist-head">
         <span className="playlist-title">playlist</span>
         <span className="zoom" role="group" aria-label="Zoom">
@@ -854,10 +962,11 @@ export default function Playlist({
         </span>
       </div>
 
+      <div className={`playlist-split ${project ? 'with-palette' : ''}`}>
       <div className="playlist-grid" ref={gridRef}>
         <div className="channel ruler-head" aria-hidden>
           <span className="lanes-tip">
-            {project ? 'click paints · drag moves · edge resizes · right-click deletes · double-click opens'
+            {project ? 'drag empty space: new pattern · click: paint · drag clip: move · edge: resize · right-click: delete · double-click: edit'
               : rows[0]?.slot === MAIN ? <>name patterns to split lanes, e.g. <code>bass: note(…)</code></> : 'ctrl/cmd + wheel zooms · drag lanes to pan'}
           </span>
         </div>
@@ -934,6 +1043,9 @@ export default function Playlist({
               onPointerUp={onLaneUp}
               onPointerCancel={() => { clipDrag.current = null; endPan() }}
               onContextMenu={(e) => { if (row.track) e.preventDefault() }}
+              onDragOver={onLaneDragOver(row)}
+              onDragLeave={onLaneDragLeave}
+              onDrop={onLaneDrop(row)}
               onDoubleClick={onLaneDoubleClick(row)}
             />
           </div>
@@ -942,6 +1054,35 @@ export default function Playlist({
         <div className="playhead" ref={playheadRef} aria-hidden />
         {emptyMessage && <div className="playlist-empty">{emptyMessage}</div>}
       </div>
+      {project && (
+        <aside className="palette" aria-label="Instruments">
+          <span className="palette-title">instruments</span>
+          <span className="palette-hint">drag onto a clip to add · onto empty space for a new pattern</span>
+          <InstrumentChips
+            className="vertical"
+            onPick={(key) => {
+              if (!currentPattern) return
+              onUpdateProject((p) => { const pat = p.patterns.find((x) => x.id === currentPattern.id); if (pat) pat.channels.push(instrumentChannel(key, pat)) })
+              openEditor(currentPattern.id)
+            }}
+          />
+        </aside>
+      )}
+      </div>
+      {project && editing && (
+        <PatternPopover
+          key={editing.patternId}
+          project={project}
+          patternId={editing.patternId}
+          anchor={editing}
+          transport={transport}
+          started={started}
+          playMode={playMode}
+          onUpdateProject={onUpdateProject}
+          onOpenRack={() => { setEditing(null); onOpenPattern(editing.patternId) }}
+          onClose={() => setEditing(null)}
+        />
+      )}
 
       <div className="overview-row">
         <div className="overview-head" aria-hidden>overview</div>
@@ -957,5 +1098,65 @@ export default function Playlist({
         />
       </div>
     </section>
+  )
+}
+
+/** A floating pattern editor on the playlist: name, length and the instruments' steps. */
+function PatternPopover({ project, patternId, anchor, transport, started, playMode, onUpdateProject, onOpenRack, onClose }) {
+  const ref = useRef(null)
+  const pattern = project.patterns.find((p) => p.id === patternId)
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape' && !e.target.closest?.('input, select')) onClose() }
+    const onDown = (e) => {
+      if (ref.current?.contains(e.target)) return
+      if (e.target.closest?.('.palette, .lane-canvas')) return // dragging in more instruments or clips
+      onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('pointerdown', onDown)
+    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('pointerdown', onDown) }
+  }, [onClose])
+
+  // place it near where it was opened, inside the window
+  const [pos, setPos] = useState({ left: anchor.x, top: anchor.y })
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const w = el.offsetWidth
+    const h = el.offsetHeight
+    setPos({
+      left: clamp(anchor.x - 40, 12, window.innerWidth - w - 12),
+      top: clamp(anchor.y + 16, 12, window.innerHeight - h - 12),
+    })
+  }, [anchor.x, anchor.y, pattern?.channels.length])
+
+  if (!pattern) return null
+  const update = (fn) => onUpdateProject((p) => { const pat = p.patterns.find((x) => x.id === patternId); if (pat) fn(pat) })
+
+  return (
+    <div className="pattern-pop" ref={ref} role="dialog" aria-label={`Edit ${pattern.name}`} style={{ left: pos.left, top: pos.top }}>
+      <div className="pop-head">
+        <NameInput className="pop-name" value={pattern.name} maxLength={40} aria-label="Pattern name" onCommit={(v) => update((pat) => { pat.name = v })} />
+        <label className="rack-field">
+          <span className="syn">bars</span>
+          <select className="select" value={pattern.bars} onChange={(e) => update((pat) => reshapePattern(pat, { bars: Number(e.target.value) }))} aria-label="Bars in this pattern">
+            {[1, 2, 3, 4, 6, 8, 12, 16].map((b) => <option key={b} value={b}>{b}</option>)}
+          </select>
+        </label>
+        <span className="spacer" />
+        <button className="btn" onClick={onOpenRack}>open in rack</button>
+        <button className="btn ghost" onClick={onClose} aria-label="Close">close</button>
+      </div>
+      <PatternChannels
+        project={project}
+        pattern={pattern}
+        onUpdateProject={onUpdateProject}
+        transport={transport}
+        started={started}
+        playMode={playMode}
+        compact
+      />
+    </div>
   )
 }

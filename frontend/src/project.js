@@ -259,3 +259,34 @@ export function placeClip(track, clip) {
   track.clips.sort((a, b) => a.bar - b.bar)
   return clip
 }
+
+/** Instruments you can drag into a pattern. Drums and synths start with empty steps. */
+export const INSTRUMENTS = [
+  { key: 'kick', label: 'kick', kind: 'drum', patch: { sound: 'bd' } },
+  { key: 'snare', label: 'snare', kind: 'drum', patch: { sound: 'sd' } },
+  { key: 'clap', label: 'clap', kind: 'drum', patch: { sound: 'cp' } },
+  { key: 'hat', label: 'hat', kind: 'drum', patch: { sound: 'hh', gain: 0.7 } },
+  { key: 'openhat', label: 'open hat', kind: 'drum', patch: { sound: 'oh', gain: 0.7 } },
+  { key: 'rim', label: 'rim', kind: 'drum', patch: { sound: 'rim' } },
+  { key: 'tom', label: 'tom', kind: 'drum', patch: { sound: 'lt' } },
+  { key: 'crash', label: 'crash', kind: 'drum', patch: { sound: 'cr', gain: 0.6 } },
+  { key: 'bass', label: 'bass', kind: 'synth', patch: { sound: 'sawtooth', note: 'c2', fx: '.lpf(900).decay(.2).sustain(0)' } },
+  { key: 'lead', label: 'lead', kind: 'synth', patch: { sound: 'square', note: 'c4', fx: '.lpf(2400).decay(.15).sustain(.2)', gain: 0.6 } },
+  { key: 'pad', label: 'pad', kind: 'synth', patch: { sound: 'supersaw', note: 'c3', fx: '.attack(.2).release(.8).room(.5)', gain: 0.5 } },
+  { key: 'pluck', label: 'pluck', kind: 'synth', patch: { sound: 'triangle', note: 'c4', fx: '.decay(.12).sustain(0).delay(.25)' } },
+  { key: 'piano', label: 'piano', kind: 'synth', patch: { sound: 'piano', note: 'c4' } },
+  { key: 'code', label: 'code', kind: 'code', patch: {} },
+]
+
+export const INSTRUMENT_MIME = 'application/x-strudel-instrument'
+
+/** A new channel for instrument `key`, named so it doesn't clash inside `pattern`. */
+export function instrumentChannel(key, pattern) {
+  const preset = INSTRUMENTS.find((i) => i.key === key) ?? INSTRUMENTS[0]
+  const taken = new Set(pattern.channels.map((c) => c.name))
+  let name = preset.label
+  for (let n = 2; taken.has(name); n++) name = `${preset.label} ${n}`
+  const ch = makeChannel(preset.kind, { ...preset.patch, name })
+  if (ch.kind !== 'code') ch.steps = Array.from({ length: stepCount(pattern) }, () => (ch.kind === 'synth' ? null : 0))
+  return ch
+}
