@@ -1,14 +1,18 @@
+import { defaultData, demoGraph, graphCode, normalizeGraph } from './graph.js'
+
 /**
- * A project is the DAW-style structure the UI edits: patterns (instruments with steps or
- * notes, plus their sound settings) and tracks (clips of those patterns placed on bars).
+ * A project is what the UI edits: a library of patterns (instruments with steps or notes,
+ * plus their sound settings) and a node graph that routes patterns and other sources
+ * through transforms and effects to an output (see graph.js).
  * It lives as JSON on one header line of the track's code, and everything below that line
  * is generated from it, so saving, sharing and remixing keep working and the code still
  * runs as Strudel. Nobody has to read the code; it's how a track travels.
  *
- *   // @project {"v":2,...}
+ *   // @project {"v":3,...}
  *   setcpm(120/4)
  *   const p_beat = stack(s("bd ~ ~ ~ …").bank("RolandTR909").room(0.2), …)
- *   t_main: stack(p_beat.late(0).mask("<1!8>"))
+ *   const n_filter = p_bass.lpf(1200).lpq(8)
+ *   out_in0: n_filter
  */
 
 export const PROJECT_MARK = '// @project '
@@ -79,10 +83,6 @@ export function makePattern(name = 'pattern', patch = {}) {
   return { id: newId(), name, bars: 1, stepsPerBar: 16, channels: [], ...patch }
 }
 
-export function makeTrack(name = 'track', patch = {}) {
-  return { id: newId(), name, mute: false, solo: false, clips: [], ...patch }
-}
-
 /** A channel's value for a knob (its default when unset). */
 export function paramValue(ch, key) {
   return ch.params?.[key] ?? PARAM_BY_KEY[key].def
@@ -92,11 +92,10 @@ export function paramValue(ch, key) {
 export function normalizeProject(raw) {
   if (!raw || typeof raw !== 'object') return null
   const project = {
-    v: 2,
+    v: 3,
     bpm: num(raw.bpm, 120, 10, 400),
     beats: Math.round(num(raw.beats, 4, 2, 8)),
     patterns: [],
-    tracks: [],
   }
   for (const p of Array.isArray(raw.patterns) ? raw.patterns : []) {
     if (!p || typeof p.id !== 'string') continue
@@ -155,22 +154,12 @@ export function normalizeProject(raw) {
     project.patterns.push(pattern)
   }
   const patternIds = new Set(project.patterns.map((p) => p.id))
-  for (const t of Array.isArray(raw.tracks) ? raw.tracks : []) {
-    if (!t || typeof t.id !== 'string') continue
-    const track = makeTrack(String(t.name ?? 'track').slice(0, 40), {
-      id: t.id.replace(/\W/g, '') || newId(),
-      mute: !!t.mute,
-      solo: !!t.solo,
-      clips: [],
-    })
-    for (const c of Array.isArray(t.clips) ? t.clips : []) {
-      if (!c || !patternIds.has(c.pattern)) continue
-      track.clips.push({ id: typeof c.id === 'string' ? c.id.replace(/\W/g, '') || newId() : newId(), pattern: c.pattern, bar: Math.round(num(c.bar, 0, 0, 4096)), bars: Math.round(num(c.bars, 1, 1, 512)) })
-    }
-    track.clips.sort((a, b) => a.bar - b.bar)
-    project.tracks.push(track)
-  }
-  if (!project.tracks.length) project.tracks.push(makeTrack('track 1'))
+  let graph = raw
+  if (!Array.isArray(raw.nodes) && Array.isArray(raw.tracks)) graph = graphFromTracks(raw.tracks, patternIds)
+  const { nodes, edges } = normalizeGraph(graph, patternIds)
+  project.nodes = nodes
+  project.edges = edges
+  if (!nodes.some((n) => n.type === 'output')) project.nodes.push({ id: 'out', type: 'output', x: 700, y: 200, data: { muted: {}, solo: null } })
   return project
 }
 
@@ -183,13 +172,6 @@ export function parseProject(code) {
   } catch {
     return null
   }
-}
-
-/** Bars until the end of the last clip (at least one). The song loops there. */
-export function songLength(project) {
-  let end = 0
-  for (const t of project.tracks) for (const c of t.clips) end = Math.max(end, c.bar + c.bars)
-  return Math.max(1, end)
 }
 
 /** Split notes into voices that never overlap, so each voice is one mini-notation sequence. */
@@ -250,31 +232,17 @@ function channelCode(ch, pattern) {
   return `/* ${commentText(ch.name)} */ ${expr}`
 }
 
-/**
- * Mini-notation that is 1 for bars [from, to) of a song and 0 elsewhere, one step per
- * cycle, run-length encoded: bars 2–8 of 8 → "<0!2 1!6>". It must be a string literal in
- * the code: Strudel only reads double-quoted literals as mini-notation.
- */
-export function barMask(from, to, song) {
-  const runs = [[0, Math.min(from, song)], [1, Math.max(0, Math.min(to, song) - from)], [0, Math.max(0, song - to)]]
-  return `<${runs.filter(([, n]) => n > 0).map(([v, n]) => (n === 1 ? `${v}` : `${v}!${n}`)).join(' ')}>`
-}
-
 export const patternVar = (id) => `p_${id}`
-export const trackLabel = (track) => (track.mute ? `_t_${track.id}` : track.solo ? `St_${track.id}` : `t_${track.id}`)
 
 /**
- * The Strudel code for a project. `mode: 'pattern'` plays only `current` on a loop (the
- * song tracks are emitted muted), like FL's pattern/song switch.
+ * The Strudel code for a project: every pattern as a const, then the graph. `solo` (a
+ * node id) plays just that node, for auditioning part of the patch.
  */
-export function generateCode(project, { mode = 'song', current = null } = {}) {
-  const song = songLength(project)
+export function generateCode(project, { solo = null } = {}) {
   const lines = [
     `${PROJECT_MARK}${JSON.stringify(project)}`,
     '// generated by the strudel studio: open the track there to edit it',
     `setcpm(${project.bpm}/${project.beats})`,
-    '',
-    `// song: ${song} bar${song === 1 ? '' : 's'}, then it loops`,
     '',
   ]
   for (const pattern of project.patterns) {
@@ -283,25 +251,36 @@ export function generateCode(project, { mode = 'song', current = null } = {}) {
     lines.push(live.length
       ? `const ${patternVar(pattern.id)} = stack(\n${live.map((c) => `  ${channelCode(c, pattern)},`).join('\n')}\n)`
       : `const ${patternVar(pattern.id)} = silence`)
-    lines.push('')
   }
-  const soloing = mode === 'pattern'
-  for (const track of project.tracks) {
-    const clips = track.clips.filter((c) => project.patterns.some((p) => p.id === c.pattern))
-    const body = clips.length
-      ? `stack(${clips.map((c) => `${patternVar(c.pattern)}.late(${c.bar}).mask("${barMask(c.bar, c.bar + c.bars, song)}")`).join(', ')})`
-      : 'silence'
-    const label = soloing ? `_t_${track.id}` : trackLabel(track)
-    lines.push(`// track: ${commentText(track.name)}`)
-    lines.push(`${label}: ${body}`)
-  }
-  if (soloing && project.patterns.some((p) => p.id === current)) {
-    lines.push('', '// pattern mode: loop the pattern being edited', `pattern: ${patternVar(current)}`)
-  }
+  const patternSolo = typeof solo === 'string' && solo.startsWith('pattern:') && project.patterns.some((p) => `pattern:${p.id}` === solo)
+  const graph = graphCode(project, { solo: patternSolo ? null : solo })
+  lines.push('', ...graph.lines.map((l) => (l.startsWith('// ') ? `// ${commentText(l.slice(3))}` : l)))
+  if (patternSolo) lines.push('', '// auditioning one pattern', ...graph.lanes.map((l) => `_${l.replace(/^_/, '')}`), `solo: ${patternVar(solo.slice(8))}`)
+  else lines.push('', solo ? '// auditioning one node' : '// output', ...(graph.lanes.length ? graph.lanes : ['$: silence']))
   return `${lines.join('\n')}\n`
 }
 
-/** A starter project: a beat and a bassline arranged over 8 bars. */
+/** v2 projects arranged patterns on tracks; bring each pattern they used into the graph. */
+function graphFromTracks(tracks, patternIds) {
+  const nodes = [{ id: 'out', type: 'output', x: 520, y: 40, data: { muted: {}, solo: null } }]
+  const edges = []
+  const seen = new Set()
+  let slot = 0
+  for (const track of tracks) {
+    for (const clip of Array.isArray(track?.clips) ? track.clips : []) {
+      if (!patternIds.has(clip?.pattern) || seen.has(clip.pattern)) continue
+      seen.add(clip.pattern)
+      const id = `pat${slot}`
+      nodes.push({ id, type: 'pattern', x: 40, y: 40 + slot * 190, data: { patternId: clip.pattern } })
+      edges.push({ source: id, target: 'out', targetHandle: `in-${slot}` })
+      if (track.mute) nodes[0].data.muted[`in-${slot}`] = true
+      slot++
+    }
+  }
+  return { nodes, edges }
+}
+
+/** A starter project: a beat and a bassline, patched through a few effects. */
 export function demoProject() {
   const on = (n, every, offset = 0) => Array.from({ length: n }, (_, i) => ((i - offset) % every === 0 && i >= offset ? 1 : 0))
   const beat = makePattern('beat', {
@@ -321,38 +300,20 @@ export function demoProject() {
       fx: '.decay(.2).sustain(0)',
     })],
   })
-  return normalizeProject({
-    v: 2,
-    bpm: 120,
-    beats: 4,
-    patterns: [beat, bass],
-    tracks: [
-      makeTrack('drums', { clips: [{ id: newId(), pattern: beat.id, bar: 0, bars: 8 }] }),
-      makeTrack('bass', { clips: [{ id: newId(), pattern: bass.id, bar: 2, bars: 6 }] }),
-      makeTrack('track 3'),
-    ],
-  })
+  return normalizeProject({ v: 3, bpm: 120, beats: 4, patterns: [beat, bass], ...demoGraph(beat.id, bass.id) })
 }
 
-/** Turn labeled code lanes into a project: one code-channel pattern and one track per lane. */
+/** Turn labeled code lanes into a project: one code node per lane, wired to the output. */
 export function projectFromLanes(lanes, { bpm = 120, beats = 4 } = {}) {
-  const project = { v: 2, bpm, beats, patterns: [], tracks: [] }
+  const nodes = [{ id: 'out', type: 'output', x: 560, y: 40, data: { muted: {}, solo: null } }]
+  const edges = []
   lanes.forEach((lane, i) => {
-    const name = lane.title ?? `lane ${i + 1}`
-    const pattern = makePattern(name, { channels: [makeChannel('code', { name, code: lane.source })] })
-    project.patterns.push(pattern)
-    project.tracks.push(makeTrack(name, { mute: lane.muted, clips: [{ id: newId(), pattern: pattern.id, bar: 0, bars: 8 }] }))
+    const id = `lane${i}`
+    nodes.push({ id, type: 'code', x: 40, y: 40 + i * 170, data: { ...defaultData('code'), code: lane.source, name: lane.title ?? `lane ${i + 1}` } })
+    edges.push({ source: id, target: 'out', targetHandle: `in-${i}` })
+    if (lane.muted) nodes[0].data.muted[`in-${i}`] = true
   })
-  return normalizeProject(project)
-}
-
-/** Put a clip on a track, removing whatever it overlaps. Returns the clip. */
-export function placeClip(track, clip) {
-  const end = clip.bar + clip.bars
-  track.clips = track.clips.filter((c) => c.id === clip.id || c.bar + c.bars <= clip.bar || c.bar >= end)
-  if (!track.clips.some((c) => c.id === clip.id)) track.clips.push(clip)
-  track.clips.sort((a, b) => a.bar - b.bar)
-  return clip
+  return normalizeProject({ v: 3, bpm, beats, patterns: [], nodes, edges })
 }
 
 /** Instruments you can drag into a pattern. Drums and synths start empty. */

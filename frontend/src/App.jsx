@@ -10,7 +10,7 @@ import { prebake } from '@strudel/repl/prebake.mjs'
 import { useUser } from './bwnd'
 import { api, clearDraft, readDraft, timeAgo, trackUrl, writeDraft } from './api'
 import Browser from './Browser.jsx'
-import Playlist from './Playlist.jsx'
+import Graph from './Graph.jsx'
 import Rack from './Rack.jsx'
 import { capturePatterns, parseLanes, tempoChange } from './lanes'
 import { PROJECT_MARK, demoProject, generateCode, normalizeProject, parseProject, projectFromLanes } from './project'
@@ -25,7 +25,7 @@ function writePref(key, value) {
 
 function songCodeOf(text) {
   const p = parseProject(text)
-  return p ? generateCode(p, { mode: 'song' }) : text
+  return p ? generateCode(p) : text
 }
 
 function scratchCode() {
@@ -63,22 +63,23 @@ export default function App() {
   // the evaluated pattern, each labeled pattern in it, and which track (null = scratch) it belongs to
   const [evaluated, setEvaluated] = useState({ pattern: null, lanes: new Map(), forId: undefined })
   const capturedRef = useRef(new Map())
-  const [view, setView] = useState(() => (['playlist', 'rack', 'code'].includes(readPref('strudel:view', 'playlist')) ? readPref('strudel:view', 'playlist') : 'playlist'))
+  const [view, setView] = useState(() => (['graph', 'rack', 'code'].includes(readPref('strudel:view', 'graph')) ? readPref('strudel:view', 'graph') : 'graph'))
   const codeViewRef = useRef(null)
-  const lastViewRef = useRef('playlist') // where ctrl/cmd+J returns to from the code
+  const lastViewRef = useRef('graph') // where ctrl/cmd+J returns to from the code
   const toggleView = useCallback(() => setView((v) => (v === 'code' ? lastViewRef.current : 'code')), [])
   useEffect(() => { if (view !== 'code') lastViewRef.current = view }, [view])
 
   // Project mode: the code's header line holds the patterns/tracks the UI edits.
   const project = useMemo(() => parseProject(code), [code])
   const [currentPatternId, setCurrentPatternId] = useState(null)
-  const [playMode, setPlayMode] = useState('song')
-  const genRef = useRef({ mode: 'song', current: null })
-  genRef.current = { mode: playMode, current: currentPatternId }
+  // auditioning: a node id, or "pattern:<id>" from the rack; null plays the output
+  const [solo, setSolo] = useState(null)
+  const genRef = useRef({ solo: null })
+  genRef.current = { solo }
   useEffect(() => {
     if (project && !project.patterns.some((p) => p.id === currentPatternId)) setCurrentPatternId(project.patterns[0]?.id ?? null)
   }, [project, currentPatternId])
-  useEffect(() => { if (code && !project && view === 'rack') setView('playlist') }, [code, project, view])
+  useEffect(() => { if (code && !project && view === 'rack') setView('graph') }, [code, project, view])
   const readOnlyRef = useRef(null)
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState('')
@@ -91,7 +92,7 @@ export default function App() {
   // what gets saved: projects always in song mode, whatever you're looping right now
   const savedCode = useMemo(() => {
     const p = parseProject(code)
-    return p ? generateCode(p, { mode: 'song' }) : code
+    return p ? generateCode(p) : code
   }, [code])
   const codeChanged = !!track && savedCode !== track.code
   const metaChanged = isOwner && (title !== track.title || visibility !== track.visibility)
@@ -254,7 +255,7 @@ export default function App() {
   }, [applySnapshot])
 
   // pattern/song mode and the selected pattern change what the code plays
-  useEffect(() => { updateProject((p) => p) }, [playMode, playMode === 'pattern' ? currentPatternId : null, updateProject])
+  useEffect(() => { updateProject((p) => p) }, [solo, updateProject])
 
   const convertToProject = useCallback(() => {
     const editor = editorRef.current
@@ -524,13 +525,13 @@ export default function App() {
           </span>
         )}
         {project && (
-          <span className="seg" role="group" aria-label="Play the song or just the pattern">
-            <button className={`btn ${playMode === 'pattern' ? 'on' : ''}`} aria-pressed={playMode === 'pattern'} onClick={() => setPlayMode('pattern')} title="Loop the pattern open in the rack">pat</button>
-            <button className={`btn ${playMode === 'song' ? 'on' : ''}`} aria-pressed={playMode === 'song'} onClick={() => setPlayMode('song')} title="Play the playlist">song</button>
+          <span className="seg" role="group" aria-label="What plays">
+            <button className={`btn ${solo ? '' : 'on'}`} aria-pressed={!solo} onClick={() => setSolo(null)} title="Play the output">output</button>
+            {solo && <button className="btn on solo-chip" onClick={() => setSolo(null)} title="Stop auditioning">solo ×</button>}
           </span>
         )}
         <span className="seg views" role="group" aria-label="View">
-          <button className={`btn ${view === 'playlist' ? 'on' : ''}`} aria-pressed={view === 'playlist'} onClick={() => setView('playlist')}>playlist</button>
+          <button className={`btn ${view === 'graph' ? 'on' : ''}`} aria-pressed={view === 'graph'} onClick={() => setView('graph')}>patch</button>
           {project && <button className={`btn ${view === 'rack' ? 'on' : ''}`} aria-pressed={view === 'rack'} onClick={() => setView('rack')}>rack</button>}
           <button
             className={`btn code-toggle ${view === 'code' ? 'on' : ''} ${evalError && view !== 'code' ? 'has-error' : ''}`}
@@ -609,29 +610,26 @@ export default function App() {
               </>
             )}
           </div>
-          {view === 'playlist' && (
-            <Playlist
-              transport={transport}
-              editorRef={editorRef}
-              code={code}
-              pattern={evaluated.forId === shownId ? evaluated.pattern : null}
-              lanePatterns={evaluated.lanes}
-              started={started}
-              stale={started && code !== activeCode}
-              emptyMessage={evaluated.forId === shownId && evaluated.pattern ? null
-                : !previewAllowed ? 'press play to load this track'
-                : evalError ? 'the code has an error · switch to code to fix it'
-                : 'loading sounds…'}
-              onEditCode={editCode}
-              onRevealCode={revealCode}
+          {view === 'graph' && project && (
+            <Graph
               project={project}
-              playMode={playMode}
-              currentPatternId={currentPatternId}
-              onSelectPattern={setCurrentPatternId}
-              onOpenPattern={openPattern}
               onUpdateProject={updateProject}
-              onConvertToProject={convertToProject}
+              started={started}
+              solo={solo}
+              onSolo={setSolo}
+              onOpenRack={openPattern}
+              transport={transport}
             />
+          )}
+          {view === 'graph' && !project && code && (
+            <section className="graph-convert">
+              <h2 className="playlist-title">this track is code</h2>
+              <p>It was written by hand, so there's no patch to show. Turn each named part (like <code>drums:</code>) into a node you can wire and tweak, or keep editing the code.</p>
+              <span className="rack-actions">
+                <button className="btn primary" onClick={convertToProject}>turn it into a patch</button>
+                <button className="btn" onClick={() => setView('code')}>open the code</button>
+              </span>
+            </section>
           )}
           {view === 'rack' && project && (
             <Rack
@@ -641,8 +639,8 @@ export default function App() {
               onUpdateProject={updateProject}
               transport={transport}
               started={started}
-              playMode={playMode}
-              onPlayMode={setPlayMode}
+              playMode={solo === `pattern:${currentPatternId}` ? 'pattern' : 'song'}
+              onPlayMode={(mode) => setSolo(mode === 'pattern' ? `pattern:${currentPatternId}` : null)}
             />
           )}
           <section ref={codeViewRef} className="code-view" hidden={view !== 'code'} aria-label="Code">

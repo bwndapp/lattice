@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   INSTRUMENTS, INSTRUMENT_MIME, PARAMS,
-  instrumentChannel, makeChannel, makePattern, midiToNote, newId, paramValue, paramsFor, reshapePattern, songLength, stepCount,
+  instrumentChannel, makeChannel, makePattern, midiToNote, newId, paramValue, paramsFor, reshapePattern, stepCount,
 } from './project'
 import { previewChannel } from './audio'
 import Knob from './Knob.jsx'
@@ -31,20 +31,9 @@ function CommitInput({ value, onCommit, ...props }) {
   )
 }
 
-/** Which step of `pattern` is sounding at song position `pos`, or -1. */
-export function stepAt(project, pattern, pos, mode) {
-  const n = stepCount(pattern)
-  if (mode === 'pattern') return Math.floor(mod(pos, pattern.bars) * pattern.stepsPerBar) % n
-  const song = songLength(project)
-  const songPos = mod(pos, song)
-  for (const track of project.tracks) {
-    if (track.mute) continue
-    for (const clip of track.clips) {
-      if (clip.pattern !== pattern.id || songPos < clip.bar || songPos >= clip.bar + clip.bars) continue
-      return Math.floor(mod(songPos - clip.bar, pattern.bars) * pattern.stepsPerBar) % n
-    }
-  }
-  return -1
+/** Which step of `pattern` is sounding at position `pos` (patterns loop from bar 1), or -1. */
+export function stepAt(project, pattern, pos) {
+  return Math.floor(mod(pos, pattern.bars) * pattern.stepsPerBar) % stepCount(pattern)
 }
 
 /** Instrument chips: click to add, or drag onto a clip, a pattern or the rack. */
@@ -343,7 +332,7 @@ export default function Rack({ project, currentPatternId, onSelectPattern, onUpd
     return (
       <section className="rack" aria-label="Channel rack">
         <div className="rack-empty">
-          <p>No patterns yet. Drag across a track in the playlist to draw one, or start one here.</p>
+          <p>No patterns yet. Add a pattern node in the patch, or start one here.</p>
           <button className="btn primary" onClick={() => onUpdateProject((p) => { const np = makePattern('pattern 1', { channels: [makeChannel('drum')] }); p.patterns.push(np); onSelectPattern(np.id) })}>+ new pattern</button>
         </div>
       </section>
@@ -364,11 +353,13 @@ export default function Rack({ project, currentPatternId, onSelectPattern, onUpd
     onSelectPattern(copy.id)
   })
   const deletePattern = () => {
-    const uses = project.tracks.reduce((sum, t) => sum + t.clips.filter((c) => c.pattern === pattern.id).length, 0)
-    if (!window.confirm(`Delete pattern “${pattern.name}”${uses ? ` and its ${uses} clip${uses === 1 ? '' : 's'} in the playlist` : ''}?`)) return
+    const users = project.nodes.filter((n) => n.type === 'pattern' && n.data.patternId === pattern.id).map((n) => n.id)
+    if (!window.confirm(`Delete pattern “${pattern.name}”${users.length ? ` and the ${users.length} node${users.length === 1 ? '' : 's'} playing it` : ''}?`)) return
     onUpdateProject((p) => {
+      const gone = new Set(users)
       p.patterns = p.patterns.filter((x) => x.id !== pattern.id)
-      p.tracks.forEach((t) => { t.clips = t.clips.filter((c) => c.pattern !== pattern.id) })
+      p.nodes = p.nodes.filter((n) => !gone.has(n.id))
+      p.edges = p.edges.filter((e) => !gone.has(e.source) && !gone.has(e.target))
       onSelectPattern(p.patterns[0]?.id ?? null)
     })
   }
