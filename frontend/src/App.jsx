@@ -58,9 +58,9 @@ export default function App() {
   // the evaluated pattern, each labeled pattern in it, and which track (null = scratch) it belongs to
   const [evaluated, setEvaluated] = useState({ pattern: null, lanes: new Map(), forId: undefined })
   const capturedRef = useRef(new Map())
-  const [codeOpen, setCodeOpen] = useState(() => readPref('strudel:code:open', false))
-  const [drawerHeight, setDrawerHeight] = useState(() => readPref('strudel:code:height', 320))
-  const drawerRef = useRef(null)
+  const [view, setView] = useState(() => (readPref('strudel:view', 'playlist') === 'code' ? 'code' : 'playlist'))
+  const codeViewRef = useRef(null)
+  const toggleView = useCallback(() => setView((v) => (v === 'code' ? 'playlist' : 'code')), [])
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
@@ -110,16 +110,17 @@ export default function App() {
     editorRef.current.setFontFamily('"Martian Mono", ui-monospace, monospace')
   }, [])
 
-  // The code drawer: closed means out of the tab order too.
+  // The main area shows the playlist or the code. The editor stays mounted (it owns the
+  // audio); when hidden it is also out of the tab order.
   useEffect(() => {
-    writePref('strudel:code:open', codeOpen)
-    if (drawerRef.current) drawerRef.current.inert = !codeOpen
-  }, [codeOpen])
-  useEffect(() => writePref('strudel:code:height', drawerHeight), [drawerHeight])
+    writePref('strudel:view', view)
+    if (codeViewRef.current) codeViewRef.current.inert = view !== 'code'
+    if (view === 'code') requestAnimationFrame(() => editorRef.current?.editor.requestMeasure())
+  }, [view])
 
-  /** Open the drawer with the cursor at `pos` (e.g. a lane's label). */
+  /** Switch to the code view with the cursor at `pos` (e.g. a lane's label). */
   const revealCode = useCallback((pos) => {
-    setCodeOpen(true)
+    setView('code')
     const view = editorRef.current?.editor
     if (!view) return
     const anchor = Math.min(pos, view.state.doc.length)
@@ -198,16 +199,6 @@ export default function App() {
     const timer = setTimeout(() => editor.repl.evaluate(editor.code, false), 500)
     return () => clearTimeout(timer)
   }, [code, activeCode, started, shownId, previewAllowed, evaluated.forId])
-
-  const startResize = (e) => {
-    const startY = e.clientY
-    const startH = drawerHeight
-    const max = window.innerHeight - 160
-    const move = (ev) => setDrawerHeight(Math.round(Math.min(max, Math.max(140, startH + startY - ev.clientY))))
-    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up)
-  }
 
   const save = useCallback(async () => {
     if (!canEdit || busy) return
@@ -310,7 +301,7 @@ export default function App() {
       if (e.key === 'Enter') keysRef.current.play()
       else if (e.key === '.' || e.code === 'Period') editorRef.current?.stop()
       else if (mod && e.key.toLowerCase() === 's') keysRef.current.save()
-      else if (mod && e.key.toLowerCase() === 'j') setCodeOpen((o) => !o)
+      else if (mod && e.key.toLowerCase() === 'j') setView((v) => (v === 'code' ? 'playlist' : 'code'))
       else return
       e.preventDefault()
       e.stopPropagation()
@@ -336,12 +327,11 @@ export default function App() {
         />
         <Position editorRef={editorRef} started={started} />
         <button
-          className={`btn code-toggle ${codeOpen ? 'on' : ''} ${evalError && !codeOpen ? 'has-error' : ''}`}
-          aria-expanded={codeOpen}
-          aria-controls="code-drawer"
-          title="Show or hide the code (ctrl/cmd + J)"
-          onClick={() => setCodeOpen((o) => !o)}
-        >{'{ }'}<span className="code-word"> code</span>{evalError && !codeOpen ? ' !' : ''}</button>
+          className={`btn code-toggle ${view === 'code' ? 'on' : ''} ${evalError && view !== 'code' ? 'has-error' : ''}`}
+          aria-pressed={view === 'code'}
+          title="Switch between the playlist and the code (ctrl/cmd + J)"
+          onClick={toggleView}
+        >{'{ }'}<span className="code-word"> code</span>{evalError && view !== 'code' ? ' !' : ''}</button>
         <span className="spacer" />
         {userLoading ? null : user ? (
           <span className="user">
@@ -412,45 +402,26 @@ export default function App() {
               </>
             )}
           </div>
-          <Playlist
-            editorRef={editorRef}
-            code={code}
-            pattern={evaluated.forId === shownId ? evaluated.pattern : null}
-            lanePatterns={evaluated.lanes}
-            started={started}
-            stale={started && code !== activeCode}
-            emptyMessage={evaluated.forId === shownId && evaluated.pattern ? null
-              : !previewAllowed ? 'press play to load this track'
-              : evalError ? 'the code has an error · open the code drawer to fix it'
-              : 'loading sounds…'}
-            onEditCode={editCode}
-            onRevealCode={revealCode}
-          />
-          <section
-            id="code-drawer"
-            ref={drawerRef}
-            className={`drawer ${codeOpen ? 'open' : ''}`}
-            style={{ '--drawer-h': `${drawerHeight}px` }}
-            aria-label="Code"
-          >
-            <div
-              className="resize"
-              role="separator"
-              aria-orientation="horizontal"
-              aria-label="Resize code drawer"
-              aria-valuenow={drawerHeight}
-              tabIndex={0}
-              onPointerDown={startResize}
-              onKeyDown={(e) => {
-                if (e.key === 'ArrowUp') setDrawerHeight((h) => Math.min(window.innerHeight - 160, h + 24))
-                if (e.key === 'ArrowDown') setDrawerHeight((h) => Math.max(140, h - 24))
-              }}
+          {view === 'playlist' && (
+            <Playlist
+              editorRef={editorRef}
+              code={code}
+              pattern={evaluated.forId === shownId ? evaluated.pattern : null}
+              lanePatterns={evaluated.lanes}
+              started={started}
+              stale={started && code !== activeCode}
+              emptyMessage={evaluated.forId === shownId && evaluated.pattern ? null
+                : !previewAllowed ? 'press play to load this track'
+                : evalError ? 'the code has an error · switch to code to fix it'
+                : 'loading sounds…'}
+              onEditCode={editCode}
+              onRevealCode={revealCode}
             />
-            <div className="drawer-head">
-              <span className="drawer-title">code</span>
-              <span className="hint">ctrl/cmd + enter play · + . stop · + s save · + J close</span>
-              <span className="spacer" />
-              <button className="btn ghost" onClick={() => setCodeOpen(false)}>close</button>
+          )}
+          <section ref={codeViewRef} className="code-view" hidden={view !== 'code'} aria-label="Code">
+            <div className="code-head">
+              <span className="code-title">code</span>
+              <span className="hint">ctrl/cmd + enter play · + . stop · + s save · + J playlist</span>
             </div>
             <div className="editor" ref={rootRef} />
             {evalError && <pre className="error">{evalError}</pre>}

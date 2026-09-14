@@ -30,6 +30,7 @@
   --mono: "Martian Mono", ui-monospace, "SF Mono", Menlo, monospace;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body, #root { height: 100%; }
 body {
   margin: 0;
@@ -258,22 +259,11 @@ body {
   color: var(--paper); background: rgba(0,0,0,0.72); pointer-events: none;
 }
 
-/* ── code drawer ──────────────────────────────────────── */
-.drawer {
-  position: relative;
-  display: flex; flex-direction: column;
-  height: 0; min-height: 0; flex-shrink: 0;
-  border-top: 1px solid var(--line);
-  background: var(--ink);
-  visibility: hidden;
-  transition: height 0.18s ease, visibility 0s linear 0.18s;
-}
-.drawer.open { height: var(--drawer-h); visibility: visible; transition: height 0.18s ease; border-top: 2px solid var(--acid); }
-.drawer .resize { position: absolute; inset: -5px 0 auto; height: 9px; cursor: row-resize; z-index: 2; }
-.drawer .resize:hover, .drawer .resize:focus-visible { background: linear-gradient(transparent 3px, var(--acid) 3px, var(--acid) 5px, transparent 5px); outline: none; }
-.drawer-head { display: flex; align-items: baseline; gap: 0.8rem; padding: 0.35rem 0.6rem 0.35rem 1rem; border-bottom: 1px solid var(--line); }
-.drawer-title { font-family: var(--display); font-weight: 900; font-stretch: 125%; font-size: 1.1rem; color: var(--acid); }
-.drawer .editor { flex: 1; min-height: 0; }
+/* ── code view (swaps with the playlist) ──────────────── */
+.code-view { flex: 1; display: flex; flex-direction: column; min-height: 0; background: var(--ink); }
+.code-head { display: flex; align-items: baseline; gap: 0.9rem; padding: 0.55rem 1rem 0.5rem; border-bottom: 1px solid var(--line); }
+.code-title { font-family: var(--display); font-weight: 900; font-stretch: 125%; font-size: 1.7rem; line-height: 1; letter-spacing: -0.03em; }
+.code-view .editor { flex: 1; min-height: 0; }
 
 /* ── browser: the setlist ─────────────────────────────── */
 .browser {
@@ -376,14 +366,14 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .cycle-bar { display: none; }
-  .browser, .drawer, .drawer.open { transition: none !important; }
+  .browser { transition: none !important; }
 }
 
 /* ── narrow screens: keep the attitude, drop the collisions ─ */
 @media (max-width: 860px) {
   .hint, .user-name { display: none; }
   .bar .browse-toggle { display: inline-block; color: var(--paper); border-color: var(--line); }
-  .btn.stop:disabled { display: none; } /* nothing to stop: give the space to the drawer toggle */
+  .btn.stop:disabled { display: none; } /* nothing to stop: give the space to the view toggle */
   .bar { gap: 0.3rem; padding: 0 0.5rem 0 0.25rem; height: 52px; }
   .logo { font-size: 30px; margin-right: 0; }
   .bar .btn { padding: 0.3rem 0.45rem; font-size: 12px; }
@@ -399,7 +389,6 @@ body {
   .tempo, .position { display: none; } /* transport stays; tempo lives in the code on phones */
   .code-toggle { padding-inline: 0.45rem; }
   .code-word { display: none; }
-  .drawer.open { height: min(var(--drawer-h), 65vh); }
   .browser {
     position: absolute; inset: 0 auto 0 0; z-index: 20;
     width: min(var(--sidebar), 88vw);
