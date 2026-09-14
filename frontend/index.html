@@ -17,12 +17,13 @@
     <meta name="twitter:title" content="lattice: patch music together with Strudel" />
     <meta name="twitter:description" content="Wire up beats, synths and effects as nodes. Strudel plays it live, right in your browser." />
     <meta name="twitter:image" content="https://strudel.bwnd.app/og.png?v=2" />
-    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <script>
       // Relative asset URLs resolve against the mount point (see src/base.js), not deep links like /t/abc.
       document.write('<base href="' + (/^\/preview(\/|$)/.test(location.pathname) ? '/preview/' : '/') + '">')
     </script>
+    <!-- icons after <base>, so they resolve from the site root on deep links like /t/abc -->
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
