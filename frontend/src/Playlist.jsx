@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { hapValue, newLaneCode, parseLanes, pitchOf, queryWindow, soundOf, toggledMute, toggledSolo } from './lanes'
+import { makeTrack, newId, placeClip, songLength } from './project'
 
 const MAIN = '__main__'
 const MIN_BARS = 0.25 // most zoomed in: one beat of 4/4 across the view
@@ -8,6 +9,35 @@ const PRESETS = [1, 4, 16, 64]
 const LABEL_STEPS = [1, 2, 4, 8, 16, 32, 64, 128, 256]
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
+
+/** How to stack a set of events vertically: by pitch, or one row per sound. */
+function noteLayout(events) {
+  const pitches = events.map((ev) => pitchOf(ev.v)).filter((p) => p !== null)
+  if (events.length && pitches.length >= events.length / 2) {
+    const lo = Math.floor(Math.min(...pitches)) - 1
+    const hi = Math.ceil(Math.max(...pitches)) + 1
+    const rowCount = Math.max(hi - lo + 1, 8)
+    return { pitched: true, labels: null, rowCount, rowOf: (v) => { const p = pitchOf(v); return p === null ? rowCount / 2 : hi - p } }
+  }
+  const labels = [...new Set(events.map((ev) => soundOf(ev.v)))].sort()
+  return { pitched: false, labels, rowCount: Math.max(labels.length, 1), rowOf: (v) => Math.max(0, labels.indexOf(soundOf(v))) }
+}
+
+/** A text field that applies on Enter or blur. */
+function NameInput({ value, onCommit, ...props }) {
+  const [text, setText] = useState(value)
+  useEffect(() => setText(value), [value])
+  const commit = () => { const v = text.trim(); if (v && v !== value) onCommit(v); else setText(value) }
+  return (
+    <input
+      {...props}
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setText(value); e.currentTarget.blur() } }}
+    />
+  )
+}
 
 function readLocal(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback } catch { return fallback }
@@ -26,7 +56,10 @@ function writeLocal(key, value) {
  * The code stays the source of truth: lanes come from its labels, clips are the
  * evaluated patterns queried ahead of time, and mute/solo/+ lane edit the code.
  */
-export default function Playlist({ transport, editorRef, code, pattern, lanePatterns, started, stale, emptyMessage, onEditCode, onRevealCode }) {
+export default function Playlist({
+  transport, editorRef, code, pattern, lanePatterns, started, stale, emptyMessage, onEditCode, onRevealCode,
+  project, playMode, currentPatternId, onSelectPattern, onOpenPattern, onUpdateProject, onConvertToProject,
+}) {
   const lastGood = useRef([])
   const parsed = useMemo(() => parseLanes(code), [code])
   if (parsed) lastGood.current = parsed
@@ -50,9 +83,22 @@ export default function Playlist({ transport, editorRef, code, pattern, lanePatt
   const overviewDrag = useRef(null)
   const cacheRef = useRef(new WeakMap()) // pattern → Map(bar → haps)
   const extentRef = useRef(32)
+  const clipDrag = useRef(null) // project mode: painting, moving, resizing or erasing clips
 
   const anySolo = sourceLanes.some((l) => l.soloed)
   const rows = useMemo(() => {
+    if (project) {
+      const soloing = project.tracks.some((t) => t.solo && !t.mute)
+      return project.tracks.map((t, i) => ({
+        id: t.id,
+        slot: `t_${t.id}#0`,
+        label: t.name,
+        source: t.clips.length ? `${t.clips.length} clip${t.clips.length === 1 ? '' : 's'}` : 'empty · click to paint',
+        track: t,
+        index: i + 1,
+        silent: playMode === 'pattern' || t.mute || (soloing && !t.solo),
+      }))
+    }
     if (!sourceLanes.length) return [{ id: MAIN, slot: MAIN, label: 'main', source: '', lane: null, index: 1 }]
     let anon = 0
     return sourceLanes.map((l, i) => ({
@@ -64,7 +110,7 @@ export default function Playlist({ transport, editorRef, code, pattern, lanePatt
       index: i + 1,
       silent: l.muted || (anySolo && !l.soloed),
     }))
-  }, [sourceLanes, anySolo])
+  }, [sourceLanes, anySolo, project, playMode])
 
   useEffect(() => writeLocal('strudel:playlist:follow', follow), [follow])
 
@@ -138,10 +184,25 @@ export default function Playlist({ transport, editorRef, code, pattern, lanePatt
     const labelStep = LABEL_STEPS.find((s) => s * ppb >= 44) ?? 512
     const barLineStep = ppb >= 5 ? 1 : labelStep
 
+    const song = project ? songLength(project) : 0
+    const patternById = project ? new Map(project.patterns.map((p) => [p.id, p])) : null
+
     // ── ruler ──
     if (rulerRef.current) {
       const { ctx, w, h } = fit(rulerRef.current)
       ctx.clearRect(0, 0, w, h)
+      if (song && playMode !== 'pattern') {
+        // past the end of the song it loops: shade the repeats
+        for (let k = Math.max(1, Math.floor(start / song)); k * song < end; k++) {
+          const x = xOf(k * song)
+          ctx.fillStyle = muted
+          ctx.globalAlpha = 0.12
+          ctx.fillRect(Math.max(0, x), 0, xOf((k + 1) * song) - Math.max(0, x), h)
+          ctx.globalAlpha = 1
+          ctx.fillStyle = paper
+          ctx.fillRect(Math.floor(x), 0, 2, h)
+        }
+      }
       if (loop.to > start && loop.from < end) {
         const x0 = xOf(Math.max(loop.from, start))
         ctx.fillStyle = loop.on ? acid : muted
@@ -175,6 +236,82 @@ export default function Playlist({ transport, editorRef, code, pattern, lanePatt
 
     // ── lanes ──
     const drawNotes = ppb >= 28
+
+    // project mode: clips come from the project; repeats after the song end are ghosts
+    const drawClips = (ctx, h, row) => {
+      const trackPattern = patternFor(row)
+      const d = clipDrag.current
+      let clips = row.track.clips
+      if (d?.moved && (d.mode === 'move' || d.mode === 'resize')) {
+        clips = clips.filter((c) => c.id !== d.clip.id)
+        if (d.targetTrack === row.track.id) clips = [...clips, { ...d.clip, bar: d.bar, bars: d.bars, dragging: true }]
+      }
+      const lastPass = playMode === 'pattern' ? 0 : Math.floor(end / song)
+      for (let k = Math.max(0, Math.floor(start / song) - 1); k <= lastPass; k++) {
+        for (const clip of clips) {
+          if (k > 0 && clip.dragging) continue
+          const b0 = clip.bar + k * song
+          const b1 = b0 + clip.bars
+          if (b1 <= start || b0 >= end) continue
+          const ghost = k > 0
+          const x0 = Math.floor(xOf(b0)) + 1
+          const cw = Math.max(2, Math.floor(xOf(b1)) - 1 - x0)
+          const tone = row.silent || ghost ? muted : acid
+          const selected = !ghost && clip.pattern === currentPatternId
+          ctx.fillStyle = tone
+          ctx.globalAlpha = ghost ? 0.05 : row.silent ? 0.07 : drawNotes ? (clip.dragging ? 0.3 : 0.12) : 0.45
+          ctx.fillRect(x0, 2, cw, h - 4)
+          ctx.globalAlpha = ghost ? 0.35 : 0.85
+          ctx.strokeStyle = clip.dragging ? paper : tone
+          ctx.lineWidth = selected ? 2 : 1
+          ctx.strokeRect(x0 + 0.5, 2.5, cw - 1, h - 5)
+          const strip = cw > 20 ? 14 : 0
+          if (strip) {
+            ctx.globalAlpha = ghost ? 0.25 : row.silent ? 0.4 : 1
+            ctx.fillRect(x0, 2, cw, strip)
+            ctx.globalAlpha = 1
+            if (cw > 34) {
+              ctx.save()
+              ctx.beginPath()
+              ctx.rect(x0, 2, cw - 8, strip)
+              ctx.clip()
+              ctx.fillStyle = '#000'
+              ctx.font = mono(9)
+              ctx.textBaseline = 'middle'
+              ctx.fillText(patternById.get(clip.pattern)?.name ?? '?', x0 + 4, 2 + strip / 2)
+              ctx.restore()
+            }
+          }
+          ctx.globalAlpha = 1
+          if (!ghost && cw > 18) {
+            // resize grip
+            ctx.fillStyle = tone
+            ctx.globalAlpha = 0.9
+            ctx.fillRect(x0 + cw - 4, 2 + strip + 4, 2, Math.max(4, h - strip - 14))
+            ctx.globalAlpha = 1
+          }
+          if (!drawNotes || !trackPattern || clip.dragging) continue
+          const events = []
+          for (let bar = Math.max(Math.floor(b0), firstBar); bar < Math.min(Math.ceil(b1), lastBar); bar++) {
+            for (const ev of barHaps(trackPattern, bar)) if (ev.b >= b0 && ev.b < b1) events.push(ev)
+          }
+          if (!events.length) continue
+          const { pitched, rowCount, rowOf } = noteLayout(events)
+          const top = 2 + strip + 3
+          const rowH = (h - top - 5) / rowCount
+          for (const ev of events) {
+            const x = xOf(ev.b)
+            const span = xOf(Math.min(ev.e, b1)) - x
+            const width = pitched ? Math.max(2, span - 1) : Math.max(2, Math.min(span * 0.6, span - 2))
+            const on = started && ev.b <= now && now < ev.e
+            ctx.globalAlpha = ghost ? 0.3 : row.silent ? 0.6 : started && ev.e <= now ? 0.5 : 1
+            ctx.fillStyle = row.silent || ghost ? muted : on ? paper : acid
+            ctx.fillRect(x, top + rowOf(ev.v) * rowH, width, Math.max(2, rowH - 1))
+          }
+          ctx.globalAlpha = 1
+        }
+      }
+    }
     for (const row of rows) {
       const canvas = canvases.current.get(row.id)
       if (!canvas) continue
@@ -194,6 +331,11 @@ export default function Playlist({ transport, editorRef, code, pattern, lanePatt
           }
           ctx.globalAlpha = 1
         }
+      }
+
+      if (row.track) {
+        drawClips(ctx, h, row)
+        continue
       }
 
       const pat = patternFor(row)
@@ -354,7 +496,7 @@ export default function Playlist({ transport, editorRef, code, pattern, lanePatt
       ctx.fillRect(ox(now), 0, 2, h)
       if (budget <= 0 && !started) requestAnimationFrame(() => drawRef.current())
     }
-  }, [transport, started, rows, patternFor, barHaps])
+  }, [transport, started, rows, patternFor, barHaps, project, playMode, currentPatternId])
 
   const drawRef = useRef(draw)
   drawRef.current = draw
@@ -504,6 +646,110 @@ export default function Playlist({ transport, editorRef, code, pattern, lanePatt
     e.preventDefault()
   }
 
+  // ── project mode: paint, move, resize and erase clips ──
+  const currentPattern = project?.patterns.find((p) => p.id === currentPatternId) ?? project?.patterns[0]
+  const trackUnder = (e) => {
+    const el = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.lane-canvas')
+    return el?.dataset.track ?? null
+  }
+  const clipAt = (track, t) => track.clips.find((c) => t >= c.bar && t < c.bar + c.bars)
+  const addClip = (trackId, bar, bars) => onUpdateProject((p) => {
+    const t = p.tracks.find((x) => x.id === trackId)
+    if (t && currentPattern) placeClip(t, { id: newId(), pattern: currentPattern.id, bar, bars })
+  })
+  const deleteClip = (trackId, clipId) => onUpdateProject((p) => {
+    const t = p.tracks.find((x) => x.id === trackId)
+    if (t) t.clips = t.clips.filter((c) => c.id !== clipId)
+  })
+
+  const onLaneDown = (row) => (e) => {
+    if (!row.track) { if (e.button === 0 || e.button === 1) startPan(e); return }
+    if (e.button === 1) return startPan(e)
+    const t = timeAt(e)
+    const clip = clipAt(row.track, t)
+    e.currentTarget.setPointerCapture(e.pointerId)
+    if (e.button === 2) {
+      clipDrag.current = { mode: 'erase' }
+      if (clip) deleteClip(row.track.id, clip.id)
+      return
+    }
+    if (e.button !== 0) return
+    if (clip) {
+      const rect = e.currentTarget.getBoundingClientRect()
+      const edgeX = ((clip.bar + clip.bars - viewRef.current.start) / viewRef.current.bars) * rect.width
+      const mode = Math.abs(e.clientX - rect.left - edgeX) <= 8 ? 'resize' : 'move'
+      clipDrag.current = { mode, clip, x0: e.clientX, grab: t - clip.bar, bar: clip.bar, bars: clip.bars, fromTrack: row.track.id, targetTrack: row.track.id, moved: false }
+    } else if (currentPattern) {
+      const bar = Math.max(0, Math.floor(t))
+      addClip(row.track.id, bar, currentPattern.bars)
+      clipDrag.current = { mode: 'paint', track: row.track.id, next: bar + currentPattern.bars, bars: currentPattern.bars }
+    }
+  }
+  const onLaneMove = (row) => (e) => {
+    if (panDrag.current) return onPanMove(e)
+    const d = clipDrag.current
+    const t = timeAt(e)
+    if (!d) {
+      if (!row.track) return
+      const clip = clipAt(row.track, t)
+      let cursor = 'crosshair'
+      if (clip) {
+        const rect = e.currentTarget.getBoundingClientRect()
+        const edgeX = ((clip.bar + clip.bars - viewRef.current.start) / viewRef.current.bars) * rect.width
+        cursor = Math.abs(e.clientX - rect.left - edgeX) <= 8 ? 'ew-resize' : 'grab'
+      }
+      e.currentTarget.style.cursor = cursor
+      return
+    }
+    if (d.mode === 'paint') {
+      while (t >= d.next) { addClip(d.track, d.next, d.bars); d.next += d.bars }
+    } else if (d.mode === 'erase') {
+      const trackId = trackUnder(e)
+      const track = project.tracks.find((x) => x.id === trackId)
+      const clip = track && clipAt(track, t)
+      if (clip) deleteClip(track.id, clip.id)
+    } else if (d.mode === 'move') {
+      if (Math.abs(e.clientX - d.x0) > 3) d.moved = true
+      d.bar = Math.max(0, Math.round(t - d.grab))
+      d.targetTrack = trackUnder(e) ?? d.targetTrack
+      if (!started) draw()
+    } else if (d.mode === 'resize') {
+      d.moved = true
+      d.bars = Math.max(1, Math.round(t - d.clip.bar))
+      if (!started) draw()
+    }
+  }
+  const onLaneUp = () => {
+    if (panDrag.current) return endPan()
+    const d = clipDrag.current
+    clipDrag.current = null
+    if (!d) return
+    if (d.mode === 'move' && !d.moved) onSelectPattern(d.clip.pattern)
+    else if (d.mode === 'move') {
+      onUpdateProject((p) => {
+        const from = p.tracks.find((x) => x.id === d.fromTrack)
+        const to = p.tracks.find((x) => x.id === d.targetTrack) ?? from
+        const clip = from?.clips.find((c) => c.id === d.clip.id)
+        if (!clip) return
+        from.clips = from.clips.filter((c) => c.id !== clip.id)
+        placeClip(to, { ...clip, bar: d.bar })
+      })
+    } else if (d.mode === 'resize') {
+      onUpdateProject((p) => {
+        const track = p.tracks.find((x) => x.id === d.fromTrack)
+        const clip = track?.clips.find((c) => c.id === d.clip.id)
+        if (clip) placeClip(track, Object.assign(clip, { bars: d.bars }))
+      })
+    }
+    if (!started) draw()
+  }
+  const onLaneDoubleClick = (row) => (e) => {
+    if (!row.track) return onRevealCode(row.lane ? row.lane.labelFrom : 0)
+    const clip = clipAt(row.track, timeAt(e))
+    if (clip) onOpenPattern(clip.pattern)
+  }
+  const updateTrack = (id, fn) => onUpdateProject((p) => { const t = p.tracks.find((x) => x.id === id); if (t) fn(t, p) })
+
   // ── lanes: drag to pan (grab the canvas) ──
   const startPan = (e) => {
     e.currentTarget.setPointerCapture(e.pointerId)
@@ -584,16 +830,35 @@ export default function Playlist({ transport, editorRef, code, pattern, lanePatt
           <button className="view" onClick={fitLoopOrSong} title="Fit the loop, or the song so far (0)">fit</button>
         </span>
         <button className={`btn follow ${follow ? 'on' : ''}`} aria-pressed={follow} onClick={() => setFollow((f) => !f)} title="Keep the playhead in view">follow</button>
-        <button className="btn add-lane" onClick={addLane}>+ lane</button>
+        {project ? (
+          <>
+            <label className="brush" title="Clicking an empty spot in a track paints this pattern">
+              <span className="syn">paint</span>
+              <select className="select" value={currentPattern?.id ?? ''} onChange={(e) => onSelectPattern(e.target.value)} aria-label="Pattern to paint">
+                {project.patterns.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </label>
+            <button className="btn add-lane" onClick={() => currentPattern && onOpenPattern(currentPattern.id)} disabled={!currentPattern}>edit pattern</button>
+            <button className="btn add-lane" onClick={() => onUpdateProject((p) => { p.tracks.push(makeTrack(`track ${p.tracks.length + 1}`)) })}>+ track</button>
+          </>
+        ) : (
+          <>
+            <button className="btn add-lane" onClick={addLane}>+ lane</button>
+            <button className="btn add-lane" onClick={onConvertToProject} title="Turn these lanes into patterns and tracks you can arrange and sequence">convert to project</button>
+          </>
+        )}
         <span className="lanes-note" role="status">
-          {stale ? 'code changed · press update to hear it' : parsed === null ? 'code doesn’t parse · showing the last lanes' : ''}
+          {project
+            ? (playMode === 'pattern' ? `pattern mode · looping “${currentPattern?.name ?? ''}”` : '')
+            : stale ? 'code changed · press update to hear it' : parsed === null ? 'code doesn’t parse · showing the last lanes' : ''}
         </span>
       </div>
 
       <div className="playlist-grid" ref={gridRef}>
         <div className="channel ruler-head" aria-hidden>
           <span className="lanes-tip">
-            {rows[0]?.slot === MAIN ? <>name patterns to split lanes, e.g. <code>bass: note(…)</code></> : 'ctrl/cmd + wheel zooms · drag lanes to pan'}
+            {project ? 'click paints · drag moves · edge resizes · right-click deletes · double-click opens'
+              : rows[0]?.slot === MAIN ? <>name patterns to split lanes, e.g. <code>bass: note(…)</code></> : 'ctrl/cmd + wheel zooms · drag lanes to pan'}
           </span>
         </div>
         <canvas
@@ -614,6 +879,24 @@ export default function Playlist({ transport, editorRef, code, pattern, lanePatt
           <div key={row.id} className={`lane ${row.silent ? 'silent' : ''}`}>
             <div className="channel">
               <span className="channel-num" aria-hidden>{String(row.index).padStart(2, '0')}</span>
+              {row.track ? (
+                <>
+                  <NameInput className="channel-name track-name" value={row.track.name} maxLength={40} aria-label="Track name" onCommit={(v) => updateTrack(row.track.id, (t) => { t.name = v })} />
+                  <span className="channel-controls">
+                    <button className={`led mute ${row.track.mute ? 'on' : ''}`} aria-pressed={row.track.mute} aria-label={`${row.track.mute ? 'Unmute' : 'Mute'} ${row.label}`} title="mute" onClick={() => updateTrack(row.track.id, (t) => { t.mute = !t.mute })}>m</button>
+                    <button className={`led solo ${row.track.solo ? 'on' : ''}`} aria-pressed={row.track.solo} aria-label={`${row.track.solo ? 'Unsolo' : 'Solo'} ${row.label}`} title="solo" onClick={() => updateTrack(row.track.id, (t) => { t.solo = !t.solo })}>s</button>
+                    <button
+                      className="led"
+                      aria-label={`Delete ${row.label}`}
+                      title="delete track"
+                      onClick={() => {
+                        if (row.track.clips.length && !window.confirm(`Delete “${row.track.name}” and its clips?`)) return
+                        onUpdateProject((p) => { p.tracks = p.tracks.filter((t) => t.id !== row.track.id) })
+                      }}
+                    >x</button>
+                  </span>
+                </>
+              ) : (<>
               <button
                 className="channel-name"
                 title={`${row.source}\n\nOpen in code`}
@@ -637,6 +920,7 @@ export default function Playlist({ transport, editorRef, code, pattern, lanePatt
                   >s</button>
                 </span>
               )}
+              </>)}
               <span className="channel-source">{row.source}</span>
             </div>
             <canvas
@@ -644,11 +928,13 @@ export default function Playlist({ transport, editorRef, code, pattern, lanePatt
               ref={(el) => { if (el) canvases.current.set(row.id, el); else canvases.current.delete(row.id) }}
               role="img"
               aria-label={`${row.label} timeline${row.silent ? ', silent' : ''}`}
-              onPointerDown={(e) => { if (e.button === 0 || e.button === 1) startPan(e) }}
-              onPointerMove={onPanMove}
-              onPointerUp={endPan}
-              onPointerCancel={endPan}
-              onDoubleClick={() => onRevealCode(row.lane ? row.lane.labelFrom : 0)}
+              data-track={row.track?.id}
+              onPointerDown={onLaneDown(row)}
+              onPointerMove={onLaneMove(row)}
+              onPointerUp={onLaneUp}
+              onPointerCancel={() => { clipDrag.current = null; endPan() }}
+              onContextMenu={(e) => { if (row.track) e.preventDefault() }}
+              onDoubleClick={onLaneDoubleClick(row)}
             />
           </div>
         ))}

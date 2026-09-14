@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useMatch, useNavigate } from 'react-router-dom'
 import { StrudelMirror } from '@strudel/codemirror'
+import { Compartment, EditorState, StateEffect } from '@codemirror/state'
 import { Pattern, silence } from '@strudel/core'
 import { getDrawContext } from '@strudel/draw'
 import { transpiler } from '@strudel/transpiler'
@@ -10,17 +11,10 @@ import { useUser } from './bwnd'
 import { api, clearDraft, readDraft, timeAgo, trackUrl, writeDraft } from './api'
 import Browser from './Browser.jsx'
 import Playlist from './Playlist.jsx'
-import { capturePatterns, tempoChange } from './lanes'
+import Rack from './Rack.jsx'
+import { capturePatterns, parseLanes, tempoChange } from './lanes'
+import { PROJECT_MARK, demoProject, generateCode, normalizeProject, parseProject, projectFromLanes } from './project'
 import { createTransport, formatBarBeat, parseBarBeat } from './transport'
-
-const DEFAULT_CODE = `// Strudel — Ctrl/Cmd+Enter to play, Ctrl/Cmd+. to stop
-setcpm(120/4)
-
-drums: s("bd*4, [~ sd]*2, hh*8").bank("RolandTR909").gain(.9)
-
-bass: note("<c2 eb2 f2 g2>*2").s("sawtooth").lpf(sine.range(300, 1800).slow(8)).decay(.2).sustain(0)
-
-lead: n("<0 2 4 [6 4]>*2").scale("C4:minor").s("triangle").room(.4).delay(.25)`
 
 function readPref(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback } catch { return fallback }
@@ -29,10 +23,15 @@ function writePref(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* storage unavailable */ }
 }
 
+function songCodeOf(text) {
+  const p = parseProject(text)
+  return p ? generateCode(p, { mode: 'song' }) : text
+}
+
 function scratchCode() {
   let legacy = null
   try { legacy = localStorage.getItem('strudel:code') } catch { /* storage unavailable */ }
-  return readDraft(null) ?? legacy ?? DEFAULT_CODE
+  return readDraft(null) ?? legacy ?? generateCode(demoProject())
 }
 
 initAudioOnFirstClick()
@@ -64,9 +63,23 @@ export default function App() {
   // the evaluated pattern, each labeled pattern in it, and which track (null = scratch) it belongs to
   const [evaluated, setEvaluated] = useState({ pattern: null, lanes: new Map(), forId: undefined })
   const capturedRef = useRef(new Map())
-  const [view, setView] = useState(() => (readPref('strudel:view', 'playlist') === 'code' ? 'code' : 'playlist'))
+  const [view, setView] = useState(() => (['playlist', 'rack', 'code'].includes(readPref('strudel:view', 'playlist')) ? readPref('strudel:view', 'playlist') : 'playlist'))
   const codeViewRef = useRef(null)
-  const toggleView = useCallback(() => setView((v) => (v === 'code' ? 'playlist' : 'code')), [])
+  const lastViewRef = useRef('playlist') // where ctrl/cmd+J returns to from the code
+  const toggleView = useCallback(() => setView((v) => (v === 'code' ? lastViewRef.current : 'code')), [])
+  useEffect(() => { if (view !== 'code') lastViewRef.current = view }, [view])
+
+  // Project mode: the code's header line holds the patterns/tracks the UI edits.
+  const project = useMemo(() => parseProject(code), [code])
+  const [currentPatternId, setCurrentPatternId] = useState(null)
+  const [playMode, setPlayMode] = useState('song')
+  const genRef = useRef({ mode: 'song', current: null })
+  genRef.current = { mode: playMode, current: currentPatternId }
+  useEffect(() => {
+    if (project && !project.patterns.some((p) => p.id === currentPatternId)) setCurrentPatternId(project.patterns[0]?.id ?? null)
+  }, [project, currentPatternId])
+  useEffect(() => { if (code && !project && view === 'rack') setView('playlist') }, [code, project, view])
+  const readOnlyRef = useRef(null)
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
@@ -75,7 +88,12 @@ export default function App() {
   const isNew = !trackId
   const isOwner = !!track?.is_owner
   const canEdit = isNew || isOwner
-  const codeChanged = !!track && code !== track.code
+  // what gets saved: projects always in song mode, whatever you're looping right now
+  const savedCode = useMemo(() => {
+    const p = parseProject(code)
+    return p ? generateCode(p, { mode: 'song' }) : code
+  }, [code])
+  const codeChanged = !!track && savedCode !== track.code
   const metaChanged = isOwner && (title !== track.title || visibility !== track.visibility)
   const dirty = isNew || codeChanged || metaChanged
 
@@ -116,7 +134,20 @@ export default function App() {
     })
     editorRef.current.setFontFamily('"Martian Mono", ui-monospace, monospace')
     transport.scheduler = editorRef.current.repl.scheduler
+    readOnlyRef.current = new Compartment()
+    editorRef.current.editor.dispatch({ effects: StateEffect.appendConfig.of(readOnlyRef.current.of(EditorState.readOnly.of(false))) })
   }, [transport])
+
+  // generated code is read-only; detach the project to edit it by hand
+  const isProject = !!project
+  useEffect(() => {
+    const editor = editorRef.current
+    if (!editor || !readOnlyRef.current) return
+    editor.editor.dispatch({ effects: readOnlyRef.current.reconfigure(EditorState.readOnly.of(isProject)) })
+  }, [isProject])
+
+  // follow the project's meter
+  useEffect(() => { if (project && project.beats !== transport.beats) transport.setBeats(project.beats) }, [project, transport])
 
   // The main area shows the playlist or the code. The editor stays mounted (it owns the
   // audio); when hidden it is also out of the tab order.
@@ -137,7 +168,8 @@ export default function App() {
   }, [])
 
   const putCode = useCallback((id, text) => {
-    editorRef.current.setCode(text)
+    const p = parseProject(text)
+    editorRef.current.setCode(p ? generateCode(p, genRef.current) : text)
     loadedIdRef.current = id
   }, [])
 
@@ -146,6 +178,61 @@ export default function App() {
     const editor = editorRef.current
     editor.editor.dispatch({ changes: change })
     if (editor.repl.scheduler.started) editor.evaluate()
+  }, [])
+
+  /** Replace the whole editor text (programmatic changes pass the read-only guard). */
+  const replaceCode = useCallback((text) => {
+    const view = editorRef.current.editor
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } })
+  }, [])
+
+  // While playing, project edits are heard right away (debounced so a paint stroke is one update).
+  const liveTimer = useRef(null)
+  const liveUpdate = useCallback(() => {
+    clearTimeout(liveTimer.current)
+    liveTimer.current = setTimeout(() => {
+      const editor = editorRef.current
+      if (editor?.repl.scheduler.started) editor.repl.evaluate(editor.code, true)
+    }, 120)
+  }, [])
+
+  /** Change the project: `mutate` edits a copy; the code is regenerated from it. */
+  const updateProject = useCallback((mutate) => {
+    const editor = editorRef.current
+    const base = editor && parseProject(editor.code)
+    if (!base) return
+    const draft = JSON.parse(JSON.stringify(base))
+    const next = normalizeProject(mutate(draft) ?? draft)
+    const text = generateCode(next, genRef.current)
+    if (text === editor.code) return
+    replaceCode(text)
+    liveUpdate()
+  }, [replaceCode, liveUpdate])
+
+  // pattern/song mode and the selected pattern change what the code plays
+  useEffect(() => { updateProject((p) => p) }, [playMode, playMode === 'pattern' ? currentPatternId : null, updateProject])
+
+  const convertToProject = useCallback(() => {
+    const editor = editorRef.current
+    const lanes = parseLanes(editor.code)
+    if (!lanes?.length) return flash('Name your patterns first (e.g. drums: s("bd*4")), then convert')
+    const bpm = Math.round((editor.repl.scheduler.cps ?? 0.5) * 60 * transport.beats * 10) / 10
+    replaceCode(generateCode(projectFromLanes(lanes, { bpm, beats: transport.beats }), genRef.current))
+    liveUpdate()
+    flash('Converted: each lane is now a pattern on its own track')
+  }, [replaceCode, liveUpdate, flash, transport])
+
+  const detachProject = useCallback(() => {
+    if (!window.confirm('Detach the project? The playlist and rack stop editing this track, and the code becomes yours to edit by hand.')) return
+    const editor = editorRef.current
+    const lines = editor.code.split('\n')
+    const body = lines.filter((l, i) => !(i < 2 && (l.startsWith(PROJECT_MARK) || l.startsWith('// generated from the playlist'))))
+    replaceCode(body.join('\n'))
+  }, [replaceCode])
+
+  const openPattern = useCallback((id) => {
+    setCurrentPatternId(id)
+    setView('rack')
   }, [])
 
   const play = useCallback(() => {
@@ -203,9 +290,9 @@ export default function App() {
   useEffect(() => {
     const id = trackId || null
     if (loadedIdRef.current !== id) return
-    if (id && track?.id === id && code === track.code) clearDraft(id)
+    if (id && track?.id === id && savedCode === track.code) clearDraft(id)
     else if (code) writeDraft(id, code)
-  }, [code, trackId, track])
+  }, [code, savedCode, trackId, track])
 
   // While stopped, evaluate silently so the timeline follows your edits. Only for code you
   // wrote or already chose to play: opening someone's link must not run their code.
@@ -224,7 +311,7 @@ export default function App() {
     if (!user) return login()
     setBusy(true)
     try {
-      const body = { title: title.trim() || 'untitled', code: editorRef.current.code, visibility }
+      const body = { title: title.trim() || 'untitled', code: songCodeOf(editorRef.current.code), visibility }
       if (isNew) {
         const t = await api('/tracks', { method: 'POST', body })
         clearDraft(null)
@@ -250,7 +337,7 @@ export default function App() {
     try {
       const t = await api('/tracks', {
         method: 'POST',
-        body: { title: `${track.title} (remix)`.slice(0, 80), code: editorRef.current.code, visibility: 'public', forked_from: track.id },
+        body: { title: `${track.title} (remix)`.slice(0, 80), code: songCodeOf(editorRef.current.code), visibility: 'public', forked_from: track.id },
       })
       clearDraft(track.id)
       navigate(`/t/${t.id}`)
@@ -329,7 +416,7 @@ export default function App() {
       if (e.key === 'Enter') keysRef.current.play()
       else if (e.key === '.' || e.code === 'Period') keysRef.current.stop()
       else if (mod && e.key.toLowerCase() === 's') keysRef.current.save()
-      else if (mod && e.key.toLowerCase() === 'j') setView((v) => (v === 'code' ? 'playlist' : 'code'))
+      else if (mod && e.key.toLowerCase() === 'j') setView((v) => (v === 'code' ? lastViewRef.current : 'code'))
       else return
       e.preventDefault()
       e.stopPropagation()
@@ -350,8 +437,9 @@ export default function App() {
           <button className="btn stop" onClick={stop} disabled={!started} title="Stop and return to the cue (ctrl/cmd + .)">stop</button>
         </span>
         <Tempo
-          bpm={(evaluated.cps ?? 0.5) * 60 * transport.beats}
+          bpm={project ? project.bpm : (evaluated.cps ?? 0.5) * 60 * transport.beats}
           onChange={(bpm) => {
+            if (project) return updateProject((p) => { p.bpm = bpm })
             const change = tempoChange(editorRef.current.code, bpm, transport.beats)
             if (change) editCode(change)
             else flash('Fix the code error first, then set the tempo')
@@ -363,7 +451,11 @@ export default function App() {
             className="lcd-value"
             aria-label="Beats per bar"
             value={transport.beats}
-            onChange={(e) => transport.setBeats(Number(e.target.value))}
+            onChange={(e) => {
+              const beats = Number(e.target.value)
+              transport.setBeats(beats)
+              if (project) updateProject((p) => { p.beats = beats })
+            }}
           >
             {[2, 3, 4, 5, 6, 7, 8].map((n) => <option key={n} value={n}>{n}/4</option>)}
           </select>
@@ -374,12 +466,22 @@ export default function App() {
           title="Loop the marked bars · drag across the ruler to mark them"
           onClick={() => transport.setLoop({ on: !transport.loop.on })}
         >loop <span className="loop-range">{formatBarBeat(transport.loop.from, transport.beats).replace(/^0+/, '')}–{formatBarBeat(transport.loop.to, transport.beats).replace(/^0+/, '')}</span></button>
-        <button
-          className={`btn code-toggle ${view === 'code' ? 'on' : ''} ${evalError && view !== 'code' ? 'has-error' : ''}`}
-          aria-pressed={view === 'code'}
-          title="Switch between the playlist and the code (ctrl/cmd + J)"
-          onClick={toggleView}
-        >{'{ }'}<span className="code-word"> code</span>{evalError && view !== 'code' ? ' !' : ''}</button>
+        {project && (
+          <span className="seg" role="group" aria-label="Play the song or just the pattern">
+            <button className={`btn ${playMode === 'pattern' ? 'on' : ''}`} aria-pressed={playMode === 'pattern'} onClick={() => setPlayMode('pattern')} title="Loop the pattern open in the rack">pat</button>
+            <button className={`btn ${playMode === 'song' ? 'on' : ''}`} aria-pressed={playMode === 'song'} onClick={() => setPlayMode('song')} title="Play the playlist">song</button>
+          </span>
+        )}
+        <span className="seg views" role="group" aria-label="View">
+          <button className={`btn ${view === 'playlist' ? 'on' : ''}`} aria-pressed={view === 'playlist'} onClick={() => setView('playlist')}>playlist</button>
+          {project && <button className={`btn ${view === 'rack' ? 'on' : ''}`} aria-pressed={view === 'rack'} onClick={() => setView('rack')}>rack</button>}
+          <button
+            className={`btn code-toggle ${view === 'code' ? 'on' : ''} ${evalError && view !== 'code' ? 'has-error' : ''}`}
+            aria-pressed={view === 'code'}
+            title="Show the code (ctrl/cmd + J)"
+            onClick={toggleView}
+          >{'{ }'}<span className="code-word"> code</span>{evalError && view !== 'code' ? ' !' : ''}</button>
+        </span>
         <span className="spacer" />
         {userLoading ? null : user ? (
           <span className="user">
@@ -465,12 +567,38 @@ export default function App() {
                 : 'loading sounds…'}
               onEditCode={editCode}
               onRevealCode={revealCode}
+              project={project}
+              playMode={playMode}
+              currentPatternId={currentPatternId}
+              onSelectPattern={setCurrentPatternId}
+              onOpenPattern={openPattern}
+              onUpdateProject={updateProject}
+              onConvertToProject={convertToProject}
+            />
+          )}
+          {view === 'rack' && project && (
+            <Rack
+              project={project}
+              currentPatternId={currentPatternId}
+              onSelectPattern={setCurrentPatternId}
+              onUpdateProject={updateProject}
+              transport={transport}
+              started={started}
+              playMode={playMode}
+              onPlayMode={setPlayMode}
             />
           )}
           <section ref={codeViewRef} className="code-view" hidden={view !== 'code'} aria-label="Code">
             <div className="code-head">
               <span className="code-title">code</span>
-              <span className="hint">ctrl/cmd + enter play · + . stop · + s save · + J playlist</span>
+              {project ? (
+                <>
+                  <span className="hint">generated from the playlist and rack · read-only</span>
+                  <button className="btn add-lane" onClick={detachProject}>detach and edit as code</button>
+                </>
+              ) : (
+                <span className="hint">ctrl/cmd + enter play · + . stop · + s save · + J back</span>
+              )}
             </div>
             <div className="editor" ref={rootRef} />
             {evalError && <pre className="error">{evalError}</pre>}
