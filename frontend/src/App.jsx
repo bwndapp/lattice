@@ -63,7 +63,7 @@ export default function App() {
   // the evaluated pattern, each labeled pattern in it, and which track (null = scratch) it belongs to
   const [evaluated, setEvaluated] = useState({ pattern: null, lanes: new Map(), forId: undefined })
   const capturedRef = useRef(new Map())
-  const [view, setView] = useState(() => (['graph', 'rack', 'code'].includes(readPref('strudel:view', 'graph')) ? readPref('strudel:view', 'graph') : 'graph'))
+  const [view, setView] = useState(() => (['browse', 'graph', 'rack', 'code'].includes(readPref('strudel:view', 'graph')) ? readPref('strudel:view', 'graph') : 'graph'))
   const codeViewRef = useRef(null)
   const lastViewRef = useRef('graph') // where ctrl/cmd+J returns to from the code
   const toggleView = useCallback(() => setView((v) => (v === 'code' ? lastViewRef.current : 'code')), [])
@@ -84,7 +84,6 @@ export default function App() {
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
-  const [browserOpen, setBrowserOpen] = useState(false)
 
   const isNew = !trackId
   const isOwner = !!track?.is_owner
@@ -452,7 +451,6 @@ export default function App() {
   }
 
   const playFromList = (id) => {
-    setBrowserOpen(false)
     if (id === trackId && loadedIdRef.current === id) return play()
     pendingPlayRef.current = id
     navigate(`/t/${id}`)
@@ -495,9 +493,8 @@ export default function App() {
   }, [])
 
   return (
-    <div className={`studio ${browserOpen ? 'browser-open' : ''}`}>
+    <div className="studio">
       <header className="bar">
-        <button className="btn ghost browse-toggle" onClick={() => setBrowserOpen((o) => !o)} aria-label="Browse tracks">tracks</button>
         <Link to="/" className="logo" aria-label="strudel, home">strudel</Link>
         <span className="transport" role="group" aria-label="Transport">
           <button className="btn tport" onClick={toStart} title="Back to the start (Home)" aria-label="Back to the start">|&lt;</button>
@@ -541,13 +538,11 @@ export default function App() {
             <button className="btn" onClick={redo} disabled={!historyRef.current.future.length} title="Redo (ctrl/cmd + shift + Z)" aria-label="Redo">redo</button>
           </span>
         )}
-        {project && (
-          <span className="seg" role="group" aria-label="What plays">
-            <button className={`btn ${solo ? '' : 'on'}`} aria-pressed={!solo} onClick={() => setSolo(null)} title="Play the output">output</button>
-            {solo && <button className="btn on solo-chip" onClick={() => setSolo(null)} title="Stop auditioning">solo ×</button>}
-          </span>
+        {project && solo && (
+          <button className="btn solo-chip" onClick={() => setSolo(null)} title="You're hearing one part only. Click to hear the whole output again">soloing ×</button>
         )}
         <span className="seg views" role="group" aria-label="View">
+          <button className={`btn ${view === 'browse' ? 'on' : ''}`} aria-pressed={view === 'browse'} onClick={() => setView('browse')} title="Tracks people have shared, and yours">browse</button>
           <button className={`btn ${view === 'graph' ? 'on' : ''}`} aria-pressed={view === 'graph'} onClick={() => setView('graph')}>patch</button>
           {project && <button className={`btn ${view === 'rack' ? 'on' : ''}`} aria-pressed={view === 'rack'} onClick={() => setView('rack')}>rack</button>}
           <button
@@ -570,18 +565,18 @@ export default function App() {
       </header>
 
       <div className="body">
-        <Browser
-          user={user}
-          login={login}
-          activeId={trackId}
-          refreshKey={refreshKey}
-          onPlay={playFromList}
-          onPick={() => setBrowserOpen(false)}
-        />
-        <div className="scrim" onClick={() => setBrowserOpen(false)} />
-
         <main className="main">
-          <div className="trackbar">
+          {view === 'browse' && (
+            <Browser
+              user={user}
+              login={login}
+              activeId={trackId}
+              refreshKey={refreshKey}
+              onPlay={playFromList}
+              onPick={() => setView('graph')}
+            />
+          )}
+          <div className="trackbar" hidden={view === 'browse'}>
             {loadError ? (
               <span className="meta">{loadError} <Link className="linkish" to="/">Start a new track</Link></span>
             ) : trackId && !track ? (

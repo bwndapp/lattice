@@ -127,7 +127,6 @@ body {
   font-family: var(--display); font-weight: 900; font-size: 0.85rem;
 }
 .user-name { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 16ch; }
-.browse-toggle { display: none; }
 
 /* ── main column: the tool ────────────────────────────── */
 .body { flex: 1; display: flex; min-height: 0; position: relative; }
@@ -630,15 +629,14 @@ body {
 
 /* ── browser: the setlist ─────────────────────────────── */
 .browser {
-  width: var(--sidebar);
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  border-right: 1px solid var(--line);
-  background: var(--panel);
+  flex: 1;
   min-height: 0;
-  padding-top: 0.75rem;
+  display: grid;
+  grid-template-columns: 19rem minmax(0, 1fr);
+  background: var(--panel);
 }
+.browser-controls { display: flex; flex-direction: column; padding-top: 0.9rem; border-right: 1px solid var(--line); overflow-y: auto; }
+.browser-title { margin: 0 1rem 0.6rem; font-family: var(--display); font-weight: 900; font-stretch: 125%; font-size: 1.7rem; line-height: 1; letter-spacing: -0.03em; color: var(--paper); }
 .syn { color: var(--muted); }
 .views { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.1rem 0.45rem; padding: 0 1rem 0.6rem; font-size: 15px; }
 .view {
@@ -667,10 +665,12 @@ body {
 .new-track:hover { border-color: var(--acid); color: var(--acid); }
 .legend { margin: 0.8rem 1rem 0.2rem; font-size: 10.5px; color: var(--muted); }
 .setlist {
-  list-style: none; margin: 0; padding: 0.3rem 0 2rem;
-  overflow-y: auto; overflow-x: hidden; flex: 1;
+  list-style: none; margin: 0; padding: 0 0 2rem;
+  overflow-y: auto; overflow-x: hidden; min-height: 0;
   counter-reset: set;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(24rem, 1fr)); align-content: start;
 }
+.setlist .empty { grid-column: 1 / -1; }
 .empty { color: var(--muted); padding: 1rem; line-height: 1.6; }
 .item {
   --w: 0;
@@ -716,7 +716,6 @@ body {
 .item-play:hover { background: var(--acid); color: var(--ink); }
 .liked { color: var(--acid); }
 .pill { margin-left: 0.4rem; padding: 0 0.3rem; border: 1px solid var(--muted); color: var(--paper); }
-.scrim { display: none; }
 
 .toast {
   position: fixed; bottom: 1.5rem; left: 50%;
@@ -729,7 +728,6 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .cycle-bar { display: none; }
-  .browser { transition: none !important; }
 }
 
 /* ── mid-size: the toolbar needs the room the wordmark was using ─ */
@@ -751,10 +749,13 @@ body {
   .bar { gap: 0.3rem; }
 }
 
+@media (max-width: 960px) {
+  .lcd.position { display: none; }
+}
+
 /* ── narrow screens: keep the attitude, drop the collisions ─ */
 @media (max-width: 860px) {
   .hint, .user-name { display: none; }
-  .bar .browse-toggle { display: inline-block; color: var(--paper); border-color: var(--line); }
   .btn.stop:disabled { display: none; } /* nothing to stop: give the space to the view toggle */
   .bar { gap: 0.3rem; padding: 0 0.5rem 0 0.25rem; height: 52px; }
   .logo { font-size: 30px; margin-right: 0; }
@@ -776,11 +777,7 @@ body {
   .seg.views .code-word { display: inline; }
   .code-toggle { padding-inline: 0.45rem; }
   .code-word { display: none; }
-  .browser {
-    position: absolute; inset: 0 auto 0 0; z-index: 20;
-    width: min(var(--sidebar), 88vw);
-    transform: translateX(-100%); transition: transform 0.18s ease;
-  }
-  .browser-open .browser { transform: none; }
-  .browser-open .scrim { display: block; position: absolute; inset: 0; background: rgba(0,0,0,0.7); z-index: 10; }
+  .browser { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .browser-controls { border-right: 0; border-bottom: 1px solid var(--line); padding-bottom: 0.6rem; }
+  .setlist { grid-template-columns: minmax(0, 1fr); }
 }

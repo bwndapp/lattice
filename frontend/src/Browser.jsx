@@ -36,7 +36,9 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
   const weight = tracks ? weights(tracks) : new Map()
 
   return (
-    <aside className="browser" aria-label="Tracks">
+    <section className="browser" aria-label="Browse tracks">
+      <div className="browser-controls">
+      <h2 className="browser-title">browse</h2>
       {/* The controls are written as a Strudel pattern: <a b c> alternates, .method("x") chains. */}
       <div className="views" role="group" aria-label="Which tracks">
         <span className="syn" aria-hidden>&lt;</span>
@@ -60,6 +62,7 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
 
       <Link to="/" className="new-track" onClick={onPick}>+ new track</Link>
       <p className="legend">bigger = played &amp; liked more</p>
+      </div>
 
       <ol className="setlist">
         {needsUser ? (
@@ -83,6 +86,6 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
           </li>
         ))}
       </ol>
-    </aside>
+    </section>
   )
 }
