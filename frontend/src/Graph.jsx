@@ -4,7 +4,7 @@ import {
   applyNodeChanges, applyEdgeChanges, useNodesInitialized, useReactFlow, useUpdateNodeInternals,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { APPLY, GROUPS, NODE_TYPES, defaultData, inputsOf, makesCycle } from './graph'
+import { APPLY, FX_UNITS, GROUPS, NODE_TYPES, defaultData, inputsOf, makeFxUnit, makesCycle } from './graph'
 import { INSTRUMENT_MIME, instrumentChannel, makePattern, newId } from './project'
 import { InstrumentChips } from './Rack.jsx'
 import Knob from './Knob.jsx'
@@ -114,9 +114,9 @@ function useKits() {
 }
 
 /** A dropdown of drum kits; picking one plays a hit from the node's rhythm in that kit. */
-function KitSelect({ node, param, onChange }) {
+function KitSelect({ node, param, value: given, onChange }) {
   const kits = useKits()
-  const value = String(node.data[param.key] ?? '')
+  const value = String(given ?? node.data[param.key] ?? '')
   const current = kits.find((k) => k.bank === value.toLowerCase())
   // the first sound named in the rhythm (hh*16 → hh), to audition the kit with
   const firstSound = (String(node.data.mini ?? '').match(/[a-z][\w]*/i) ?? ['bd'])[0]
@@ -141,13 +141,13 @@ function KitSelect({ node, param, onChange }) {
 }
 
 /** The controls for one parameter of a node. */
-function Param({ node, param }) {
+function Param({ node, param, value: given, onChange }) {
   const ctx = useContext(Ctx)
-  const value = node.data[param.key]
-  const set = (v) => ctx.updateNode(node.id, (d) => { d[param.key] = v })
+  const value = given !== undefined ? given : node.data[param.key]
+  const set = onChange ?? ((v) => ctx.updateNode(node.id, (d) => { d[param.key] = v }))
   switch (param.type) {
     case 'kit':
-      return <KitSelect node={node} param={param} onChange={set} />
+      return <KitSelect node={node} param={param} value={value} onChange={set} />
     case 'knob':
       return <div className="nodrag nowheel"><Knob def={param} value={value} onChange={set} /></div>
     case 'int':
@@ -187,6 +187,71 @@ function Param({ node, param }) {
   }
 }
 
+/** The inside of an fx rack: effect units that the sound passes through, top to bottom. */
+function FxRack({ node }) {
+  const ctx = useContext(Ctx)
+  const chain = node.data.chain ?? []
+  const edit = (fn) => ctx.updateNode(node.id, (d) => { d.chain = d.chain ?? []; fn(d.chain) })
+  const at = (list, unitId) => list.findIndex((u) => u.id === unitId)
+  return (
+    <div className="fx-rack">
+      <span className="fx-io">in</span>
+      {chain.length === 0 && <p className="node-hint fx-empty">No effects yet. Add some below; the sound runs through them top to bottom.</p>}
+      <ol className="fx-units">
+        {chain.map((unit, i) => {
+          const spec = NODE_TYPES[unit.type]
+          return (
+            <li key={unit.id} className={`fx-unit ${unit.on ? '' : 'bypassed'}`}>
+              <div className="fx-unit-head">
+                <span className="fx-order" aria-hidden>{i + 1}</span>
+                <span className="fx-unit-name">{spec.label}</span>
+                <button
+                  className={`fx-toggle nodrag ${unit.on ? 'on' : ''}`}
+                  aria-pressed={unit.on}
+                  title={unit.on ? 'Bypass this effect' : 'Turn this effect back on'}
+                  onClick={() => edit((c) => { const j = at(c, unit.id); if (j >= 0) c[j].on = !c[j].on })}
+                >{unit.on ? 'on' : 'off'}</button>
+                <button className="node-btn nodrag" disabled={i === 0} title="Move up (earlier)" aria-label={`Move ${spec.label} up`}
+                  onClick={() => edit((c) => { const j = at(c, unit.id); if (j > 0) [c[j - 1], c[j]] = [c[j], c[j - 1]] })}>up</button>
+                <button className="node-btn nodrag" disabled={i === chain.length - 1} title="Move down (later)" aria-label={`Move ${spec.label} down`}
+                  onClick={() => edit((c) => { const j = at(c, unit.id); if (j >= 0 && j < c.length - 1) [c[j + 1], c[j]] = [c[j], c[j + 1]] })}>dn</button>
+                <button className="node-btn nodrag" title="Remove" aria-label={`Remove ${spec.label}`}
+                  onClick={() => edit((c) => { const j = at(c, unit.id); if (j >= 0) c.splice(j, 1) })}>×</button>
+              </div>
+              <div className="node-params">
+                {spec.params.map((p) => (
+                  <Param
+                    key={p.key}
+                    node={node}
+                    param={p}
+                    value={unit.data[p.key]}
+                    onChange={(v) => edit((c) => { const j = at(c, unit.id); if (j >= 0) c[j].data[p.key] = v })}
+                  />
+                ))}
+              </div>
+            </li>
+          )
+        })}
+      </ol>
+      <label className="node-field wide nodrag fx-add">
+        <span className="sr-only">Add an effect</span>
+        <select
+          className="select"
+          value=""
+          onChange={(e) => {
+            const type = e.target.value
+            if (type) edit((c) => { c.push(makeFxUnit(type, `fx${newId().slice(-7)}`)) })
+          }}
+        >
+          <option value="">+ add effect</option>
+          {FX_UNITS.map((t) => <option key={t} value={t}>{NODE_TYPES[t].label}</option>)}
+        </select>
+      </label>
+      <span className="fx-io">out</span>
+    </div>
+  )
+}
+
 /** One card on the canvas. Everything reads the project through context, so it's never stale. */
 function StudioNode({ id, selected }) {
   const ctx = useContext(Ctx)
@@ -204,7 +269,7 @@ function StudioNode({ id, selected }) {
   const pattern = node.type === 'pattern' && ctx.project.patterns.find((p) => p.id === node.data.patternId)
 
   return (
-    <div className={`gnode g-${spec.group} ${selected ? 'selected' : ''} ${soloing ? 'soloing' : ''}`}>
+    <div className={`gnode g-${spec.group} t-${node.type} ${selected ? 'selected' : ''} ${soloing ? 'soloing' : ''}`}>
       {spec.inputs === 1 && <Handle type="target" position={Position.Left} id="in" className="port in" />}
       <div className="node-head">
         <span className="node-kind">{spec.label}</span>
@@ -250,6 +315,8 @@ function StudioNode({ id, selected }) {
             </div>
           </>
         )}
+
+        {node.type === 'fxrack' && <FxRack node={node} />}
 
         {spec.params.length > 0 && (
           <div className="node-params">
@@ -306,7 +373,7 @@ function Palette({ onAdd }) {
       {GROUPS.map(([group, label]) => (
         <div key={group} className="pal-group">
           <span className="pal-label">{label}</span>
-          {Object.entries(NODE_TYPES).filter(([, s]) => s.group === group).map(([type, s]) => (
+          {Object.entries(NODE_TYPES).filter(([, s]) => s.group === group).sort(([a], [b]) => (b === 'fxrack') - (a === 'fxrack')).map(([type, s]) => (
             <button
               key={type}
               className={`chip pal-${group}`}

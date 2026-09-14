@@ -168,6 +168,52 @@ export const NODE_TYPES = {
     code: (d, [x]) => `${x}.shape(${tidy(d.shape)})${d.crush > 0 ? `.crush(${Math.round(16 - d.crush * 14)})` : ''}`,
   },
 
+  djfilter: {
+    group: 'effect', label: 'dj filter', blurb: 'One knob: left darkens, right thins out',
+    inputs: 1,
+    params: [{ key: 'djf', type: 'knob', label: 'sweep', min: 0, max: 1, def: 0.5 }],
+    code: (d, [x]) => `${x}.djf(${tidy(d.djf)})`,
+  },
+  phaser: {
+    group: 'effect', label: 'phaser', blurb: 'A swirling, sweeping sound',
+    inputs: 1,
+    params: [
+      { key: 'rate', type: 'knob', label: 'rate', min: 0.1, max: 16, def: 2, log: true },
+      { key: 'depth', type: 'knob', label: 'depth', min: 0, max: 1, def: 0.6 },
+    ],
+    code: (d, [x]) => `${x}.phaser(${tidy(d.rate)}).phaserdepth(${tidy(d.depth)})`,
+  },
+  tremolo: {
+    group: 'effect', label: 'tremolo', blurb: 'Volume that pulses',
+    inputs: 1,
+    params: [
+      { key: 'rate', type: 'knob', label: 'rate', min: 0.25, max: 32, def: 4, log: true },
+      { key: 'depth', type: 'knob', label: 'depth', min: 0, max: 1, def: 0.7 },
+    ],
+    code: (d, [x]) => `${x}.tremolo(${tidy(d.rate)}).tremolodepth(${tidy(d.depth)})`,
+  },
+  vowel: {
+    group: 'effect', label: 'vowel', blurb: 'Makes it sound like it says a vowel',
+    inputs: 1,
+    params: [{ key: 'vowel', type: 'select', label: 'vowel', options: ['a', 'e', 'i', 'o', 'u'], def: 'a' }],
+    code: (d, [x]) => `${x}.vowel("${['a', 'e', 'i', 'o', 'u'].includes(d.vowel) ? d.vowel : 'a'}")`,
+  },
+  lofi: {
+    group: 'effect', label: 'lo-fi', blurb: 'Lower sample rate, grittier',
+    inputs: 1,
+    params: [{ key: 'coarse', type: 'int', label: 'grit', min: 1, max: 32, def: 6 }],
+    code: (d, [x]) => `${x}.coarse(${d.coarse})`,
+  },
+  fxrack: {
+    group: 'effect', label: 'fx rack', blurb: 'Several effects in one box, applied top to bottom',
+    inputs: 1,
+    params: [],
+    code: (d, [x]) => {
+      const chain = (d.chain ?? []).filter((u) => u.on && FX_UNITS.includes(u.type))
+      return chain.length ? `${x}${chain.map((u) => NODE_TYPES[u.type].code(u.data, [''])).join('')}` : x
+    },
+  },
+
   stack: {
     group: 'combine', label: 'stack', blurb: 'Play inputs together',
     inputs: 'many',
@@ -194,6 +240,29 @@ export const NODE_TYPES = {
     params: [],
     code: () => null, // handled by generateGraphCode
   },
+}
+
+/** Effects that can sit inside an fx rack: every plain effect node. */
+export const FX_UNITS = ['filter', 'djfilter', 'space', 'level', 'drive', 'phaser', 'tremolo', 'vowel', 'lofi']
+
+/** Clean one node type's data against its params. */
+function cleanData(type, raw) {
+  const spec = NODE_TYPES[type]
+  const data = { ...defaultData(type) }
+  for (const p of spec.params) {
+    const v = raw?.[p.key]
+    if (v === undefined) continue
+    if (p.type === 'knob' || p.type === 'int') data[p.key] = clampNum(v, p.def, p.min, p.max)
+    if (p.type === 'int') data[p.key] = Math.round(data[p.key])
+    if (p.type === 'select') data[p.key] = p.options.includes(v) ? v : p.def
+    if (['text', 'mini', 'sound', 'code', 'kit'].includes(p.type)) data[p.key] = String(v).slice(0, p.type === 'code' ? 20000 : 400)
+  }
+  return data
+}
+
+/** A new effect unit for an fx rack. */
+export function makeFxUnit(type, id) {
+  return { id, type, on: true, data: defaultData(type) }
 }
 
 export const GROUPS = [
@@ -224,14 +293,13 @@ export function normalizeGraph(raw, patternIds) {
     const id = n.id.replace(/\W/g, '')
     if (!id || ids.has(id)) continue
     ids.add(id)
-    const data = { ...defaultData(n.type) }
-    for (const p of spec.params) {
-      const v = n.data?.[p.key]
-      if (v === undefined) continue
-      if (p.type === 'knob' || p.type === 'int') data[p.key] = clampNum(v, p.def, p.min, p.max)
-      if (p.type === 'int') data[p.key] = Math.round(data[p.key])
-      if (p.type === 'select') data[p.key] = p.options.includes(v) ? v : p.def
-      if (['text', 'mini', 'sound', 'code', 'kit'].includes(p.type)) data[p.key] = String(v).slice(0, p.type === 'code' ? 20000 : 400)
+    const data = cleanData(n.type, n.data)
+    if (n.type === 'fxrack') {
+      const seen = new Set()
+      data.chain = (Array.isArray(n.data?.chain) ? n.data.chain : [])
+        .filter((u) => u && FX_UNITS.includes(u.type) && typeof u.id === 'string' && !seen.has(u.id) && seen.add(u.id))
+        .slice(0, 16)
+        .map((u) => ({ id: u.id.replace(/\W/g, '').slice(0, 24) || 'fx', type: u.type, on: u.on !== false, data: cleanData(u.type, u.data) }))
     }
     if (n.type === 'pattern') data.patternId = patternIds.has(n.data?.patternId) ? n.data.patternId : [...patternIds][0] ?? null
     if (n.type === 'arrange') data.bars = Object.fromEntries(Object.entries(n.data?.bars ?? {}).filter(([k]) => /^in-\d+$/.test(k)).map(([k, v]) => [k, Math.round(clampNum(v, 4, 1, 64))]))

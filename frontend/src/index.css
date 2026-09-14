@@ -601,6 +601,25 @@ body {
 .graph-convert p { margin: 0; line-height: 1.6; }
 .graph-convert code { color: var(--acid); }
 .btn.solo-chip { background: var(--acid); color: var(--ink); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.gnode.t-fxrack { width: 290px; }
+.fx-rack { display: grid; gap: 0.35rem; position: relative; }
+.fx-io { justify-self: center; font-size: 9px; letter-spacing: 0.08em; color: var(--muted); }
+.fx-units { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; position: relative; }
+.fx-units::before { content: ""; position: absolute; left: 50%; top: -0.35rem; bottom: -0.35rem; width: 1px; background: var(--line); z-index: 0; }
+.fx-unit { position: relative; z-index: 1; background: var(--ink); border: 1px solid var(--line); border-left: 3px solid var(--acid); }
+.fx-unit.bypassed { border-left-color: var(--line); }
+.fx-unit.bypassed .node-params, .fx-unit.bypassed .fx-unit-name { opacity: 0.4; }
+.fx-unit-head { display: flex; align-items: center; gap: 0.3rem; padding: 0.25rem 0.35rem 0.25rem 0.45rem; border-bottom: 1px solid var(--line); }
+.fx-order { font-size: 9px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.fx-unit-name { flex: 1; min-width: 0; font-family: var(--display); font-weight: 800; font-stretch: 112%; font-size: 12px; }
+.fx-unit .node-params { padding: 0.35rem 0.45rem 0.4rem; }
+.fx-unit .node-btn { color: var(--muted); }
+.fx-unit .node-btn:disabled { opacity: 0.25; cursor: default; }
+.fx-toggle { font: inherit; font-size: 9px; line-height: 1.5; padding: 0 0.35rem; border-radius: 0; cursor: pointer; color: var(--muted); background: transparent; border: 1px solid var(--line); }
+.fx-toggle.on { background: var(--acid); color: var(--ink); border-color: var(--acid); }
+.fx-add { position: relative; z-index: 1; }
+.fx-add .select { color: var(--acid); }
 .graph-canvas .react-flow__edge.splice-target .react-flow__edge-path { stroke: var(--acid); stroke-width: 5; stroke-dasharray: 8 5; }
 .graph-canvas .react-flow__edge.detaching .react-flow__edge-path { opacity: 0.2; }
 @media (max-width: 860px) {
