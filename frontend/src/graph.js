@@ -67,7 +67,7 @@ export const NODE_TYPES = {
     params: [{ key: 'mini', type: 'mini', label: 'notes (with nothing wired)', def: '<[c3,eb3,g3] [ab2,c3,eb3] [f2,ab2,c3] [g2,bb2,d3]>' }],
     code: (d, xs, ctx) => {
       const notes = xs[ctx.slots.indexOf('in-0')] ?? `note("${miniText(d.mini)}")`
-      const voice = phylloCode(normalizePatch(d.patch), notes, { cps: ctx.cps })
+      const voice = phylloCode(normalizePatch(d.patch), notes, { cps: ctx.cps, nodeId: ctx.nodeId })
       return voice && NODE_TYPES.fxrack.code(d, [voice], ctx)
     },
   },

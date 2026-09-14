@@ -10,6 +10,7 @@
  * that can't work at all (an envelope on a pan knob, say) is kept but marked "off".
  */
 import { registerWaveTable } from '@strudel/webaudio'
+import { liveBus } from './live'
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 const num = (v, def, lo, hi) => (Number.isFinite(Number(v)) ? clamp(Number(v), lo, hi) : def)
@@ -327,7 +328,11 @@ const lfoHz = (lfo, cps) => (lfo.sync ? cps / lfo.bars : lfo.hz)
  * layer, `shared` applies to all of them, and `status` says how each route is heard.
  * A value is a number/string, or { signal } for per-note modulation.
  */
-export function compileVoice(patch, { cps = 0.5 } = {}) {
+export function compileVoice(patch, { cps = 0.5, nodeId = null } = {}) {
+  // a knob you can sweep while notes ring: its value, then a bus modulator (see live.js)
+  const tap = (list, param, control, v, scale = 1) => {
+    if (nodeId && typeof v === 'number') list.push(['bmod', { b: liveBus(nodeId, param, v, scale), c: control }])
+  }
   const status = {}
   const claimed = new Set() // native slots already used by an earlier route
   const perNote = new Map() // target → [{ lfo, amt }]
@@ -417,18 +422,32 @@ export function compileVoice(patch, { cps = 0.5 } = {}) {
     else if (pitch || fine) pairs.push(['octave', Math.round((pitch + fine / 1200) * 10000) / 10000])
     if (l.type === 'analog' && l.wave === 'pulse') pairs.push(['pw', value(tgt('pw'), l.pw, K.pw)])
     if (l.type === 'wavetable') {
-      pairs.push(['wt', value(tgt('pos'), l.pos, K.pos)])
+      const pos = value(tgt('pos'), l.pos, K.pos)
+      pairs.push(['wt', pos])
+      tap(pairs, tgt('pos'), 'wt', pos)
       const warp = value(tgt('warp'), l.warp, K.warp)
-      if (l.warpmode !== 'none' || typeof warp === 'object' || l.warp > 0) pairs.push(['warp', warp], ['warpmode', l.warpmode])
+      if (l.warpmode !== 'none' || typeof warp === 'object' || l.warp > 0) {
+        pairs.push(['warp', warp], ['warpmode', l.warpmode])
+        tap(pairs, tgt('warp'), 'warp', warp)
+      }
     }
     if (l.type === 'supersaw' || (l.type === 'wavetable' && l.unison > 1)) {
-      pairs.push(['unison', l.unison], ['detune', value(tgt('detune'), l.detune, K.detune)], ['spread', value(tgt('spread'), l.spread, K.spread)])
+      const detune = value(tgt('detune'), l.detune, K.detune)
+      const spread = value(tgt('spread'), l.spread, K.spread)
+      pairs.push(['unison', l.unison], ['detune', detune])
+      tap(pairs, tgt('detune'), 'detune', detune)
+      pairs.push(['spread', spread])
+      tap(pairs, tgt('spread'), 'spread', spread)
     }
     const fm = value(tgt('fm'), l.fm, K.fm)
     if (l.type !== 'noise' && (typeof fm === 'object' || l.fm > 0)) pairs.push(['fmi', fm], ['fmh', l.ratio], ['fmwave', l.fmwave])
     pairs.push(...(nativeLayer.get(l.id) ?? []))
     const pan = value(tgt('pan'), l.pan, K.pan)
-    if (typeof pan === 'object' || Math.abs(l.pan - 0.5) > 0.001) pairs.push(['pan', pan])
+    // with live knobs the panner is always there, so the pan knob can move a ringing note
+    if (nodeId || typeof pan === 'object' || Math.abs(l.pan - 0.5) > 0.001) {
+      pairs.push(['pan', pan])
+      tap(pairs, tgt('pan'), 'pan', pan, 2) // the panner runs -1..1, the knob 0..1
+    }
     pairs.push(['gain', value(tgt('level'), l.level, K.level)])
     layers.push({ layer: l, pairs })
   }
@@ -436,7 +455,13 @@ export function compileVoice(patch, { cps = 0.5 } = {}) {
   if (patch.filter.on) {
     const f = patch.filter
     const p = fprefix
-    shared.unshift([`${p}f`, value('filter.cutoff', f.cutoff, K.cutoff)], [`${p}q`, value('filter.reso', f.reso, K.reso)])
+    const cutoff = value('filter.cutoff', f.cutoff, K.cutoff)
+    const reso = value('filter.reso', f.reso, K.reso)
+    const head = [[`${p}f`, cutoff], [`${p}q`, reso]]
+    const control = { lp: ['cutoff', 'resonance'], hp: ['hcutoff', 'hresonance'], bp: ['bandf', 'bandq'] }[p]
+    tap(head, 'filter.cutoff', control[0], cutoff)
+    if (f.slope !== 'ladder') tap(head, 'filter.reso', control[1], reso) // the ladder's resonance isn't reachable
+    shared.unshift(...head)
     if (f.slope !== '12db') shared.unshift(['ftype', f.slope])
     const drive = value('filter.drive', f.drive, K.drive)
     if (f.slope === 'ladder') shared.push(['drive', typeof drive === 'object' ? drive : Math.round(f.drive * 5 * 100) / 100])
@@ -444,7 +469,9 @@ export function compileVoice(patch, { cps = 0.5 } = {}) {
   }
   const a = patch.amp
   shared.push(['attack', a.attack], ['decay', a.decay], ['sustain', a.sustain], ['release', a.release])
-  shared.push(['gain', value('volume', patch.volume, K.volume)])
+  const volume = value('volume', patch.volume, K.volume)
+  shared.push(['postgain', volume])
+  tap(shared, 'volume', 'postgain', volume)
   return { layers, shared, status }
 }
 
@@ -458,11 +485,15 @@ const valueCode = (v) => {
   else if (v.cycles) sig += `.fast(${tidy(v.cycles)})`
   return `${sig}.range(${tidy(v.invert ? v.hi : v.lo)}, ${tidy(v.invert ? v.lo : v.hi)})`
 }
-const chain = (pairs) => pairs.map(([k, v]) => (k === 'gain' ? `.mul(gain(${valueCode(v)}))` : `.${k}(${valueCode(v)})`)).join('')
+const chain = (pairs) => pairs.map(([k, v]) => {
+  if (k === 'gain') return `.mul(gain(${valueCode(v)}))`
+  if (k === 'bmod') return `.bmod({ b: ${v.b}, c: '${v.c}', da: 0.3 })`
+  return `.${k}(${valueCode(v)})`
+}).join('')
 
 /** Strudel for a patch playing the notes in `input` (an expression). */
-export function phylloCode(patch, input, { cps } = {}) {
-  const { layers, shared } = compileVoice(patch, { cps })
+export function phylloCode(patch, input, { cps, nodeId } = {}) {
+  const { layers, shared } = compileVoice(patch, { cps, nodeId })
   if (layers.some(({ layer }) => layer.type === 'wavetable')) ensureTables()
   if (!layers.length) return null
   const body = layers.length === 1
@@ -479,6 +510,7 @@ export function previewValues(patch, midi, { cps = 0.5 } = {}) {
   return layers.map(({ pairs }) => {
     const v = { note: midi }
     for (const [k, raw] of [...pairs, ...shared]) {
+      if (k === 'bmod') continue
       const x = typeof raw === 'object' ? raw.base : raw
       if (k === 'gain') v.gain = (v.gain ?? 1) * x
       else v[KEY[k] ?? k] = x
