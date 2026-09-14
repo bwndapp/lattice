@@ -12,7 +12,6 @@ import { useUser } from './bwnd'
 import { api, clearDraft, readDraft, timeAgo, trackUrl, writeDraft } from './api'
 import Browser from './Browser.jsx'
 import Graph from './Graph.jsx'
-import Rack from './Rack.jsx'
 import { capturePatterns, parseLanes, tempoChange } from './lanes'
 import { PROJECT_MARK, demoProject, generateCode, normalizeProject, parseProject, projectFromCode } from './project'
 import { createTransport, formatBarBeat, parseBarBeat } from './transport'
@@ -77,7 +76,7 @@ export default function App() {
   // the evaluated pattern, each labeled pattern in it, and which track (null = scratch) it belongs to
   const [evaluated, setEvaluated] = useState({ pattern: null, lanes: new Map(), forId: undefined })
   const capturedRef = useRef(new Map())
-  const [view, setView] = useState(() => (['browse', 'graph', 'rack', 'code'].includes(readPref('strudel:view', 'graph')) ? readPref('strudel:view', 'graph') : 'graph'))
+  const [view, setView] = useState(() => (['browse', 'graph', 'code'].includes(readPref('strudel:view', 'graph')) ? readPref('strudel:view', 'graph') : 'graph'))
   const codeViewRef = useRef(null)
   const lastViewRef = useRef('graph') // where ctrl/cmd+J returns to from the code
   const toggleView = useCallback(() => setView((v) => (v === 'code' ? lastViewRef.current : 'code')), [])
@@ -85,15 +84,10 @@ export default function App() {
 
   // Project mode: the code's header line holds the patterns/tracks the UI edits.
   const project = useMemo(() => parseProject(code), [code])
-  const [currentPatternId, setCurrentPatternId] = useState(null)
-  // auditioning: a node id, or "pattern:<id>" from the rack; null plays the output
+  // auditioning: a node id; null plays the output
   const [solo, setSolo] = useState(null)
   const genRef = useRef({ solo: null })
   genRef.current = { solo }
-  useEffect(() => {
-    if (project && !project.patterns.some((p) => p.id === currentPatternId)) setCurrentPatternId(project.patterns[0]?.id ?? null)
-  }, [project, currentPatternId])
-  useEffect(() => { if (code && !project && view === 'rack') setView('graph') }, [code, project, view])
   const readOnlyRef = useRef(null)
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState('')
@@ -325,17 +319,12 @@ export default function App() {
   }, [replaceCode, liveUpdate, flash, transport])
 
   const detachProject = useCallback(() => {
-    if (!window.confirm('Detach the project? The playlist and rack stop editing this track, and the code becomes yours to edit by hand.')) return
+    if (!window.confirm('Detach the project? The patch stops editing this track, and the code becomes yours to edit by hand.')) return
     const editor = editorRef.current
     const lines = editor.code.split('\n')
     const body = lines.filter((l, i) => !(i < 2 && (l.startsWith(PROJECT_MARK) || l.startsWith('// generated from the playlist'))))
     replaceCode(body.join('\n'))
   }, [replaceCode])
-
-  const openPattern = useCallback((id) => {
-    setCurrentPatternId(id)
-    setView('rack')
-  }, [])
 
   const play = useCallback(() => {
     const editor = editorRef.current
@@ -608,7 +597,6 @@ export default function App() {
         <span className="seg views" role="group" aria-label="View">
           <button className={`btn ${view === 'browse' ? 'on' : ''}`} aria-pressed={view === 'browse'} onClick={() => setView('browse')} title="Tracks people have shared, and yours">browse</button>
           <button className={`btn ${view === 'graph' ? 'on' : ''}`} aria-pressed={view === 'graph'} onClick={() => setView('graph')}>patch</button>
-          {project && <button className={`btn ${view === 'rack' ? 'on' : ''}`} aria-pressed={view === 'rack'} onClick={() => setView('rack')}>rack</button>}
           <button
             className={`btn code-toggle ${view === 'code' ? 'on' : ''} ${evalError && view !== 'code' ? 'has-error' : ''}`}
             aria-pressed={view === 'code'}
@@ -693,7 +681,6 @@ export default function App() {
               started={started}
               solo={solo}
               onSolo={setSolo}
-              onOpenRack={openPattern}
               transport={transport}
             />
           )}
@@ -707,24 +694,12 @@ export default function App() {
               </span>
             </section>
           )}
-          {view === 'rack' && project && (
-            <Rack
-              project={project}
-              currentPatternId={currentPatternId}
-              onSelectPattern={setCurrentPatternId}
-              onUpdateProject={updateProject}
-              transport={transport}
-              started={started}
-              playMode={solo === `pattern:${currentPatternId}` ? 'pattern' : 'song'}
-              onPlayMode={(mode) => setSolo(mode === 'pattern' ? `pattern:${currentPatternId}` : null)}
-            />
-          )}
           <section ref={codeViewRef} className="code-view" hidden={view !== 'code'} aria-label="Code">
             <div className="code-head">
               <span className="code-title">code</span>
               {project ? (
                 <>
-                  <span className="hint">generated from the playlist and rack · read-only</span>
+                  <span className="hint">generated from the patch · read-only</span>
                   <button className="btn add-lane" onClick={detachProject}>detach and edit as code</button>
                 </>
               ) : (

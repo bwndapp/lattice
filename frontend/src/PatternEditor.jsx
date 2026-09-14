@@ -30,7 +30,7 @@ export function NameInput({ value, onCommit, ...props }) {
 }
 
 /** A floating editor for one pattern: name, length, instruments with their steps and notes. */
-export default function PatternEditor({ project, patternId, anchor, transport, started, onUpdateProject, onOpenRack, onClose }) {
+export default function PatternEditor({ project, patternId, anchor, transport, started, onUpdateProject, onClose }) {
   const ref = useRef(null)
   const pattern = project.patterns.find((p) => p.id === patternId)
 
@@ -117,10 +117,15 @@ export default function PatternEditor({ project, patternId, anchor, transport, s
             {[1, 2, 3, 4, 6, 8, 12, 16].map((b) => <option key={b} value={b}>{b}</option>)}
           </select>
         </label>
+        <label className="rack-field">
+          <span className="syn">steps / bar</span>
+          <select className="select" value={pattern.stepsPerBar} onChange={(e) => update((pat) => reshapePattern(pat, { stepsPerBar: Number(e.target.value) }))} aria-label="Steps per bar">
+            {[8, 12, 16, 24, 32].map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
         {uses > 1 && <span className="pop-uses" title="Every node using this pattern changes with it">used by {uses} nodes</span>}
         <span className="spacer" />
         <button className="btn" onClick={() => setExpanded((v) => !v)} aria-pressed={expanded} title={expanded ? 'Back to a floating window' : 'Fill the window'}>{expanded ? 'shrink' : 'expand'}</button>
-        <button className="btn" onClick={onOpenRack}>open in rack</button>
         <button className="btn ghost" onClick={onClose} aria-label="Close">close</button>
       </div>
       <PatternChannels

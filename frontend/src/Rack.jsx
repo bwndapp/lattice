@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   INSTRUMENTS, INSTRUMENT_MIME, PARAMS,
-  instrumentChannel, makeChannel, makePattern, midiToNote, newId, paramValue, paramsFor, reshapePattern, stepCount,
+  instrumentChannel, midiToNote, newId, paramValue, paramsFor, stepCount,
 } from './project'
 import { previewChannel } from './audio'
 import Knob from './Knob.jsx'
@@ -9,7 +9,6 @@ import SoundPicker from './SoundPicker.jsx'
 import PianoRoll from './PianoRoll.jsx'
 
 const mod = (a, n) => ((a % n) + n) % n
-const BAR_CHOICES = [1, 2, 3, 4, 6, 8, 12, 16]
 const GAIN = PARAMS.find((p) => p.key === 'gain')
 
 /** A text field that applies its value on Enter or blur, not per keystroke. */
@@ -36,7 +35,7 @@ export function stepAt(project, pattern, pos) {
   return Math.floor(mod(pos, pattern.bars) * pattern.stepsPerBar) % stepCount(pattern)
 }
 
-/** Instrument chips: click to add, or drag onto a clip, a pattern or the rack. */
+/** Instrument chips: click to add, or drag onto a pattern. */
 export function InstrumentChips({ onPick, className = '' }) {
   return (
     <div className={`instruments ${className}`} role="group" aria-label="Instruments">
@@ -97,7 +96,7 @@ function MiniRoll({ channel, total, open, onToggle }) {
 
 /**
  * The instruments of one pattern: sound, knobs, and steps (drums) or a piano roll
- * (synths). Used by the rack and by the pattern editor on the playlist. Instruments can
+ * (synths). Used by the pattern editor pop-up. Instruments can
  * be dropped onto it.
  */
 export function PatternChannels({ project, pattern, onUpdateProject, transport, started, playMode, compact = false }) {
@@ -315,105 +314,5 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
         />
       )}
     </div>
-  )
-}
-
-/** The channel rack: pick a pattern, shape it, edit its instruments. */
-export default function Rack({ project, currentPatternId, onSelectPattern, onUpdateProject, transport, started, playMode, onPlayMode }) {
-  const pattern = project.patterns.find((p) => p.id === currentPatternId) ?? project.patterns[0]
-
-  const newPattern = () => onUpdateProject((p) => {
-    const np = makePattern(`pattern ${p.patterns.length + 1}`)
-    p.patterns.push(np)
-    onSelectPattern(np.id)
-  })
-
-  if (!pattern) {
-    return (
-      <section className="rack" aria-label="Channel rack">
-        <div className="rack-empty">
-          <p>No patterns yet. Add a pattern node in the patch, or start one here.</p>
-          <button className="btn primary" onClick={() => onUpdateProject((p) => { const np = makePattern('pattern 1', { channels: [makeChannel('drum')] }); p.patterns.push(np); onSelectPattern(np.id) })}>+ new pattern</button>
-        </div>
-      </section>
-    )
-  }
-
-  const update = (fn) => onUpdateProject((p) => {
-    const target = p.patterns.find((x) => x.id === pattern.id)
-    if (target) fn(target, p)
-  })
-  const clonePattern = () => onUpdateProject((p) => {
-    const src = p.patterns.find((x) => x.id === pattern.id)
-    const copy = JSON.parse(JSON.stringify(src))
-    copy.id = newId()
-    copy.name = `${src.name} copy`.slice(0, 40)
-    copy.channels.forEach((c) => { c.id = newId() })
-    p.patterns.push(copy)
-    onSelectPattern(copy.id)
-  })
-  const deletePattern = () => {
-    const users = project.nodes.filter((n) => n.type === 'pattern' && n.data.patternId === pattern.id).map((n) => n.id)
-    if (!window.confirm(`Delete pattern “${pattern.name}”${users.length ? ` and the ${users.length} node${users.length === 1 ? '' : 's'} playing it` : ''}?`)) return
-    onUpdateProject((p) => {
-      const gone = new Set(users)
-      p.patterns = p.patterns.filter((x) => x.id !== pattern.id)
-      p.nodes = p.nodes.filter((n) => !gone.has(n.id))
-      p.edges = p.edges.filter((e) => !gone.has(e.source) && !gone.has(e.target))
-      onSelectPattern(p.patterns[0]?.id ?? null)
-    })
-  }
-
-  return (
-    <section className="rack" aria-label="Channel rack">
-      <div className="rack-head">
-        <span className="playlist-title">rack</span>
-        <label className="rack-field">
-          <span className="syn">pattern</span>
-          <select className="select" value={pattern.id} onChange={(e) => onSelectPattern(e.target.value)} aria-label="Pattern">
-            {project.patterns.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-        </label>
-        <input
-          className="title-input rack-name"
-          value={pattern.name}
-          maxLength={40}
-          aria-label="Pattern name"
-          onChange={(e) => { const name = e.target.value; update((pat) => { pat.name = name }) }}
-        />
-        <label className="rack-field">
-          <span className="syn">bars</span>
-          <select className="select" value={pattern.bars} onChange={(e) => update((pat) => reshapePattern(pat, { bars: Number(e.target.value) }))} aria-label="Bars in this pattern">
-            {BAR_CHOICES.map((b) => <option key={b} value={b}>{b}</option>)}
-          </select>
-        </label>
-        <label className="rack-field">
-          <span className="syn">steps/bar</span>
-          <select className="select" value={pattern.stepsPerBar} onChange={(e) => update((pat) => reshapePattern(pat, { stepsPerBar: Number(e.target.value) }))} aria-label="Steps per bar">
-            {[8, 12, 16, 24, 32].map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </label>
-        <span className="rack-actions">
-          <button className="btn" onClick={newPattern}>+ pattern</button>
-          <button className="btn" onClick={clonePattern}>clone</button>
-          <button className="btn ghost danger" onClick={deletePattern}>delete</button>
-        </span>
-        <button
-          className={`btn mode-pattern ${playMode === 'pattern' ? 'on' : ''}`}
-          aria-pressed={playMode === 'pattern'}
-          onClick={() => onPlayMode(playMode === 'pattern' ? 'song' : 'pattern')}
-          title="Loop just this pattern instead of the whole song"
-        >{playMode === 'pattern' ? 'looping this pattern' : 'loop this pattern'}</button>
-      </div>
-
-      <PatternChannels
-        project={project}
-        pattern={pattern}
-        onUpdateProject={onUpdateProject}
-        transport={transport}
-        started={started}
-        playMode={playMode}
-      />
-    </section>
   )
 }

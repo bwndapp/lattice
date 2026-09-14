@@ -312,7 +312,6 @@ function StudioNode({ id, selected }) {
             )}
             <div className="node-actions nodrag">
               <button className="btn primary" onClick={(e) => ctx.editPattern(node.data.patternId, e)} disabled={!pattern}>edit steps &amp; notes</button>
-              <button className="btn" onClick={() => ctx.openRack(node.data.patternId)} disabled={!pattern}>rack</button>
             </div>
           </>
         )}
@@ -624,7 +623,7 @@ function Palette({ onAdd }) {
   )
 }
 
-function Canvas({ project, onUpdateProject, started, solo, onSolo, onOpenRack, transport }) {
+function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) {
   const flow = useReactFlow()
   const wrapRef = useRef(null)
   const [editing, setEditing] = useState(null) // { patternId, x, y }
@@ -719,7 +718,6 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, onOpenRack, t
     updateNode,
     removeNode: (id) => removeNodes([id]),
     editPattern: (patternId, e) => setEditing({ patternId, x: e?.clientX ?? window.innerWidth / 2, y: e?.clientY ?? 200 }),
-    openRack: onOpenRack,
     pickSound: (nodeId, key, at) => setPicking({ nodeId, key, ...at }),
     openSynth: (nodeId, e) => setSynth({ nodeId, x: e?.clientX ?? window.innerWidth / 2, y: e?.clientY ?? 160 }),
     editPatch: (nodeId, fn) => updateNode(nodeId, (d) => { d.patch = normalizePatch(d.patch); fn(d.patch) }),
@@ -732,7 +730,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, onOpenRack, t
       })
       setEditing({ patternId, x: window.innerWidth / 2, y: 160 })
     },
-  }), [project, solo, onSolo, updateNode, removeNodes, onOpenRack, onUpdateProject])
+  }), [project, solo, onSolo, updateNode, removeNodes, onUpdateProject])
 
   const isValidConnection = useCallback((c) => {
     if (c.source === c.target) return false
@@ -862,7 +860,6 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, onOpenRack, t
           transport={transport}
           started={started}
           onUpdateProject={onUpdateProject}
-          onOpenRack={() => { const id = editing.patternId; setEditing(null); onOpenRack(id) }}
           onClose={() => setEditing(null)}
         />
       )}
