@@ -44,7 +44,7 @@ export const NODE_TYPES = {
     inputs: 0,
     params: [
       { key: 'mini', type: 'mini', label: 'rhythm', def: 'hh*8' },
-      { key: 'bank', type: 'text', label: 'kit', def: '' },
+      { key: 'bank', type: 'kit', label: 'kit', def: 'RolandTR909' },
     ],
     code: (d) => `s("${miniText(d.mini)}")${d.bank ? `.bank("${String(d.bank).replace(/\W/g, '')}")` : ''}`,
   },
@@ -231,7 +231,7 @@ export function normalizeGraph(raw, patternIds) {
       if (p.type === 'knob' || p.type === 'int') data[p.key] = clampNum(v, p.def, p.min, p.max)
       if (p.type === 'int') data[p.key] = Math.round(data[p.key])
       if (p.type === 'select') data[p.key] = p.options.includes(v) ? v : p.def
-      if (['text', 'mini', 'sound', 'code'].includes(p.type)) data[p.key] = String(v).slice(0, p.type === 'code' ? 20000 : 400)
+      if (['text', 'mini', 'sound', 'code', 'kit'].includes(p.type)) data[p.key] = String(v).slice(0, p.type === 'code' ? 20000 : 400)
     }
     if (n.type === 'pattern') data.patternId = patternIds.has(n.data?.patternId) ? n.data.patternId : [...patternIds][0] ?? null
     if (n.type === 'arrange') data.bars = Object.fromEntries(Object.entries(n.data?.bars ?? {}).filter(([k]) => /^in-\d+$/.test(k)).map(([k, v]) => [k, Math.round(clampNum(v, 4, 1, 64))]))

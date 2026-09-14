@@ -10,6 +10,7 @@ import { InstrumentChips } from './Rack.jsx'
 import Knob from './Knob.jsx'
 import SoundPicker from './SoundPicker.jsx'
 import PatternEditor from './PatternEditor.jsx'
+import { onSoundsChange, previewSound, soundCatalog } from './audio'
 
 const NODE_MIME = 'application/x-strudel-node'
 const Ctx = createContext(null)
@@ -68,12 +69,48 @@ function Stepper({ param, value, onChange }) {
   )
 }
 
+/** Drum kits Strudel has loaded, kept fresh as sample packs finish loading. */
+function useKits() {
+  const [kits, setKits] = useState(() => soundCatalog().kits)
+  useEffect(() => onSoundsChange(() => setKits(soundCatalog().kits)), [])
+  return kits
+}
+
+/** A dropdown of drum kits; picking one plays a hit from the node's rhythm in that kit. */
+function KitSelect({ node, param, onChange }) {
+  const kits = useKits()
+  const value = String(node.data[param.key] ?? '')
+  const current = kits.find((k) => k.bank === value.toLowerCase())
+  // the first sound named in the rhythm (hh*16 → hh), to audition the kit with
+  const firstSound = (String(node.data.mini ?? '').match(/[a-z][\w]*/i) ?? ['bd'])[0]
+  return (
+    <label className="node-field wide nodrag">
+      <span>{param.label}{current ? ` · ${current.sounds.length} sounds` : ''}</span>
+      <select
+        className="select kit-select"
+        value={current ? current.bank : value ? `raw:${value}` : ''}
+        onChange={(e) => {
+          const bank = e.target.value.startsWith('raw:') ? e.target.value.slice(4) : e.target.value
+          onChange(bank)
+          previewSound({ s: firstSound, bank: bank || undefined })
+        }}
+      >
+        <option value="">default sounds</option>
+        {value && !current && <option value={`raw:${value}`}>{value}{kits.length ? ' (not loaded)' : ''}</option>}
+        {kits.map((k) => <option key={k.bank} value={k.bank}>{k.bank}</option>)}
+      </select>
+    </label>
+  )
+}
+
 /** The controls for one parameter of a node. */
 function Param({ node, param }) {
   const ctx = useContext(Ctx)
   const value = node.data[param.key]
   const set = (v) => ctx.updateNode(node.id, (d) => { d[param.key] = v })
   switch (param.type) {
+    case 'kit':
+      return <KitSelect node={node} param={param} onChange={set} />
     case 'knob':
       return <div className="nodrag nowheel"><Knob def={param} value={value} onChange={set} /></div>
     case 'int':
