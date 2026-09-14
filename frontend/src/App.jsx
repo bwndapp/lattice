@@ -189,14 +189,30 @@ export default function App() {
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } })
   }, [])
 
-  // While playing, project edits are heard right away (debounced so a paint stroke is one update).
-  const liveTimer = useRef(null)
+  // While playing, project edits are heard as they happen: a turning knob re-evaluates
+  // at a steady rate instead of waiting for you to let go. One evaluation runs at a time;
+  // changes made meanwhile are folded into the next one, so it always plays the latest.
+  const LIVE_INTERVAL = 50 // ms between evaluations while something keeps changing
+  const live = useRef({ timer: null, running: false, dirty: false, last: 0 })
   const liveUpdate = useCallback(() => {
-    clearTimeout(liveTimer.current)
-    liveTimer.current = setTimeout(() => {
+    const st = live.current
+    st.dirty = true
+    if (st.running || st.timer) return
+    const run = async () => {
+      st.timer = null
       const editor = editorRef.current
-      if (editor?.repl.scheduler.started) editor.repl.evaluate(editor.code, true)
-    }, 120)
+      if (!st.dirty || !editor?.repl.scheduler.started) { st.dirty = false; return }
+      st.dirty = false
+      st.running = true
+      st.last = performance.now()
+      try {
+        await editor.repl.evaluate(editor.code, true)
+      } finally {
+        st.running = false
+        if (st.dirty) st.timer = setTimeout(run, Math.max(0, LIVE_INTERVAL - (performance.now() - st.last)))
+      }
+    }
+    st.timer = setTimeout(run, Math.max(0, LIVE_INTERVAL - (performance.now() - st.last)))
   }, [])
 
   // Undo history of project snapshots. Edits within half a second (a knob turn, a paint
