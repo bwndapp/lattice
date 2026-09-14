@@ -12,6 +12,8 @@
  * grow a new input slot as you connect them; slot order is the order in the code.
  */
 
+import { normalizePatch, phylloCode } from './phyllo/engine'
+
 const clampNum = (v, fallback, lo, hi) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : fallback)
 const tidy = (v) => String(Math.round(Number(v) * 1000) / 1000)
 // text that lands inside a double-quoted mini-notation string
@@ -57,6 +59,17 @@ export const NODE_TYPES = {
       { key: 'sound', type: 'sound', label: 'sound', def: 'sawtooth' },
     ],
     code: (d) => `note("${miniText(d.mini)}").s("${soundName(d.sound)}")`,
+  },
+  phyllo: {
+    group: 'source', label: 'phyllo', blurb: 'A layered synth: analog, supersaw and wavetable layers, filter, envelopes, lfos',
+    // notes come from a wire (a pattern, a melody) or, with nothing wired, from its own notes
+    inputs: ['notes'],
+    params: [{ key: 'mini', type: 'mini', label: 'notes (with nothing wired)', def: '<[c3,eb3,g3] [ab2,c3,eb3] [f2,ab2,c3] [g2,bb2,d3]>' }],
+    code: (d, xs, ctx) => {
+      const notes = xs[ctx.slots.indexOf('in-0')] ?? `note("${miniText(d.mini)}")`
+      const voice = phylloCode(normalizePatch(d.patch), notes, { cps: ctx.cps })
+      return voice && NODE_TYPES.fxrack.code(d, [voice], ctx)
+    },
   },
   code: {
     group: 'source', label: 'code', blurb: 'Any Strudel pattern, written out',
@@ -352,7 +365,7 @@ const eqActive = (d) => [d.low, d.mid, d.high].some((db) => Math.abs(db) >= 0.05
 
 /** Whether a node splits the sound into eq bands, so later filters must merge with them. */
 const splitsBands = (node) => (node.type === 'eq3' && eqActive(node.data))
-  || (node.type === 'fxrack' && (node.data.chain ?? []).some((u) => u.on && u.type === 'eq3' && eqActive(u.data)))
+  || ((node.type === 'fxrack' || node.type === 'phyllo') && (node.data.chain ?? []).some((u) => u.on && u.type === 'eq3' && eqActive(u.data)))
 
 /** Saturator characters → Strudel's waveshaping curves. */
 const SATURATION = { warm: 'scurve', tape: 'soft', tube: 'diode', asym: 'asym', harmonics: 'chebyshev', fold: 'fold' }
@@ -407,7 +420,8 @@ export function normalizeGraph(raw, patternIds) {
     if (!id || ids.has(id)) continue
     ids.add(id)
     const data = cleanData(n.type, n.data)
-    if (n.type === 'fxrack') {
+    if (n.type === 'phyllo') data.patch = normalizePatch(n.data?.patch)
+    if (n.type === 'fxrack' || n.type === 'phyllo') {
       const seen = new Set()
       data.chain = (Array.isArray(n.data?.chain) ? n.data.chain : [])
         .filter((u) => u && FX_UNITS.includes(u.type) && typeof u.id === 'string' && !seen.has(u.id) && seen.add(u.id))
@@ -483,6 +497,7 @@ export function graphCode(project, { solo = null } = {}) {
   const lines = []
   // each sidechain gets its own audio bus; bus 1 is where everything else plays
   const sidechains = nodes.filter((n) => n.type === 'sidechain').map((n) => n.id)
+  const cps = (Number(project.bpm) || 120) / (Number(project.beats) || 4) / 60
 
   const visit = (id, trail = new Set()) => {
     if (exprs.has(id)) return exprs.get(id)
@@ -500,7 +515,7 @@ export function graphCode(project, { solo = null } = {}) {
     }
     const eqAbove = wires.some((w) => banded.has(w.source))
     if (spec.inputs === 1 && !inputs.length) { exprs.set(id, null); return null }
-    const expr = spec.code(node.data, inputs, { patternIds, slots, nodeId: id, orbit: 2 + sidechains.indexOf(id), eqAbove })
+    const expr = spec.code(node.data, inputs, { patternIds, slots, nodeId: id, orbit: 2 + sidechains.indexOf(id), eqAbove, cps })
     if (!expr) { exprs.set(id, null); return null }
     if (eqAbove || splitsBands(node)) banded.add(id)
     const name = nodeVar(id)

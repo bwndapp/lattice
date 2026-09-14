@@ -9,6 +9,8 @@ import { INSTRUMENTS, INSTRUMENT_MIME, instrumentChannel, makePattern, newId } f
 import Knob from './Knob.jsx'
 import SoundPicker from './SoundPicker.jsx'
 import PatternEditor from './PatternEditor.jsx'
+import Phyllo, { PhylloFace } from './phyllo/Phyllo.jsx'
+import { normalizePatch } from './phyllo/engine'
 import { onSoundsChange, previewSound, soundCatalog } from './audio'
 
 const NODE_MIME = 'application/x-strudel-node'
@@ -316,6 +318,7 @@ function StudioNode({ id, selected }) {
         )}
 
         {node.type === 'fxrack' && <FxRack node={node} />}
+        {node.type === 'phyllo' && <PhylloFace node={node} onEdit={(fn) => ctx.editPatch(id, fn)} onOpen={(e) => ctx.openSynth(id, e)} />}
 
         {Array.isArray(spec.inputs) && (
           <ul className="node-inputs named">
@@ -409,6 +412,7 @@ const SEARCH_WORDS = {
   clipper: 'clip clipping limiter loud ceiling hard peaks mastering bass mixing',
   compressor: 'compression comp dynamics glue squash level even punch bass mixing',
   punch: 'transient shaper attack snap punch tail sustain drums',
+  phyllo: 'synth instrument serum vital phase plant wavetable supersaw analog fm lfo envelope modulation pad lead bass pluck',
   fxrack: 'effects chain multiple fx rack bus insert',
   sidechain: 'duck ducking pump pumping compression compressor side chain kick bass edm',
   stack: 'layer mix together combine sum',
@@ -633,6 +637,8 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, onOpenRack, t
     requestAnimationFrame(() => flow.fitView({ padding: 0.12, maxZoom: 1 }))
   }, [initialized, flow])
   const [picking, setPicking] = useState(null) // { nodeId, key, x, y }
+  const [synth, setSynth] = useState(null) // the phyllo node whose synth window is open: { nodeId, x, y }
+  const synthNode = synth && project.nodes.find((n) => n.id === synth.nodeId && n.type === 'phyllo')
 
   // React Flow keeps its own copy for dragging and selection; the project stays the source.
   // Existing nodes keep their object (and so their measured size): a fresh object makes
@@ -715,6 +721,8 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, onOpenRack, t
     editPattern: (patternId, e) => setEditing({ patternId, x: e?.clientX ?? window.innerWidth / 2, y: e?.clientY ?? 200 }),
     openRack: onOpenRack,
     pickSound: (nodeId, key, at) => setPicking({ nodeId, key, ...at }),
+    openSynth: (nodeId, e) => setSynth({ nodeId, x: e?.clientX ?? window.innerWidth / 2, y: e?.clientY ?? 160 }),
+    editPatch: (nodeId, fn) => updateNode(nodeId, (d) => { d.patch = normalizePatch(d.patch); fn(d.patch) }),
     newPatternFor: (nodeId) => {
       const patternId = newId()
       onUpdateProject((p) => {
@@ -856,6 +864,17 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, onOpenRack, t
           onUpdateProject={onUpdateProject}
           onOpenRack={() => { const id = editing.patternId; setEditing(null); onOpenRack(id) }}
           onClose={() => setEditing(null)}
+        />
+      )}
+      {synthNode && (
+        <Phyllo
+          key={synthNode.id}
+          node={synthNode}
+          cps={(project.bpm || 120) / (project.beats || 4) / 60}
+          anchor={synth}
+          onEdit={(fn) => ctx.editPatch(synthNode.id, fn)}
+          onClose={() => setSynth(null)}
+          fx={<FxRack node={synthNode} />}
         />
       )}
       {soundNode && (
