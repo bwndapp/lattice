@@ -4,6 +4,7 @@
  *   sources      pattern, sound, notes, code          → a pattern out
  *   transforms   fast, slow, every, euclid, …         → one pattern in, one out
  *   effects      filter, space, level, drive          → one pattern in, one out
+ *   eq & dynamics  eq, saturator, clipper, compressor  → one pattern in, one out
  *   combine      stack, sequence, arrange             → many in, one out
  *   output       each wire into it is a lane you hear (with mute / solo)
  *
@@ -137,7 +138,12 @@ export const NODE_TYPES = {
       { key: 'lpq', type: 'knob', label: 'reso', min: 0, max: 25, def: 4 },
       { key: 'hpf', type: 'knob', label: 'low cut', min: 20, max: 8000, def: 20, log: true, unit: 'hz' },
     ],
-    code: (d, [x]) => `${x}.lpf(${Math.round(d.lpf)}).lpq(${tidy(d.lpq)})${d.hpf > 20 ? `.hpf(${Math.round(d.hpf)})` : ''}`,
+    code: (d, [x], ctx) => {
+      if (!ctx?.eqAbove) return `${x}.lpf(${Math.round(d.lpf)}).lpq(${tidy(d.lpq)})${d.hpf > 20 ? `.hpf(${Math.round(d.hpf)})` : ''}`
+      // after an eq, tighten each band's filters instead of replacing them (the last .lpf wins in Strudel)
+      const hp = d.hpf > 20 ? `, ...(v.hcutoff >= ${Math.round(d.hpf)} ? {} : { hcutoff: ${Math.round(d.hpf)} })` : ''
+      return `${x}.fmap(v => ({ ...v, ...(v.cutoff <= ${Math.round(d.lpf)} ? {} : { cutoff: ${Math.round(d.lpf)}, resonance: ${tidy(d.lpq)} })${hp} }))`
+    },
   },
   space: {
     group: 'effect', label: 'space', blurb: 'Reverb and delay',
@@ -225,13 +231,88 @@ export const NODE_TYPES = {
       return `stack(${sound}.orbit(${orbit}), ${trigger}.duckorbit(${orbit}).duckonset(${tidy(d.attack)}).duckattack(${tidy(d.release)}).duckdepth(${tidy(d.depth)})${d.hear === 'silent' ? '.postgain(0)' : ''})`
     },
   },
+  eq3: {
+    group: 'mixing', label: '3-band eq', blurb: 'Boost or cut lows, mids and highs',
+    inputs: 1,
+    params: [
+      { key: 'low', type: 'knob', label: 'low', min: -24, max: 12, def: 0, unit: 'db', origin: 0 },
+      { key: 'mid', type: 'knob', label: 'mid', min: -24, max: 12, def: 0, unit: 'db', origin: 0 },
+      { key: 'high', type: 'knob', label: 'high', min: -24, max: 12, def: 0, unit: 'db', origin: 0 },
+      { key: 'lowf', type: 'knob', label: 'low / mid', min: 40, max: 1000, def: 200, log: true, unit: 'hz' },
+      { key: 'highf', type: 'knob', label: 'mid / high', min: 1000, max: 12000, def: 3000, log: true, unit: 'hz' },
+    ],
+    // Strudel has no shelving eq, so the sound is split into three bands with steep (24 dB,
+    // Linkwitz-Riley) crossovers that add back up flat, and each band gets its own gain.
+    // A band's filter never opens up a filter that's already on the sound. Fully down = off.
+    code: (d, [x]) => {
+      const bands = [[d.low, 0, d.lowf], [d.mid, d.lowf, d.highf], [d.high, d.highf, 0]]
+      if (!eqActive(d)) return x
+      const live = bands.filter(([db]) => db > -24)
+      if (!live.length) return `${x}.gain(0)`
+      const band = ([db, lo, hi]) => {
+        const lp = hi ? `, ...(v.cutoff <= ${Math.round(hi)} ? {} : { cutoff: ${Math.round(hi)}, resonance: .71 })` : ''
+        const hp = lo ? `, ...(v.hcutoff >= ${Math.round(lo)} ? {} : { hcutoff: ${Math.round(lo)}, hresonance: .71 })` : ''
+        return `v => ({ ...v${lp}${hp}, ftype: '24db', gain: (v.gain ?? .8) * ${tidy(10 ** (db / 20))} })`
+      }
+      return `${x}.layer(${live.map((b) => `p => p.fmap(${band(b)})`).join(', ')})`
+    },
+  },
+  saturator: {
+    group: 'mixing', label: 'saturator', blurb: 'Warmth and grit: rounds off peaks and adds harmonics',
+    inputs: 1,
+    params: [
+      { key: 'drive', type: 'knob', label: 'drive', min: 0, max: 4, def: 1.2 },
+      { key: 'character', type: 'select', label: 'character', options: ['warm', 'tape', 'tube', 'asym', 'harmonics', 'fold'], def: 'tape' },
+      { key: 'out', type: 'knob', label: 'output', min: 0.05, max: 1, def: 0.8 },
+    ],
+    code: (d, [x]) => `${x}.distort("${tidy(d.drive)}:${tidy(d.out)}:${SATURATION[d.character] ?? 'soft'}")`,
+  },
+  clipper: {
+    group: 'mixing', label: 'clipper', blurb: 'Pushes the level into a hard ceiling for loud, punchy peaks',
+    inputs: 1,
+    params: [
+      { key: 'push', type: 'knob', label: 'push', min: 0, max: 3, def: 0.6 },
+      { key: 'ceiling', type: 'knob', label: 'ceiling', min: 0.1, max: 1, def: 0.9 },
+    ],
+    // Clipper and saturator share Strudel's one distortion stage: after a saturator, the
+    // clipper adds its push to it and its ceiling caps the (already bounded) output.
+    code: (d, [x]) => `${x}.fmap(v => v.distort === undefined ? { ...v, distort: ${tidy(d.push)}, distortvol: ${tidy(d.ceiling)}, distorttype: 'hard' } : { ...v, distort: v.distort + ${tidy(d.push)}, distortvol: (v.distortvol ?? 1) * ${tidy(d.ceiling)} })`,
+  },
+  compressor: {
+    group: 'mixing', label: 'compressor', blurb: 'Evens out the level: loud parts get turned down',
+    inputs: 1,
+    params: [
+      { key: 'threshold', type: 'knob', label: 'thresh', min: -60, max: 0, def: -18, unit: 'db' },
+      { key: 'ratio', type: 'knob', label: 'ratio', min: 1, max: 20, def: 4, log: true, unit: 'ratio' },
+      { key: 'attack', type: 'knob', label: 'attack', min: 0.001, max: 0.2, def: 0.01, log: true, unit: 's' },
+      { key: 'release', type: 'knob', label: 'release', min: 0.02, max: 1, def: 0.15, log: true, unit: 's' },
+      { key: 'knee', type: 'knob', label: 'knee', min: 0, max: 30, def: 6, unit: 'db' },
+      { key: 'makeup', type: 'knob', label: 'makeup', min: 0, max: 18, def: 3, unit: 'db', origin: 0 },
+    ],
+    code: (d, [x]) => `${x}.compressor("${Math.round(d.threshold * 10) / 10}:${tidy(d.ratio)}:${tidy(d.knee)}:${tidy(d.attack)}:${tidy(d.release)}")${d.makeup > 0.05 ? `.mul(postgain(${tidy(10 ** (d.makeup / 20))}))` : ''}`,
+  },
+  punch: {
+    group: 'mixing', label: 'transient', blurb: 'More or less snap at the start of each hit, and more or less tail',
+    inputs: 1,
+    params: [
+      { key: 'attack', type: 'knob', label: 'snap', min: -1, max: 1, def: 0.5, unit: 'bi', origin: 0 },
+      { key: 'sustain', type: 'knob', label: 'tail', min: -1, max: 1, def: 0, unit: 'bi', origin: 0 },
+    ],
+    code: (d, [x]) => `${x}.transient("${tidy(d.attack)}:${tidy(d.sustain)}")`,
+  },
+
   fxrack: {
     group: 'effect', label: 'fx rack', blurb: 'Several effects in one box, applied top to bottom',
     inputs: 1,
     params: [],
-    code: (d, [x]) => {
+    code: (d, [x], ctx) => {
       const chain = (d.chain ?? []).filter((u) => u.on && FX_UNITS.includes(u.type))
-      return chain.length ? `${x}${chain.map((u) => NODE_TYPES[u.type].code(u.data, [''])).join('')}` : x
+      let eqAbove = !!ctx?.eqAbove
+      return chain.reduce((acc, u) => {
+        const out = NODE_TYPES[u.type].code(u.data, [acc], { ...ctx, eqAbove })
+        eqAbove ||= splitsBands(u)
+        return out
+      }, x)
     },
   },
 
@@ -264,7 +345,17 @@ export const NODE_TYPES = {
 }
 
 /** Effects that can sit inside an fx rack: every plain effect node. */
-export const FX_UNITS = ['filter', 'djfilter', 'space', 'level', 'drive', 'phaser', 'tremolo', 'vowel', 'lofi']
+export const FX_UNITS = ['eq3', 'compressor', 'saturator', 'clipper', 'punch', 'filter', 'djfilter', 'space', 'level', 'drive', 'phaser', 'tremolo', 'vowel', 'lofi']
+
+/** Whether an eq node or unit changes anything (a flat eq isn't in the code at all). */
+const eqActive = (d) => [d.low, d.mid, d.high].some((db) => Math.abs(db) >= 0.05)
+
+/** Whether a node splits the sound into eq bands, so later filters must merge with them. */
+const splitsBands = (node) => (node.type === 'eq3' && eqActive(node.data))
+  || (node.type === 'fxrack' && (node.data.chain ?? []).some((u) => u.on && u.type === 'eq3' && eqActive(u.data)))
+
+/** Saturator characters → Strudel's waveshaping curves. */
+const SATURATION = { warm: 'scurve', tape: 'soft', tube: 'diode', asym: 'asym', harmonics: 'chebyshev', fold: 'fold' }
 
 /** Clean one node type's data against its params. */
 function cleanData(type, raw) {
@@ -290,6 +381,7 @@ export const GROUPS = [
   ['source', 'sources'],
   ['transform', 'transform'],
   ['effect', 'effects'],
+  ['mixing', 'eq & dynamics'],
   ['combine', 'combine'],
   ['output', 'output'],
 ]
@@ -387,6 +479,7 @@ export function graphCode(project, { solo = null } = {}) {
   const byId = new Map(nodes.map((n) => [n.id, n]))
   const patternIds = new Set(project.patterns.map((p) => p.id))
   const exprs = new Map() // id → variable name, or null when the node makes nothing
+  const banded = new Set() // ids whose output has been split into eq bands somewhere upstream
   const lines = []
   // each sidechain gets its own audio bus; bus 1 is where everything else plays
   const sidechains = nodes.filter((n) => n.type === 'sidechain').map((n) => n.id)
@@ -405,9 +498,11 @@ export function graphCode(project, { solo = null } = {}) {
       const v = visit(w.source, trail)
       if (v) { inputs.push(v); slots.push(w.targetHandle) }
     }
+    const eqAbove = wires.some((w) => banded.has(w.source))
     if (spec.inputs === 1 && !inputs.length) { exprs.set(id, null); return null }
-    const expr = spec.code(node.data, inputs, { patternIds, slots, nodeId: id, orbit: 2 + sidechains.indexOf(id) })
+    const expr = spec.code(node.data, inputs, { patternIds, slots, nodeId: id, orbit: 2 + sidechains.indexOf(id), eqAbove })
     if (!expr) { exprs.set(id, null); return null }
+    if (eqAbove || splitsBands(node)) banded.add(id)
     const name = nodeVar(id)
     lines.push(`// ${node.data.name ?? spec.label}`, `const ${name} = ${expr}`)
     exprs.set(id, name)

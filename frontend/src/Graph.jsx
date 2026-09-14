@@ -404,6 +404,11 @@ const SEARCH_WORDS = {
   tremolo: 'modulation volume pulse lfo wobble',
   vowel: 'formant voice talk mouth',
   lofi: 'coarse bitcrush downsample grit crush retro',
+  eq3: 'eq equalizer equaliser three band 3 bass low mid high boost cut tone mixing',
+  saturator: 'saturation distortion warm tape tube harmonics drive grit bass mixing',
+  clipper: 'clip clipping limiter loud ceiling hard peaks mastering bass mixing',
+  compressor: 'compression comp dynamics glue squash level even punch bass mixing',
+  punch: 'transient shaper attack snap punch tail sustain drums',
   fxrack: 'effects chain multiple fx rack bus insert',
   sidechain: 'duck ducking pump pumping compression compressor side chain kick bass edm',
   stack: 'layer mix together combine sum',
@@ -831,7 +836,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, onOpenRack, t
           >
             <Background gap={24} size={1.2} color="#34342f" />
             <Controls showInteractive={false} />
-            <MiniMap pannable zoomable nodeColor={(n) => ({ source: '#e4ff1a', output: '#e4ff1a', transform: '#f2f0e6', effect: '#a3a39a', combine: '#6b6b63' })[NODE_TYPES[project.nodes.find((x) => x.id === n.id)?.type]?.group] ?? '#555'} maskColor="rgba(0,0,0,0.6)" />
+            <MiniMap pannable zoomable nodeColor={(n) => ({ source: '#e4ff1a', output: '#e4ff1a', transform: '#f2f0e6', effect: '#a3a39a', mixing: '#a3a39a', combine: '#6b6b63' })[NODE_TYPES[project.nodes.find((x) => x.id === n.id)?.type]?.group] ?? '#555'} maskColor="rgba(0,0,0,0.6)" />
           </ReactFlow>
           <div className="graph-tip" aria-live="polite">
             {solo

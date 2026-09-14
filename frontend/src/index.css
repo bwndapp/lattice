@@ -571,7 +571,7 @@ body {
 .pal-item.cursor { background: #1c1c14; }
 .pal-item-blurb { font-size: 10px; color: var(--muted); line-height: 1.35; }
 .pal-item.pal-transform { border-left-color: var(--paper); }
-.pal-item.pal-effect { border-left-color: var(--muted); }
+.pal-item.pal-effect, .pal-item.pal-mixing { border-left-color: var(--muted); }
 .pal-item.pal-combine { border-left-color: #6b6b63; }
 .pal-item.pal-instruments { border-left-color: #b9c96a; }
 .pal-resize { position: absolute; top: 0; bottom: 0; right: -4px; width: 8px; cursor: col-resize; z-index: 6; }
@@ -581,7 +581,7 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
 .pal-label { font-size: 10px; color: var(--muted); letter-spacing: 0.06em; margin-top: 0.2rem; }
 .chip.pal-source, .chip.pal-output { border-left-color: var(--acid); }
 .chip.pal-transform { border-left-color: var(--paper); }
-.chip.pal-effect { border-left-color: var(--muted); }
+.chip.pal-effect, .chip.pal-mixing { border-left-color: var(--muted); }
 .chip.pal-combine { border-left-color: #6b6b63; }
 .graph-canvas { flex: 1; position: relative; min-width: 0; }
 .graph-canvas .react-flow {
