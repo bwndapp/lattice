@@ -231,7 +231,7 @@ export function normalizeGraph(raw, patternIds) {
       if (p.type === 'knob' || p.type === 'int') data[p.key] = clampNum(v, p.def, p.min, p.max)
       if (p.type === 'int') data[p.key] = Math.round(data[p.key])
       if (p.type === 'select') data[p.key] = p.options.includes(v) ? v : p.def
-      if (['text', 'mini', 'sound', 'code'].includes(p.type)) data[p.key] = String(v).slice(0, p.type === 'code' ? 2000 : 400)
+      if (['text', 'mini', 'sound', 'code'].includes(p.type)) data[p.key] = String(v).slice(0, p.type === 'code' ? 20000 : 400)
     }
     if (n.type === 'pattern') data.patternId = patternIds.has(n.data?.patternId) ? n.data.patternId : [...patternIds][0] ?? null
     if (n.type === 'arrange') data.bars = Object.fromEntries(Object.entries(n.data?.bars ?? {}).filter(([k]) => /^in-\d+$/.test(k)).map(([k, v]) => [k, Math.round(clampNum(v, 4, 1, 64))]))

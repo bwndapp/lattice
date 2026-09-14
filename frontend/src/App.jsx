@@ -13,7 +13,7 @@ import Browser from './Browser.jsx'
 import Graph from './Graph.jsx'
 import Rack from './Rack.jsx'
 import { capturePatterns, parseLanes, tempoChange } from './lanes'
-import { PROJECT_MARK, demoProject, generateCode, normalizeProject, parseProject, projectFromLanes } from './project'
+import { PROJECT_MARK, demoProject, generateCode, normalizeProject, parseProject, projectFromCode } from './project'
 import { createTransport, formatBarBeat, parseBarBeat } from './transport'
 
 function readPref(key, fallback) {
@@ -259,12 +259,13 @@ export default function App() {
 
   const convertToProject = useCallback(() => {
     const editor = editorRef.current
-    const lanes = parseLanes(editor.code)
-    if (!lanes?.length) return flash('Name your patterns first (e.g. drums: s("bd*4")), then convert')
     const bpm = Math.round((editor.repl.scheduler.cps ?? 0.5) * 60 * transport.beats * 10) / 10
-    replaceCode(generateCode(projectFromLanes(lanes, { bpm, beats: transport.beats }), genRef.current))
+    const { project: converted, parts, error } = projectFromCode(editor.code, { bpm, beats: transport.beats })
+    if (error) { setView('code'); return flash(error) }
+    replaceCode(generateCode(converted, genRef.current))
+    setView('graph')
     liveUpdate()
-    flash('Converted: each lane is now a pattern on its own track')
+    flash(parts > 1 ? `Turned into a patch: ${parts} parts, each a node` : 'Turned into a patch')
   }, [replaceCode, liveUpdate, flash, transport])
 
   const detachProject = useCallback(() => {

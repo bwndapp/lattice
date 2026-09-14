@@ -1,3 +1,4 @@
+import { parse } from 'acorn'
 import { defaultData, demoGraph, graphCode, normalizeGraph } from './graph.js'
 
 /**
@@ -159,6 +160,7 @@ export function normalizeProject(raw) {
   const { nodes, edges } = normalizeGraph(graph, patternIds)
   project.nodes = nodes
   project.edges = edges
+  if (typeof raw.prelude === 'string' && raw.prelude.trim()) project.prelude = raw.prelude.slice(0, 20000)
   if (!nodes.some((n) => n.type === 'output')) project.nodes.push({ id: 'out', type: 'output', x: 700, y: 200, data: { muted: {}, solo: null } })
   return project
 }
@@ -245,6 +247,7 @@ export function generateCode(project, { solo = null } = {}) {
     `setcpm(${project.bpm}/${project.beats})`,
     '',
   ]
+  if (project.prelude) lines.push('// setup, kept from the original code', project.prelude, '')
   for (const pattern of project.patterns) {
     const live = pattern.channels.filter((c) => !c.mute)
     lines.push(`// pattern: ${commentText(pattern.name)} (${pattern.bars} bar${pattern.bars === 1 ? '' : 's'})`)
@@ -303,17 +306,64 @@ export function demoProject() {
   return normalizeProject({ v: 3, bpm: 120, beats: 4, patterns: [beat, bass], ...demoGraph(beat.id, bass.id) })
 }
 
-/** Turn labeled code lanes into a project: one code node per lane, wired to the output. */
-export function projectFromLanes(lanes, { bpm = 120, beats = 4 } = {}) {
-  const nodes = [{ id: 'out', type: 'output', x: 560, y: 40, data: { muted: {}, solo: null } }]
+const TEMPO = { setcpm: 'cpm', setCpm: 'cpm', setcps: 'cps', setCps: 'cps' }
+
+/**
+ * Turn any Strudel code into a patch. Named parts (`drums: …`, `$: …`) become one code
+ * node each; code without names becomes one code node for its final pattern. Everything
+ * else (samples(), consts, helpers) is kept as setup that runs first, and the tempo is
+ * read from setcpm / setcps. Returns { project, parts } or { error } naming a line.
+ */
+export function projectFromCode(code, { bpm: fallbackBpm = 120, beats = 4 } = {}) {
+  const src = String(code ?? '')
+  let ast
+  try {
+    ast = parse(src, { ecmaVersion: 'latest', sourceType: 'module', allowAwaitOutsideFunction: true, allowReturnOutsideFunction: true })
+  } catch (e) {
+    return { error: `The code has a mistake on line ${e.loc?.line ?? '?'}. Fix it in the code view, then try again.` }
+  }
+  const text = (node) => src.slice(node.start, node.end)
+  let bpm = fallbackBpm
+  const parts = []
+  const setup = []
+  const statements = ast.body
+  const lastExpr = [...statements].reverse().find((n) => n.type === 'ExpressionStatement')
+  const hasLabels = statements.some((n) => n.type === 'LabeledStatement')
+  for (const node of statements) {
+    if (node.type === 'LabeledStatement') {
+      const name = node.label.name
+      const muted = name.startsWith('_') || name.endsWith('_')
+      const base = name.replace(/^_+|_+$/g, '').replace(/^S(?=.)/, '')
+      parts.push({ title: base === '$' ? null : base, source: text(node.body).replace(/;\s*$/, ''), muted })
+      continue
+    }
+    const call = node.type === 'ExpressionStatement' && node.expression.type === 'CallExpression' ? node.expression : null
+    const kind = call?.callee.type === 'Identifier' ? TEMPO[call.callee.name] : null
+    if (kind) {
+      const arg = call.arguments[0] ? text(call.arguments[0]) : ''
+      if (/^[\d\s.+\-*/()]+$/.test(arg)) {
+        try {
+          const value = Function(`"use strict"; return (${arg})`)()
+          if (Number.isFinite(value) && value > 0) bpm = Math.round((kind === 'cpm' ? value * beats : value * 60 * beats) * 10) / 10
+          continue
+        } catch { /* not plain arithmetic: keep it as setup */ }
+      }
+      setup.push(text(node)) // tempo that isn't a plain number stays in the code
+      continue
+    }
+    if (!hasLabels && node === lastExpr) { parts.push({ title: 'code', source: text(node.expression), muted: false }); continue }
+    setup.push(text(node))
+  }
+  const nodes = [{ id: 'out', type: 'output', x: 600, y: 40, data: { muted: {}, solo: null } }]
   const edges = []
-  lanes.forEach((lane, i) => {
-    const id = `lane${i}`
-    nodes.push({ id, type: 'code', x: 40, y: 40 + i * 170, data: { ...defaultData('code'), code: lane.source, name: lane.title ?? `lane ${i + 1}` } })
+  parts.forEach((part, i) => {
+    const id = `code${i}`
+    nodes.push({ id, type: 'code', x: 40, y: 40 + i * 190, data: { ...defaultData('code'), code: part.source, name: part.title ?? `part ${i + 1}` } })
     edges.push({ source: id, target: 'out', targetHandle: `in-${i}` })
-    if (lane.muted) nodes[0].data.muted[`in-${i}`] = true
+    if (part.muted) nodes[0].data.muted[`in-${i}`] = true
   })
-  return normalizeProject({ v: 3, bpm, beats, patterns: [], nodes, edges })
+  const project = normalizeProject({ v: 3, bpm, beats, patterns: [], nodes, edges, prelude: setup.join('\n') })
+  return { project, parts: parts.length }
 }
 
 /** Instruments you can drag into a pattern. Drums and synths start empty. */
