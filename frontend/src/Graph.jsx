@@ -17,6 +17,43 @@ const Ctx = createContext(null)
 
 const slotNum = (h) => Number(/^in-(\d+)$/.exec(h ?? '')?.[1] ?? -1)
 
+/** Can this kind of node be dropped into the middle of a wire? It needs an input and an output. */
+const splicable = (type) => !!NODE_TYPES[type]?.inputs && type !== 'output'
+const firstInput = (type) => (NODE_TYPES[type]?.inputs === 1 ? 'in' : 'in-0')
+
+/**
+ * The wire under a screen rectangle (or near a point), found by sampling each rendered
+ * edge path. `skip` leaves out wires touching a node.
+ */
+function wireAt(box, skip = null) {
+  for (const el of document.querySelectorAll('.graph-canvas .react-flow__edge')) {
+    const id = el.getAttribute('data-id') ?? el.dataset.id
+    if (!id || (skip && el.dataset.touches?.split(' ').includes(skip))) continue
+    const path = el.querySelector('path.react-flow__edge-path')
+    const ctm = path?.getScreenCTM()
+    if (!path || !ctm) continue
+    const length = path.getTotalLength()
+    for (let t = 0; t <= length; t += 10) {
+      const p = path.getPointAtLength(t)
+      const x = ctm.a * p.x + ctm.c * p.y + ctm.e
+      const y = ctm.b * p.x + ctm.d * p.y + ctm.f
+      if (x >= box.left && x <= box.right && y >= box.top && y <= box.bottom) return id
+    }
+  }
+  return null
+}
+
+/** Rewire A → B into A → node → B. Mutates the project draft. */
+function spliceInto(p, edgeId, nodeId) {
+  const wire = p.edges.find((e) => e.id === edgeId)
+  const node = p.nodes.find((n) => n.id === nodeId)
+  if (!wire || !node || !splicable(node.type) || wire.source === nodeId || wire.target === nodeId) return false
+  p.edges = p.edges.filter((e) => e !== wire && e.source !== nodeId && e.target !== nodeId)
+  p.edges.push({ source: wire.source, target: nodeId, targetHandle: firstInput(node.type) })
+  p.edges.push({ source: nodeId, target: wire.target, targetHandle: wire.targetHandle })
+  return true
+}
+
 /** What a node is called on wires and in lists. */
 function nodeTitle(node, project) {
   if (!node) return '?'
@@ -316,7 +353,17 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, onOpenRack, t
   const [nodes, setNodes] = useState(() => toRf([]))
   useEffect(() => setNodes((prev) => toRf(prev)), [toRf])
 
-  const rfEdges = useMemo(() => project.edges.map((e) => ({ ...e, sourceHandle: 'out', animated: started })), [project.edges, started])
+  const [spliceTarget, setSpliceTarget] = useState(null) // wire a dragged node would drop into
+  const [detaching, setDetaching] = useState(null) // wire being pulled off its input (for its look)
+  const detachRef = useRef(null) // the same, for the drop handler, which must not read stale state
+  const spliceRef = useRef(null)
+  const rfEdges = useMemo(() => project.edges.map((e) => ({
+    ...e,
+    sourceHandle: 'out',
+    animated: started,
+    className: e.id === spliceTarget ? 'splice-target' : e.id === detaching ? 'detaching' : '',
+    domAttributes: { 'data-touches': `${e.source} ${e.target}` },
+  })), [project.edges, started, spliceTarget, detaching])
   const [edges, setEdges] = useState(rfEdges)
   useEffect(() => setEdges((prev) => {
     const sel = new Set(prev.filter((e) => e.selected).map((e) => e.id))
@@ -337,7 +384,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, onOpenRack, t
     if (gone.has(solo)) onSolo(null)
   }, [onUpdateProject, solo, onSolo])
 
-  const addNode = useCallback((type, position, instrument) => {
+  const addNode = useCallback((type, position, instrument, intoWire = null) => {
     const id = `${type}${newId().slice(-5)}`
     const rect = wrapRef.current?.getBoundingClientRect()
     const at = position ?? flow.screenToFlowPosition({ x: (rect?.left ?? 0) + (rect?.width ?? 800) / 2 - 110, y: (rect?.top ?? 0) + (rect?.height ?? 600) / 2 - 60 })
@@ -350,6 +397,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, onOpenRack, t
         data.patternId = pattern.id
       }
       p.nodes.push({ id, type, x: Math.round(at.x), y: Math.round(at.y), data })
+      if (intoWire) spliceInto(p, intoWire, id)
     })
     return id
   }, [flow, onUpdateProject])
@@ -382,6 +430,8 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, onOpenRack, t
   }, [project])
 
   const onConnect = useCallback((c) => {
+    detachRef.current = null // a pulled wire that lands on an output is rewired, not deleted
+    setDetaching(null)
     onUpdateProject((p) => {
       const target = p.nodes.find((n) => n.id === c.target)
       const handle = NODE_TYPES[target?.type]?.inputs === 1 ? 'in' : c.targetHandle
@@ -400,15 +450,27 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, onOpenRack, t
         <div
           className="graph-canvas"
           onDragOver={(e) => {
-            if (e.dataTransfer.types.includes(NODE_MIME) || e.dataTransfer.types.includes(INSTRUMENT_MIME)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }
+            if (!e.dataTransfer.types.includes(NODE_MIME) && !e.dataTransfer.types.includes(INSTRUMENT_MIME)) return
+            e.preventDefault()
+            e.dataTransfer.dropEffect = 'copy'
+            // the node type isn't readable during dragover, so any node lights wires; the drop decides
+            if (e.dataTransfer.types.includes(NODE_MIME)) {
+              const r = 14
+              const wire = wireAt({ left: e.clientX - r, right: e.clientX + r, top: e.clientY - r, bottom: e.clientY + r })
+              if (wire !== spliceTarget) setSpliceTarget(wire)
+            }
           }}
+          onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setSpliceTarget(null) }}
           onDrop={(e) => {
             const type = e.dataTransfer.getData(NODE_MIME)
             const instrument = e.dataTransfer.getData(INSTRUMENT_MIME)
             if (!type && !instrument) return
             e.preventDefault()
+            setSpliceTarget(null)
             const at = flow.screenToFlowPosition({ x: e.clientX - 20, y: e.clientY - 20 })
-            addNode(type || 'pattern', at, instrument || null)
+            const r = 14
+            const wire = type && splicable(type) ? wireAt({ left: e.clientX - r, right: e.clientX + r, top: e.clientY - r, bottom: e.clientY + r }) : null
+            addNode(type || 'pattern', at, instrument || null, wire)
           }}
         >
           <ReactFlow
@@ -423,12 +485,44 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, onOpenRack, t
               const gone = new Set(deleted.map((e) => e.id))
               onUpdateProject((p) => { p.edges = p.edges.filter((e) => !gone.has(e.id)) })
             }}
-            onNodeDragStop={(_, __, dragged) => onUpdateProject((p) => {
-              for (const d of dragged) {
-                const n = p.nodes.find((x) => x.id === d.id)
-                if (n) { n.x = Math.round(d.position.x); n.y = Math.round(d.position.y) }
+            onNodeDrag={(_, node, dragged) => {
+              // a lone, unwired node that has an input and an output can drop into a wire
+              const model = project.nodes.find((n) => n.id === node.id)
+              const wired = project.edges.some((e) => e.source === node.id || e.target === node.id)
+              if (dragged.length !== 1 || !model || !splicable(model.type) || wired) {
+                if (spliceRef.current) { spliceRef.current = null; setSpliceTarget(null) }
+                return
               }
-            })}
+              const el = document.querySelector(`.graph-canvas .react-flow__node[data-id="${node.id}"]`)
+              const wire = el ? wireAt(el.getBoundingClientRect(), node.id) : null
+              if (wire !== spliceRef.current) { spliceRef.current = wire; setSpliceTarget(wire) }
+            }}
+            onNodeDragStop={(_, __, dragged) => {
+              const into = spliceRef.current
+              spliceRef.current = null
+              setSpliceTarget(null)
+              onUpdateProject((p) => {
+                for (const d of dragged) {
+                  const n = p.nodes.find((x) => x.id === d.id)
+                  if (n) { n.x = Math.round(d.position.x); n.y = Math.round(d.position.y) }
+                }
+                if (into && dragged.length === 1) spliceInto(p, into, dragged[0].id)
+              })
+            }}
+            onConnectStart={(_, { nodeId, handleId, handleType }) => {
+              // grabbing a connected input pulls its wire off
+              if (handleType !== 'target') return
+              const wire = project.edges.find((e) => e.target === nodeId && e.targetHandle === (handleId ?? 'in'))
+              detachRef.current = wire?.id ?? null
+              setDetaching(detachRef.current)
+            }}
+            onConnectEnd={() => {
+              const wire = detachRef.current
+              detachRef.current = null
+              setDetaching(null)
+              // dropped anywhere but an output: the pulled wire goes away (a successful onConnect already replaced it)
+              if (wire) onUpdateProject((p) => { p.edges = p.edges.filter((e) => e.id !== wire) })
+            }}
             onConnect={onConnect}
             isValidConnection={isValidConnection}
             deleteKeyCode={['Backspace', 'Delete']}
@@ -444,7 +538,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, onOpenRack, t
             {solo
               ? <>auditioning <b>{nodeTitle(project.nodes.find((n) => n.id === solo), project)}</b> · <button className="linkish" onClick={() => onSolo(null)}>back to the output</button></>
               : selected ? NODE_TYPES[selected.type]?.blurb
-              : 'drag from a node’s right dot to another node’s left dot to wire them · delete removes · scroll zooms'}
+              : 'wire: drag right dot → left dot · pull a wire off an input to remove it · drop a node on a wire to insert it'}
           </div>
         </div>
       </div>

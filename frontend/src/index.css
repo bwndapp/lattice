@@ -601,6 +601,8 @@ body {
 .graph-convert p { margin: 0; line-height: 1.6; }
 .graph-convert code { color: var(--acid); }
 .btn.solo-chip { background: var(--acid); color: var(--ink); }
+.graph-canvas .react-flow__edge.splice-target .react-flow__edge-path { stroke: var(--acid); stroke-width: 5; stroke-dasharray: 8 5; }
+.graph-canvas .react-flow__edge.detaching .react-flow__edge-path { opacity: 0.2; }
 @media (max-width: 860px) {
   .palette.graph-palette { width: 7.5rem; }
   .graph-tip { display: none; }
