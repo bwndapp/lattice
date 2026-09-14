@@ -1,4 +1,6 @@
-import { getAudioContext, soundMap, superdough } from '@strudel/webaudio'
+import { getAudioContext, getSampleBuffer, getSampleInfo, getSound, initAudio, soundMap, superdough } from '@strudel/webaudio'
+import { getFontBufferSource } from '@strudel/soundfonts'
+import { getSoundIndex } from '@strudel/core'
 import { paramValue, paramsFor } from './project'
 
 /**
@@ -84,4 +86,74 @@ function play(value, duration) {
     if (ac.state !== 'running') ac.resume()
     Promise.resolve(superdough(value, ac.currentTime + 0.03, duration)).catch(() => {})
   } catch { /* audio not ready yet */ }
+}
+
+let audioReady = null
+/** Start the audio engine (context + effect worklets) once; safe to call from any gesture. */
+export function ensureAudio() {
+  if (!audioReady) audioReady = initAudio().catch(() => {})
+  const ac = getAudioContext()
+  if (ac.state !== 'running') ac.resume().catch(() => {})
+  return audioReady
+}
+
+const warmed = new Map() // sample url or font:note → loading promise
+const yieldToAudio = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+/** Start loading whatever sounds one hap needs; returns the loading promise, if any. */
+function warm(v, seen) {
+  if (!v || typeof v !== 'object' || typeof v.s !== 'string') return null
+  const key = v.bank ? `${v.bank}_${v.s}` : v.s
+  const data = getSound(key)?.data
+  if (!data) return null
+  try {
+    let id
+    let load
+    if (data.type === 'sample' && data.samples) {
+      const value = { ...v, s: key }
+      id = getSampleInfo(value, data.samples).url
+      load = () => getSampleBuffer(value, data.samples)
+    } else if (data.type === 'soundfont' && data.fonts?.length) {
+      const font = data.fonts[getSoundIndex(v.n, data.fonts.length)]
+      id = `${font}:${v.note ?? v.freq ?? 'c3'}`
+      load = () => getFontBufferSource(font, v, getAudioContext())
+    } else return null
+    if (seen.has(id)) return null
+    seen.add(id)
+    if (!warmed.has(id)) warmed.set(id, load().catch(() => warmed.delete(id)))
+    return warmed.get(id)
+  } catch {
+    return null // an odd value: let the scheduler deal with it
+  }
+}
+
+/**
+ * Load every sample and instrument note a pattern plays over the next `cycles` cycles.
+ * Strudel otherwise loads a sound the first time it's triggered and drops that hit if the
+ * file isn't ready in time, so a fresh page starts with drums fading in one by one.
+ *
+ * Querying a pattern is expensive, so it goes one cycle at a time and yields in between:
+ * the scheduler's clock must never be held up (a late tick skips notes). Resolves once
+ * the sounds are loaded, or after `timeout` ms, whichever comes first.
+ */
+export async function preloadPattern(pattern, { from = 0, cycles = 16, timeout = 4000, stillWanted = () => true } = {}) {
+  if (!pattern?.queryArc) return
+  const jobs = []
+  const seen = new Set()
+  for (let c = from; c < from + cycles; c++) {
+    if (!stillWanted()) return
+    let haps
+    try {
+      haps = pattern.queryArc(c, c + 1, { _cps: 0.5 })
+    } catch {
+      return
+    }
+    for (const hap of haps) {
+      if (!hap.hasOnset()) continue
+      const job = warm(hap.value, seen)
+      if (job) jobs.push(job)
+    }
+    await yieldToAudio()
+  }
+  if (jobs.length) await Promise.race([Promise.all(jobs), new Promise((r) => setTimeout(r, timeout))])
 }

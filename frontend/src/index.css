@@ -852,3 +852,8 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
   .browser-controls { border-right: 0; border-bottom: 1px solid var(--line); padding-bottom: 0.6rem; }
   .setlist { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* play while the first bars' sounds load */
+.btn.play.preparing { animation: preparing 0.7s steps(2) infinite; }
+@keyframes preparing { 50% { opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) { .btn.play.preparing { animation: none; opacity: 0.7; } }

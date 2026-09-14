@@ -5,7 +5,8 @@ import { Compartment, EditorState, StateEffect } from '@codemirror/state'
 import { Pattern, silence } from '@strudel/core'
 import { getDrawContext } from '@strudel/draw'
 import { transpiler } from '@strudel/transpiler'
-import { getAudioContext, webaudioOutput, initAudioOnFirstClick } from '@strudel/webaudio'
+import { getAudioContext, webaudioOutput } from '@strudel/webaudio'
+import { ensureAudio, preloadPattern } from './audio'
 import { prebake } from '@strudel/repl/prebake.mjs'
 import { useUser } from './bwnd'
 import { api, clearDraft, readDraft, timeAgo, trackUrl, writeDraft } from './api'
@@ -34,7 +35,8 @@ function scratchCode() {
   return readDraft(null) ?? legacy ?? generateCode(demoProject())
 }
 
-initAudioOnFirstClick()
+// start the audio engine on the first click or key, so a keyboard play gets effects too
+for (const type of ['pointerdown', 'keydown']) window.addEventListener(type, () => ensureAudio(), { once: true, capture: true })
 
 export default function App() {
   const trackId = useMatch('/t/:id')?.params.id || null
@@ -97,6 +99,9 @@ export default function App() {
   const metaChanged = isOwner && (title !== track.title || visibility !== track.visibility)
   const dirty = isNew || codeChanged || metaChanged
 
+  const [preparing, setPreparing] = useState(false) // loading sounds before the first beat
+  const preparingRef = useRef(false)
+  const preloadRunRef = useRef(0)
   const toastTimer = useRef(null)
   const flash = useCallback((msg) => {
     setToast(msg)
@@ -124,13 +129,37 @@ export default function App() {
         setActiveCode(state.activeCode)
       },
       beforeEval: () => { capturedRef.current = capturePatterns(Pattern) },
+      // Before the clock starts: audio engine up and every sound of the first bars loaded,
+      // so everything comes in together on the first beat instead of hits going missing.
+      beforeStart: async () => {
+        setPreparing(true)
+        preparingRef.current = true
+        try {
+          await ensureAudio()
+          await preloadPattern(editorRef.current?.repl.scheduler.pattern, { cycles: 4 })
+        } finally {
+          preparingRef.current = false
+          setPreparing(false)
+        }
+      },
       editPattern: (pattern) => transport.edit(pattern),
-      afterEval: () => setEvaluated({
-        pattern: transport.raw, // song time; the scheduler plays the transport-shaped copy
-        lanes: capturedRef.current,
-        forId: loadedIdRef.current,
-        cps: editorRef.current.repl.scheduler.cps,
-      }),
+      afterEval: () => {
+        // load what the new code plays in the background: the rest of the song, or a sound just added
+        const { scheduler } = editorRef.current.repl
+        const run = ++preloadRunRef.current
+        // (after the sample maps have arrived, or there's nothing to look sounds up in)
+        Promise.all([editorRef.current.prebaked, new Promise((r) => setTimeout(r, 300))]).then(() => preloadPattern(scheduler.pattern, {
+          from: scheduler.started ? Math.ceil(scheduler.now()) : 0,
+          cycles: 32,
+          stillWanted: () => preloadRunRef.current === run, // newer code: that run takes over
+        }))
+        setEvaluated({
+          pattern: transport.raw, // song time; the scheduler plays the transport-shaped copy
+          lanes: capturedRef.current,
+          forId: loadedIdRef.current,
+          cps: scheduler.cps,
+        })
+      },
     })
     editorRef.current.setFontFamily('"Martian Mono", ui-monospace, monospace')
     transport.scheduler = editorRef.current.repl.scheduler
@@ -298,7 +327,7 @@ export default function App() {
 
   const play = useCallback(() => {
     const editor = editorRef.current
-    if (!editor) return
+    if (!editor || preparingRef.current) return // already starting: sounds are loading
     if (!editor.repl.scheduler.started) transport.cue() // start from the cue, not bar 1
     editor.evaluate()
     const id = loadedIdRef.current
@@ -515,7 +544,7 @@ export default function App() {
         <Link to="/" className="logo" aria-label="strudel, home">strudel</Link>
         <span className="transport" role="group" aria-label="Transport">
           <button className="btn tport" onClick={toStart} title="Back to the start (Home)" aria-label="Back to the start">|&lt;</button>
-          <button className={`btn play ${started ? 'on' : ''}`} onClick={play} title="Play (space) · update while playing (ctrl/cmd + enter)">{started ? 'update' : 'play'}</button>
+          <button className={`btn play ${started ? 'on' : ''} ${preparing ? 'preparing' : ''}`} onClick={play} aria-busy={preparing} title="Play (space) · update while playing (ctrl/cmd + enter)">{started ? 'update' : preparing ? 'loading' : 'play'}</button>
           <button className="btn tport" onClick={pause} disabled={!started} title="Pause (space)">pause</button>
           <button className="btn stop" onClick={stop} disabled={!started} title="Stop and return to the cue (ctrl/cmd + .)">stop</button>
         </span>
