@@ -330,6 +330,9 @@ body {
   border-bottom: 1px solid var(--line);
 }
 .ch.muted .steps, .ch.muted .ch-code { opacity: 0.35; }
+/* only step grids need to be as wide as their steps; synth and code rows (and the piano
+   roll inside them) stay the width of the screen and scroll inside themselves */
+.ch.ch-synth, .ch.ch-code { grid-template-columns: 1.6rem 7.5rem 15rem minmax(18rem, 1fr) 15.5rem; min-width: 0; }
 .ch-name {
   font-family: var(--display); font-weight: 800; font-stretch: 112%; font-size: 1rem;
   color: var(--paper); background: transparent; border: 0; border-bottom: 1px solid transparent; padding: 0.1rem 0; min-width: 0;
@@ -421,11 +424,18 @@ body {
 .rack-body.dropping { outline: 2px dashed var(--acid); outline-offset: -4px; }
 .pattern-pop {
   position: fixed; z-index: 40;
-  width: min(820px, calc(100vw - 24px)); max-height: min(70vh, 640px);
+  width: 860px; height: 560px;
+  min-width: min(520px, calc(100vw - 24px)); min-height: 260px;
+  max-width: calc(100vw - 24px); max-height: calc(100vh - 24px);
   display: flex; flex-direction: column;
   background: var(--panel); border: 2px solid var(--acid);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+  resize: both; overflow: hidden;
 }
+.pattern-pop.expanded { inset: 3vh 2.5vw; width: auto; height: auto; max-width: none; max-height: none; resize: none; }
+.pattern-pop .pop-head { cursor: move; flex-shrink: 0; }
+.pattern-pop.expanded .pop-head { cursor: default; }
+.pattern-pop .rack-body { flex: 1; min-height: 0; }
 .pop-head { display: flex; align-items: center; gap: 0.6rem; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .pop-name {
   font-family: var(--display); font-weight: 900; font-stretch: 112%; font-size: 1.3rem;
@@ -433,7 +443,8 @@ body {
 }
 .pop-name:focus { outline: none; border-bottom-color: var(--acid); }
 .pattern-pop .rack-body { overflow: auto; padding-bottom: 0.4rem; }
-.rack-body.compact .ch { grid-template-columns: 1.6rem 6.5rem 12rem minmax(max(12rem, calc(var(--n) * 1.4rem)), 1fr) 7.5rem; padding-inline: 0.75rem; }
+.rack-body.compact .ch { grid-template-columns: 1.6rem 6.5rem 12rem minmax(max(12rem, calc(var(--n) * 1.4rem)), 1fr) max-content; padding-inline: 0.75rem; }
+.rack-body.compact .ch.ch-synth, .rack-body.compact .ch.ch-code { grid-template-columns: 1.6rem 6.5rem 12rem minmax(12rem, 1fr) max-content; min-width: 0; }
 .rack-body.compact .rack-add { padding: 0.6rem 0.75rem; }
 @media (max-width: 1100px) {
   .playlist.has-palette { --palette: 0px; }
@@ -496,15 +507,31 @@ body {
 .sp-count { color: var(--muted); font-size: 10px; }
 .sp-item.on .sp-count { color: var(--ink); }
 .sp-empty { color: var(--muted); padding: 1rem; font-size: 12px; }
+.pr-panel { display: flex; flex-direction: column; min-width: 0; background: #0a0a09; border: 1px solid var(--line); }
+.pr-toolbar { flex-shrink: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 0.35rem 0.6rem; padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--line); font-size: 11px; color: var(--muted); }
+.pr-title { font-family: var(--display); font-weight: 800; font-stretch: 112%; font-size: 12px; color: var(--paper); }
+.pr-group { display: inline-flex; align-items: center; gap: 0.15rem; }
+.pr-zoom { min-width: 3.2rem; text-align: center; color: var(--acid); font-variant-numeric: tabular-nums; }
+.pr-spacer { flex: 1; }
+.pr-hint { font-size: 10px; }
+.pr .node-btn { color: var(--paper); border-color: var(--line); opacity: 1; }
+.pr .node-btn:hover { border-color: var(--acid); color: var(--acid); }
+.pr .node-btn.on { background: var(--acid); color: var(--ink); border-color: var(--acid); }
+.pr-overview { display: block; flex-shrink: 0; width: 100%; height: 28px; cursor: pointer; touch-action: none; border-bottom: 1px solid var(--line); }
 .piano-roll {
-  position: relative; height: 18rem; overflow: auto; background: #0a0a09;
-  border: 1px solid var(--line); outline: none;
+  position: relative; height: 18rem; min-height: 9rem; overflow: auto; resize: vertical;
+  outline: none; overscroll-behavior: contain;
 }
-.piano-roll:focus-visible { border-color: var(--acid); }
-.pr-inner { display: flex; position: relative; }
-.pr-keys { position: sticky; left: 0; z-index: 2; flex-shrink: 0; cursor: pointer; border-right: 1px solid var(--line); }
+.piano-roll:focus-visible { box-shadow: inset 0 0 0 1px var(--acid); }
+.pr-inner { display: grid; position: relative; }
+.pr-corner { position: sticky; left: 0; top: 0; z-index: 4; background: #0c0c0b; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.pr-ruler { position: sticky; top: 0; z-index: 3; display: block; cursor: pointer; }
+.pr-keys { position: sticky; left: 0; z-index: 2; display: block; cursor: pointer; border-right: 1px solid var(--line); }
 .pr-grid-wrap { position: relative; }
 .pr-grid { display: block; touch-action: none; }
+.pr-backdrop { position: fixed; inset: 0; z-index: 80; background: rgba(0, 0, 0, 0.72); }
+.pr.full .pr-panel { position: fixed; inset: 3vh 2.5vw; z-index: 81; border: 2px solid var(--acid); box-shadow: 0 24px 80px rgba(0, 0, 0, 0.8); }
+.pr.full .piano-roll { flex: 1; height: auto; resize: none; }
 .pr-cursor { position: absolute; top: 0; bottom: 0; left: 0; background: rgba(242, 240, 230, 0.12); border-left: 2px solid var(--paper); pointer-events: none; }
 .pop-uses { font-size: 11px; color: var(--muted); }
 .seg.history .btn { padding-inline: 0.5rem; }
