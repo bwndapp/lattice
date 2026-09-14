@@ -13,6 +13,8 @@ const target = process.env.BUILD_TARGET === 'webapp' ? 'webapp' : 'public'
 
 export default defineConfig({
   base: './',
+  // copied as-is into the build (the share image); not "public", which is the live site's dir
+  publicDir: 'static',
   plugins: [react()],
   // bwnd sign-in: the issuer and this app's client id come from the box's env
   // at build time (see src/bwnd.js). Empty when built outside a box.
