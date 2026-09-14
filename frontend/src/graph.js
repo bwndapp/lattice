@@ -542,27 +542,43 @@ export function graphCode(project, { solo = null } = {}) {
   return { lines, lanes }
 }
 
-/** A starter patch: a beat, a filtered bassline in some space, and thinned-out hats. */
-export function demoGraph(beatId, bassId) {
+/**
+ * The starter patch: a beat; a bassline through an eq and compressor, ducked by a silent
+ * kick; chords in some space; and thinned-out hats. Four lanes into the output.
+ */
+export function demoGraph(beatId, bassId, chordsId) {
+  const data = (type, patch) => ({ ...defaultData(type), ...patch })
   return {
     nodes: [
       { id: 'beat', type: 'pattern', x: 40, y: 40, data: { patternId: beatId } },
       { id: 'bass', type: 'pattern', x: 40, y: 250, data: { patternId: bassId } },
-      { id: 'bassfilter', type: 'filter', x: 330, y: 230, data: { ...defaultData('filter'), lpf: 1200, lpq: 8 } },
-      { id: 'bassspace', type: 'space', x: 620, y: 230, data: { ...defaultData('space'), room: 0.3, delay: 0.2 } },
-      { id: 'hats', type: 'sound', x: 40, y: 470, data: { mini: 'hh*16', bank: 'RolandTR909' } },
-      { id: 'hatsthin', type: 'thin', x: 330, y: 470, data: { amount: 0.35 } },
-      { id: 'hatslevel', type: 'level', x: 620, y: 470, data: { gain: 0.45, pan: 0.65 } },
-      { id: 'out', type: 'output', x: 930, y: 250, data: { muted: {}, solo: null } },
+      { id: 'basseq', type: 'eq3', x: 330, y: 230, data: data('eq3', { low: 3, mid: -2 }) },
+      { id: 'basscomp', type: 'compressor', x: 620, y: 230, data: data('compressor', { threshold: -20, ratio: 4 }) },
+      { id: 'pump', type: 'sound', x: 330, y: 470, data: { mini: 'bd*4', bank: 'RolandTR909' } },
+      { id: 'bassduck', type: 'sidechain', x: 910, y: 250, data: data('sidechain', { depth: 0.7 }) },
+      ...(chordsId ? [
+        { id: 'chords', type: 'pattern', x: 40, y: 680, data: { patternId: chordsId } },
+        { id: 'chordspace', type: 'space', x: 330, y: 700, data: data('space', { room: 0.6, delay: 0.3 }) },
+      ] : []),
+      { id: 'hats', type: 'sound', x: 40, y: 920, data: { mini: 'hh*16', bank: 'RolandTR909' } },
+      { id: 'hatsthin', type: 'thin', x: 330, y: 920, data: { amount: 0.35 } },
+      { id: 'hatslevel', type: 'level', x: 620, y: 920, data: { gain: 0.45, pan: 0.65 } },
+      { id: 'out', type: 'output', x: 1220, y: 420, data: { muted: {}, solo: null } },
     ],
     edges: [
       { source: 'beat', target: 'out', targetHandle: 'in-0' },
-      { source: 'bass', target: 'bassfilter', targetHandle: 'in' },
-      { source: 'bassfilter', target: 'bassspace', targetHandle: 'in' },
-      { source: 'bassspace', target: 'out', targetHandle: 'in-1' },
+      { source: 'bass', target: 'basseq', targetHandle: 'in' },
+      { source: 'basseq', target: 'basscomp', targetHandle: 'in' },
+      { source: 'basscomp', target: 'bassduck', targetHandle: 'in-0' },
+      { source: 'pump', target: 'bassduck', targetHandle: 'in-1' },
+      { source: 'bassduck', target: 'out', targetHandle: 'in-1' },
+      ...(chordsId ? [
+        { source: 'chords', target: 'chordspace', targetHandle: 'in' },
+        { source: 'chordspace', target: 'out', targetHandle: 'in-2' },
+      ] : []),
       { source: 'hats', target: 'hatsthin', targetHandle: 'in' },
       { source: 'hatsthin', target: 'hatslevel', targetHandle: 'in' },
-      { source: 'hatslevel', target: 'out', targetHandle: 'in-2' },
+      { source: 'hatslevel', target: 'out', targetHandle: chordsId ? 'in-3' : 'in-2' },
     ],
   }
 }

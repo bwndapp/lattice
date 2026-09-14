@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useMatch, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useMatch, useNavigate } from 'react-router-dom'
 import { StrudelMirror } from '@strudel/codemirror'
 import { Compartment, EditorState, StateEffect } from '@codemirror/state'
 import { Pattern, silence } from '@strudel/core'
@@ -29,10 +29,20 @@ function songCodeOf(text) {
   return p ? generateCode(p) : text
 }
 
+/**
+ * What the scratch pad at / opens with: your unsaved patch, or a fresh starter patch.
+ * Hand-written code left in the scratch pad (from before patches) is kept aside rather
+ * than opened, so a new track always starts as a patch.
+ */
 function scratchCode() {
-  let legacy = null
-  try { legacy = localStorage.getItem('strudel:code') } catch { /* storage unavailable */ }
-  return readDraft(null) ?? legacy ?? generateCode(demoProject())
+  const draft = readDraft(null)
+  if (draft && parseProject(draft)) return draft
+  try {
+    const old = draft ?? localStorage.getItem('strudel:code')
+    if (old && !localStorage.getItem('strudel:scratch-code')) localStorage.setItem('strudel:scratch-code', old)
+    localStorage.removeItem('strudel:code')
+  } catch { /* storage unavailable */ }
+  return generateCode(demoProject())
 }
 
 // start the audio engine on the first click or key, so a keyboard play gets effects too
@@ -40,6 +50,8 @@ for (const type of ['pointerdown', 'keydown']) window.addEventListener(type, () 
 
 export default function App() {
   const trackId = useMatch('/t/:id')?.params.id || null
+  const fresh = useLocation().state?.fresh ?? null // "+ new track": start over from the starter patch
+  const freshHandledRef = useRef(null)
   const navigate = useNavigate()
   const { user, loading: userLoading, login, logout } = useUser()
 
@@ -356,7 +368,13 @@ export default function App() {
       setTrack(null)
       setTitle('')
       setVisibility('public')
-      putCode(null, scratchCode())
+      const startOver = fresh && freshHandledRef.current !== fresh // once per click, not again on sign-in
+      freshHandledRef.current = fresh
+      const previous = readDraft(null)
+      putCode(null, startOver ? generateCode(demoProject()) : scratchCode())
+      // starting over is one undo away from the patch that was there
+      const before = startOver && previous && parseProject(previous)
+      if (before) { historyRef.current.past.push(JSON.stringify(before)); setHistoryTick((n) => n + 1) }
       return
     }
     setTrack((t) => (t?.id === trackId ? t : null))
@@ -374,7 +392,7 @@ export default function App() {
       })
       .catch((e) => { if (alive) setLoadError(e.status === 404 ? 'This track doesn’t exist, or it’s private.' : e.message) })
     return () => { alive = false }
-  }, [trackId, user?.id, putCode, play])
+  }, [trackId, fresh, user?.id, putCode, play])
 
   // Keep unsaved edits per track in this browser, so nothing is lost on navigation or sign-in.
   useEffect(() => {

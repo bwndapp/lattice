@@ -8,7 +8,9 @@
  * Standard OpenID Connect with PKCE against the platform issuer. This app is
  * already registered as a client (client id = the incubator id); the values
  * below are baked in at build time from the container's env. Tokens live in
- * sessionStorage for this tab. The access token says who the person is; send it as `Authorization: Bearer` to your own API and
+ * localStorage, so the sign-in survives new tabs and coming back later (the refresh
+ * token keeps it going); a first visit also signs in silently when the person is
+ * already signed in to blue wind. The access token says who the person is; send it as `Authorization: Bearer` to your own API and
  * verify it there with incubator_lib.sso_user().
  */
 import { useEffect, useState } from 'react'
@@ -25,8 +27,20 @@ const rand = (n = 32) => b64url(crypto.getRandomValues(new Uint8Array(n)))
 async function sha256(s) { return b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s))) }
 const decode = (jwt) => { try { return JSON.parse(atob(jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))) } catch { return null } }
 
-function read() { try { return JSON.parse(sessionStorage.getItem(KEY) || 'null') } catch { return null } }
-function write(t) { try { t ? sessionStorage.setItem(KEY, JSON.stringify(t)) : sessionStorage.removeItem(KEY) } catch { /* ignore */ } }
+const SILENT_KEY = 'bwnd_sso_silent_tried'
+const SCOPE = 'openid profile email offline_access'
+
+function read() {
+  try {
+    const kept = localStorage.getItem(KEY)
+    if (kept) return JSON.parse(kept)
+    // sign-ins from before tokens were kept across tabs
+    const old = sessionStorage.getItem(KEY)
+    if (old) { localStorage.setItem(KEY, old); sessionStorage.removeItem(KEY); return JSON.parse(old) }
+  } catch { /* storage unavailable */ }
+  return null
+}
+function write(t) { try { t ? localStorage.setItem(KEY, JSON.stringify(t)) : localStorage.removeItem(KEY) } catch { /* ignore */ } }
 
 export function configured() { return !!(ISSUER && CLIENT_ID) }
 
@@ -41,7 +55,7 @@ export async function login(next = window.location.pathname + window.location.se
     client_id: CLIENT_ID,
     redirect_uri: window.location.origin + CALLBACK_PATH,
     response_type: 'code',
-    scope: 'openid profile email offline_access',
+    scope: SCOPE,
     state,
     code_challenge: await sha256(verifier),
     code_challenge_method: 'S256',
@@ -52,17 +66,25 @@ export async function login(next = window.location.pathname + window.location.se
 /** Finish the redirect. Call once on the /auth/callback route; resolves to
  *  the path to navigate to. */
 export async function handleCallback() {
+  // a silent sign-in lands here inside a hidden frame; the page that opened it takes the code
+  if (window.top !== window) return new Promise(() => {})
   const q = new URLSearchParams(window.location.search)
   const saved = JSON.parse(sessionStorage.getItem(PKCE_KEY) || 'null')
   sessionStorage.removeItem(PKCE_KEY)
   if (q.get('error')) throw new Error(q.get('error_description') || q.get('error'))
   if (!saved || q.get('state') !== saved.state) throw new Error('sign-in state mismatch')
+  write(await exchange(q.get('code') || '', saved.verifier))
+  return saved.next || '/'
+}
+
+/** Trade an authorization code for tokens. */
+async function exchange(code, verifier) {
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
-    code: q.get('code') || '',
+    code,
     redirect_uri: window.location.origin + CALLBACK_PATH,
     client_id: CLIENT_ID,
-    code_verifier: saved.verifier,
+    code_verifier: verifier,
   })
   // A network failure here is what a person sees when the issuer cannot be
   // reached (or refuses the origin); the browser's own "Failed to fetch" is
@@ -79,8 +101,71 @@ export async function handleCallback() {
     throw new Error(why ? `Blue wind refused the sign-in: ${why}` : "Blue wind couldn't finish the sign-in. Try again.")
   }
   const t = await r.json()
-  write({ ...t, obtained_at: Date.now() })
-  return saved.next || '/'
+  return { ...t, obtained_at: Date.now() }
+}
+
+/**
+ * Sign in without a click when the person is already signed in to blue wind: the
+ * authorize page runs with prompt=none in a hidden frame and comes straight back to
+ * our callback with a code (or login_required). Same site as the issuer, so its
+ * session cookie goes along. Resolves to the user, or null. Tried once per tab.
+ */
+export function silentLogin({ timeout = 6000 } = {}) {
+  if (!configured() || read()?.access_token || window.top !== window) return Promise.resolve(currentUser())
+  try {
+    if (sessionStorage.getItem(SILENT_KEY)) return Promise.resolve(null)
+    sessionStorage.setItem(SILENT_KEY, '1')
+  } catch { /* storage unavailable: try anyway */ }
+  return new Promise((resolve) => {
+    const verifier = rand(48)
+    const state = rand(16)
+    const frame = document.createElement('iframe')
+    frame.hidden = true
+    frame.setAttribute('aria-hidden', 'true')
+    frame.tabIndex = -1
+    let done = false
+    let poll = null
+    let timer = null
+    const finish = (user) => {
+      if (done) return
+      done = true
+      clearInterval(poll)
+      clearTimeout(timer)
+      frame.remove()
+      resolve(user)
+    }
+    poll = setInterval(async () => {
+      let href
+      try { href = frame.contentWindow.location.href } catch { return } // still on the issuer
+      if (!href.startsWith(window.location.origin + CALLBACK_PATH)) return
+      clearInterval(poll)
+      try { frame.contentWindow.stop() } catch { /* ignore */ }
+      const q = new URL(href).searchParams
+      if (q.get('state') !== state || !q.get('code')) return finish(null) // login_required: not signed in
+      try {
+        write(await exchange(q.get('code'), verifier))
+        notify()
+        finish(currentUser())
+      } catch {
+        finish(null)
+      }
+    }, 50)
+    timer = setTimeout(() => finish(null), timeout)
+    sha256(verifier).then((challenge) => {
+      const q = new URLSearchParams({
+        client_id: CLIENT_ID,
+        redirect_uri: window.location.origin + CALLBACK_PATH,
+        response_type: 'code',
+        scope: SCOPE,
+        state,
+        code_challenge: challenge,
+        code_challenge_method: 'S256',
+        prompt: 'none',
+      })
+      frame.src = `${ISSUER}/authorize?${q}`
+      document.body.appendChild(frame)
+    })
+  })
 }
 
 async function refresh() {
@@ -168,11 +253,16 @@ export function useUser() {
     let alive = true
     const sync = () => { if (alive) setUser(currentUser()) }
     listeners.add(sync)
-    checkSession().then(() => { if (alive) { setUser(currentUser()); setLoading(false) } })
+    checkSession()
+      .then((u) => u ?? silentLogin())
+      .then(() => { if (alive) { setUser(currentUser()); setLoading(false) } })
+    // signing in or out in another tab
+    const onStorage = (e) => { if (e.key === KEY) sync() }
+    window.addEventListener('storage', onStorage)
     const onShow = () => { if (document.visibilityState === 'visible') checkSession().then(sync) }
     document.addEventListener('visibilitychange', onShow)
     const timer = setInterval(() => checkSession().then(sync), 60_000)
-    return () => { alive = false; listeners.delete(sync); document.removeEventListener('visibilitychange', onShow); clearInterval(timer) }
+    return () => { alive = false; listeners.delete(sync); window.removeEventListener('storage', onStorage); document.removeEventListener('visibilitychange', onShow); clearInterval(timer) }
   }, [])
   return { user, loading, login, logout }
 }

@@ -286,11 +286,12 @@ function graphFromTracks(tracks, patternIds) {
 /** A starter project: a beat and a bassline, patched through a few effects. */
 export function demoProject() {
   const on = (n, every, offset = 0) => Array.from({ length: n }, (_, i) => ((i - offset) % every === 0 && i >= offset ? 1 : 0))
+  const notes = (list) => list.map(([s, l, n]) => ({ s, l, n: noteToMidi(n) }))
   const beat = makePattern('beat', {
     channels: [
       makeChannel('drum', { name: 'kick', sound: 'bd', steps: on(16, 4) }),
-      makeChannel('drum', { name: 'snare', sound: 'sd', steps: on(16, 8, 4), params: { room: 0.15 } }),
-      makeChannel('drum', { name: 'hat', sound: 'hh', steps: on(16, 2, 2), params: { gain: 0.6, pan: 0.6 } }),
+      makeChannel('drum', { name: 'clap', sound: 'cp', steps: on(16, 8, 4), params: { room: 0.2, gain: 0.8 } }),
+      makeChannel('drum', { name: 'open hat', sound: 'oh', steps: on(16, 4, 2), params: { gain: 0.45, pan: 0.4 } }),
     ],
   })
   const bass = makePattern('bassline', {
@@ -298,12 +299,24 @@ export function demoProject() {
       name: 'bass',
       sound: 'sawtooth',
       note: 'c2',
-      notes: [[0, 2, 'c2'], [3, 1, 'c2'], [6, 2, 'eb2'], [8, 2, 'c2'], [11, 2, 'g1'], [14, 2, 'bb1']].map(([s, l, n]) => ({ s, l, n: noteToMidi(n) })),
+      notes: notes([[0, 2, 'c2'], [3, 1, 'c2'], [6, 2, 'eb2'], [8, 2, 'c2'], [11, 2, 'g1'], [14, 2, 'bb1']]),
       params: { lpf: 900, lpq: 6, release: 0.1 },
       fx: '.decay(.2).sustain(0)',
     })],
   })
-  return normalizeProject({ v: 3, bpm: 120, beats: 4, patterns: [beat, bass], ...demoGraph(beat.id, bass.id) })
+  // four bars of chords: Cm, Ab, Eb, Bb, one per bar
+  const chord = (bar, names) => names.map((n) => [bar * 16, 16, n])
+  const chords = makePattern('chords', {
+    bars: 4,
+    channels: [makeChannel('synth', {
+      name: 'pad',
+      sound: 'sawtooth',
+      note: 'c4',
+      notes: notes([...chord(0, ['c4', 'eb4', 'g4']), ...chord(1, ['ab3', 'c4', 'eb4']), ...chord(2, ['eb4', 'g4', 'bb4']), ...chord(3, ['bb3', 'd4', 'f4'])]),
+      params: { lpf: 1800, gain: 0.35, attack: 0.08, release: 0.4 },
+    })],
+  })
+  return normalizeProject({ v: 3, bpm: 124, beats: 4, patterns: [beat, bass, chords], ...demoGraph(beat.id, bass.id, chords.id) })
 }
 
 const TEMPO = { setcpm: 'cpm', setCpm: 'cpm', setcps: 'cps', setCps: 'cps' }
