@@ -9,8 +9,8 @@ import { prebake } from '@strudel/repl/prebake.mjs'
 import { useUser } from './bwnd'
 import { api, clearDraft, readDraft, timeAgo, trackUrl, writeDraft } from './api'
 import Browser from './Browser.jsx'
-import Lanes from './Lanes.jsx'
-import { capturePatterns } from './lanes'
+import Playlist from './Playlist.jsx'
+import { capturePatterns, tempoChange } from './lanes'
 
 const DEFAULT_CODE = `// Strudel — Ctrl/Cmd+Enter to play, Ctrl/Cmd+. to stop
 setcpm(120/4)
@@ -58,8 +58,9 @@ export default function App() {
   // the evaluated pattern, each labeled pattern in it, and which track (null = scratch) it belongs to
   const [evaluated, setEvaluated] = useState({ pattern: null, lanes: new Map(), forId: undefined })
   const capturedRef = useRef(new Map())
-  const [lanesOpen, setLanesOpen] = useState(() => readPref('strudel:lanes:open', true))
-  const [lanesHeight, setLanesHeight] = useState(() => readPref('strudel:lanes:height', 260))
+  const [codeOpen, setCodeOpen] = useState(() => readPref('strudel:code:open', false))
+  const [drawerHeight, setDrawerHeight] = useState(() => readPref('strudel:code:height', 320))
+  const drawerRef = useRef(null)
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
@@ -99,10 +100,31 @@ export default function App() {
         setActiveCode(state.activeCode)
       },
       beforeEval: () => { capturedRef.current = capturePatterns(Pattern) },
-      afterEval: ({ pattern }) => setEvaluated({ pattern, lanes: capturedRef.current, forId: loadedIdRef.current }),
+      afterEval: ({ pattern }) => setEvaluated({
+        pattern,
+        lanes: capturedRef.current,
+        forId: loadedIdRef.current,
+        cps: editorRef.current.repl.scheduler.cps,
+      }),
     })
     editorRef.current.setFontFamily('"Martian Mono", ui-monospace, monospace')
-    editorRef.current.editor.focus()
+  }, [])
+
+  // The code drawer: closed means out of the tab order too.
+  useEffect(() => {
+    writePref('strudel:code:open', codeOpen)
+    if (drawerRef.current) drawerRef.current.inert = !codeOpen
+  }, [codeOpen])
+  useEffect(() => writePref('strudel:code:height', drawerHeight), [drawerHeight])
+
+  /** Open the drawer with the cursor at `pos` (e.g. a lane's label). */
+  const revealCode = useCallback((pos) => {
+    setCodeOpen(true)
+    const view = editorRef.current?.editor
+    if (!view) return
+    const anchor = Math.min(pos, view.state.doc.length)
+    view.dispatch({ selection: { anchor }, scrollIntoView: true })
+    requestAnimationFrame(() => view.focus())
   }, [])
 
   const putCode = useCallback((id, text) => {
@@ -177,14 +199,11 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [code, activeCode, started, shownId, previewAllowed, evaluated.forId])
 
-  useEffect(() => writePref('strudel:lanes:open', lanesOpen), [lanesOpen])
-  useEffect(() => writePref('strudel:lanes:height', lanesHeight), [lanesHeight])
-
   const startResize = (e) => {
     const startY = e.clientY
-    const startH = lanesHeight
-    const max = window.innerHeight - 220
-    const move = (ev) => setLanesHeight(Math.round(Math.min(max, Math.max(120, startH + startY - ev.clientY))))
+    const startH = drawerHeight
+    const max = window.innerHeight - 160
+    const move = (ev) => setDrawerHeight(Math.round(Math.min(max, Math.max(140, startH + startY - ev.clientY))))
     const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
@@ -291,6 +310,7 @@ export default function App() {
       if (e.key === 'Enter') keysRef.current.play()
       else if (e.key === '.' || e.code === 'Period') editorRef.current?.stop()
       else if (mod && e.key.toLowerCase() === 's') keysRef.current.save()
+      else if (mod && e.key.toLowerCase() === 'j') setCodeOpen((o) => !o)
       else return
       e.preventDefault()
       e.stopPropagation()
@@ -306,8 +326,22 @@ export default function App() {
         <Link to="/" className="logo" aria-label="strudel, home">strudel</Link>
         <button className={`btn play ${started ? 'on' : ''}`} onClick={play}>{started ? 'update' : 'play'}</button>
         <button className="btn stop" onClick={() => editorRef.current?.stop()} disabled={!started}>stop</button>
-        <CycleMeter editorRef={editorRef} started={started} />
-        <span className="hint">ctrl/cmd + enter play · + . stop · + s save</span>
+        <Tempo
+          bpm={evaluated.cps ? evaluated.cps * 240 : 120}
+          onChange={(bpm) => {
+            const change = tempoChange(editorRef.current.code, bpm)
+            if (change) editCode(change)
+            else flash('Fix the code error first, then set the tempo')
+          }}
+        />
+        <Position editorRef={editorRef} started={started} />
+        <button
+          className={`btn code-toggle ${codeOpen ? 'on' : ''} ${evalError && !codeOpen ? 'has-error' : ''}`}
+          aria-expanded={codeOpen}
+          aria-controls="code-drawer"
+          title="Show or hide the code (ctrl/cmd + J)"
+          onClick={() => setCodeOpen((o) => !o)}
+        >{'{ }'}<span className="code-word"> code</span>{evalError && !codeOpen ? ' !' : ''}</button>
         <span className="spacer" />
         {userLoading ? null : user ? (
           <span className="user">
@@ -378,41 +412,49 @@ export default function App() {
               </>
             )}
           </div>
-          <div className="editor" ref={rootRef} />
-          {evalError && <pre className="error">{evalError}</pre>}
-          <div className="lanes-dock" style={{ '--lanes-h': `${lanesHeight}px` }}>
-            <div className="lanes-bar">
-              {lanesOpen && (
-                <div
-                  className="resize"
-                  role="separator"
-                  aria-orientation="horizontal"
-                  aria-label="Resize lanes"
-                  aria-valuenow={lanesHeight}
-                  tabIndex={0}
-                  onPointerDown={startResize}
-                  onKeyDown={(e) => {
-                    if (e.key === 'ArrowUp') setLanesHeight((h) => Math.min(window.innerHeight - 220, h + 24))
-                    if (e.key === 'ArrowDown') setLanesHeight((h) => Math.max(120, h - 24))
-                  }}
-                />
-              )}
-              <button className="lanes-toggle" aria-expanded={lanesOpen} onClick={() => setLanesOpen((o) => !o)}>
-                {lanesOpen ? 'hide lanes' : 'show lanes'}
-              </button>
+          <Playlist
+            editorRef={editorRef}
+            code={code}
+            pattern={evaluated.forId === shownId ? evaluated.pattern : null}
+            lanePatterns={evaluated.lanes}
+            started={started}
+            stale={started && code !== activeCode}
+            emptyMessage={evaluated.forId === shownId && evaluated.pattern ? null
+              : !previewAllowed ? 'press play to load this track'
+              : evalError ? 'the code has an error · open the code drawer to fix it'
+              : 'loading sounds…'}
+            onEditCode={editCode}
+            onRevealCode={revealCode}
+          />
+          <section
+            id="code-drawer"
+            ref={drawerRef}
+            className={`drawer ${codeOpen ? 'open' : ''}`}
+            style={{ '--drawer-h': `${drawerHeight}px` }}
+            aria-label="Code"
+          >
+            <div
+              className="resize"
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label="Resize code drawer"
+              aria-valuenow={drawerHeight}
+              tabIndex={0}
+              onPointerDown={startResize}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowUp') setDrawerHeight((h) => Math.min(window.innerHeight - 160, h + 24))
+                if (e.key === 'ArrowDown') setDrawerHeight((h) => Math.max(140, h - 24))
+              }}
+            />
+            <div className="drawer-head">
+              <span className="drawer-title">code</span>
+              <span className="hint">ctrl/cmd + enter play · + . stop · + s save · + J close</span>
+              <span className="spacer" />
+              <button className="btn ghost" onClick={() => setCodeOpen(false)}>close</button>
             </div>
-            {lanesOpen && (
-              <Lanes
-                editorRef={editorRef}
-                code={code}
-                pattern={evaluated.forId === shownId ? evaluated.pattern : null}
-                lanePatterns={evaluated.lanes}
-                started={started}
-                stale={started && code !== activeCode}
-                onEditCode={editCode}
-              />
-            )}
-          </div>
+            <div className="editor" ref={rootRef} />
+            {evalError && <pre className="error">{evalError}</pre>}
+          </section>
         </main>
       </div>
 
@@ -421,30 +463,53 @@ export default function App() {
   )
 }
 
-/** Where we are in the current cycle, Tidal's unit of time. Moves only while a pattern
- *  plays, so Stop is its pause control; hidden under prefers-reduced-motion (CSS). */
-function CycleMeter({ editorRef, started }) {
+/** BPM field (4 beats per cycle). Editing it rewrites setcpm/setcps in the code. */
+function Tempo({ bpm, onChange }) {
+  const shown = String(Math.round(bpm * 10) / 10)
+  const [text, setText] = useState(shown)
+  useEffect(() => setText(shown), [shown])
+  const commit = () => {
+    const next = Math.round(Number(text) * 10) / 10
+    if (Number.isFinite(next) && next >= 10 && next <= 400 && String(next) !== shown) onChange(next)
+    else setText(shown)
+  }
+  return (
+    <label className="lcd tempo">
+      <input
+        className="lcd-value"
+        inputMode="decimal"
+        value={text}
+        aria-label="Tempo in BPM"
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setText(shown); e.currentTarget.blur() } }}
+      />
+      <span className="lcd-unit" aria-hidden>bpm</span>
+    </label>
+  )
+}
+
+/** Song position as bar.beat (bars are cycles). Moves only while playing; Stop pauses it. */
+function Position({ editorRef, started }) {
+  const valueRef = useRef(null)
   const barRef = useRef(null)
-  const numRef = useRef(null)
   useEffect(() => {
-    if (!started) {
-      barRef.current?.style.setProperty('--phase', 0)
-      if (numRef.current) numRef.current.textContent = '0'
-      return
+    const show = (cycle) => {
+      const bar = Math.floor(cycle)
+      const beat = Math.floor((cycle - bar) * 4)
+      if (valueRef.current) valueRef.current.textContent = `${String(bar + 1).padStart(3, '0')}.${beat + 1}`
+      barRef.current?.style.setProperty('--phase', cycle - bar)
     }
+    if (!started) { show(0); return }
     let frame
-    const tick = () => {
-      const cycle = editorRef.current?.repl.scheduler.now() || 0
-      barRef.current?.style.setProperty('--phase', cycle - Math.floor(cycle))
-      if (numRef.current) numRef.current.textContent = String(Math.floor(cycle))
-      frame = requestAnimationFrame(tick)
-    }
+    const tick = () => { show(editorRef.current?.repl.scheduler.now() || 0); frame = requestAnimationFrame(tick) }
     tick()
     return () => cancelAnimationFrame(frame)
   }, [started, editorRef])
   return (
-    <span className={`cycle ${started ? 'running' : ''}`} aria-hidden>
-      <span className="cycle-label">cycle <span ref={numRef}>0</span></span>
+    <span className={`lcd position ${started ? 'running' : ''}`} aria-hidden>
+      <span className="lcd-value" ref={valueRef}>001.1</span>
+      <span className="lcd-unit">bar.beat</span>
       <span className="cycle-bar" ref={barRef} />
     </span>
   )

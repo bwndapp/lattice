@@ -13,8 +13,8 @@
  *    They are still real buttons, inputs and selects with labels.
  * 4. Soft SaaS palette → projector black, warm white and one acid signal colour,
  *    the TB-303 acid-house yellow. Essential text sits on solid plates at ≥ 7:1.
- * 5. Spinners and pulses → one moving element, the cycle meter (Tidal's unit of time).
- *    It moves only while music plays (Stop pauses it) and hides under reduced motion.
+ * 5. Spinners and pulses → motion only where it carries information: the playhead and
+ *    bar.beat counter move while music plays (Stop pauses them); reduced motion is honoured.
  */
 :root {
   color-scheme: dark;
@@ -112,13 +112,10 @@ body {
 }
 .btn.play.on { background: var(--ink); color: var(--acid); }
 .btn.stop { text-transform: uppercase; font-family: var(--display); font-weight: 700; font-stretch: 112%; }
-.cycle { display: flex; flex-direction: column; gap: 4px; width: 110px; color: var(--muted); font-size: 11px; }
-.cycle-bar { position: relative; height: 3px; background: var(--line); }
 .cycle-bar::after {
   content: ""; position: absolute; inset: 0 auto 0 0;
   width: calc(var(--phase, 0) * 100%); background: var(--acid);
 }
-.cycle:not(.running) { opacity: 0.5; }
 .hint { font-size: 11px; color: var(--muted); }
 .spacer { flex: 1; }
 .user { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
@@ -176,69 +173,107 @@ body {
   white-space: pre-wrap;
 }
 
-/* ── lanes: the pattern, read ahead of time ───────────── */
-.lanes-dock { --head: 190px; flex-shrink: 0; border-top: 1px solid var(--line); background: var(--panel); }
-.lanes-bar { position: relative; display: flex; justify-content: flex-end; }
-.resize { position: absolute; inset: -4px 0 auto; height: 9px; cursor: row-resize; z-index: 2; }
-.resize:hover, .resize:focus-visible { background: linear-gradient(transparent 3px, var(--acid) 3px, var(--acid) 5px, transparent 5px); outline: none; }
-.lanes-toggle {
-  font: inherit; font-size: 11px; color: var(--muted); background: none; border: 0;
-  padding: 0.3rem 1rem; cursor: pointer;
+/* ── transport readouts (tempo, position) ─────────────── */
+.lcd {
+  position: relative; display: inline-flex; align-items: baseline; gap: 0.35rem;
+  padding: 0.25rem 0.55rem; border: 1px solid var(--line); background: var(--panel);
 }
-.lanes-toggle:hover { color: var(--acid); }
-.lanes { display: flex; flex-direction: column; height: var(--lanes-h); min-height: 0; margin-top: -1.6rem; }
-.lanes-head { display: flex; align-items: baseline; gap: 0.9rem; padding: 0.15rem 7rem 0.5rem 1rem; flex-wrap: wrap; }
-.lanes-title {
+.lcd-value {
+  font: inherit; font-size: 1.05rem; font-weight: 700; font-variant-numeric: tabular-nums;
+  color: var(--acid); background: transparent; border: 0; padding: 0; min-width: 0;
+}
+.tempo .lcd-value { width: 3.6ch; }
+.tempo:focus-within { border-color: var(--acid); }
+.tempo .lcd-value:focus { outline: none; }
+.lcd-unit { font-size: 10px; color: var(--muted); }
+.position .cycle-bar { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: transparent; }
+.position:not(.running) .lcd-value { color: var(--paper); }
+.code-toggle.has-error { border-color: var(--danger); color: var(--danger); }
+
+/* ── playlist: lanes and clips, read ahead of time ────── */
+.main { position: relative; }
+.playlist { flex: 1; display: flex; flex-direction: column; min-height: 0; --head: 200px; }
+.playlist-head { display: flex; align-items: baseline; gap: 0.9rem; padding: 0.55rem 1rem 0.5rem; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+.playlist-title {
   font-family: var(--display); font-weight: 900; font-stretch: 125%;
-  font-size: 1.5rem; line-height: 1; letter-spacing: -0.03em; color: var(--paper);
+  font-size: 1.7rem; line-height: 1; letter-spacing: -0.03em;
 }
 .lanes-window { display: flex; align-items: baseline; gap: 0.2rem; font-size: 12px; }
+.add-lane { padding: 0.2rem 0.6rem; }
 .lanes-note { color: var(--muted); font-size: 11px; }
-.lanes-grid {
+.playlist-grid {
   position: relative;
-  display: grid;
-  grid-template-columns: var(--head) 1fr;
-  grid-auto-rows: minmax(64px, 1fr);
-  grid-template-rows: 20px;
-  overflow-y: auto;
   flex: 1;
-  border-top: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: var(--head) minmax(0, 1fr);
+  grid-template-rows: 24px;
+  grid-auto-rows: minmax(92px, 1fr);
+  overflow-y: auto;
+  min-height: 0;
 }
 .lane { display: contents; }
-.lane-head {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 0.15rem 0.4rem;
+.channel {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-rows: auto auto;
   align-content: center;
-  padding: 0.35rem 0.6rem 0.35rem 1rem;
+  gap: 0.2rem 0.5rem;
+  padding: 0.4rem 0.6rem 0.4rem 0.7rem;
   border-bottom: 1px solid var(--line); border-right: 1px solid var(--line);
-  min-width: 0; background: var(--panel);
+  background: var(--panel); min-width: 0;
 }
-.ruler-head { padding-block: 0; }
+.ruler-head { display: flex; align-items: center; padding-block: 0; }
 .lanes-tip { font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lanes-tip code { color: var(--paper); font: inherit; }
-.ruler { width: 100%; height: 20px; display: block; border-bottom: 1px solid var(--line); }
-.lane-name {
+.ruler { width: 100%; height: 24px; display: block; border-bottom: 1px solid var(--line); background: var(--panel); }
+.channel-num { font-size: 10px; color: var(--muted); align-self: center; }
+.channel-name {
   font-family: var(--display); font-weight: 800; font-stretch: 112%;
-  font-size: 1.15rem; line-height: 1; letter-spacing: -0.02em;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
+  font-size: 1.2rem; line-height: 1; letter-spacing: -0.02em; text-align: left;
+  color: var(--paper); background: none; border: 0; padding: 0; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
 }
-.lane-controls { display: inline-flex; gap: 0.2rem; }
-.lane-btn {
-  font: inherit; font-size: 11px; width: 1.6rem; height: 1.35rem;
-  color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 0; cursor: pointer;
+.channel-name:hover { color: var(--acid); }
+.channel-controls { display: inline-flex; gap: 0.25rem; }
+.led {
+  font: inherit; font-size: 10px; font-weight: 700; width: 1.5rem; height: 1.3rem;
+  color: var(--muted); background: var(--ink); border: 1px solid var(--line); border-radius: 0; cursor: pointer;
 }
-.lane-btn:hover { color: var(--paper); border-color: var(--paper); }
-.lane-btn.on { background: var(--acid); border-color: var(--acid); color: var(--ink); font-weight: 700; }
-.lane-source { flex-basis: 100%; font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.lane-canvas { width: 100%; height: 100%; min-height: 64px; display: block; border-bottom: 1px solid var(--line); background: var(--ink); }
-.lane.silent .lane-name { color: var(--muted); text-decoration: line-through; text-decoration-thickness: 2px; }
-.lane.silent .lane-canvas {
-  background: repeating-linear-gradient(-45deg, var(--ink) 0 8px, #11110f 8px 16px);
-}
+.led:hover { color: var(--paper); border-color: var(--paper); }
+.led.mute.on { background: var(--danger); border-color: var(--danger); color: var(--ink); }
+.led.solo.on { background: var(--acid); border-color: var(--acid); color: var(--ink); }
+.channel-source { grid-column: 1 / -1; font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lane-canvas { width: 100%; height: 100%; min-height: 92px; display: block; border-bottom: 1px solid var(--line); background: var(--ink); cursor: default; }
+.lane.silent .channel-name { color: var(--muted); text-decoration: line-through; text-decoration-thickness: 2px; }
+.lane.silent .lane-canvas { background: repeating-linear-gradient(-45deg, var(--ink) 0 8px, #0f0f0d 8px 16px); }
 .playhead {
-  position: absolute; top: 0; bottom: 0; width: 2px; pointer-events: none;
+  position: absolute; top: 0; bottom: 0; width: 2px; pointer-events: none; z-index: 1;
   left: calc(var(--head) + (100% - var(--head)) * var(--ph, 0));
   background: var(--acid); box-shadow: 0 0 0 1px var(--ink);
 }
+.playlist-empty {
+  position: absolute; left: var(--head); right: 0; top: 24px; bottom: 0;
+  display: grid; place-items: center; padding: 1rem; text-align: center;
+  font-family: var(--display); font-weight: 800; font-stretch: 112%; font-size: 1.3rem;
+  color: var(--paper); background: rgba(0,0,0,0.72); pointer-events: none;
+}
+
+/* ── code drawer ──────────────────────────────────────── */
+.drawer {
+  position: relative;
+  display: flex; flex-direction: column;
+  height: 0; min-height: 0; flex-shrink: 0;
+  border-top: 1px solid var(--line);
+  background: var(--ink);
+  visibility: hidden;
+  transition: height 0.18s ease, visibility 0s linear 0.18s;
+}
+.drawer.open { height: var(--drawer-h); visibility: visible; transition: height 0.18s ease; border-top: 2px solid var(--acid); }
+.drawer .resize { position: absolute; inset: -5px 0 auto; height: 9px; cursor: row-resize; z-index: 2; }
+.drawer .resize:hover, .drawer .resize:focus-visible { background: linear-gradient(transparent 3px, var(--acid) 3px, var(--acid) 5px, transparent 5px); outline: none; }
+.drawer-head { display: flex; align-items: baseline; gap: 0.8rem; padding: 0.35rem 0.6rem 0.35rem 1rem; border-bottom: 1px solid var(--line); }
+.drawer-title { font-family: var(--display); font-weight: 900; font-stretch: 125%; font-size: 1.1rem; color: var(--acid); }
+.drawer .editor { flex: 1; min-height: 0; }
 
 /* ── browser: the setlist ─────────────────────────────── */
 .browser {
@@ -341,26 +376,30 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .cycle-bar { display: none; }
-  .browser { transition: none !important; }
+  .browser, .drawer, .drawer.open { transition: none !important; }
 }
 
 /* ── narrow screens: keep the attitude, drop the collisions ─ */
 @media (max-width: 860px) {
-  .hint, .user-name, .cycle { display: none; }
+  .hint, .user-name { display: none; }
   .bar .browse-toggle { display: inline-block; color: var(--paper); border-color: var(--line); }
   .btn.stop:disabled { display: none; } /* nothing to stop: give the space to the drawer toggle */
   .bar { gap: 0.3rem; padding: 0 0.5rem 0 0.25rem; height: 52px; }
-  .logo { font-size: 36px; margin-right: 0.1rem; }
+  .logo { font-size: 30px; margin-right: 0; }
   .bar .btn { padding: 0.3rem 0.45rem; font-size: 12px; }
   .btn.play, .btn.stop { font-size: 0.85rem; padding-inline: 0.6rem; }
   .spacer { display: none; }
   .trackbar { padding: 0.5rem 0.75rem; }
   .title-input { flex: 1 1 100%; font-size: 1.35rem; }
   .trackbar .meta { flex-basis: 100%; order: 5; white-space: normal; }
-  .lanes-dock { --head: 104px; }
-  .lanes-head { padding-right: 6.5rem; }
-  .lane-source { display: none; }
-  .lane-name { font-size: 0.95rem; }
+  .playlist { --head: 96px; }
+  .channel { grid-template-columns: 1fr; padding: 0.3rem 0.4rem; }
+  .channel-num, .channel-source, .lanes-tip { display: none; }
+  .channel-name { font-size: 0.95rem; }
+  .tempo, .position { display: none; } /* transport stays; tempo lives in the code on phones */
+  .code-toggle { padding-inline: 0.45rem; }
+  .code-word { display: none; }
+  .drawer.open { height: min(var(--drawer-h), 65vh); }
   .browser {
     position: absolute; inset: 0 auto 0 0; z-index: 20;
     width: min(var(--sidebar), 88vw);

@@ -112,3 +112,38 @@ export function soundOf(v) {
   if (s === undefined) return '·'
   return v.n !== undefined && typeof v.n !== 'object' ? `${s}:${v.n}` : String(s)
 }
+
+const TEMPO_CALLS = { setcpm: 'cpm', setCpm: 'cpm', setcps: 'cps', setCps: 'cps' }
+
+/**
+ * The code change that sets the tempo to `bpm` (4 beats per cycle, Strudel's usual
+ * `setcpm(bpm/4)`): rewrites the arguments of the first top-level setcpm/setcps call,
+ * or inserts `setcpm(bpm/4)` at the top. Returns null when the code doesn't parse.
+ */
+export function tempoChange(code, bpm) {
+  let ast
+  try {
+    ast = parse(code, { ecmaVersion: 'latest', sourceType: 'module', allowAwaitOutsideFunction: true, allowReturnOutsideFunction: true })
+  } catch {
+    return null
+  }
+  for (const node of ast.body) {
+    const call = node.type === 'ExpressionStatement' && node.expression.type === 'CallExpression' ? node.expression : null
+    const kind = call?.callee.type === 'Identifier' ? TEMPO_CALLS[call.callee.name] : null
+    if (!kind) continue
+    const insert = kind === 'cpm' ? `${bpm}/4` : `${bpm}/60/4`
+    const from = call.arguments.length ? call.arguments[0].start : call.end - 1
+    const to = call.arguments.length ? call.arguments[call.arguments.length - 1].end : call.end - 1
+    return { from, to, insert }
+  }
+  return { from: 0, to: 0, insert: `setcpm(${bpm}/4)\n` }
+}
+
+/** Code to append for a new lane, with a label that isn't taken yet. */
+export function newLaneCode(code, lanes) {
+  const taken = new Set(lanes.map((l) => laneBase(l.name)))
+  let n = lanes.length + 1
+  while (taken.has(`lane${n}`)) n++
+  const sep = code.length === 0 || code.endsWith('\n\n') ? '' : code.endsWith('\n') ? '\n' : '\n\n'
+  return { from: code.length, to: code.length, insert: `${sep}lane${n}: s("hh*8").gain(.6)\n`, label: `lane${n}` }
+}
