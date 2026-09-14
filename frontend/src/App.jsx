@@ -559,7 +559,7 @@ export default function App() {
   return (
     <div className="studio">
       <header className="bar">
-        <Link to="/" className="logo" aria-label="strudel, home">strudel</Link>
+        <Link to="/" className="logo" aria-label="lattice, home">lattice</Link>
         <span className="transport" role="group" aria-label="Transport">
           <button className="btn tport" onClick={toStart} title="Back to the start (Home)" aria-label="Back to the start">|&lt;</button>
           <button className={`btn play ${started ? 'on' : ''} ${preparing ? 'preparing' : ''}`} onClick={play} aria-busy={preparing} title="Play (space) · update while playing (ctrl/cmd + enter)">{started ? 'update' : preparing ? 'loading' : 'play'}</button>
