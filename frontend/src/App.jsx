@@ -83,6 +83,7 @@ export default function App() {
         setCode(state.code)
       },
     })
+    editorRef.current.setFontFamily('"Martian Mono", ui-monospace, monospace')
     editorRef.current.editor.focus()
   }, [])
 
@@ -251,11 +252,12 @@ export default function App() {
   return (
     <div className={`studio ${browserOpen ? 'browser-open' : ''}`}>
       <header className="bar">
-        <button className="btn ghost browse-toggle" onClick={() => setBrowserOpen((o) => !o)} aria-label="Browse tracks">☰</button>
-        <Link to="/" className="logo">strudel</Link>
-        <button className={`btn ${started ? 'on' : ''}`} onClick={play}>{started ? '↻ update' : '▶︎ play'}</button>
-        <button className="btn" onClick={() => editorRef.current?.stop()} disabled={!started}>■ stop</button>
-        <span className="hint">⌘/Ctrl+Enter play · ⌘/Ctrl+. stop · ⌘/Ctrl+S save</span>
+        <button className="btn ghost browse-toggle" onClick={() => setBrowserOpen((o) => !o)} aria-label="Browse tracks">tracks</button>
+        <Link to="/" className="logo" aria-label="strudel, home">strudel</Link>
+        <button className={`btn play ${started ? 'on' : ''}`} onClick={play}>{started ? 'update' : 'play'}</button>
+        <button className="btn stop" onClick={() => editorRef.current?.stop()} disabled={!started}>stop</button>
+        <CycleMeter editorRef={editorRef} started={started} />
+        <span className="hint">ctrl/cmd + enter play · + . stop · + s save</span>
         <span className="spacer" />
         {userLoading ? null : user ? (
           <span className="user">
@@ -291,7 +293,7 @@ export default function App() {
                   className="title-input"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Untitled track"
+                  placeholder="untitled"
                   maxLength={80}
                   aria-label="Track title"
                 />
@@ -306,7 +308,7 @@ export default function App() {
                 {isOwner && <button className="btn" onClick={share}>Share</button>}
                 {isOwner && <button className="btn ghost danger" onClick={remove}>Delete</button>}
                 <span className="meta">
-                  {isNew ? 'Scratch pad · not saved yet' : <>♥ {track.likes} · ▶︎ {track.plays} · saved {timeAgo(track.updated_at)}</>}
+                  {isNew ? 'Scratch pad · not saved yet' : <>♥{track.likes} · {track.plays} plays · saved {timeAgo(track.updated_at)}</>}
                   {track?.parent && <> · remix of <Link className="linkish" to={`/t/${track.parent.id}`}>{track.parent.title}</Link></>}
                 </span>
               </>
@@ -315,11 +317,11 @@ export default function App() {
                 <div className="track-heading">
                   <span className="track-title">{track.title}</span>
                   <span className="meta">
-                    by {track.author} · ▶︎ {track.plays} · {timeAgo(track.updated_at)}
+                    by {track.author} · {track.plays} plays · {timeAgo(track.updated_at)}
                     {track.parent && <> · remix of <Link className="linkish" to={`/t/${track.parent.id}`}>{track.parent.title}</Link></>}
                   </span>
                 </div>
-                <button className={`btn ${track.liked ? 'on' : ''}`} onClick={like}>♥ {track.likes}</button>
+                <button className={`btn ${track.liked ? 'on' : ''}`} onClick={like}>♥{track.likes}</button>
                 <button className="btn" onClick={remix} disabled={busy}>Remix</button>
                 <button className="btn" onClick={share}>Share</button>
                 {codeChanged && <span className="meta">edited locally · <button className="linkish" onClick={revert}>revert</button></span>}
@@ -333,5 +335,34 @@ export default function App() {
 
       {toast && <div className="toast" role="status">{toast}</div>}
     </div>
+  )
+}
+
+/** Where we are in the current cycle, Tidal's unit of time. Moves only while a pattern
+ *  plays, so Stop is its pause control; hidden under prefers-reduced-motion (CSS). */
+function CycleMeter({ editorRef, started }) {
+  const barRef = useRef(null)
+  const numRef = useRef(null)
+  useEffect(() => {
+    if (!started) {
+      barRef.current?.style.setProperty('--phase', 0)
+      if (numRef.current) numRef.current.textContent = '0'
+      return
+    }
+    let frame
+    const tick = () => {
+      const cycle = editorRef.current?.repl.scheduler.now() || 0
+      barRef.current?.style.setProperty('--phase', cycle - Math.floor(cycle))
+      if (numRef.current) numRef.current.textContent = String(Math.floor(cycle))
+      frame = requestAnimationFrame(tick)
+    }
+    tick()
+    return () => cancelAnimationFrame(frame)
+  }, [started, editorRef])
+  return (
+    <span className={`cycle ${started ? 'running' : ''}`} aria-hidden>
+      <span className="cycle-label">cycle <span ref={numRef}>0</span></span>
+      <span className="cycle-bar" ref={barRef} />
+    </span>
   )
 }

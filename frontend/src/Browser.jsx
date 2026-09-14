@@ -2,8 +2,15 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, timeAgo } from './api'
 
-const VIEWS = [['explore', 'Explore'], ['mine', 'Mine'], ['liked', 'Liked']]
-const SORTS = [['new', 'New'], ['top', 'Top'], ['played', 'Most played']]
+const VIEWS = ['explore', 'mine', 'liked']
+const SORTS = [['new', 'new'], ['top', 'top'], ['played', 'played']]
+
+/** 0..1 — how loud a track is in this list. Sets the size of its title. */
+function weights(tracks) {
+  const score = (t) => Math.log1p(t.plays + 3 * t.likes)
+  const max = Math.max(1, ...tracks.map(score))
+  return new Map(tracks.map((t) => [t.id, score(t) / max]))
+}
 
 export default function Browser({ user, login, activeId, refreshKey, onPlay, onPick }) {
   const [view, setView] = useState('explore')
@@ -26,21 +33,35 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
     return () => { alive = false; clearTimeout(timer) }
   }, [view, sort, q, needsUser, refreshKey, user?.id])
 
+  const weight = tracks ? weights(tracks) : new Map()
+
   return (
-    <aside className="browser">
-      <div className="tabs">
-        {VIEWS.map(([key, label]) => (
-          <button key={key} className={`tab ${view === key ? 'on' : ''}`} onClick={() => setView(key)}>{label}</button>
+    <aside className="browser" aria-label="Tracks">
+      {/* The controls are written as a Strudel pattern: <a b c> alternates, .method("x") chains. */}
+      <div className="views" role="group" aria-label="Which tracks">
+        <span className="syn" aria-hidden>&lt;</span>
+        {VIEWS.map((key) => (
+          <button key={key} className={`view ${view === key ? 'on' : ''}`} aria-pressed={view === key} onClick={() => setView(key)}>{key}</button>
         ))}
+        <span className="syn" aria-hidden>&gt;</span>
       </div>
-      <div className="filters">
-        <input className="search" placeholder="Search tracks or people" value={q} onChange={(e) => setQ(e.target.value)} />
-        <select className="select" value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Sort">
+      <label className="chain">
+        <span className="syn" aria-hidden>.filter("</span>
+        <input className="chain-input" aria-label="Search tracks or people" placeholder="anything" value={q} onChange={(e) => setQ(e.target.value)} />
+        <span className="syn" aria-hidden>")</span>
+      </label>
+      <label className="chain">
+        <span className="syn" aria-hidden>.sort("</span>
+        <select className="chain-input" aria-label="Sort" value={sort} onChange={(e) => setSort(e.target.value)}>
           {SORTS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
         </select>
-      </div>
-      <Link to="/" className="new-track" onClick={onPick}>+ New track</Link>
-      <ul className="list">
+        <span className="syn" aria-hidden>")</span>
+      </label>
+
+      <Link to="/" className="new-track" onClick={onPick}>+ new pattern</Link>
+      <p className="legend">bigger = played &amp; liked more</p>
+
+      <ol className="setlist">
         {needsUser ? (
           <li className="empty">
             <button className="linkish" onClick={() => login()}>Sign in</button> to see {view === 'mine' ? 'your tracks' : 'tracks you liked'}.
@@ -48,26 +69,20 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
         ) : error ? (
           <li className="empty">Couldn’t load tracks: {error}</li>
         ) : tracks === null ? (
-          <li className="empty">Loading…</li>
+          <li className="empty">loading…</li>
         ) : tracks.length === 0 ? (
-          <li className="empty">{q ? 'Nothing matches that search.' : view === 'explore' ? 'No shared tracks yet. Be the first.' : view === 'mine' ? 'You haven’t saved anything yet.' : 'No likes yet.'}</li>
+          <li className="empty">{q ? 'Nothing matches that.' : view === 'explore' ? 'silence. share the first track.' : view === 'mine' ? 'You haven’t saved anything yet.' : 'No likes yet.'}</li>
         ) : tracks.map((t) => (
-          <li key={t.id} className={`item ${t.id === activeId ? 'active' : ''}`}>
-            <button className="item-play" title="Play" onClick={() => onPlay(t.id)}>▶︎</button>
-            <Link to={`/t/${t.id}`} className="item-body" onClick={onPick}>
-              <span className="item-title">{t.title}</span>
-              <span className="item-meta">
-                {t.author} · {timeAgo(t.updated_at)}
-                {view === 'mine' && t.visibility !== 'public' && <span className="pill">{t.visibility}</span>}
-              </span>
-            </Link>
-            <span className="item-stats">
-              <span className={t.liked ? 'liked' : ''}>♥ {t.likes}</span>
-              <span>▶︎ {t.plays}</span>
+          <li key={t.id} className={`item ${t.id === activeId ? 'active' : ''}`} style={{ '--w': weight.get(t.id) }}>
+            <Link to={`/t/${t.id}`} className="item-title" onClick={onPick}>{t.title}</Link>
+            <span className="item-meta">
+              <button className="item-play" aria-label={`Play ${t.title}`} onClick={() => onPlay(t.id)}>play</button>
+              {' '}{t.author} · {timeAgo(t.updated_at)} · <span className={t.liked ? 'liked' : ''}>♥{t.likes}</span> · {t.plays} plays
+              {view === 'mine' && t.visibility !== 'public' && <span className="pill">{t.visibility}</span>}
             </span>
           </li>
         ))}
-      </ul>
+      </ol>
     </aside>
   )
 }
