@@ -342,12 +342,16 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, onOpenRack, t
   const [picking, setPicking] = useState(null) // { nodeId, key, x, y }
 
   // React Flow keeps its own copy for dragging and selection; the project stays the source.
+  // Existing nodes keep their object (and so their measured size): a fresh object makes
+  // React Flow treat the node as unmeasured and hide it for a frame, which blanks the
+  // canvas on every knob turn. Only a moved position makes a new object.
   const toRf = useCallback((prev) => {
     const old = new Map(prev.map((n) => [n.id, n]))
     return project.nodes.map((n) => {
       const was = old.get(n.id)
-      const dragging = was?.dragging
-      return { id: n.id, type: 'studio', position: dragging ? was.position : { x: n.x, y: n.y }, data: {}, selected: was?.selected ?? false, dragHandle: '.node-head' }
+      if (!was) return { id: n.id, type: 'studio', position: { x: n.x, y: n.y }, data: {}, selected: false, dragHandle: '.node-head' }
+      if (was.dragging || (was.position.x === n.x && was.position.y === n.y)) return was
+      return { ...was, position: { x: n.x, y: n.y } }
     })
   }, [project.nodes])
   const [nodes, setNodes] = useState(() => toRf([]))
