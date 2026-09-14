@@ -189,6 +189,17 @@ body {
 .lcd-unit { font-size: 10px; color: var(--muted); }
 .position .cycle-bar { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: transparent; }
 .position:not(.running) .lcd-value { color: var(--paper); }
+.transport { display: inline-flex; gap: 0.3rem; align-items: center; }
+.btn.tport { font-family: var(--display); font-weight: 700; font-stretch: 112%; text-transform: uppercase; padding-inline: 0.55rem; }
+.position .lcd-value { width: 5.2ch; cursor: text; }
+.position .lcd-value:focus { outline: none; }
+.position:focus-within { border-color: var(--acid); }
+.position .lcd-value.invalid { color: var(--danger); }
+.meter .lcd-value { appearance: none; -webkit-appearance: none; cursor: pointer; font-size: 0.95rem; padding-right: 0.1rem; }
+.meter .lcd-value option { background: var(--ink); color: var(--paper); }
+.meter:focus-within { border-color: var(--acid); }
+.btn.loop .loop-range { color: var(--muted); font-size: 11px; }
+.btn.loop.on .loop-range { color: var(--acid); }
 .code-toggle.has-error { border-color: var(--danger); color: var(--danger); }
 
 /* ── playlist: lanes and clips, read ahead of time ────── */
@@ -251,6 +262,16 @@ body {
   position: absolute; top: 0; bottom: 0; width: 2px; pointer-events: none; z-index: 1;
   left: calc(var(--head) + (100% - var(--head)) * var(--ph, 0));
   background: var(--acid); box-shadow: 0 0 0 1px var(--ink);
+}
+.playhead.cued { background: var(--paper); opacity: 0.7; }
+.ruler { cursor: pointer; touch-action: none; }
+.ruler:focus-visible { outline-offset: -2px; }
+.loop-region {
+  position: absolute; top: 0; bottom: 0; pointer-events: none; z-index: 1;
+  left: calc(var(--head) + (100% - var(--head)) * var(--la, 0));
+  width: calc((100% - var(--head)) * (var(--lb, 0) - var(--la, 0)));
+  border-left: 2px solid var(--acid); border-right: 2px solid var(--acid);
+  background: rgba(228, 255, 26, 0.05);
 }
 .playlist-empty {
   position: absolute; left: var(--head); right: 0; top: 24px; bottom: 0;
@@ -369,6 +390,18 @@ body {
   .browser { transition: none !important; }
 }
 
+/* ── mid-size: the toolbar needs the room the wordmark was using ─ */
+@media (max-width: 1440px) {
+  .logo { font-size: 58px; margin-right: 0.2rem; }
+  .bar { gap: 0.4rem; }
+  .lcd-unit { display: none; }
+  .btn.loop .loop-range { display: none; }
+}
+@media (max-width: 1100px) {
+  .code-word { display: none; }
+  .meter { display: none; }
+}
+
 /* ── narrow screens: keep the attitude, drop the collisions ─ */
 @media (max-width: 860px) {
   .hint, .user-name { display: none; }
@@ -386,7 +419,7 @@ body {
   .channel { grid-template-columns: 1fr; padding: 0.3rem 0.4rem; }
   .channel-num, .channel-source, .lanes-tip { display: none; }
   .channel-name { font-size: 0.95rem; }
-  .tempo, .position { display: none; } /* transport stays; tempo lives in the code on phones */
+  .tempo, .position, .meter, .btn.tport, .btn.loop { display: none; } /* phones: play/stop only; the ruler still seeks */
   .code-toggle { padding-inline: 0.45rem; }
   .code-word { display: none; }
   .browser {

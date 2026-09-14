@@ -116,11 +116,11 @@ export function soundOf(v) {
 const TEMPO_CALLS = { setcpm: 'cpm', setCpm: 'cpm', setcps: 'cps', setCps: 'cps' }
 
 /**
- * The code change that sets the tempo to `bpm` (4 beats per cycle, Strudel's usual
+ * The code change that sets the tempo to `bpm` with `beats` per cycle (Strudel's usual
  * `setcpm(bpm/4)`): rewrites the arguments of the first top-level setcpm/setcps call,
- * or inserts `setcpm(bpm/4)` at the top. Returns null when the code doesn't parse.
+ * or inserts `setcpm(bpm/beats)` at the top. Returns null when the code doesn't parse.
  */
-export function tempoChange(code, bpm) {
+export function tempoChange(code, bpm, beats = 4) {
   let ast
   try {
     ast = parse(code, { ecmaVersion: 'latest', sourceType: 'module', allowAwaitOutsideFunction: true, allowReturnOutsideFunction: true })
@@ -131,12 +131,12 @@ export function tempoChange(code, bpm) {
     const call = node.type === 'ExpressionStatement' && node.expression.type === 'CallExpression' ? node.expression : null
     const kind = call?.callee.type === 'Identifier' ? TEMPO_CALLS[call.callee.name] : null
     if (!kind) continue
-    const insert = kind === 'cpm' ? `${bpm}/4` : `${bpm}/60/4`
+    const insert = kind === 'cpm' ? `${bpm}/${beats}` : `${bpm}/60/${beats}`
     const from = call.arguments.length ? call.arguments[0].start : call.end - 1
     const to = call.arguments.length ? call.arguments[call.arguments.length - 1].end : call.end - 1
     return { from, to, insert }
   }
-  return { from: 0, to: 0, insert: `setcpm(${bpm}/4)\n` }
+  return { from: 0, to: 0, insert: `setcpm(${bpm}/${beats})\n` }
 }
 
 /** Code to append for a new lane, with a label that isn't taken yet. */

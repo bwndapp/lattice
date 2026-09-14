@@ -3,7 +3,6 @@ import { hapValue, newLaneCode, parseLanes, pitchOf, queryWindow, soundOf, toggl
 
 const WINDOWS = [1, 2, 4, 8, 16]
 const MAIN = '__main__'
-const BEATS = 4 // beats drawn per cycle (bar)
 
 function readLocal(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback } catch { return fallback }
@@ -18,7 +17,7 @@ function writeLocal(key, value) {
  * labels, clips are the evaluated patterns queried ahead of time, and every control here
  * (mute, solo, + lane) is an edit to the code.
  */
-export default function Playlist({ editorRef, code, pattern, lanePatterns, started, stale, emptyMessage, onEditCode, onRevealCode }) {
+export default function Playlist({ transport, editorRef, code, pattern, lanePatterns, started, stale, emptyMessage, onEditCode, onRevealCode }) {
   const [bars, setBars] = useState(() => readLocal('strudel:playlist:bars', 4))
   const lastGood = useRef([])
   const parsed = useMemo(() => parseLanes(code), [code])
@@ -28,6 +27,9 @@ export default function Playlist({ editorRef, code, pattern, lanePatterns, start
   const canvases = useRef(new Map())
   const rulerRef = useRef(null)
   const playheadRef = useRef(null)
+  const loopRef = useRef(null)
+  const pageRef = useRef(0) // first bar on screen, for mapping ruler clicks to time
+  const dragRef = useRef(null) // { x0, t0, t1, moved } while pressing on the ruler
   const cacheRef = useRef(new WeakMap()) // pattern → { begin, bars, haps }
 
   const anySolo = sourceLanes.some((l) => l.soloed)
@@ -49,9 +51,11 @@ export default function Playlist({ editorRef, code, pattern, lanePatterns, start
 
   const draw = useCallback(() => {
     const scheduler = editorRef.current?.repl.scheduler
-    const now = started && scheduler ? scheduler.now() : 0
-    const begin = started ? Math.floor(now / bars) * bars : 0
+    const now = transport.position()
+    const BEATS = transport.beats
+    const begin = Math.floor(now / bars) * bars
     const end = begin + bars
+    pageRef.current = begin
 
     // Query each lane's pattern once per page of bars, not every frame.
     const hapsFor = (pat) => {
@@ -83,10 +87,22 @@ export default function Playlist({ editorRef, code, pattern, lanePatterns, start
     const xOf = (t, w) => ((t - begin) / bars) * w
     const mono = (px) => `${px}px "Martian Mono", ui-monospace, monospace`
 
-    // ruler: bar numbers (1-based, like a DAW) and beat ticks
+    // the loop being dragged out, else the transport's
+    const drag = dragRef.current
+    const loop = drag?.moved
+      ? { on: true, from: Math.min(drag.t0, drag.t1), to: Math.max(drag.t0, drag.t1) }
+      : transport.loop
+
+    // ruler: bar numbers (1-based, like a DAW), beat ticks, the loop band
     if (rulerRef.current) {
       const { ctx, w, h } = fit(rulerRef.current)
       ctx.clearRect(0, 0, w, h)
+      if (loop.to > begin && loop.from < end) {
+        ctx.fillStyle = loop.on ? acid : muted
+        ctx.globalAlpha = loop.on ? 0.3 : 0.15
+        ctx.fillRect(xOf(Math.max(loop.from, begin), w), 0, xOf(Math.min(loop.to, end), w) - xOf(Math.max(loop.from, begin), w), h)
+        ctx.globalAlpha = 1
+      }
       ctx.textBaseline = 'top'
       for (let c = begin; c < end; c++) {
         const x = xOf(c, w)
@@ -197,10 +213,60 @@ export default function Playlist({ editorRef, code, pattern, lanePatterns, start
     }
 
     if (playheadRef.current) {
-      playheadRef.current.style.setProperty('--ph', started ? (now - begin) / bars : 0)
-      playheadRef.current.hidden = !started
+      playheadRef.current.style.setProperty('--ph', (now - begin) / bars)
+      playheadRef.current.classList.toggle('cued', !started)
     }
-  }, [editorRef, pattern, lanePatterns, started, bars, rows])
+    if (loopRef.current) {
+      const a = Math.max(0, (loop.from - begin) / bars)
+      const b = Math.min(1, (loop.to - begin) / bars)
+      loopRef.current.hidden = !(loop.on && b > a)
+      loopRef.current.style.setProperty('--la', a)
+      loopRef.current.style.setProperty('--lb', b)
+    }
+  }, [editorRef, transport, pattern, lanePatterns, started, bars, rows])
+
+  // stopped: redraw when the cue, loop or meter changes
+  useEffect(() => transport.subscribe(() => { if (!started) draw() }), [transport, started, draw])
+
+  // Ruler: click to jump (snaps to the beat), drag to mark a loop (snaps to beats).
+  const timeAt = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = Math.min(Math.max(0, e.clientX - rect.left), rect.width)
+    return pageRef.current + (x / rect.width) * bars
+  }
+  const snap = (t, fn = Math.round) => fn(t * transport.beats) / transport.beats
+  const onRulerDown = (e) => {
+    if (e.button !== 0) return
+    e.currentTarget.setPointerCapture(e.pointerId)
+    const t = timeAt(e)
+    dragRef.current = { x0: e.clientX, t0: snap(t), t1: snap(t), raw: t, moved: false }
+  }
+  const onRulerMove = (e) => {
+    const drag = dragRef.current
+    if (!drag) return
+    if (Math.abs(e.clientX - drag.x0) > 4) drag.moved = true
+    drag.t1 = snap(timeAt(e))
+    if (drag.moved && !started) draw()
+  }
+  const onRulerUp = (e) => {
+    const drag = dragRef.current
+    dragRef.current = null
+    if (!drag) return
+    if (drag.moved && drag.t1 !== drag.t0) {
+      transport.setLoop({ on: true, from: Math.min(drag.t0, drag.t1), to: Math.max(drag.t0, drag.t1) })
+    } else {
+      transport.seek(snap(drag.raw, Math.floor))
+    }
+    if (!started) draw()
+  }
+  const onRulerKey = (e) => {
+    const step = e.shiftKey ? 1 : 1 / transport.beats
+    const pos = snap(transport.position())
+    if (e.key === 'ArrowRight') transport.seek(pos + step)
+    else if (e.key === 'ArrowLeft') transport.seek(pos - step)
+    else return
+    e.preventDefault()
+  }
 
   // Redraw every frame while playing; once per change while stopped.
   useEffect(() => {
@@ -246,7 +312,20 @@ export default function Playlist({ editorRef, code, pattern, lanePatterns, start
         <div className="channel ruler-head" aria-hidden>
           {rows[0]?.slot === MAIN ? <span className="lanes-tip">name patterns to split lanes, e.g. <code>bass: note(…)</code></span> : <span className="lanes-tip">{rows.length} lanes</span>}
         </div>
-        <canvas className="ruler" ref={rulerRef} aria-hidden />
+        <canvas
+          className="ruler"
+          ref={rulerRef}
+          tabIndex={0}
+          role="slider"
+          aria-label="Song position: click to jump, drag to mark a loop, arrow keys nudge"
+          aria-valuemin={0}
+          aria-valuenow={Math.round(transport.position() * transport.beats) / transport.beats}
+          onPointerDown={onRulerDown}
+          onPointerMove={onRulerMove}
+          onPointerUp={onRulerUp}
+          onPointerCancel={() => { dragRef.current = null }}
+          onKeyDown={onRulerKey}
+        />
         {rows.map((row) => (
           <div key={row.id} className={`lane ${row.silent ? 'silent' : ''}`}>
             <div className="channel">
@@ -285,7 +364,8 @@ export default function Playlist({ editorRef, code, pattern, lanePatterns, start
             />
           </div>
         ))}
-        <div className="playhead" ref={playheadRef} hidden aria-hidden />
+        <div className="loop-region" ref={loopRef} hidden aria-hidden />
+        <div className="playhead" ref={playheadRef} aria-hidden />
         {emptyMessage && <div className="playlist-empty">{emptyMessage}</div>}
       </div>
     </section>

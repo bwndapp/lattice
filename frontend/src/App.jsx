@@ -11,6 +11,7 @@ import { api, clearDraft, readDraft, timeAgo, trackUrl, writeDraft } from './api
 import Browser from './Browser.jsx'
 import Playlist from './Playlist.jsx'
 import { capturePatterns, tempoChange } from './lanes'
+import { createTransport, formatBarBeat, parseBarBeat } from './transport'
 
 const DEFAULT_CODE = `// Strudel — Ctrl/Cmd+Enter to play, Ctrl/Cmd+. to stop
 setcpm(120/4)
@@ -43,6 +44,11 @@ export default function App() {
 
   const rootRef = useRef(null)
   const editorRef = useRef(null)
+  const transportRef = useRef(null)
+  if (!transportRef.current) transportRef.current = createTransport()
+  const transport = transportRef.current
+  const [, setTransportTick] = useState(0)
+  useEffect(() => transport.subscribe(() => setTransportTick((n) => n + 1)), [transport])
   const loadedIdRef = useRef(undefined) // which track's code is in the editor right now
   const pendingPlayRef = useRef(null)
   const countedRef = useRef(new Set())
@@ -100,15 +106,17 @@ export default function App() {
         setActiveCode(state.activeCode)
       },
       beforeEval: () => { capturedRef.current = capturePatterns(Pattern) },
-      afterEval: ({ pattern }) => setEvaluated({
-        pattern,
+      editPattern: (pattern) => transport.edit(pattern),
+      afterEval: () => setEvaluated({
+        pattern: transport.raw, // song time; the scheduler plays the transport-shaped copy
         lanes: capturedRef.current,
         forId: loadedIdRef.current,
         cps: editorRef.current.repl.scheduler.cps,
       }),
     })
     editorRef.current.setFontFamily('"Martian Mono", ui-monospace, monospace')
-  }, [])
+    transport.scheduler = editorRef.current.repl.scheduler
+  }, [transport])
 
   // The main area shows the playlist or the code. The editor stays mounted (it owns the
   // audio); when hidden it is also out of the tab order.
@@ -143,13 +151,24 @@ export default function App() {
   const play = useCallback(() => {
     const editor = editorRef.current
     if (!editor) return
+    if (!editor.repl.scheduler.started) transport.cue() // start from the cue, not bar 1
     editor.evaluate()
     const id = loadedIdRef.current
     if (id && !countedRef.current.has(id)) {
       countedRef.current.add(id)
       api(`/tracks/${id}/play`, { method: 'POST' }).catch(() => {})
     }
-  }, [])
+  }, [transport])
+
+  /** Stop: back to where playback started (the cue). */
+  const stop = useCallback(() => editorRef.current?.stop(), [])
+  /** Pause: stop, and resume from here next time. */
+  const pause = useCallback(() => {
+    const at = transport.position()
+    editorRef.current?.stop()
+    transport.pausedAt(at)
+  }, [transport])
+  const toStart = useCallback(() => transport.seek(transport.looping() ? transport.loop.from : 0), [transport])
 
   // Load whatever the URL points at: the scratch pad at /, or a saved track.
   useEffect(() => {
@@ -293,13 +312,22 @@ export default function App() {
   // Page-wide shortcuts (Strudel's own only fire while the editor has focus). Capture
   // phase + stopPropagation so a focused editor doesn't run them a second time.
   const keysRef = useRef({})
-  keysRef.current = { play, save }
+  keysRef.current = { play, save, stop, pause, toStart }
   useEffect(() => {
+    const typing = (el) => el?.closest?.('input, textarea, select, button, [contenteditable="true"]')
     const onKeyDown = (e) => {
       const mod = e.ctrlKey || e.metaKey
+      if (!mod && !e.altKey && !typing(e.target)) {
+        // DAW keys outside text fields: space plays/pauses, Home goes to the start
+        if (e.key === ' ') editorRef.current?.repl.scheduler.started ? keysRef.current.pause() : keysRef.current.play()
+        else if (e.key === 'Home') keysRef.current.toStart()
+        else return
+        e.preventDefault()
+        return
+      }
       if (!(mod || e.altKey)) return
       if (e.key === 'Enter') keysRef.current.play()
-      else if (e.key === '.' || e.code === 'Period') editorRef.current?.stop()
+      else if (e.key === '.' || e.code === 'Period') keysRef.current.stop()
       else if (mod && e.key.toLowerCase() === 's') keysRef.current.save()
       else if (mod && e.key.toLowerCase() === 'j') setView((v) => (v === 'code' ? 'playlist' : 'code'))
       else return
@@ -315,17 +343,37 @@ export default function App() {
       <header className="bar">
         <button className="btn ghost browse-toggle" onClick={() => setBrowserOpen((o) => !o)} aria-label="Browse tracks">tracks</button>
         <Link to="/" className="logo" aria-label="strudel, home">strudel</Link>
-        <button className={`btn play ${started ? 'on' : ''}`} onClick={play}>{started ? 'update' : 'play'}</button>
-        <button className="btn stop" onClick={() => editorRef.current?.stop()} disabled={!started}>stop</button>
+        <span className="transport" role="group" aria-label="Transport">
+          <button className="btn tport" onClick={toStart} title="Back to the start (Home)" aria-label="Back to the start">|&lt;</button>
+          <button className={`btn play ${started ? 'on' : ''}`} onClick={play} title="Play (space) · update while playing (ctrl/cmd + enter)">{started ? 'update' : 'play'}</button>
+          <button className="btn tport" onClick={pause} disabled={!started} title="Pause (space)">pause</button>
+          <button className="btn stop" onClick={stop} disabled={!started} title="Stop and return to the cue (ctrl/cmd + .)">stop</button>
+        </span>
         <Tempo
-          bpm={evaluated.cps ? evaluated.cps * 240 : 120}
+          bpm={(evaluated.cps ?? 0.5) * 60 * transport.beats}
           onChange={(bpm) => {
-            const change = tempoChange(editorRef.current.code, bpm)
+            const change = tempoChange(editorRef.current.code, bpm, transport.beats)
             if (change) editCode(change)
             else flash('Fix the code error first, then set the tempo')
           }}
         />
-        <Position editorRef={editorRef} started={started} />
+        <Position transport={transport} started={started} />
+        <label className="lcd meter" title="Beats per bar">
+          <select
+            className="lcd-value"
+            aria-label="Beats per bar"
+            value={transport.beats}
+            onChange={(e) => transport.setBeats(Number(e.target.value))}
+          >
+            {[2, 3, 4, 5, 6, 7, 8].map((n) => <option key={n} value={n}>{n}/4</option>)}
+          </select>
+        </label>
+        <button
+          className={`btn loop ${transport.loop.on ? 'on' : ''}`}
+          aria-pressed={transport.loop.on}
+          title="Loop the marked bars · drag across the ruler to mark them"
+          onClick={() => transport.setLoop({ on: !transport.loop.on })}
+        >loop <span className="loop-range">{formatBarBeat(transport.loop.from, transport.beats).replace(/^0+/, '')}–{formatBarBeat(transport.loop.to, transport.beats).replace(/^0+/, '')}</span></button>
         <button
           className={`btn code-toggle ${view === 'code' ? 'on' : ''} ${evalError && view !== 'code' ? 'has-error' : ''}`}
           aria-pressed={view === 'code'}
@@ -404,6 +452,7 @@ export default function App() {
           </div>
           {view === 'playlist' && (
             <Playlist
+              transport={transport}
               editorRef={editorRef}
               code={code}
               pattern={evaluated.forId === shownId ? evaluated.pattern : null}
@@ -434,7 +483,7 @@ export default function App() {
   )
 }
 
-/** BPM field (4 beats per cycle). Editing it rewrites setcpm/setcps in the code. */
+/** BPM field (beats per bar × cycles per minute). Editing it rewrites setcpm/setcps in the code. */
 function Tempo({ bpm, onChange }) {
   const shown = String(Math.round(bpm * 10) / 10)
   const [text, setText] = useState(shown)
@@ -460,28 +509,58 @@ function Tempo({ bpm, onChange }) {
   )
 }
 
-/** Song position as bar.beat (bars are cycles). Moves only while playing; Stop pauses it. */
-function Position({ editorRef, started }) {
-  const valueRef = useRef(null)
+/**
+ * Song position as bar.beat. Type a position ("5.3") and press Enter to jump there;
+ * arrow keys nudge a beat, shift + arrows (or page up/down) a bar.
+ */
+function Position({ transport, started }) {
+  const inputRef = useRef(null)
   const barRef = useRef(null)
   useEffect(() => {
-    const show = (cycle) => {
-      const bar = Math.floor(cycle)
-      const beat = Math.floor((cycle - bar) * 4)
-      if (valueRef.current) valueRef.current.textContent = `${String(bar + 1).padStart(3, '0')}.${beat + 1}`
-      barRef.current?.style.setProperty('--phase', cycle - bar)
+    const show = () => {
+      const pos = transport.position()
+      const input = inputRef.current
+      if (input && document.activeElement !== input) input.value = formatBarBeat(pos, transport.beats)
+      barRef.current?.style.setProperty('--phase', pos - Math.floor(pos))
     }
-    if (!started) { show(0); return }
+    show()
+    if (!started) return transport.subscribe(show)
     let frame
-    const tick = () => { show(editorRef.current?.repl.scheduler.now() || 0); frame = requestAnimationFrame(tick) }
+    const tick = () => { show(); frame = requestAnimationFrame(tick) }
     tick()
     return () => cancelAnimationFrame(frame)
-  }, [started, editorRef])
+  }, [started, transport])
+
+  const onKeyDown = (e) => {
+    const step = e.shiftKey || e.key.startsWith('Page') ? 1 : 1 / transport.beats
+    const pos = transport.position()
+    const snapped = Math.round(pos * transport.beats) / transport.beats
+    if (e.key === 'Enter') {
+      const target = parseBarBeat(e.currentTarget.value, transport.beats)
+      if (target === null) e.currentTarget.classList.add('invalid')
+      else { e.currentTarget.classList.remove('invalid'); transport.seek(target); e.currentTarget.blur() }
+    } else if (e.key === 'Escape') e.currentTarget.blur()
+    else if (e.key === 'ArrowUp' || e.key === 'PageUp') transport.seek(snapped + step)
+    else if (e.key === 'ArrowDown' || e.key === 'PageDown') transport.seek(snapped - step)
+    else return
+    e.preventDefault()
+    e.currentTarget.value = formatBarBeat(transport.position(), transport.beats)
+  }
+
   return (
-    <span className={`lcd position ${started ? 'running' : ''}`} aria-hidden>
-      <span className="lcd-value" ref={valueRef}>001.1</span>
-      <span className="lcd-unit">bar.beat</span>
+    <label className={`lcd position ${started ? 'running' : ''}`} title="Type bar.beat and press Enter to jump · arrows nudge">
+      <input
+        ref={inputRef}
+        className="lcd-value"
+        defaultValue="001.1"
+        aria-label="Song position, bar.beat"
+        spellCheck={false}
+        onKeyDown={onKeyDown}
+        onFocus={(e) => e.currentTarget.select()}
+        onBlur={(e) => { e.currentTarget.classList.remove('invalid'); e.currentTarget.value = formatBarBeat(transport.position(), transport.beats) }}
+      />
+      <span className="lcd-unit" aria-hidden>bar.beat</span>
       <span className="cycle-bar" ref={barRef} />
-    </span>
+    </label>
   )
 }
