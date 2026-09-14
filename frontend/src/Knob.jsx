@@ -62,6 +62,7 @@ export default function Knob({ def, value, onChange }) {
     <div className={`knob ${changed ? 'changed' : ''}`} title={`${def.label}: ${format(shown, def)} · drag, scroll, double-click to reset`}>
       <svg
         ref={ref}
+        className="nodrag"
         width="36"
         height="36"
         viewBox="0 0 36 36"

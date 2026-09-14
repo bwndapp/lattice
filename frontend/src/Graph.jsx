@@ -148,7 +148,7 @@ function Param({ node, param, value: given, onChange }) {
     case 'kit':
       return <KitSelect node={node} param={param} value={value} onChange={set} />
     case 'knob':
-      return <div className="nodrag nowheel"><Knob def={param} value={value} onChange={set} /></div>
+      return <div className="nowheel"><Knob def={param} value={value} onChange={set} /></div>
     case 'int':
       return <Stepper param={param} value={value} onChange={set} />
     case 'select':
@@ -637,7 +637,8 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, onOpenRack, t
     const old = new Map(prev.map((n) => [n.id, n]))
     return project.nodes.map((n) => {
       const was = old.get(n.id)
-      if (!was) return { id: n.id, type: 'studio', position: { x: n.x, y: n.y }, data: {}, selected: false, dragHandle: '.node-head' }
+      // no dragHandle: grab a node anywhere; its controls opt out with the nodrag class
+      if (!was) return { id: n.id, type: 'studio', position: { x: n.x, y: n.y }, data: {}, selected: false }
       if (was.dragging || (was.position.x === n.x && was.position.y === n.y)) return was
       return { ...was, position: { x: n.x, y: n.y } }
     })

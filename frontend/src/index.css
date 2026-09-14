@@ -603,7 +603,11 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
 .graph-canvas .react-flow__edge.animated .react-flow__edge-path { stroke: var(--acid); }
 .graph-canvas .react-flow__controls { box-shadow: none; border: 1px solid var(--line); }
 .graph-canvas .react-flow__minimap { border: 1px solid var(--line); }
-.gnode { width: 250px; background: var(--panel); border: 1px solid var(--line); font-size: 12px; color: var(--paper); }
+.gnode { width: 250px; background: var(--panel); border: 1px solid var(--line); font-size: 12px; color: var(--paper); cursor: grab; }
+.react-flow__node.dragging .gnode, .react-flow__node.dragging .gnode * { cursor: grabbing; }
+.gnode .nodrag, .gnode input, .gnode select, .gnode textarea, .gnode button { cursor: auto; }
+.gnode button, .gnode select { cursor: pointer; }
+.gnode .knob svg { cursor: ns-resize; }
 .gnode.selected { border-color: var(--acid); box-shadow: 0 0 0 1px var(--acid); }
 .gnode.soloing { outline: 2px dashed var(--acid); outline-offset: 4px; }
 .node-head {
