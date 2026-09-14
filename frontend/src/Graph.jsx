@@ -5,8 +5,7 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { APPLY, FX_UNITS, GROUPS, NODE_TYPES, defaultData, inputsOf, makeFxUnit, makesCycle } from './graph'
-import { INSTRUMENT_MIME, instrumentChannel, makePattern, newId } from './project'
-import { InstrumentChips } from './Rack.jsx'
+import { INSTRUMENTS, INSTRUMENT_MIME, instrumentChannel, makePattern, newId } from './project'
 import Knob from './Knob.jsx'
 import SoundPicker from './SoundPicker.jsx'
 import PatternEditor from './PatternEditor.jsx'
@@ -365,31 +364,235 @@ function StudioNode({ id, selected }) {
 
 const nodeTypes = { studio: StudioNode }
 
+/** Everyday words people search for, per node type. */
+const SEARCH_WORDS = {
+  pattern: 'steps drums notes sequencer piano roll beat loop',
+  sound: 'rhythm drum sample mini notation beat hits kit',
+  notes: 'melody synth chords notes mini notation',
+  code: 'strudel custom javascript expression write',
+  fast: 'speed tempo faster slower double half time',
+  every: 'alternate change cycle variation every few',
+  sometimes: 'random chance probability maybe',
+  euclid: 'rhythm polyrhythm spread hits pattern',
+  thin: 'random drop degrade probability sparse fewer',
+  echo: 'delay repeat stutter ghost',
+  shape: 'reverse jux stereo swing palindrome iter ply shuffle',
+  transpose: 'pitch key semitones octave up down',
+  filter: 'lpf low pass high pass hpf cutoff resonance eq tone muffle',
+  djfilter: 'filter sweep dj low high one knob',
+  space: 'reverb delay room echo ambience wet',
+  level: 'volume gain pan loudness mix quiet loud',
+  drive: 'distortion saturation crush bitcrush overdrive dirt',
+  phaser: 'modulation swirl sweep jet',
+  tremolo: 'modulation volume pulse lfo wobble',
+  vowel: 'formant voice talk mouth',
+  lofi: 'coarse bitcrush downsample grit crush retro',
+  fxrack: 'effects chain multiple fx rack bus insert',
+  stack: 'layer mix together combine sum',
+  sequence: 'cat order alternate chain one after another',
+  arrange: 'song structure sections order bars intro verse',
+  output: 'master out hear speakers main',
+}
+
+function paletteItems() {
+  const nodes = Object.entries(NODE_TYPES).map(([type, s]) => ({
+    id: `node:${type}`, kind: 'node', key: type, group: s.group, label: s.label, blurb: s.blurb,
+    words: `${type} ${s.group} ${SEARCH_WORDS[type] ?? ''}`,
+  }))
+  const instruments = INSTRUMENTS.map((inst) => ({
+    id: `instrument:${inst.key}`, kind: 'instrument', key: inst.key, group: 'instruments', label: inst.label,
+    blurb: inst.kind === 'code' ? 'a pattern with a line of code' : `a pattern with a ${inst.kind === 'drum' ? 'drum' : 'synth'} (${inst.patch.sound})`,
+    words: `instrument ${inst.kind} ${inst.patch.sound ?? ''} pattern`,
+  }))
+  return [...nodes, ...instruments]
+}
+
+/** How well an item matches a search: higher is better, 0 is no match. Every word must hit. */
+function matchScore(item, tokens) {
+  let score = 0
+  const label = item.label.toLowerCase()
+  const hay = `${label} ${item.blurb} ${item.words}`.toLowerCase()
+  for (const t of tokens) {
+    if (label.startsWith(t)) score += 30
+    else if (label.includes(t)) score += 20
+    else if (item.words.toLowerCase().split(/\s+/).some((w) => w.startsWith(t))) score += 10
+    else if (hay.includes(t)) score += 4
+    else return 0
+  }
+  return score
+}
+
+const PAL_GROUPS = [['recent', 'recent'], ...GROUPS, ['instruments', 'instruments']]
+const PAL_MIN = 150
+const PAL_MAX = 460
+
+function readPalPref(key, fallback) {
+  try { return JSON.parse(localStorage.getItem(key)) ?? fallback } catch { return fallback }
+}
+function writePalPref(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* storage unavailable */ }
+}
+
+/**
+ * The add pane: every node and instrument, searchable. Drag its right edge to resize,
+ * collapse it to a rail, fold groups away. Type to search (press / to jump to the box),
+ * arrow keys move through results, Enter adds.
+ */
 function Palette({ onAdd }) {
+  const items = useMemo(() => paletteItems(), [])
+  const [width, setWidth] = useState(() => Math.min(PAL_MAX, Math.max(PAL_MIN, readPalPref('strudel:palette:width', 200))))
+  const [collapsed, setCollapsed] = useState(() => readPalPref('strudel:palette:collapsed', false))
+  const [closed, setClosed] = useState(() => new Set(readPalPref('strudel:palette:closed', [])))
+  const [recent, setRecent] = useState(() => readPalPref('strudel:palette:recent', []))
+  const [query, setQuery] = useState('')
+  const [cursor, setCursor] = useState(0)
+  const searchRef = useRef(null)
+  const listRef = useRef(null)
+
+  useEffect(() => writePalPref('strudel:palette:width', width), [width])
+  useEffect(() => writePalPref('strudel:palette:collapsed', collapsed), [collapsed])
+  useEffect(() => writePalPref('strudel:palette:closed', [...closed]), [closed])
+  useEffect(() => writePalPref('strudel:palette:recent', recent), [recent])
+
+  // "/" jumps to the search box from anywhere that isn't a text field
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return
+      if (e.target.closest?.('input, textarea, select, [contenteditable="true"]')) return
+      e.preventDefault()
+      setCollapsed(false)
+      requestAnimationFrame(() => searchRef.current?.focus())
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const results = tokens.length
+    ? items.map((it) => ({ it, score: matchScore(it, tokens) })).filter((r) => r.score > 0).sort((a, b) => b.score - a.score).map((r) => r.it)
+    : null
+  useEffect(() => setCursor(0), [query])
+  useEffect(() => {
+    listRef.current?.querySelector('.pal-item.cursor')?.scrollIntoView({ block: 'nearest' })
+  }, [cursor])
+
+  const add = (item) => {
+    if (item.kind === 'instrument') onAdd('pattern', null, item.key)
+    else onAdd(item.key)
+    setRecent((r) => [item.id, ...r.filter((x) => x !== item.id)].slice(0, 6))
+  }
+
+  const wide = width >= 230
+  const Item = ({ item, index }) => (
+    <button
+      className={`pal-item pal-${item.group} ${index === cursor && results ? 'cursor' : ''}`}
+      draggable
+      title={item.blurb}
+      onDragStart={(e) => {
+        if (item.kind === 'instrument') e.dataTransfer.setData(INSTRUMENT_MIME, item.key)
+        else e.dataTransfer.setData(NODE_MIME, item.key)
+        e.dataTransfer.effectAllowed = 'copy'
+      }}
+      onClick={() => add(item)}
+    >
+      <span className="pal-item-label">{item.label}</span>
+      {wide && <span className="pal-item-blurb">{item.blurb}</span>}
+    </button>
+  )
+
+  const startResize = (e) => {
+    e.preventDefault()
+    const x0 = e.clientX
+    const w0 = width
+    const move = (ev) => setWidth(Math.min(PAL_MAX, Math.max(PAL_MIN, w0 + ev.clientX - x0)))
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); document.body.classList.remove('resizing-x') }
+    document.body.classList.add('resizing-x')
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+
+  if (collapsed) {
+    return (
+      <aside className="palette graph-palette collapsed" aria-label="Add nodes">
+        <button className="pal-rail" onClick={() => setCollapsed(false)} title="Open the add pane (/ to search)" aria-expanded="false">
+          <span>add</span>
+        </button>
+      </aside>
+    )
+  }
+
+  const byGroup = (group) => (group === 'recent'
+    ? recent.map((id) => items.find((it) => it.id === id)).filter(Boolean)
+    : items.filter((it) => it.group === group).sort((a, b) => (b.key === 'fxrack') - (a.key === 'fxrack')))
+
   return (
-    <aside className="palette graph-palette" aria-label="Add nodes">
-      <span className="palette-title">add</span>
-      <span className="palette-hint">click to add, or drag onto the canvas</span>
-      {GROUPS.map(([group, label]) => (
-        <div key={group} className="pal-group">
-          <span className="pal-label">{label}</span>
-          {Object.entries(NODE_TYPES).filter(([, s]) => s.group === group).sort(([a], [b]) => (b === 'fxrack') - (a === 'fxrack')).map(([type, s]) => (
-            <button
-              key={type}
-              className={`chip pal-${group}`}
-              draggable
-              title={s.blurb}
-              onDragStart={(e) => { e.dataTransfer.setData(NODE_MIME, type); e.dataTransfer.effectAllowed = 'copy' }}
-              onClick={() => onAdd(type)}
-            >{s.label}</button>
-          ))}
-        </div>
-      ))}
-      <div className="pal-group">
-        <span className="pal-label">instruments</span>
-        <span className="palette-hint">drop one on the canvas for a new pattern with it</span>
-        <InstrumentChips className="vertical" onPick={(key) => onAdd('pattern', null, key)} />
+    <aside className={`palette graph-palette ${wide ? 'wide' : ''}`} aria-label="Add nodes" style={{ width }}>
+      <div className="pal-head">
+        <span className="palette-title">add</span>
+        <button className="node-btn" onClick={() => setCollapsed(true)} title="Collapse the pane" aria-label="Collapse the add pane">«</button>
       </div>
+      <div className="pal-search">
+        <input
+          ref={searchRef}
+          className="node-input"
+          type="search"
+          placeholder="search  ( / )"
+          value={query}
+          aria-label="Search nodes and instruments"
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (!results) return
+            if (e.key === 'ArrowDown') { e.preventDefault(); setCursor((c) => Math.min(results.length - 1, c + 1)) }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); setCursor((c) => Math.max(0, c - 1)) }
+            else if (e.key === 'Enter' && results[cursor]) { e.preventDefault(); add(results[cursor]) }
+            else if (e.key === 'Escape') { e.preventDefault(); setQuery('') }
+            e.stopPropagation()
+          }}
+        />
+      </div>
+      <div className="pal-list" ref={listRef}>
+        {results ? (
+          <>
+            <span className="pal-count" aria-live="polite">{results.length ? `${results.length} match${results.length === 1 ? '' : 'es'} · enter adds the highlighted one` : `nothing matches “${query}”`}</span>
+            {results.map((item, index) => <Item key={item.id} item={item} index={index} />)}
+          </>
+        ) : (
+          PAL_GROUPS.map(([group, label]) => {
+            const list = byGroup(group)
+            if (!list.length) return null
+            const open = !closed.has(group)
+            return (
+              <section key={group} className="pal-group">
+                <button
+                  className="pal-group-head"
+                  aria-expanded={open}
+                  onClick={() => setClosed((s) => { const next = new Set(s); next.has(group) ? next.delete(group) : next.add(group); return next })}
+                >
+                  <span className="pal-caret" aria-hidden>{open ? '−' : '+'}</span>
+                  <span className="pal-label">{label}</span>
+                  <span className="pal-n">{list.length}</span>
+                </button>
+                {open && list.map((item) => <Item key={item.id} item={item} index={-1} />)}
+              </section>
+            )
+          })
+        )}
+      </div>
+      <div
+        className="pal-resize"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize the add pane"
+        aria-valuenow={Math.round(width)}
+        tabIndex={0}
+        onPointerDown={startResize}
+        onDoubleClick={() => setCollapsed(true)}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowRight') setWidth((w) => Math.min(PAL_MAX, w + 20))
+          if (e.key === 'ArrowLeft') setWidth((w) => Math.max(PAL_MIN, w - 20))
+        }}
+        title="Drag to resize · double-click to collapse"
+      />
     </aside>
   )
 }
@@ -458,7 +661,13 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, onOpenRack, t
   const addNode = useCallback((type, position, instrument, intoWire = null) => {
     const id = `${type}${newId().slice(-5)}`
     const rect = wrapRef.current?.getBoundingClientRect()
-    const at = position ?? flow.screenToFlowPosition({ x: (rect?.left ?? 0) + (rect?.width ?? 800) / 2 - 110, y: (rect?.top ?? 0) + (rect?.height ?? 600) / 2 - 60 })
+    let at = position
+    if (!at) {
+      // middle of the view, stepping down-right past any node already sitting there
+      at = flow.screenToFlowPosition({ x: (rect?.left ?? 0) + (rect?.width ?? 800) / 2 - 110, y: (rect?.top ?? 0) + (rect?.height ?? 600) / 2 - 60 })
+      const taken = (p) => project.nodes.some((n) => Math.abs(n.x - p.x) < 120 && Math.abs(n.y - p.y) < 80)
+      for (let i = 0; i < 20 && taken(at); i++) at = { x: at.x + 40, y: at.y + 60 }
+    }
     onUpdateProject((p) => {
       const data = defaultData(type)
       if (type === 'pattern') {
@@ -471,7 +680,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, onOpenRack, t
       if (intoWire) spliceInto(p, intoWire, id)
     })
     return id
-  }, [flow, onUpdateProject])
+  }, [flow, onUpdateProject, project.nodes])
 
   const ctx = useMemo(() => ({
     project,
