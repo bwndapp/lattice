@@ -46,7 +46,7 @@ export const APPLY = {
  */
 export const NODE_TYPES = {
   pattern: {
-    group: 'source', label: 'pattern', blurb: 'Steps and notes you draw in the rack',
+    group: 'source', label: 'pattern', blurb: 'Steps and notes you draw in its pop-up',
     inputs: 0,
     params: [],
     code: (d, _in, ctx) => (ctx.patternIds.has(d.patternId) ? `p_${d.patternId}` : null),
