@@ -46,7 +46,7 @@ export function configured() { return !!(ISSUER && CLIENT_ID) }
 
 /** Send the browser to the platform sign-in. Returns instantly when the user
  *  is already signed in to any blue wind app. `next` is where to land after. */
-export async function login(next = window.location.pathname + window.location.search) {
+export async function login(next = window.location.pathname + window.location.search + window.location.hash) {
   if (!configured()) throw new Error('bwnd SSO is not configured for this app')
   const verifier = rand(48)
   const state = rand(16)

@@ -1,7 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { useEffect, useRef, useState } from 'react'
-import { BrowserRouter, Routes, Route, Link, Navigate, useNavigate } from 'react-router-dom'
+import { BrowserRouter, HashRouter, Routes, Route, Link, Navigate, useNavigate } from 'react-router-dom'
 import App from './App.jsx'
 import { handleCallback } from './bwnd'
 import { BASE } from './base'
@@ -32,9 +32,13 @@ function AuthCallback() {
   )
 }
 
+// The preview's server only serves /preview/ itself (a reload of /preview/t/abc is a 404),
+// so the draft keeps its routes after a # (/preview/#/t/abc). Live has real paths.
+const Router = BASE ? HashRouter : BrowserRouter
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <BrowserRouter basename={BASE}>
+    <Router {...(BASE ? {} : { basename: BASE })}>
       <Routes>
         {/* One layout route so the editor (and whatever is playing) survives navigation. */}
         <Route element={<App />}>
@@ -44,6 +48,6 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="*" element={<Navigate to="/" replace />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
       </Routes>
-    </BrowserRouter>
+    </Router>
   </React.StrictMode>,
 )

@@ -39,7 +39,7 @@ export function timeAgo(seconds) {
   return `${label} ago`
 }
 
-/** Public link for a track (live: /t/id, draft: /preview/t/id). */
+/** Public link for a track (live: /t/id, draft: /preview/#/t/id). */
 export function trackUrl(id) {
-  return `${window.location.origin}${BASE}/t/${id}`
+  return BASE ? `${window.location.origin}${BASE}/#/t/${id}` : `${window.location.origin}/t/${id}`
 }
