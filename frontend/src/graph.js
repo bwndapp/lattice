@@ -183,9 +183,14 @@ export const NODE_TYPES = {
       { key: 'hpf', type: 'knob', label: 'low cut', min: 20, max: 8000, def: 20, log: true, unit: 'hz' },
     ],
     code: (d, [x], ctx) => {
+      // a note carries one filter, so filters along a line keep the tightest setting
+      // instead of the last one replacing the rest (an instrument's own cutoff included)
       const hpOn = d.hpf > 20 || isAuto(ctx, 'hpf')
-      const lp = `.lpf(${K(ctx, d, 'lpf', round)})${tapUnlessAuto(ctx, 'lpf', 'cutoff', Math.round(d.lpf))}.lpq(${K(ctx, d, 'lpq')})${tapUnlessAuto(ctx, 'lpq', 'resonance', tidy(d.lpq))}`
-      return `${x}${lp}${hpOn ? `.hpf(${K(ctx, d, 'hpf', round)})${tapUnlessAuto(ctx, 'hpf', 'hcutoff', Math.round(d.hpf))}` : ''}`
+      const merged = fmapWith(x, ctx, d, ['lpf', 'lpq', 'hpf'], (val) => {
+        const hp = hpOn ? `, hcutoff: Math.max(v.hcutoff ?? 0, ${val('hpf')})` : ''
+        return `{ ...v, ...(v.cutoff !== undefined && v.cutoff <= ${val('lpf')} ? {} : { cutoff: ${val('lpf')}, resonance: ${val('lpq')} })${hp} }`
+      }, { lpf: round, hpf: round })
+      return `${merged}${tapUnlessAuto(ctx, 'lpf', 'cutoff', Math.round(d.lpf))}${tapUnlessAuto(ctx, 'lpq', 'resonance', tidy(d.lpq))}${hpOn ? tapUnlessAuto(ctx, 'hpf', 'hcutoff', Math.round(d.hpf)) : ''}`
     },
   },
   space: {
@@ -255,7 +260,15 @@ export const NODE_TYPES = {
       { key: 'gain', type: 'knob', label: 'vol', min: 0, max: 1.5, def: 0.8 },
       { key: 'pan', type: 'knob', label: 'pan', min: 0, max: 1, def: 0.5 },
     ],
-    code: (d, [x], ctx) => `${x}.gain(${K(ctx, d, 'gain')})${tapUnlessAuto(ctx, 'gain', 'gain', tidy(d.gain))}${d.pan !== 0.5 || ctx?.nodeId || isAuto(ctx, 'pan') ? `.pan(${K(ctx, d, 'pan')})${tapUnlessAuto(ctx, 'pan', 'pan', tidy(d.pan), 2)}` : ''}`,
+    // one level after another turns the sound down twice (they multiply), and pans add up
+    code: (d, [x], ctx) => {
+      const pan = d.pan !== 0.5 || isAuto(ctx, 'pan')
+      const merged = fmapWith(x, ctx, d, pan ? ['gain', 'pan'] : ['gain'], (val) => {
+        const p = pan ? `, pan: Math.min(1, Math.max(0, (v.pan ?? 0.5) + ${val('pan')} - 0.5))` : ''
+        return `{ ...v, gain: (v.gain ?? 1) * ${val('gain')}${p} }`
+      })
+      return `${merged}${tapUnlessAuto(ctx, 'gain', 'gain', tidy(d.gain))}${pan ? tapUnlessAuto(ctx, 'pan', 'pan', tidy(d.pan), 2) : ''}`
+    },
   },
   drive: {
     group: 'effect', label: 'drive', blurb: 'Distortion and bitcrush',
@@ -265,8 +278,12 @@ export const NODE_TYPES = {
       { key: 'crush', type: 'knob', label: 'crush', min: 0, max: 1, def: 0 },
     ],
     code: (d, [x], ctx) => {
-      const crush = isAuto(ctx, 'crush') ? `.crush(${ctx.autoOf('crush')}.fmap((v) => Math.round(16 - v * 14)))` : d.crush > 0 ? `.crush(${Math.round(16 - d.crush * 14)})` : ''
-      return `${x}.shape(${K(ctx, d, 'shape')})${d.shape > 0 ? tapUnlessAuto(ctx, 'shape', 'shape', tidy(d.shape)) : ''}${crush}`
+      const crush = d.crush > 0 || isAuto(ctx, 'crush')
+      const merged = fmapWith(x, ctx, d, crush ? ['shape', 'crush'] : ['shape'], (val) => {
+        const bits = crush ? `, crush: Math.min(v.crush ?? 16, Math.round(16 - ${val('crush')} * 14))` : ''
+        return `{ ...v, shape: Math.min(0.95, (v.shape ?? 0) + ${val('shape')})${bits} }`
+      })
+      return `${merged}${d.shape > 0 ? tapUnlessAuto(ctx, 'shape', 'shape', tidy(d.shape)) : ''}`
     },
   },
 
@@ -304,7 +321,7 @@ export const NODE_TYPES = {
     group: 'effect', label: 'lo-fi', blurb: 'Lower sample rate, grittier',
     inputs: 1,
     params: [{ key: 'coarse', type: 'int', label: 'grit', min: 1, max: 32, def: 6 }],
-    code: (d, [x]) => `${x}.coarse(${d.coarse})`,
+    code: (d, [x]) => `${x}.fmap((v) => ({ ...v, coarse: Math.max(v.coarse ?? 1, ${d.coarse}) }))`,
   },
   sidechain: {
     group: 'effect', label: 'sidechain', blurb: 'Duck the sound every time the trigger hits (kick pumps the bass)',
@@ -392,9 +409,8 @@ export const NODE_TYPES = {
       { key: 'attack', type: 'knob', label: 'snap', min: -1, max: 1, def: 0.5, unit: 'bi', origin: 0 },
       { key: 'sustain', type: 'knob', label: 'tail', min: -1, max: 1, def: 0, unit: 'bi', origin: 0 },
     ],
-    code: (d, [x], ctx) => (isAuto(ctx, 'attack') || isAuto(ctx, 'sustain')
-      ? fmapWith(x, ctx, d, ['attack', 'sustain'], (val) => `{ ...v, transient: ${val('attack')}, transsustain: ${val('sustain')} }`)
-      : `${x}.transient("${tidy(d.attack)}:${tidy(d.sustain)}")`),
+    code: (d, [x], ctx) => fmapWith(x, ctx, d, ['attack', 'sustain'], (val) =>
+      `{ ...v, transient: Math.min(1, Math.max(-1, (v.transient ?? 0) + ${val('attack')})), transsustain: Math.min(1, Math.max(-1, (v.transsustain ?? 0) + ${val('sustain')})) }`),
   },
 
   haas: {
