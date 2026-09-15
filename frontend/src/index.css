@@ -285,15 +285,22 @@ body {
 .file-line { margin: 0.25rem 0.2rem; border: 0; border-top: 1px solid var(--line); }
 .track-status { max-width: 22rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .popover { position: fixed; z-index: 80; background: var(--panel); border: 1px solid var(--acid); box-shadow: 8px 8px 0 #000; }
-.track-menu { width: 300px; max-width: calc(100vw - 16px); display: grid; gap: 0.6rem; padding: 0.7rem; }
-.track-menu-field { display: grid; gap: 0.25rem; font-size: 11px; color: var(--muted); }
-.track-menu-field .node-input, .track-menu-field .select { width: 100%; }
-.track-menu-meta { margin: 0; line-height: 1.5; }
-.track-menu-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; padding-top: 0.6rem; border-top: 1px solid var(--line); }
-.track-menu-action { display: grid; gap: 0.35rem; justify-items: start; padding-top: 0.6rem; border-top: 1px solid var(--line); }
-.track-menu-note { margin: 0; font-size: 10.5px; line-height: 1.5; color: var(--muted); }
-.track-menu-action.danger-zone { border-top-color: rgba(255, 90, 60, 0.45); }
-.track-menu-action.danger-zone .track-menu-note { color: #c98a7c; }
+.track-menu { width: 280px; max-width: calc(100vw - 16px); display: grid; gap: 0.15rem; padding: 0.55rem 0.3rem 0.3rem; }
+/* the ··· menu: name and status, two settings, then one line per action */
+.tm-title { margin: 0 0.25rem; padding: 0.15rem 0.25rem; font-family: var(--display); font-weight: 800; font-stretch: 112%; font-size: 1.05rem; color: var(--paper); background: transparent; border: 0; border-bottom: 1px solid var(--line); min-width: 0; }
+.tm-title:hover, .tm-title:focus { border-bottom-color: var(--acid); outline: none; }
+.tm-heading { margin: 0 0.5rem; font-family: var(--display); font-weight: 800; font-stretch: 112%; font-size: 1.05rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tm-status { margin: 0.25rem 0.5rem 0.45rem; font-size: 10.5px; line-height: 1.45; color: var(--muted); }
+.tm-unsaved { color: var(--acid); }
+.tm-row { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; padding: 0.3rem 0.55rem; font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.tm-seg { display: inline-flex; border: 1px solid var(--line); }
+.tm-seg button { font: inherit; font-size: 10.5px; white-space: nowrap; padding: 0.2rem 0.45rem; color: var(--muted); background: none; border: 0; cursor: var(--ring); }
+.tm-seg button + button { border-left: 1px solid var(--line); }
+.tm-seg button:hover:not(.on) { color: var(--paper); }
+.tm-seg button.on { color: var(--ink); background: var(--paper); }
+.select.tm-select { padding: 0.15rem 0.35rem; font-size: 11px; }
+.file-item.danger { color: #e8836f; }
+.file-item.danger:hover { color: var(--danger); }
 .track-heading { display: flex; flex-direction: column; margin-right: 0.35rem; min-width: 0; max-width: 16rem; }
 .track-heading .meta { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .track-title {
