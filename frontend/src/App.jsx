@@ -84,7 +84,7 @@ export default function App() {
   const freshHandledRef = useRef(null)
   const navigate = useNavigate()
   const { user, loading: userLoading, login, logout } = useUser()
-  // Opening the site at / (typed, bookmarked or refreshed, not a click inside the app) goes
+  // Opening the site at / (typed, bookmarked or refreshed) goes
   // back to the track that was open last time, or the scratch pad if that's what was open
   // and it still holds your work. When this browser has nothing of yours to go back to (its
   // storage was cleared, another device, a first visit), a signed-in person gets their most
@@ -97,7 +97,8 @@ export default function App() {
   trackIdRef.current = trackId
   useEffect(() => {
     if (reopened.current) return
-    if (trackId || location.state?.fresh || location.key !== 'default') { reopened.current = true; return }
+    // only as the page loads (this effect runs once): a refresh counts, clicks inside the app don't
+    if (trackId || location.state?.fresh) { reopened.current = true; return }
     const scratchWins = store.get(LAST_OPEN) === 'scratch' && store.get(SCRATCH_WORK) === 'yes' && hadScratch.current
     if (scratchWins) { reopened.current = true; return } // you were last working on the scratch pad
     const last = lastTrack()
