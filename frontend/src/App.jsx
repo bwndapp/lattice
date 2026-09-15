@@ -16,8 +16,11 @@ import Timeline from './Timeline.jsx'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import Popover from './Popover.jsx'
 import { Glass } from './Glass.jsx'
+import { AutomationEditor } from './Automation.jsx'
+import { AutomationContext, autoLive } from './autoLive.js'
+import { AUTO_PREFIX, activeAutos, autoValueFn, resolveTarget, toPos } from './automation.js'
 import { capturePatterns, parseLanes, tempoChange } from './lanes'
-import { PROJECT_MARK, blankProject, demoProject, generateCode, normalizeProject, parseProject, projectFromCode } from './project'
+import { PROJECT_MARK, blankProject, demoProject, generateCode, newId, normalizeProject, parseProject, projectFromCode } from './project'
 import { createTransport, formatBarBeat, parseBarBeat } from './transport'
 
 function readPref(key, fallback) {
@@ -364,11 +367,84 @@ export default function App() {
       p.nodes = out ? [{ ...out, data: { ...out.data, muted: {}, solo: null } }] : []
       p.edges = []
       p.patterns = []
-      if (p.song) p.song = { ...p.song, clips: [] }
+      if (p.song) p.song = { ...p.song, clips: [], autos: [] }
     })
     setSolo(null)
     flash('Patch cleared · ctrl/cmd + Z brings it back')
   }, [updateProject, flash])
+
+  // ── automation: right-click a knob → a curve on the timeline (see automation.js) ──
+  const [autoEditing, setAutoEditing] = useState(null) // { id, x, y }
+  const closeAutoEditor = useCallback(() => setAutoEditing(null), [])
+  const automation = useMemo(() => {
+    const autos = project?.song?.autos ?? []
+    const byTarget = new Map(autos.map((a) => [a.target, a]))
+    return {
+      automated: new Set(byTarget.keys()),
+      /** A new automation for this knob, with a clip on the timeline, opened to draw. */
+      automate(target, at) {
+        if (!project) return
+        if (byTarget.has(target)) return setAutoEditing({ id: byTarget.get(target).id, ...at })
+        const found = resolveTarget(project, target)
+        if (!found) return
+        // over the loop when there is one, else four bars from the bar the playhead is in
+        const looping = transport.looping()
+        const start = looping ? transport.loop.from : Math.max(0, Math.floor(transport.position() + 1e-9))
+        const bars = looping ? Math.max(1, Math.round(transport.loopLength() * 4) / 4) : 4
+        const id = newId().replace(/\W/g, '')
+        const y = Math.round(toPos(found.value, found.def) * 10000) / 10000
+        const hadSound = !!project.song?.clips.some((c) => !c.src.startsWith(AUTO_PREFIX))
+        updateProject((p) => {
+          p.song = p.song ?? { on: true, snap: 'bar', clips: [] }
+          p.song.autos = [...(p.song.autos ?? []), { id, target, bars, points: [{ x: 0, y }, { x: bars, y }] }]
+          const lane = Math.max(-1, ...p.song.clips.map((c) => c.lane)) + 1 // a row of its own, under the rest
+          p.song.clips.push({ id: `c${newId()}`, src: `${AUTO_PREFIX}${id}`, lane: Math.min(63, lane), start, len: bars })
+          if (!hadSound) p.song.on = true // automation alone doesn't switch the patch into song mode
+        })
+        setAutoEditing({ id, ...at })
+        flash(project.song && !project.song.on && hadSound
+          ? `Automation added at bar ${start + 1}, but the song is off: turn it on to hear it`
+          : `Automation for ${found.owner} · ${found.label} added to the timeline at bar ${start + 1}`)
+      },
+      open(target, at) {
+        const auto = byTarget.get(target) ?? autos.find((a) => a.id === target)
+        if (auto) setAutoEditing({ id: auto.id, ...at })
+      },
+      remove(target) {
+        const auto = byTarget.get(target) ?? autos.find((a) => a.id === target)
+        if (!auto) return
+        updateProject((p) => {
+          if (!p.song) return
+          p.song.autos = (p.song.autos ?? []).filter((a) => a.id !== auto.id)
+          p.song.clips = p.song.clips.filter((c) => c.src !== `${AUTO_PREFIX}${auto.id}`)
+          if (p.song.colors) delete p.song.colors[`${AUTO_PREFIX}${auto.id}`]
+        })
+        setAutoEditing((e) => (e?.id === auto.id ? null : e))
+        flash(`Automation removed · ctrl/cmd + Z brings it back`)
+      },
+      showTimeline() {
+        setAutoEditing(null)
+        switchCanvas('song')
+      },
+    }
+  }, [project, updateProject, transport, flash]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // automated knobs turn with their curves while the song plays
+  const autoFns = useMemo(() => (project ? activeAutos(project).map((a) => [a.target, autoValueFn(project, a)]).filter(([, fn]) => fn) : []), [project])
+  useEffect(() => {
+    if (!started || !autoFns.length) { autoLive.clear(); return }
+    let raf = 0
+    let last = 0
+    const tick = (now) => {
+      raf = requestAnimationFrame(tick)
+      if (now - last < 40) return // 25 times a second is plenty for a knob
+      last = now
+      const at = transport.position()
+      autoLive.set(new Map(autoFns.map(([target, fn]) => [target, fn(at)])))
+    }
+    raf = requestAnimationFrame(tick)
+    return () => { cancelAnimationFrame(raf); autoLive.clear() }
+  }, [started, autoFns, transport])
 
   const undo = useCallback(() => {
     const editor = editorRef.current
@@ -882,6 +958,7 @@ export default function App() {
         </span>
       </header>
 
+      <AutomationContext.Provider value={project ? automation : null}>
       <div className="body">
         <main className="main">
           {view === 'browse' && (
@@ -961,6 +1038,21 @@ export default function App() {
           </section>
         </main>
       </div>
+
+      {autoEditing && project && (
+        <AutomationEditor
+          key={autoEditing.id}
+          project={project}
+          autoId={autoEditing.id}
+          anchor={autoEditing}
+          beats={transport.beats}
+          onUpdateProject={updateProject}
+          onRemove={() => automation.remove(autoEditing.id)}
+          onShowTimeline={view === 'song' ? null : () => automation.showTimeline()}
+          onClose={closeAutoEditor}
+        />
+      )}
+      </AutomationContext.Provider>
 
       {toast && <div className="toast" role="status">{toast}</div>}
     </div>

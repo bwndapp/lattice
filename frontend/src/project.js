@@ -1,6 +1,7 @@
 import { parse } from 'acorn'
 import { defaultData, demoGraph, graphCode, normalizeGraph } from './graph.js'
 import { normalizeSong, songActive, songExpr } from './song.js'
+import { automationCode, channelTarget } from './automation.js'
 
 /**
  * A project is what the UI edits: a library of patterns (instruments with steps or notes,
@@ -213,19 +214,20 @@ function sequenceOf(notes, total) {
   return tokens.join(' ')
 }
 
-function paramCode(ch) {
+function paramCode(ch, auto) {
   let out = ''
   for (const def of paramsFor(ch.kind)) {
     const v = paramValue(ch, def.key)
-    if (v === def.def) continue
-    if (def.key === 'crush') out += `.crush(${Math.round(16 - v * 14)})` // amount → bits: more crush, fewer bits
-    else if (def.key === 'delay') out += `.delay(${tidy(v)}).delaytime(.1875).delayfeedback(.35)`
-    else out += `.${def.key}(${def.log && v > 10 ? Math.round(v) : tidy(v)})`
+    const a = auto?.(def.key) // the name of the knob's automation, when it follows one
+    if (!a && v === def.def) continue
+    if (def.key === 'crush') out += a ? `.crush(${a}.fmap((v) => Math.round(16 - v * 14)))` : `.crush(${Math.round(16 - v * 14)})` // amount → bits: more crush, fewer bits
+    else if (def.key === 'delay') out += `.delay(${a ?? tidy(v)}).delaytime(.1875).delayfeedback(.35)`
+    else out += `.${def.key}(${a ?? (def.log && v > 10 ? Math.round(v) : tidy(v))})`
   }
   return out
 }
 
-function channelCode(ch, pattern) {
+function channelCode(ch, pattern, auto = null) {
   const total = stepCount(pattern)
   let expr
   if (ch.kind === 'code') {
@@ -242,7 +244,7 @@ function channelCode(ch, pattern) {
     const seq = pattern.bars > 1 ? `<${bars.map((b) => `[${b}]`).join(' ')}>` : bars[0]
     expr = `s("${seq}")${ch.bank ? `.bank("${String(ch.bank).replace(/\W/g, '')}")` : ''}`
   }
-  expr += paramCode(ch)
+  expr += paramCode(ch, auto && ((key) => auto(channelTarget(pattern.id, ch.id, key))))
   if (ch.fx?.trim()) expr += ch.fx.trim().startsWith('.') ? ch.fx.trim() : `.${ch.fx.trim()}`
   return `/* ${commentText(ch.name)} */ ${expr}`
 }
@@ -332,9 +334,13 @@ export function generateCode(project, { solo = null } = {}) {
   // the song decides when each part plays (not while auditioning one thing)
   const song = songActive(project) && !solo ? (src, expr) => songExpr(project, src, expr) : null
   if (song) lines.push('// song: each part plays inside its clips on the timeline', '')
+  // knobs that follow automation clips (also not while auditioning)
+  const automation = solo ? null : automationCode(project)
+  if (automation?.lines.length) lines.push(...automation.lines)
+  const auto = automation?.lines.length ? automation.lookup : null
   const patternExpr = (pattern) => {
     const live = pattern.channels.filter((c) => !c.mute)
-    return live.length ? `stack(\n${live.map((c) => `  ${channelCode(c, pattern)},`).join('\n')}\n)` : 'silence'
+    return live.length ? `stack(\n${live.map((c) => `  ${channelCode(c, pattern, auto)},`).join('\n')}\n)` : 'silence'
   }
   for (const pattern of project.patterns) {
     const variations = pattern.parent ? [] : project.patterns.filter((v) => v.parent === pattern.id)
@@ -349,7 +355,7 @@ export function generateCode(project, { solo = null } = {}) {
     lines.push(`const ${patternVar(pattern.id)} = ${value}`)
   }
   const patternSolo = typeof solo === 'string' && solo.startsWith('pattern:') && project.patterns.some((p) => `pattern:${p.id}` === solo)
-  const graph = graphCode(project, { solo: patternSolo ? null : solo, song })
+  const graph = graphCode(project, { solo: patternSolo ? null : solo, song, auto })
   lines.push('', ...graph.lines.map((l) => (l.startsWith('// ') ? `// ${commentText(l.slice(3))}` : l)))
   if (patternSolo) lines.push('', '// auditioning one pattern', ...graph.lanes.map((l) => `_${l.replace(/^_/, '')}`), `solo: ${patternVar(solo.slice(8))}`)
   else lines.push('', solo ? '// auditioning one node' : '// output', ...(graph.lanes.length ? graph.lanes : ['$: silence']))

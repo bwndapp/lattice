@@ -38,7 +38,7 @@ export default function PatternEditor({ project, patternId, anchor, transport, s
     const onKey = (e) => { if (e.key === 'Escape' && !e.target.closest?.('input, select, textarea')) onClose() }
     const onDown = (e) => {
       if (ref.current?.contains(e.target)) return
-      if (e.target.closest?.('.sound-picker, .palette')) return
+      if (e.target.closest?.('.sound-picker, .palette, .knob-menu, .auto-pop')) return
       onClose()
     }
     window.addEventListener('keydown', onKey)

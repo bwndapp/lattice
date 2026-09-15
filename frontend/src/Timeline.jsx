@@ -4,6 +4,8 @@ import { MAX_BARS, songLength, songParts } from './song'
 import PatternEditor from './PatternEditor.jsx'
 import Popover from './Popover.jsx'
 import { Glass } from './Glass.jsx'
+import { useAutomation } from './autoLive.js'
+import { AUTO_PREFIX, curveAt, resolveTarget } from './automation.js'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import { KitSelect } from './Graph.jsx'
 import { NODE_TYPES } from './graph'
@@ -82,6 +84,16 @@ function patternSketch(pattern, ink) {
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`
 }
 
+/** An automation's curve as FL draws it on a clip: a line with a light fill under it. */
+function autoSketch(auto, ink) {
+  if (!auto) return null
+  const W = Math.max(64, Math.round(auto.bars * 64))
+  const pts = []
+  for (let i = 0; i <= W; i++) pts.push(`${i},${(100 - curveAt(auto, (i / W) * auto.bars) * 92 - 4).toFixed(1)}`)
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} 100" preserveAspectRatio="none"><path d="M0,100L${pts.join('L')}L${W},100Z" fill="${ink}" fill-opacity="0.16"/><path d="M${pts.join('L')}" fill="none" stroke="${ink}" stroke-opacity="0.85" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>`
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`
+}
+
 function readRows() {
   try { return clamp(Number(localStorage.getItem('lattice:song:rows')) || LANE_DEFAULT, MIN_LANE, MAX_LANE) } catch { return LANE_DEFAULT }
 }
@@ -97,19 +109,23 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const partBySrc = useMemo(() => new Map(parts.map((p) => [p.src, p])), [parts])
   // each pattern's sketch for its clips (redrawn only when the pattern or its colour changes)
   const sketchCache = useRef(new Map())
+  const automation = useAutomation()
   const sketchFor = (src) => {
-    if (!src?.startsWith('pattern:')) return null
-    const pattern = project.patterns.find((p) => p.id === src.slice(8))
+    const isAuto = src?.startsWith(AUTO_PREFIX)
+    if (!src?.startsWith('pattern:') && !isAuto) return null
+    const pattern = isAuto ? song.autos?.find((a) => a.id === src.slice(AUTO_PREFIX.length)) : project.patterns.find((p) => p.id === src.slice(8))
     const ink = inkFor(colorFor(src, song.colors))
     const hit = sketchCache.current.get(src)
     if (hit && hit.pattern === pattern && hit.ink === ink) return hit.url
-    const url = patternSketch(pattern, ink)
+    const url = isAuto ? autoSketch(pattern, ink) : patternSketch(pattern, ink)
     sketchCache.current.set(src, { pattern, ink, url })
     return url
   }
   const length = songLength(song)
-  const inPatch = parts.filter((p) => p.inPatch)
+  const inPatch = parts.filter((p) => p.inPatch && p.kind !== 'auto')
   const unused = parts.filter((p) => !p.inPatch)
+  const autoParts = parts.filter((p) => p.kind === 'auto')
+  const soundClips = song.clips.filter((c) => !c.src.startsWith(AUTO_PREFIX)).length
 
   const [ppb, setPpb] = useState(readZoom) // pixels per bar
   const [laneH, setLaneH] = useState(readRows) // row height
@@ -273,7 +289,8 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     const node = project.nodes.find((n) => `node:${n.id}` === src)
     // after this press is over: a window opened during it would take the press for a click outside
     setTimeout(() => {
-      if (src.startsWith('pattern:')) setEditing({ patternId: src.slice(8), x, y })
+      if (src.startsWith(AUTO_PREFIX)) automation?.open(src.slice(AUTO_PREFIX.length), { x, y })
+      else if (src.startsWith('pattern:')) setEditing({ patternId: src.slice(8), x, y })
       else if (node) setPanel({ nodeId: node.id, x, y })
     }, 0)
   }
@@ -721,19 +738,19 @@ export default function Timeline({ project, onUpdateProject, transport, started 
           onDragEnd={() => setGhost(null)}
           onClick={() => setActivePart((a) => (a === part.src ? null : part.src))}
           onDoubleClick={(e) => openPart(part.src, { clientX: e.clientX + 60, clientY: e.clientY })}
-          title={part.kind === 'pattern' ? 'Double-click to edit its instruments, sounds, steps and notes' : 'Double-click to change its settings'}
+          title={part.kind === 'pattern' ? 'Double-click to edit its instruments, sounds, steps and notes' : part.kind === 'auto' ? 'Double-click to draw its curve' : 'Double-click to change its settings'}
         >
           <span className="song-swatch" aria-hidden />
           <span className="song-part-name">{part.name}</span>
           <span className="song-part-meta">
-            {part.trigger ? 'trigger · always on' : part.kind === 'pattern' ? `${part.bars} bar${part.bars === 1 ? '' : 's'}${part.parent ? ` · plays through ${part.parentName}` : ''}${part.inPatch ? '' : ' · drop to add to the patch'}` : part.kind === 'sound' ? 'rhythm' : part.kind === 'notes' ? 'melody' : part.kind}
-            {count > 0 ? ` · ${count} clip${count === 1 ? '' : 's'}` : part.inPatch && song.on && song.clips.length && !part.trigger ? ' · silent in the song' : ''}
+            {part.trigger ? 'trigger · always on' : part.kind === 'pattern' ? `${part.bars} bar${part.bars === 1 ? '' : 's'}${part.parent ? ` · plays through ${part.parentName}` : ''}${part.inPatch ? '' : ' · drop to add to the patch'}` : part.kind === 'auto' ? (resolveTarget(project, part.target) ? `curve · ${part.bars} bar${part.bars === 1 ? '' : 's'}` : 'its knob was deleted') : part.kind === 'sound' ? 'rhythm' : part.kind === 'notes' ? 'melody' : part.kind}
+            {count > 0 ? ` · ${count} clip${count === 1 ? '' : 's'}` : part.kind === 'auto' ? ' · not on the timeline' : part.inPatch && song.on && soundClips && !part.trigger ? ' · silent in the song' : ''}
           </span>
         </button>
         <Popover
           label={<><span className="song-color-dot" style={{ background: colorFor(part.src, song.colors) }} />colour</>}
           title={`Colour of ${part.name} and its clips`}
-          className={`song-color-btn ${part.kind === 'pattern' ? '' : 'solo'}`}
+          className={`song-color-btn ${part.kind === 'pattern' ? '' : part.kind === 'auto' ? 'one' : 'solo'}`}
           panelClassName="song-colors"
           align="left"
         >
@@ -770,6 +787,15 @@ export default function Timeline({ project, onUpdateProject, transport, started 
             aria-label={`Duplicate ${part.name} as a variation`}
           >dup</button>
         )}
+        {part.kind === 'auto' && (
+          <button
+            type="button"
+            className="song-part-del"
+            onClick={() => automation?.remove(part.id)}
+            title="Delete this automation and its clips (ctrl/cmd + Z brings it back)"
+            aria-label={`Delete ${part.name}`}
+          >×</button>
+        )}
         {part.kind === 'pattern' && (
           <button
             type="button"
@@ -799,6 +825,17 @@ export default function Timeline({ project, onUpdateProject, transport, started 
         <ul className="song-part-list">
           {inPatch.map(partRow)}
         </ul>
+        <div className="song-parts-sub">
+          <span>automation</span>
+          {autoParts.length > 0 && <span className="song-unused-count">{autoParts.length}</span>}
+        </div>
+        {autoParts.length ? (
+          <ul className="song-part-list">
+            {autoParts.map(partRow)}
+          </ul>
+        ) : (
+          <p className="song-parts-hint auto-empty">Right-click any knob in the patch or an instrument and pick <b>automate</b>: its curve lands here and on the timeline.</p>
+        )}
         {unused.length > 0 && (
           <details className="song-unused">
             <summary>
@@ -893,18 +930,19 @@ export default function Timeline({ project, onUpdateProject, transport, started 
                 const part = partBySrc.get(c.src)
                 if (!part) return null
                 // where the pattern starts over inside the clip (it may begin part-way in, after a cut)
-                const into = part.kind === 'pattern' && part.bars > 0 ? (((c.offset ?? 0) % part.bars) + part.bars) % part.bars : 0
+                const loops = (part.kind === 'pattern' || part.kind === 'auto') && part.bars > 0
+                const into = loops ? (((c.offset ?? 0) % part.bars) + part.bars) % part.bars : 0
                 const firstRepeat = part.bars - into
-                const repeats = part.kind === 'pattern' && part.bars > 0 ? Math.max(0, Math.ceil((c.len - firstRepeat - 1e-9) / part.bars)) : 0
+                const repeats = loops ? Math.max(0, Math.ceil((c.len - firstRepeat - 1e-9) / part.bars)) : 0
                 return (
                   <div
                     key={c.id}
                     data-id={c.id}
-                    className={`clip ${LANE_H >= 30 ? 'roomy' : ''} ${selected.has(c.id) ? 'selected' : ''} ${c.id.startsWith('__') ? 'preview' : ''} ${!song.on ? 'off' : ''}`}
+                    className={`clip ${LANE_H >= 30 && part.kind !== 'auto' ? 'roomy' : ''} ${part.kind === 'auto' ? 'automation' : ''} ${selected.has(c.id) ? 'selected' : ''} ${c.id.startsWith('__') ? 'preview' : ''} ${!song.on ? 'off' : ''}`}
                     style={{ left: c.start * ppb, top: c.lane * LANE_H + 3, width: Math.max(4, c.len * ppb - 1), height: LANE_H - 6, '--clip': colorFor(c.src, song.colors), '--clip-ink': inkFor(colorFor(c.src, song.colors)) }}
                     title={`${part.name} · bar ${Math.floor(c.start) + 1}${c.start % 1 ? `.${Math.round((c.start % 1) * beats) + 1}` : ''} · ${Math.round(c.len * beats) / beats} bar${c.len === 1 ? '' : 's'}`}
                   >
-                    <ClipSketch url={sketchFor(c.src)} bars={part.bars} ppb={ppb} into={into} laneH={LANE_H} />
+                    <ClipSketch url={sketchFor(c.src)} bars={part.bars} ppb={ppb} into={into} laneH={LANE_H} full={part.kind === 'auto'} />
                     <span className="clip-name">{part.name}</span>
                     {Array.from({ length: repeats }, (_, i) => (
                       <span key={i} className="clip-repeat" style={{ left: (firstRepeat + i * part.bars) * ppb }} aria-hidden />
@@ -1050,12 +1088,12 @@ function PartPanel({ node, anchor, onUpdateProject, onClose }) {
 }
 
 /** The pattern drawn inside a clip, starting where the clip starts in the pattern. */
-function ClipSketch({ url, bars, ppb, into, laneH }) {
+function ClipSketch({ url, bars, ppb, into, laneH, full = false }) {
   if (!url || !bars) return null
-  const roomy = laneH >= 30 // tall rows keep a strip for the name; short ones draw under it
+  const roomy = laneH >= 30 && !full // tall rows keep a strip for the name; short ones (and curves) draw under it
   return (
     <span
-      className={`clip-sketch ${roomy ? 'roomy' : ''}`}
+      className={`clip-sketch ${roomy ? 'roomy' : ''} ${full ? 'full' : ''}`}
       aria-hidden
       style={{ backgroundImage: url, backgroundSize: `${bars * ppb}px 100%`, backgroundPositionX: `${-into * ppb}px` }}
     />

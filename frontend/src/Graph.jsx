@@ -7,6 +7,7 @@ import '@xyflow/react/dist/style.css'
 import { APPLY, FX_UNITS, GROUPS, NODE_TYPES, defaultData, inputsOf, makeFxUnit, makesCycle } from './graph'
 import { INSTRUMENTS, INSTRUMENT_MIME, instrumentChannel, makePattern, newId } from './project'
 import Knob from './Knob.jsx'
+import { canAutomate, nodeTarget, unitTarget } from './automation.js'
 import SoundPicker from './SoundPicker.jsx'
 import PatternEditor from './PatternEditor.jsx'
 import AddMenu from './AddMenu.jsx'
@@ -216,15 +217,17 @@ export function KitSelect({ node, param, value: given, onChange }) {
 }
 
 /** The controls for one parameter of a node. */
-function Param({ node, param, value: given, onChange }) {
+function Param({ node, param, value: given, onChange, target: givenTarget }) {
   const ctx = useContext(Ctx)
   const value = given !== undefined ? given : node.data[param.key]
+  // what right-click → automate moves (an fx rack's units pass their own)
+  const target = givenTarget !== undefined ? givenTarget : canAutomate(node.type, param.key) ? nodeTarget(node.id, param.key) : null
   const set = onChange ?? ((v) => ctx.updateNode(node.id, (d) => { d[param.key] = v }))
   switch (param.type) {
     case 'kit':
       return <KitSelect node={node} param={param} value={value} onChange={set} />
     case 'knob':
-      return <div className="nowheel"><Knob def={param} value={value} onChange={set} /></div>
+      return <div className="nowheel"><Knob def={param} value={value} onChange={set} target={target} /></div>
     case 'int':
       return <Stepper param={param} value={value} onChange={set} />
     case 'select':
@@ -300,6 +303,7 @@ function FxRack({ node }) {
                     node={node}
                     param={p}
                     value={unit.data[p.key]}
+                    target={canAutomate(unit.type, p.key) ? unitTarget(node.id, unit.id, p.key) : null}
                     onChange={(v) => edit((c) => { const j = at(c, unit.id); if (j >= 0) c[j].data[p.key] = v })}
                   />
                 ))}

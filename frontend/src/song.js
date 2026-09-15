@@ -4,7 +4,7 @@
  * Clips put a part on the timeline: { id, src, lane, start, len, offset }, in bars (cycles).
  * `offset` is how far into the part the clip begins (after a cut or a trimmed left edge).
  *
- *   src   "pattern:<id>" or "node:<id>"
+ *   src   "pattern:<id>", "node:<id>" or "auto:<id>" (an automation, see automation.js)
  *   lane  the row it sits on (rows are free, like a calendar)
  *
  * While the song is on and has clips, only what's on the timeline plays: each part plays
@@ -13,6 +13,7 @@
  * a sidechain's trigger keep running, so ducking doesn't vanish.
  */
 import { NODE_TYPES } from './graph'
+import { AUTO_PREFIX, autoName, normalizeAutos } from './automation.js'
 
 const num = (v, fallback, lo, hi) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : fallback)
 const snapTo = (v, step) => Math.round(v / step) * step
@@ -30,8 +31,8 @@ export function triggerOnly(project, nodeId) {
   return out.length > 0 && out.every((e) => project.nodes.find((n) => n.id === e.target)?.type === 'sidechain' && e.targetHandle === 'in-1')
 }
 
-/** Everything that can go on the timeline, in sidebar order. */
-export function songParts(project) {
+/** Everything that can go on the timeline, in sidebar order. `autos` defaults to the song's. */
+export function songParts(project, autos = project.song?.autos ?? []) {
   // originals, each followed by its variations (which play through the original's node)
   const byId = new Map(project.patterns.map((p) => [p.id, p]))
   const ordered = project.patterns.filter((p) => !p.parent).flatMap((p) => [p, ...project.patterns.filter((v) => v.parent === p.id)])
@@ -54,7 +55,16 @@ export function songParts(project) {
     inPatch: true,
     trigger: triggerOnly(project, n.id),
   }))
-  return [...patterns, ...nodes]
+  const automations = autos.map((a) => ({
+    src: `${AUTO_PREFIX}${a.id}`,
+    kind: 'auto',
+    id: a.id,
+    name: autoName(project, a),
+    bars: a.bars,
+    target: a.target,
+    inPatch: true,
+  }))
+  return [...patterns, ...nodes, ...automations]
 }
 
 function partLabel(node) {
@@ -65,7 +75,8 @@ function partLabel(node) {
 
 /** Clean a song against the project: clips must point at a part that still exists. */
 export function normalizeSong(raw, project) {
-  const valid = new Set(songParts(project).map((p) => p.src))
+  const autos = normalizeAutos(raw?.autos, project)
+  const valid = new Set(songParts(project, autos).map((p) => p.src))
   const seen = new Set()
   const clips = []
   for (const c of Array.isArray(raw?.clips) ? raw.clips : []) {
@@ -83,7 +94,7 @@ export function normalizeSong(raw, project) {
   // colours people picked for parts (the rest get one from the part's id)
   const colors = {}
   for (const [src, color] of Object.entries(raw?.colors ?? {})) if (valid.has(src) && /^#[0-9a-f]{6}$/i.test(color)) colors[src] = color.toLowerCase()
-  return { on: raw?.on !== false, snap: raw?.snap === 'beat' ? 'beat' : 'bar', clips, ...(Object.keys(colors).length ? { colors } : {}) }
+  return { on: raw?.on !== false, snap: raw?.snap === 'beat' ? 'beat' : 'bar', clips, ...(autos.length ? { autos } : {}), ...(Object.keys(colors).length ? { colors } : {}) }
 }
 
 /** Bars the song lasts: to the end of its last clip. */
@@ -91,8 +102,9 @@ export function songLength(song) {
   return Math.max(0, ...(song?.clips ?? []).map((c) => c.start + c.len))
 }
 
+/** Whether the song decides what plays: it's on and has clips of sound (automation alone doesn't). */
 export function songActive(project) {
-  return !!project.song?.on && project.song.clips.length > 0
+  return !!project.song?.on && project.song.clips.some((c) => !c.src.startsWith(AUTO_PREFIX))
 }
 
 /**

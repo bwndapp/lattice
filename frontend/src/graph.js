@@ -28,6 +28,27 @@ const tap = (ctx, param, control, value, scale = 1) => (ctx?.nodeId
   ? `.bmod({ b: ${liveBus(ctx.nodeId, param, Number(value), scale)}, c: '${control}', da: 0.3 })`
   : '')
 const soundName = (s) => String(s ?? '').replace(/[^\w:.#-]/g, '') || 'bd'
+const round = (v) => String(Math.round(Number(v)))
+
+/*
+ * Automation (see automation.js). `ctx.autoOf(key)` names the continuous pattern a knob
+ * follows along the song, or is null. K() puts that pattern where the knob's number would
+ * go; a knob that follows a curve drops its live-knob bus (the curve sets it per note).
+ */
+const isAuto = (ctx, key) => !!ctx?.autoOf?.(key)
+const K = (ctx, d, key, fmt = tidy) => ctx?.autoOf?.(key) ?? fmt(d[key])
+const tapUnlessAuto = (ctx, key, ...rest) => (isAuto(ctx, key) ? '' : tap(ctx, key, ...rest))
+/**
+ * `x.fmap(v => body)` where some values in the body may follow automation: each automated
+ * key becomes a function argument fed by `.appLeft(itsPattern)`. `body(val)` gets val(key),
+ * an expression for that key; `fmts` formats the plain numbers.
+ */
+function fmapWith(x, ctx, d, keys, body, fmts = {}) {
+  const autos = keys.filter((k) => isAuto(ctx, k))
+  const val = (k) => (autos.includes(k) ? `_${k}` : (fmts[k] ?? tidy)(d[k]))
+  const args = autos.map((k) => `(_${k}) => `).join('')
+  return `${x}.fmap((v) => ${args}(${body(val)}))${autos.map((k) => `.appLeft(${ctx.autoOf(k)})`).join('')}`
+}
 
 /** Functions a transform like "every" or "sometimes" can apply. */
 export const APPLY = {
@@ -98,7 +119,7 @@ export const NODE_TYPES = {
       { key: 'chance', type: 'knob', label: 'chance', min: 0, max: 1, def: 0.3 },
       { key: 'fn', type: 'select', label: 'do', options: Object.keys(APPLY), def: 'up12' },
     ],
-    code: (d, [x]) => `${x}.sometimesBy(${tidy(d.chance)}, ${APPLY[d.fn]?.code ?? APPLY.up12.code})`,
+    code: (d, [x], ctx) => `${x}.sometimesBy(${K(ctx, d, 'chance')}, ${APPLY[d.fn]?.code ?? APPLY.up12.code})`,
   },
   euclid: {
     group: 'transform', label: 'euclid', blurb: 'Spread hits evenly',
@@ -114,7 +135,7 @@ export const NODE_TYPES = {
     group: 'transform', label: 'thin out', blurb: 'Randomly drop events',
     inputs: 1,
     params: [{ key: 'amount', type: 'knob', label: 'drop', min: 0, max: 1, def: 0.3 }],
-    code: (d, [x]) => `${x}.degradeBy(${tidy(d.amount)})`,
+    code: (d, [x], ctx) => `${x}.degradeBy(${K(ctx, d, 'amount')})`,
   },
   echo: {
     group: 'transform', label: 'echo', blurb: 'Repeat each event, fading',
@@ -124,7 +145,7 @@ export const NODE_TYPES = {
       { key: 'time', type: 'knob', label: 'gap', min: 0.02, max: 0.5, def: 0.125, unit: 'c' },
       { key: 'feedback', type: 'knob', label: 'fade', min: 0.1, max: 0.95, def: 0.6 },
     ],
-    code: (d, [x]) => `${x}.echo(${d.times}, ${tidy(d.time)}, ${tidy(d.feedback)})`,
+    code: (d, [x], ctx) => `${x}.echo(${d.times}, ${K(ctx, d, 'time')}, ${K(ctx, d, 'feedback')})`,
   },
   shape: {
     group: 'transform', label: 'shuffle', blurb: 'Reverse, spread in stereo, repeat, swing',
@@ -150,13 +171,16 @@ export const NODE_TYPES = {
       { key: 'hpf', type: 'knob', label: 'low cut', min: 20, max: 8000, def: 20, log: true, unit: 'hz' },
     ],
     code: (d, [x], ctx) => {
+      const hpOn = d.hpf > 20 || isAuto(ctx, 'hpf')
       if (!ctx?.eqAbove) {
-        const lp = `.lpf(${Math.round(d.lpf)})${tap(ctx, 'lpf', 'cutoff', Math.round(d.lpf))}.lpq(${tidy(d.lpq)})${tap(ctx, 'lpq', 'resonance', tidy(d.lpq))}`
-        return `${x}${lp}${d.hpf > 20 ? `.hpf(${Math.round(d.hpf)})${tap(ctx, 'hpf', 'hcutoff', Math.round(d.hpf))}` : ''}`
+        const lp = `.lpf(${K(ctx, d, 'lpf', round)})${tapUnlessAuto(ctx, 'lpf', 'cutoff', Math.round(d.lpf))}.lpq(${K(ctx, d, 'lpq')})${tapUnlessAuto(ctx, 'lpq', 'resonance', tidy(d.lpq))}`
+        return `${x}${lp}${hpOn ? `.hpf(${K(ctx, d, 'hpf', round)})${tapUnlessAuto(ctx, 'hpf', 'hcutoff', Math.round(d.hpf))}` : ''}`
       }
       // after an eq, tighten each band's filters instead of replacing them (the last .lpf wins in Strudel)
-      const hp = d.hpf > 20 ? `, ...(v.hcutoff >= ${Math.round(d.hpf)} ? {} : { hcutoff: ${Math.round(d.hpf)} })` : ''
-      return `${x}.fmap(v => ({ ...v, ...(v.cutoff <= ${Math.round(d.lpf)} ? {} : { cutoff: ${Math.round(d.lpf)}, resonance: ${tidy(d.lpq)} })${hp} }))`
+      return fmapWith(x, ctx, d, ['lpf', 'lpq', 'hpf'], (val) => {
+        const hp = hpOn ? `, ...(v.hcutoff >= ${val('hpf')} ? {} : { hcutoff: ${val('hpf')} })` : ''
+        return `{ ...v, ...(v.cutoff <= ${val('lpf')} ? {} : { cutoff: ${val('lpf')}, resonance: ${val('lpq')} })${hp} }`
+      }, { lpf: round, hpf: round })
     },
   },
   space: {
@@ -168,7 +192,7 @@ export const NODE_TYPES = {
       { key: 'delaytime', type: 'knob', label: 'time', min: 0.05, max: 0.75, def: 0.1875, unit: 'c' },
     ],
     // a send only exists when it's above zero, so only then can its knob move ringing notes
-    code: (d, [x], ctx) => `${x}.room(${tidy(d.room)})${d.room > 0 ? tap(ctx, 'room', 'room', tidy(d.room)) : ''}.delay(${tidy(d.delay)})${d.delay > 0 ? tap(ctx, 'delay', 'delay', tidy(d.delay)) : ''}.delaytime(${tidy(d.delaytime)}).delayfeedback(.4)`,
+    code: (d, [x], ctx) => `${x}.room(${K(ctx, d, 'room')})${d.room > 0 ? tapUnlessAuto(ctx, 'room', 'room', tidy(d.room)) : ''}.delay(${K(ctx, d, 'delay')})${d.delay > 0 ? tapUnlessAuto(ctx, 'delay', 'delay', tidy(d.delay)) : ''}.delaytime(${K(ctx, d, 'delaytime')}).delayfeedback(.4)`,
   },
   level: {
     group: 'effect', label: 'level', blurb: 'Volume and pan',
@@ -177,7 +201,7 @@ export const NODE_TYPES = {
       { key: 'gain', type: 'knob', label: 'vol', min: 0, max: 1.5, def: 0.8 },
       { key: 'pan', type: 'knob', label: 'pan', min: 0, max: 1, def: 0.5 },
     ],
-    code: (d, [x], ctx) => `${x}.gain(${tidy(d.gain)})${tap(ctx, 'gain', 'gain', tidy(d.gain))}${d.pan !== 0.5 || ctx?.nodeId ? `.pan(${tidy(d.pan)})${tap(ctx, 'pan', 'pan', tidy(d.pan), 2)}` : ''}`,
+    code: (d, [x], ctx) => `${x}.gain(${K(ctx, d, 'gain')})${tapUnlessAuto(ctx, 'gain', 'gain', tidy(d.gain))}${d.pan !== 0.5 || ctx?.nodeId || isAuto(ctx, 'pan') ? `.pan(${K(ctx, d, 'pan')})${tapUnlessAuto(ctx, 'pan', 'pan', tidy(d.pan), 2)}` : ''}`,
   },
   drive: {
     group: 'effect', label: 'drive', blurb: 'Distortion and bitcrush',
@@ -186,14 +210,17 @@ export const NODE_TYPES = {
       { key: 'shape', type: 'knob', label: 'drive', min: 0, max: 0.9, def: 0.4 },
       { key: 'crush', type: 'knob', label: 'crush', min: 0, max: 1, def: 0 },
     ],
-    code: (d, [x], ctx) => `${x}.shape(${tidy(d.shape)})${d.shape > 0 ? tap(ctx, 'shape', 'shape', tidy(d.shape)) : ''}${d.crush > 0 ? `.crush(${Math.round(16 - d.crush * 14)})` : ''}`,
+    code: (d, [x], ctx) => {
+      const crush = isAuto(ctx, 'crush') ? `.crush(${ctx.autoOf('crush')}.fmap((v) => Math.round(16 - v * 14)))` : d.crush > 0 ? `.crush(${Math.round(16 - d.crush * 14)})` : ''
+      return `${x}.shape(${K(ctx, d, 'shape')})${d.shape > 0 ? tapUnlessAuto(ctx, 'shape', 'shape', tidy(d.shape)) : ''}${crush}`
+    },
   },
 
   djfilter: {
     group: 'effect', label: 'dj filter', blurb: 'One knob: left darkens, right thins out',
     inputs: 1,
     params: [{ key: 'djf', type: 'knob', label: 'sweep', min: 0, max: 1, def: 0.5 }],
-    code: (d, [x]) => `${x}.djf(${tidy(d.djf)})`,
+    code: (d, [x], ctx) => `${x}.djf(${K(ctx, d, 'djf')})`,
   },
   phaser: {
     group: 'effect', label: 'phaser', blurb: 'A swirling, sweeping sound',
@@ -202,7 +229,7 @@ export const NODE_TYPES = {
       { key: 'rate', type: 'knob', label: 'rate', min: 0.1, max: 16, def: 2, log: true },
       { key: 'depth', type: 'knob', label: 'depth', min: 0, max: 1, def: 0.6 },
     ],
-    code: (d, [x]) => `${x}.phaser(${tidy(d.rate)}).phaserdepth(${tidy(d.depth)})`,
+    code: (d, [x], ctx) => `${x}.phaser(${K(ctx, d, 'rate')}).phaserdepth(${K(ctx, d, 'depth')})`,
   },
   tremolo: {
     group: 'effect', label: 'tremolo', blurb: 'Volume that pulses',
@@ -211,7 +238,7 @@ export const NODE_TYPES = {
       { key: 'rate', type: 'knob', label: 'rate', min: 0.25, max: 32, def: 4, log: true },
       { key: 'depth', type: 'knob', label: 'depth', min: 0, max: 1, def: 0.7 },
     ],
-    code: (d, [x]) => `${x}.tremolo(${tidy(d.rate)}).tremolodepth(${tidy(d.depth)})`,
+    code: (d, [x], ctx) => `${x}.tremolo(${K(ctx, d, 'rate')}).tremolodepth(${K(ctx, d, 'depth')})`,
   },
   vowel: {
     group: 'effect', label: 'vowel', blurb: 'Makes it sound like it says a vowel',
@@ -245,7 +272,7 @@ export const NODE_TYPES = {
       // a sound already on its own bus (a haas or widener before this) keeps it, so both work
       const orbit = ctx.inputOrbits?.[ctx.slots.indexOf('in-0')] ?? ctx.orbit
       if (ctx.route) ctx.route.orbit = orbit
-      return `stack(${sound}.orbit(${orbit}), ${trigger}.duckorbit(${orbit}).duckonset(${tidy(d.attack)}).duckattack(${tidy(d.release)}).duckdepth(${tidy(d.depth)})${d.hear === 'silent' ? '.postgain(0)' : ''})`
+      return `stack(${sound}.orbit(${orbit}), ${trigger}.duckorbit(${orbit}).duckonset(${K(ctx, d, 'attack')}).duckattack(${K(ctx, d, 'release')}).duckdepth(${K(ctx, d, 'depth')})${d.hear === 'silent' ? '.postgain(0)' : ''})`
     },
   },
   eq3: {
@@ -261,17 +288,19 @@ export const NODE_TYPES = {
     // Strudel has no shelving eq, so the sound is split into three bands with steep (24 dB,
     // Linkwitz-Riley) crossovers that add back up flat, and each band gets its own gain.
     // A band's filter never opens up a filter that's already on the sound. Fully down = off.
-    code: (d, [x]) => {
-      const bands = [[d.low, 0, d.lowf], [d.mid, d.lowf, d.highf], [d.high, d.highf, 0]]
-      if (!eqActive(d)) return x
-      const live = bands.filter(([db]) => db > -24)
+    code: (d, [x], ctx) => {
+      // [band gain, its low edge, its high edge]
+      const bands = [['low', null, 'lowf'], ['mid', 'lowf', 'highf'], ['high', 'highf', null]]
+      if (!eqActive(d) && !bands.some(([k]) => isAuto(ctx, k))) return x
+      const live = bands.filter(([k]) => isAuto(ctx, k) || d[k] > -24)
       if (!live.length) return `${x}.gain(0)`
-      const band = ([db, lo, hi]) => {
-        const lp = hi ? `, ...(v.cutoff <= ${Math.round(hi)} ? {} : { cutoff: ${Math.round(hi)}, resonance: .71 })` : ''
-        const hp = lo ? `, ...(v.hcutoff >= ${Math.round(lo)} ? {} : { hcutoff: ${Math.round(lo)}, hresonance: .71 })` : ''
-        return `v => ({ ...v${lp}${hp}, ftype: '24db', gain: (v.gain ?? .8) * ${tidy(10 ** (db / 20))} })`
-      }
-      return `${x}.layer(${live.map((b) => `p => p.fmap(${band(b)})`).join(', ')})`
+      const band = ([k, lo, hi]) => fmapWith('p', ctx, d, [k, lo, hi].filter(Boolean), (val) => {
+        const lp = hi ? `, ...(v.cutoff <= ${val(hi)} ? {} : { cutoff: ${val(hi)}, resonance: .71 })` : ''
+        const hp = lo ? `, ...(v.hcutoff >= ${val(lo)} ? {} : { hcutoff: ${val(lo)}, hresonance: .71 })` : ''
+        const gain = isAuto(ctx, k) ? `(${val(k)} <= -24 ? 0 : 10 ** (${val(k)} / 20))` : tidy(10 ** (d[k] / 20))
+        return `{ ...v${lp}${hp}, ftype: '24db', gain: (v.gain ?? .8) * ${gain} }`
+      }, { lowf: round, highf: round })
+      return `${x}.layer(${live.map((b) => `(p) => ${band(b)}`).join(', ')})`
     },
   },
   saturator: {
@@ -282,7 +311,9 @@ export const NODE_TYPES = {
       { key: 'character', type: 'select', label: 'character', options: ['warm', 'tape', 'tube', 'asym', 'harmonics', 'fold'], def: 'tape' },
       { key: 'out', type: 'knob', label: 'output', min: 0.05, max: 1, def: 0.8 },
     ],
-    code: (d, [x]) => `${x}.distort("${tidy(d.drive)}:${tidy(d.out)}:${SATURATION[d.character] ?? 'soft'}")`,
+    code: (d, [x], ctx) => (isAuto(ctx, 'drive') || isAuto(ctx, 'out')
+      ? fmapWith(x, ctx, d, ['drive', 'out'], (val) => `{ ...v, distort: ${val('drive')}, distortvol: ${val('out')}, distorttype: '${SATURATION[d.character] ?? 'soft'}' }`)
+      : `${x}.distort("${tidy(d.drive)}:${tidy(d.out)}:${SATURATION[d.character] ?? 'soft'}")`),
   },
   clipper: {
     group: 'mixing', label: 'clipper', blurb: 'Pushes the level into a hard ceiling for loud, punchy peaks',
@@ -293,7 +324,7 @@ export const NODE_TYPES = {
     ],
     // Clipper and saturator share Strudel's one distortion stage: after a saturator, the
     // clipper adds its push to it and its ceiling caps the (already bounded) output.
-    code: (d, [x]) => `${x}.fmap(v => v.distort === undefined ? { ...v, distort: ${tidy(d.push)}, distortvol: ${tidy(d.ceiling)}, distorttype: 'hard' } : { ...v, distort: v.distort + ${tidy(d.push)}, distortvol: (v.distortvol ?? 1) * ${tidy(d.ceiling)} })`,
+    code: (d, [x], ctx) => fmapWith(x, ctx, d, ['push', 'ceiling'], (val) => `v.distort === undefined ? { ...v, distort: ${val('push')}, distortvol: ${val('ceiling')}, distorttype: 'hard' } : { ...v, distort: v.distort + ${val('push')}, distortvol: (v.distortvol ?? 1) * ${val('ceiling')} }`),
   },
   compressor: {
     group: 'mixing', label: 'compressor', blurb: 'Evens out the level: loud parts get turned down',
@@ -306,7 +337,14 @@ export const NODE_TYPES = {
       { key: 'knee', type: 'knob', label: 'knee', min: 0, max: 30, def: 6, unit: 'db' },
       { key: 'makeup', type: 'knob', label: 'makeup', min: 0, max: 18, def: 3, unit: 'db', origin: 0 },
     ],
-    code: (d, [x]) => `${x}.compressor("${Math.round(d.threshold * 10) / 10}:${tidy(d.ratio)}:${tidy(d.knee)}:${tidy(d.attack)}:${tidy(d.release)}")${d.makeup > 0.05 ? `.mul(postgain(${tidy(10 ** (d.makeup / 20))}))` : ''}`,
+    code: (d, [x], ctx) => {
+      const keys = ['threshold', 'ratio', 'knee', 'attack', 'release']
+      const comp = keys.some((k) => isAuto(ctx, k))
+        ? fmapWith(x, ctx, d, keys, (val) => `{ ...v, compressor: ${val('threshold')}, compressorRatio: ${val('ratio')}, compressorKnee: ${val('knee')}, compressorAttack: ${val('attack')}, compressorRelease: ${val('release')} }`)
+        : `${x}.compressor("${Math.round(d.threshold * 10) / 10}:${tidy(d.ratio)}:${tidy(d.knee)}:${tidy(d.attack)}:${tidy(d.release)}")`
+      if (isAuto(ctx, 'makeup')) return fmapWith(comp, ctx, d, ['makeup'], (val) => `{ ...v, postgain: (v.postgain ?? 1) * 10 ** (${val('makeup')} / 20) }`)
+      return `${comp}${d.makeup > 0.05 ? `.mul(postgain(${tidy(10 ** (d.makeup / 20))}))` : ''}`
+    },
   },
   punch: {
     group: 'mixing', label: 'transient', blurb: 'More or less snap at the start of each hit, and more or less tail',
@@ -315,7 +353,9 @@ export const NODE_TYPES = {
       { key: 'attack', type: 'knob', label: 'snap', min: -1, max: 1, def: 0.5, unit: 'bi', origin: 0 },
       { key: 'sustain', type: 'knob', label: 'tail', min: -1, max: 1, def: 0, unit: 'bi', origin: 0 },
     ],
-    code: (d, [x]) => `${x}.transient("${tidy(d.attack)}:${tidy(d.sustain)}")`,
+    code: (d, [x], ctx) => (isAuto(ctx, 'attack') || isAuto(ctx, 'sustain')
+      ? fmapWith(x, ctx, d, ['attack', 'sustain'], (val) => `{ ...v, transient: ${val('attack')}, transsustain: ${val('sustain')} }`)
+      : `${x}.transient("${tidy(d.attack)}:${tidy(d.sustain)}")`),
   },
 
   haas: {
@@ -347,8 +387,9 @@ export const NODE_TYPES = {
       const chain = (d.chain ?? []).filter((u) => u.on && FX_UNITS.includes(u.type))
       let eqAbove = !!ctx?.eqAbove
       return chain.reduce((acc, u) => {
-        const out = NODE_TYPES[u.type].code(u.data, [acc], { ...ctx, eqAbove, nodeId: ctx?.nodeId && `${ctx.nodeId}_${u.id}` })
-        eqAbove ||= splitsBands(u)
+        const autoOf = ctx?.auto ? (key) => ctx.auto(`u:${ctx.nodeId}:${u.id}:${key}`) : null
+        const out = NODE_TYPES[u.type].code(u.data, [acc], { ...ctx, eqAbove, autoOf, nodeId: ctx?.nodeId && `${ctx.nodeId}_${u.id}` })
+        eqAbove ||= splitsBands(u, autoOf)
         return out
       }, x)
     },
@@ -434,7 +475,8 @@ export const FX_UNITS = ['eq3', 'compressor', 'saturator', 'clipper', 'punch', '
 const eqActive = (d) => [d.low, d.mid, d.high].some((db) => Math.abs(db) >= 0.05)
 
 /** Whether a node splits the sound into eq bands, so later filters must merge with them. */
-const splitsBands = (node) => (node.type === 'eq3' && eqActive(node.data))
+const bandsAutomated = (autoOf) => !!autoOf && ['low', 'mid', 'high'].some((k) => autoOf(k))
+const splitsBands = (node, autoOf = null) => (node.type === 'eq3' && (eqActive(node.data) || bandsAutomated(autoOf)))
   || (node.type === 'fxrack' && (node.data.chain ?? []).some((u) => u.on && u.type === 'eq3' && eqActive(u.data)))
 
 /** Saturator characters → Strudel's waveshaping curves. */
@@ -557,7 +599,7 @@ export const nodeVar = (id) => `n_${id}`
  * Code for the graph: one `const` per node that makes a pattern, in dependency order,
  * then one lane per wire into each output node. `solo` (a node id) plays only that node.
  */
-export function graphCode(project, { solo = null, song = null, audition = false } = {}) {
+export function graphCode(project, { solo = null, song = null, audition = false, auto = null } = {}) {
   const { nodes, edges } = project
   const byId = new Map(nodes.map((n) => [n.id, n]))
   const patternIds = new Set(project.patterns.map((p) => p.id))
@@ -598,12 +640,13 @@ export function graphCode(project, { solo = null, song = null, audition = false 
     const inputOrbits = wires.filter((w) => exprs.get(w.source)).map((w) => orbitOf.get(w.source) ?? null)
     // a single input passes its bus on; mixing several inputs lands back on the main bus
     const route = { orbit: inputs.length === 1 && spec.inputs !== 'many' ? inputOrbits[0] : null }
-    let expr = spec.code(node.data, inputs, { patternIds, slots, nodeId: id, orbit: 2 + sidechains.indexOf(id), eqAbove, cps, route, inputOrbits, stereoOrbit, declare, routeBus })
+    const autoOf = auto ? (key) => auto(`n:${id}:${key}`) : null
+    let expr = spec.code(node.data, inputs, { patternIds, slots, nodeId: id, orbit: 2 + sidechains.indexOf(id), eqAbove, cps, route, inputOrbits, stereoOrbit, declare, routeBus, auto, autoOf })
     if (!expr) { exprs.set(id, null); return null }
     // a source making sound on its own plays when the song says (patterns are handled where they're defined)
     if (song && spec.group === 'source' && node.type !== 'pattern' && !wires.length) expr = song(`node:${id}`, expr)
     if (route.orbit != null) orbitOf.set(id, route.orbit)
-    if (eqAbove || splitsBands(node)) banded.add(id)
+    if (eqAbove || splitsBands(node, autoOf)) banded.add(id)
     const name = nodeVar(id)
     lines.push(`// ${node.data.name ?? spec.label}`, `const ${name} = ${expr}`)
     exprs.set(id, name)

@@ -5,6 +5,7 @@ import {
 } from './project'
 import { previewInPatch } from './audio'
 import Knob from './Knob.jsx'
+import { channelTarget } from './automation.js'
 import SoundPicker from './SoundPicker.jsx'
 import PianoRoll from './PianoRoll.jsx'
 
@@ -248,7 +249,7 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
             )}
 
             <div className="ch-more">
-              <Knob def={GAIN} value={paramValue(ch, 'gain')} onChange={(v) => setParam(ch.id, 'gain', v)} />
+              <Knob def={GAIN} value={paramValue(ch, 'gain')} onChange={(v) => setParam(ch.id, 'gain', v)} target={channelTarget(pattern.id, ch.id, 'gain')} />
               <button className={`btn ch-btn ${fxOpen ? 'on' : ''}`} aria-expanded={fxOpen} onClick={() => toggle(setOpenFx, ch.id)} title="Sound settings">
                 fx{tweaked ? ` ${tweaked}` : ''}
               </button>
@@ -267,7 +268,7 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
             {fxOpen && (
               <div className="ch-fxpanel">
                 {paramsFor(ch.kind).filter((d) => d.key !== 'gain').map((def) => (
-                  <Knob key={def.key} def={def} value={paramValue(ch, def.key)} onChange={(v) => setParam(ch.id, def.key, v)} />
+                  <Knob key={def.key} def={def} value={paramValue(ch, def.key)} onChange={(v) => setParam(ch.id, def.key, v)} target={channelTarget(pattern.id, ch.id, def.key)} />
                 ))}
                 <label className="ch-advanced">
                   <span className="syn">more, as code</span>

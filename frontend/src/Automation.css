@@ -1,0 +1,92 @@
+/* automation: the knob menu, the curve editor, automated knobs (see Automation.jsx) */
+
+/* right-click menu on a knob */
+.knob-menu {
+  position: fixed;
+  z-index: 120;
+  min-width: 13rem;
+  padding: 0.3rem;
+  display: grid;
+  background: #121210;
+  border: 1px solid #34342e;
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  font-family: var(--mono);
+}
+.knob-menu-title { padding: 0.3rem 0.55rem 0.35rem; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.knob-menu-item {
+  display: block;
+  width: 100%;
+  padding: 0.42rem 0.55rem;
+  text-align: left;
+  font: inherit;
+  font-size: 12px;
+  color: var(--paper);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  cursor: var(--ring);
+}
+.knob-menu-item:hover, .knob-menu-item:focus-visible { background: rgba(255, 255, 255, 0.07); outline: none; }
+.knob-menu-item.accent { color: var(--acid); }
+.knob-menu-item.danger:hover { color: var(--danger); }
+.knob-menu-line { margin: 0.25rem 0.3rem; border: 0; border-top: 1px solid #2a2a25; }
+
+/* an automated knob: a small acid mark, and its readout while it follows the curve */
+.knob { position: relative; }
+.knob-auto-mark { position: absolute; top: 0; right: 3px; width: 6px; height: 6px; border-radius: 50%; background: var(--acid); box-shadow: 0 0 0 2px var(--panel); pointer-events: none; }
+.knob.automated .knob-value { stroke: var(--acid); }
+.knob.following .knob-label { color: var(--acid); }
+
+/* the curve editor */
+.auto-pop {
+  position: fixed;
+  z-index: 60;
+  width: min(760px, calc(100vw - 24px));
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid #3a3a33;
+  border-radius: 12px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+}
+.auto-head { display: flex; align-items: center; flex-wrap: wrap; gap: 0.55rem 0.75rem; padding: 0.55rem 0.75rem; border-bottom: 1px solid var(--line); cursor: move; }
+.auto-kind { padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); background: var(--acid); }
+.auto-name { width: 14rem; font-size: 1.1rem; }
+.auto-target { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 22rem; }
+.auto-target b { color: var(--paper); font-weight: 600; }
+.auto-gone { color: var(--danger); }
+.auto-field { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 11px; color: var(--muted); cursor: var(--dot); }
+.auto-field .select { border-radius: 999px; padding: 0.2rem 0.5rem; background: #121210; border-color: #2e2e2a; }
+.auto-head .btn { border-radius: 999px; }
+
+.auto-graph { position: relative; padding: 0.4rem 0; background: #0b0b0a; touch-action: none; user-select: none; cursor: crosshair; }
+.auto-graph svg { display: block; }
+.auto-grid { stroke: rgba(255, 255, 255, 0.035); stroke-width: 1; }
+.auto-grid.bar { stroke: rgba(255, 255, 255, 0.1); }
+.auto-grid.edge { stroke: rgba(255, 255, 255, 0.12); }
+.auto-axis { fill: #6f6f67; font-family: var(--mono); font-size: 10px; font-variant-numeric: tabular-nums; }
+.auto-now { stroke: rgba(242, 240, 230, 0.28); stroke-width: 1; stroke-dasharray: 3 4; }
+.auto-area { fill: rgba(228, 255, 26, 0.1); }
+.auto-line { fill: none; stroke: var(--acid); stroke-width: 2; stroke-linejoin: round; }
+.auto-point { fill: var(--panel); stroke: var(--acid); stroke-width: 2; cursor: grab; transition: r 0.1s ease; }
+.auto-point:hover, .auto-point.active { fill: var(--acid); }
+.auto-bend { fill: #0b0b0a; stroke: rgba(228, 255, 26, 0.55); stroke-width: 1.5; cursor: ns-resize; }
+.auto-bend:hover, .auto-bend.bent { stroke: var(--acid); fill: rgba(228, 255, 26, 0.25); }
+.auto-readout { position: absolute; top: 0.55rem; right: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 11px; color: var(--paper); background: rgba(18, 18, 16, 0.9); border: 1px solid #2e2e2a; font-variant-numeric: tabular-nums; pointer-events: none; }
+
+.auto-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem 0.7rem; padding: 0.5rem 0.75rem; border-top: 1px solid var(--line); }
+.auto-hint { font-size: 10px; color: var(--muted); }
+.auto-meta { font-size: 11px; color: var(--muted); }
+.auto-foot .btn { border-radius: 999px; padding: 0.25rem 0.7rem; font-size: 11.5px; }
+
+/* the timeline sidebar's automation section */
+.song-parts-sub { display: flex; align-items: center; gap: 0.45rem; padding: 0.55rem 0.7rem 0.1rem; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); border-top: 1px solid var(--line); }
+.song-parts-hint.auto-empty { padding-top: 0.35rem; border-bottom: 0; }
+.btn.song-color-btn.one { right: 32px; } /* automations have delete, no dup */
+
+@media (max-width: 700px) {
+  .auto-hint { display: none; }
+  .auto-target { max-width: 100%; }
+}

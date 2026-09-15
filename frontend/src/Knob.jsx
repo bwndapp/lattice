@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useAutoLive, useAutomation } from './autoLive.js'
+import { KnobMenu } from './KnobMenu.jsx'
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 
@@ -6,7 +8,7 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 const toPos = (v, { min, max, log }) => (log ? Math.log(v / min) / Math.log(max / min) : (v - min) / (max - min))
 const fromPos = (t, { min, max, log }) => (log ? min * (max / min) ** t : min + t * (max - min))
 
-function format(v, def) {
+export function formatValue(v, def) {
   if (def.key === 'pan') return v === 0.5 ? 'C' : v < 0.5 ? `L${Math.round((0.5 - v) * 200)}` : `R${Math.round((v - 0.5) * 200)}`
   if (def.unit === 'hz') return v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k` : `${Math.round(v)}`
   if (def.unit === 'x') return `${v.toFixed(2)}x`
@@ -19,13 +21,20 @@ function format(v, def) {
 
 /**
  * A knob: drag up/down (shift for fine), scroll, arrow keys, double-click to reset.
- * Calls `onChange` as it turns and `onCommit` when you let go.
+ * Calls `onChange` as it turns and `onCommit` when you let go. With a `target` (see
+ * automation.js), right-click offers to automate it; an automated knob wears a mark and,
+ * while the song plays, turns with its curve.
  */
-export default function Knob({ def, value, onChange }) {
+export default function Knob({ def, value, onChange, target = null }) {
   const ref = useRef(null)
   const drag = useRef(null)
   const [live, setLive] = useState(null) // value while dragging, so the knob moves smoothly
-  const shown = live ?? value
+  const automation = useAutomation()
+  const automated = !!target && !!automation?.automated.has(target)
+  const following = useAutoLive(automated ? target : null) // where its curve has it, while playing
+  const [menu, setMenu] = useState(null)
+  const closeMenu = useCallback(() => setMenu(null), [])
+  const shown = live ?? following ?? value
   const pos = clamp(toPos(shown, def), 0, 1)
   const changed = Math.abs(shown - def.def) > 1e-9
 
@@ -62,7 +71,16 @@ export default function Knob({ def, value, onChange }) {
   const [hx, hy] = pt(pos)
 
   return (
-    <div className={`knob ${changed ? 'changed' : ''}`} title={`${def.label}: ${format(shown, def)} · drag, scroll, double-click to reset`}>
+    <div
+      className={`knob ${changed ? 'changed' : ''} ${automated ? 'automated' : ''} ${following !== undefined ? 'following' : ''}`}
+      title={`${def.label}: ${formatValue(shown, def)}${automated ? ' · automated in the song' : ''} · drag, scroll, double-click to reset${target && automation ? ' · right-click to automate' : ''}`}
+      onContextMenu={(e) => {
+        if (!target || !automation) return
+        e.preventDefault()
+        e.stopPropagation()
+        setMenu({ x: e.clientX, y: e.clientY })
+      }}
+    >
       <svg
         ref={ref}
         className="nodrag"
@@ -75,7 +93,7 @@ export default function Knob({ def, value, onChange }) {
         aria-valuemin={def.min}
         aria-valuemax={def.max}
         aria-valuenow={Math.round(shown * 1000) / 1000}
-        aria-valuetext={format(shown, def)}
+        aria-valuetext={formatValue(shown, def)}
         onPointerDown={(e) => {
           e.currentTarget.setPointerCapture(e.pointerId)
           drag.current = { y: e.clientY, t: toPos(value, def) }
@@ -102,7 +120,27 @@ export default function Knob({ def, value, onChange }) {
         {Math.abs(pos - origin) > 0.004 && <path d={pos > origin ? arc(origin, pos) : arc(pos, origin)} className="knob-value" />}
         <line x1="18" y1="18" x2={hx} y2={hy} className="knob-hand" />
       </svg>
-      <span className="knob-label">{live !== null ? format(shown, def) : def.label}</span>
+      <span className="knob-label">{live !== null || following !== undefined ? formatValue(shown, def) : def.label}</span>
+      {automated && <span className="knob-auto-mark" aria-hidden />}
+      {menu && (
+        <KnobMenu
+          x={menu.x}
+          y={menu.y}
+          title={def.label}
+          onClose={closeMenu}
+          items={automated ? [
+            ['Edit automation', () => automation.open(target, menu)],
+            ['Show on the timeline', () => automation.showTimeline(target)],
+            ['Remove automation', () => automation.remove(target), { danger: true }],
+            null,
+            ['Reset to default', () => onChange(def.def)],
+          ] : [
+            ['Automate on the timeline', () => automation.automate(target, menu), { accent: true }],
+            null,
+            ['Reset to default', () => onChange(def.def)],
+          ]}
+        />
+      )}
     </div>
   )
 }
