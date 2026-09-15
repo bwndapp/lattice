@@ -448,7 +448,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   // ── keys ──
   const onKeyDown = (e) => {
     if (e.target.closest('input, select, textarea')) return
-    if (editing || synth || panel) return // an open window's keys (Esc closes it) come first
+    if (editing || panel) return // an open window's keys (Esc closes it) come first
     const mod = e.ctrlKey || e.metaKey
     const k = e.key.toLowerCase()
     const chosen = song.clips.filter((c) => selected.has(c.id))
