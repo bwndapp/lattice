@@ -3,6 +3,7 @@ import { makePattern, makeVariation, newId } from './project'
 import { MAX_BARS, songLength, songParts } from './song'
 import PatternEditor from './PatternEditor.jsx'
 import Popover from './Popover.jsx'
+import ConfirmDialog from './ConfirmDialog.jsx'
 import { KitSelect } from './Graph.jsx'
 import { NODE_TYPES } from './graph'
 import './Timeline.css'
@@ -71,6 +72,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const [editing, setEditing] = useState(null) // { patternId, x, y }
   const [tool, setTool] = useState('pointer') // or 'slice'
   const [panel, setPanel] = useState(null) // a rhythm / melody / code part's settings: { nodeId, x, y }
+  const [deleting, setDeleting] = useState(null) // an original pattern waiting on 'are you sure'
   const lastPress = useRef(null) // for double-clicks (pointer capture keeps dblclick off the clips)
   const [sliceLine, setSliceLine] = useState(null) // { bar, l0, l1 } where the slice tool would cut
   const scrollRef = useRef(null)
@@ -460,7 +462,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   // ── keys ──
   const onKeyDown = (e) => {
     if (e.target.closest('input, select, textarea')) return
-    if (editing || panel) return // an open window's keys (Esc closes it) come first
+    if (editing || panel || deleting) return // an open window's keys (Esc closes it) come first
     const mod = e.ctrlKey || e.metaKey
     const k = e.key.toLowerCase()
     const chosen = song.clips.filter((c) => selected.has(c.id))
@@ -629,6 +631,29 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     setEditing({ patternId: made, x: e.clientX + 60, y: e.clientY })
   }
 
+  /**
+   * Delete a pattern part: a variation goes at once (undo brings it back); an original takes
+   * its variations, its clips and its pattern nodes with it, so it asks first.
+   */
+  const deletePart = (part) => {
+    const doomed = new Set([part.id, ...(part.parent ? [] : project.patterns.filter((v) => v.parent === part.id).map((v) => v.id))])
+    onUpdateProject((p) => {
+      p.patterns = p.patterns.filter((x) => !doomed.has(x.id))
+      if (!part.parent) {
+        const gone = new Set(p.nodes.filter((n) => n.type === 'pattern' && doomed.has(n.data.patternId)).map((n) => n.id))
+        p.nodes = p.nodes.filter((n) => !gone.has(n.id))
+        p.edges = p.edges.filter((e) => !gone.has(e.source) && !gone.has(e.target))
+      }
+      if (p.song) {
+        p.song.clips = p.song.clips.filter((c) => !(c.src.startsWith('pattern:') && doomed.has(c.src.slice(8))))
+        if (p.song.colors) for (const id of doomed) delete p.song.colors[`pattern:${id}`]
+      }
+    })
+    if (activePart && doomed.has(activePart.slice(8))) setActivePart(null)
+    if (editing && doomed.has(editing.patternId)) setEditing(null)
+    setSelected((sel) => new Set([...sel].filter((id) => song.clips.some((c) => c.id === id && !doomed.has(c.src.slice(8))))))
+  }
+
   const partRow = (part) => {
     const count = song.clips.filter((c) => c.src === part.src).length
     return (
@@ -694,6 +719,15 @@ export default function Timeline({ project, onUpdateProject, transport, started 
             title={`Duplicate as a variation: change it freely, it still plays through ${part.parentName ?? part.name}'s spot in the patch`}
             aria-label={`Duplicate ${part.name} as a variation`}
           >dup</button>
+        )}
+        {part.kind === 'pattern' && (
+          <button
+            type="button"
+            className="song-part-del"
+            onClick={() => (part.parent ? deletePart(part) : setDeleting(part))}
+            title={part.parent ? `Delete this variation and its clips (ctrl/cmd + Z brings it back)` : `Delete ${part.name}, its variations, clips and pattern node`}
+            aria-label={`Delete ${part.name}`}
+          >×</button>
         )}
       </li>
     )
@@ -861,6 +895,28 @@ export default function Timeline({ project, onUpdateProject, transport, started 
         </div>
       </div>
 
+      {deleting && (
+        <ConfirmDialog
+          title={`Delete ${deleting.name}?`}
+          confirmLabel="delete pattern"
+          danger
+          onCancel={() => setDeleting(null)}
+          onConfirm={() => { deletePart(deleting); setDeleting(null) }}
+        >
+          {(() => {
+            const variations = project.patterns.filter((v) => v.parent === deleting.id)
+            const ids = new Set([deleting.id, ...variations.map((v) => v.id)])
+            const clips = song.clips.filter((c) => c.src.startsWith('pattern:') && ids.has(c.src.slice(8))).length
+            const nodes = project.nodes.filter((n) => n.type === 'pattern' && n.data.patternId === deleting.id).length
+            return (
+              <>
+                <p>This removes the pattern{variations.length ? <> and its <strong>{variations.length} variation{variations.length === 1 ? '' : 's'}</strong></> : null}, <strong>{clips} clip{clips === 1 ? '' : 's'}</strong> on the timeline{nodes ? <> and <strong>{nodes} pattern node{nodes === 1 ? '' : 's'}</strong> in the patch</> : null}.</p>
+                <p>ctrl/cmd + Z brings it all back.</p>
+              </>
+            )
+          })()}
+        </ConfirmDialog>
+      )}
       {panelNode && <PartPanel node={panelNode} anchor={panel} onUpdateProject={onUpdateProject} onClose={() => setPanel(null)} />}
       {editingPattern && (
         <PatternEditor

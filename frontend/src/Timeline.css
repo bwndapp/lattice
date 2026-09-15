@@ -38,12 +38,14 @@
 .song-part-list li { position: relative; }
 .song-part-list li.variant { margin-left: 14px; }
 .song-part-list li.variant::before { content: ''; position: absolute; left: -9px; top: -3px; height: 21px; width: 7px; border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-.song-part-dup {
-  position: absolute; top: 5px; right: 5px;
+.song-part-dup, .song-part-del {
+  position: absolute; top: 5px; right: 30px;
   padding: 0.1rem 0.35rem; font: inherit; font-size: 10px; color: var(--paper);
   background: var(--panel); border: 1px solid var(--line); cursor: pointer; opacity: 0;
 }
-.song-part-list li:hover .song-part-dup, .song-part-dup:focus-visible { opacity: 1; }
+.song-part-del { right: 5px; width: 22px; padding-inline: 0; text-align: center; }
+.song-part-list li:hover .song-part-dup, .song-part-dup:focus-visible, .song-part-list li:hover .song-part-del, .song-part-del:focus-visible { opacity: 1; }
+.song-part-del:hover { border-color: var(--danger) !important; color: var(--danger) !important; }
 .song-part-dup:hover { border-color: var(--acid); color: var(--acid); }
 .song-parts-hint b { color: var(--paper); font-weight: 600; }
 .song-part.unused .song-part-name { color: var(--muted); }
