@@ -12,6 +12,7 @@ import { useUser } from './bwnd'
 import { api, clearDraft, readDraft, timeAgo, trackUrl, writeDraft } from './api'
 import Browser from './Browser.jsx'
 import Graph from './Graph.jsx'
+import ConfirmDialog from './ConfirmDialog.jsx'
 import { capturePatterns, parseLanes, tempoChange } from './lanes'
 import { PROJECT_MARK, blankProject, demoProject, generateCode, normalizeProject, parseProject, projectFromCode } from './project'
 import { createTransport, formatBarBeat, parseBarBeat } from './transport'
@@ -88,6 +89,7 @@ export default function App() {
   const project = useMemo(() => parseProject(code), [code])
   // auditioning: a node id; null plays the output
   const [solo, setSolo] = useState(null)
+  const [confirmClear, setConfirmClear] = useState(false)
   const genRef = useRef({ solo: null })
   genRef.current = { solo }
   const readOnlyRef = useRef(null)
@@ -284,6 +286,18 @@ export default function App() {
     replaceCode(text)
     liveUpdate()
   }, [replaceCode, liveUpdate])
+
+  /** Clear nodes: everything but the output (and the tempo) goes; one undo brings it back. */
+  const clearPatch = useCallback(() => {
+    updateProject((p) => {
+      const out = p.nodes.find((n) => n.type === 'output')
+      p.nodes = out ? [{ ...out, data: { ...out.data, muted: {}, solo: null } }] : []
+      p.edges = []
+      p.patterns = []
+    })
+    setSolo(null)
+    flash('Patch cleared · ctrl/cmd + Z brings it back')
+  }, [updateProject, flash])
 
   const undo = useCallback(() => {
     const editor = editorRef.current
@@ -663,6 +677,14 @@ export default function App() {
                 <button className="btn primary" onClick={save} disabled={busy || (!!user && !dirty)}>
                   {!user ? 'Sign in to save' : busy ? 'Saving…' : dirty ? 'Save' : 'Saved'}
                 </button>
+                {project && (
+                  <button
+                    className="btn ghost danger"
+                    onClick={() => setConfirmClear(true)}
+                    disabled={!project.nodes.some((n) => n.type !== 'output')}
+                    title="Remove every node, wire and pattern from this patch"
+                  >Clear nodes</button>
+                )}
                 {isOwner && <button className="btn" onClick={share}>Share</button>}
                 {isOwner && <button className="btn ghost danger" onClick={remove}>Delete</button>}
                 <span className="meta">
@@ -686,6 +708,21 @@ export default function App() {
               </>
             )}
           </div>
+          {confirmClear && project && (
+            <ConfirmDialog
+              title="Clear the whole patch?"
+              confirmLabel="Clear nodes"
+              danger
+              onCancel={() => setConfirmClear(false)}
+              onConfirm={() => {
+                setConfirmClear(false)
+                clearPatch()
+              }}
+            >
+              <p>This removes <strong>{project.nodes.filter((n) => n.type !== 'output').length} nodes</strong>, their wires and <strong>{project.patterns.length} pattern{project.patterns.length === 1 ? '' : 's'}</strong> with all their steps and notes. The output and tempo stay.</p>
+              <p>{isNew ? 'You can bring it back with ctrl/cmd + Z.' : 'You can bring it back with ctrl/cmd + Z, and nothing changes on the saved track until you save.'}</p>
+            </ConfirmDialog>
+          )}
           {view === 'graph' && project && (
             <Graph
               project={project}

@@ -9,6 +9,7 @@ import { INSTRUMENTS, INSTRUMENT_MIME, instrumentChannel, makePattern, newId } f
 import Knob from './Knob.jsx'
 import SoundPicker from './SoundPicker.jsx'
 import PatternEditor from './PatternEditor.jsx'
+import AddMenu from './AddMenu.jsx'
 import Phyllo, { PhylloFace } from './phyllo/Phyllo.jsx'
 import { normalizePatch } from './phyllo/engine'
 import { onSoundsChange, previewSound, soundCatalog } from './audio'
@@ -287,7 +288,6 @@ function StudioNode({ id, selected }) {
       </div>
 
       <div className="node-body">
-        {node.type === 'pattern' && (
         {node.type !== 'output' && !ctx.heard.has(id) && (
           <p className="node-warn">
             {spec.inputs && node.type !== 'phyllo' && wires.length === 0
@@ -295,6 +295,7 @@ function StudioNode({ id, selected }) {
               : 'not heard · wire its right dot on toward the output'}
           </p>
         )}
+        {node.type === 'pattern' && (
           <>
             <label className="node-field wide nodrag">
               <span>pattern</span>
@@ -643,6 +644,9 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
     requestAnimationFrame(() => flow.fitView({ padding: 0.12, maxZoom: 1 }))
   }, [initialized, flow])
   const [picking, setPicking] = useState(null) // { nodeId, key, x, y }
+  const [menu, setMenu] = useState(null) // right-click add menu: { x, y, at (flow position), wire (edge id or null) }
+  const menuItems = useMemo(() => paletteItems(), [])
+  const closeMenu = useCallback(() => setMenu(null), [])
   const [synth, setSynth] = useState(null) // the phyllo node whose synth window is open: { nodeId, x, y }
   const synthNode = synth && project.nodes.find((n) => n.id === synth.nodeId && n.type === 'phyllo')
 
@@ -713,10 +717,6 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
       const taken = (p) => project.nodes.some((n) => Math.abs(n.x - p.x) < 120 && Math.abs(n.y - p.y) < 80)
       for (let i = 0; i < 20 && taken(at); i++) at = { x: at.x + 40, y: at.y + 60 }
     }
-    onUpdateProject((p) => {
-      const data = defaultData(type)
-      if (type === 'pattern') {
-        const pattern = makePattern(`pattern ${p.patterns.length + 1}`)
     // Clicked in the pane (not dropped somewhere): wire it up so it's heard straight away.
     // A sound goes into the output; an effect or transform goes after the selected node,
     // taking over that node's wires, so clicking effects one by one builds a chain.
@@ -730,16 +730,16 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
       const feeding = project.edges.filter((e) => e.target === output.id).map((e) => project.nodes.find((n) => n.id === e.source)).filter(Boolean)
       at = { x: Math.min(output.x - 360, ...feeding.map((n) => n.x)), y: feeding.length ? Math.max(...feeding.map((n) => n.y)) + 230 : output.y }
     }
+    onUpdateProject((p) => {
+      const data = defaultData(type)
+      if (type === 'pattern') {
+        const pattern = makePattern(`pattern ${p.patterns.length + 1}`)
         if (instrument) { pattern.channels.push(instrumentChannel(instrument, pattern)); pattern.name = instrument }
         p.patterns.push(pattern)
         data.patternId = pattern.id
       }
       p.nodes.push({ id, type, x: Math.round(at.x), y: Math.round(at.y), data })
       if (intoWire) spliceInto(p, intoWire, id)
-    })
-    return id
-  }, [flow, onUpdateProject, project.nodes])
-
       if (after) {
         for (const e of p.edges) if (e.source === after.id) e.source = id
         p.edges.push({ source: after.id, target: id, targetHandle: firstInput(type) })
@@ -752,11 +752,11 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
           p.edges.push({ source: id, target: out.id, targetHandle: `in-${Math.max(-1, ...used) + 1}` })
         }
       }
-  const ctx = useMemo(() => ({
+    })
     if (clicked) selectNext.current = id
-    project,
-    solo,
-    setSolo: onSolo,
+    return id
+  }, [flow, onUpdateProject, project.nodes])
+
   // nodes with a path of wires to an output: everything else is silent
   const heard = useMemo(() => {
     const set = new Set(project.nodes.filter((n) => n.type === 'output').map((n) => n.id))
@@ -767,9 +767,13 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
     return set
   }, [project.nodes, project.edges])
 
+  const ctx = useMemo(() => ({
+    project,
+    heard,
+    solo,
+    setSolo: onSolo,
     updateNode,
     removeNode: (id) => removeNodes([id]),
-    heard,
     editPattern: (patternId, e) => setEditing({ patternId, x: e?.clientX ?? window.innerWidth / 2, y: e?.clientY ?? 200 }),
     pickSound: (nodeId, key, at) => setPicking({ nodeId, key, ...at }),
     openSynth: (nodeId, e) => setSynth({ nodeId, x: e?.clientX ?? window.innerWidth / 2, y: e?.clientY ?? 160 }),
@@ -841,6 +845,17 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
             edges={edges}
             nodeTypes={nodeTypes}
             colorMode="dark"
+            onPaneContextMenu={(e) => {
+              // right-click empty canvas: add something here (into the wire under the pointer, if any)
+              e.preventDefault()
+              const r = 10
+              const wire = wireAt({ left: e.clientX - r, right: e.clientX + r, top: e.clientY - r, bottom: e.clientY + r })
+              setMenu({ x: e.clientX, y: e.clientY, at: flow.screenToFlowPosition({ x: e.clientX - 20, y: e.clientY - 20 }), wire })
+            }}
+            onEdgeContextMenu={(e, edge) => {
+              e.preventDefault()
+              setMenu({ x: e.clientX, y: e.clientY, at: flow.screenToFlowPosition({ x: e.clientX - 20, y: e.clientY - 20 }), wire: edge.id })
+            }}
             onNodesChange={(changes) => setNodes((ns) => applyNodeChanges(changes.filter((c) => c.type !== 'remove'), ns))}
             onEdgesChange={(changes) => setEdges((es) => applyEdgeChanges(changes.filter((c) => c.type !== 'remove'), es))}
             onNodesDelete={(deleted) => removeNodes(deleted.map((n) => n.id))}
@@ -897,6 +912,12 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
             <Controls showInteractive={false} />
             <MiniMap pannable zoomable nodeColor={(n) => ({ source: '#e4ff1a', output: '#e4ff1a', transform: '#f2f0e6', effect: '#a3a39a', mixing: '#a3a39a', combine: '#6b6b63' })[NODE_TYPES[project.nodes.find((x) => x.id === n.id)?.type]?.group] ?? '#555'} maskColor="rgba(0,0,0,0.6)" />
           </ReactFlow>
+          {project.nodes.length === 1 && project.nodes[0].type === 'output' && (
+            <div className="graph-empty">
+              <strong>blank patch</strong>
+              <p>Click a sound in the pane (<b>phyllo</b>, <b>rhythm</b>, <b>pattern</b>): it wires into the output by itself. With it selected, click effects to chain them after it.</p>
+            </div>
+          )}
           <div className="graph-tip" aria-live="polite">
             {solo
               ? <>auditioning <b>{nodeTitle(project.nodes.find((n) => n.id === solo), project)}</b> · <button className="linkish" onClick={() => onSolo(null)}>back to the output</button></>
@@ -912,12 +933,6 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
           anchor={editing}
           transport={transport}
           started={started}
-          {project.nodes.length === 1 && project.nodes[0].type === 'output' && (
-            <div className="graph-empty">
-              <strong>blank patch</strong>
-              <p>Click a sound in the pane (<b>phyllo</b>, <b>rhythm</b>, <b>pattern</b>): it wires into the output by itself. With it selected, click effects to chain them after it.</p>
-            </div>
-          )}
           onUpdateProject={onUpdateProject}
           onClose={() => setEditing(null)}
         />
@@ -931,6 +946,21 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
           onEdit={(fn) => ctx.editPatch(synthNode.id, fn)}
           onClose={() => setSynth(null)}
           fx={<FxRack node={synthNode} />}
+        />
+      )}
+      {menu && (
+        <AddMenu
+          x={menu.x}
+          y={menu.y}
+          items={menuItems}
+          groups={PAL_GROUPS}
+          score={matchScore}
+          intoWire={!!menu.wire}
+          onPick={(item) => {
+            if (item.kind === 'instrument') addNode('pattern', menu.at, item.key)
+            else addNode(item.key, menu.at, null, menu.wire && splicable(item.key) ? menu.wire : null)
+          }}
+          onClose={closeMenu}
         />
       )}
       {soundNode && (
