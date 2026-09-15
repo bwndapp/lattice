@@ -195,6 +195,11 @@ body {
 .tempo .lcd-value { width: 3.6ch; }
 .tempo:focus-within { border-color: var(--acid); }
 .tempo .lcd-value:focus { outline: none; }
+.tempo { cursor: ns-resize; touch-action: none; user-select: none; }
+.tempo .lcd-value { cursor: ns-resize; }
+.tempo.editing, .tempo.editing .lcd-value { cursor: text; user-select: text; }
+.tempo.dragging { border-color: var(--acid); }
+.tempo:not(.editing) .lcd-value::selection { background: transparent; }
 .lcd-unit { font-size: 10px; color: var(--muted); }
 .position .cycle-bar { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: transparent; }
 .position:not(.running) .lcd-value { color: var(--paper); }

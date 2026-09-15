@@ -766,26 +766,111 @@ export default function App() {
   )
 }
 
-/** BPM field (beats per bar × cycles per minute). Editing it rewrites setcpm/setcps in the code. */
+/**
+ * BPM readout that works like a knob: drag up or down (shift for tenths), scroll, arrow keys
+ * (page up/down for 10), double-click for 120. A click without dragging types a tempo.
+ * Changing it rewrites setcpm/setcps in the code.
+ */
 function Tempo({ bpm, onChange }) {
-  const shown = String(Math.round(bpm * 10) / 10)
+  const MIN = 10
+  const MAX = 400
+  const tidy = (v) => Math.round(Math.min(MAX, Math.max(MIN, v)) * 10) / 10
+  const shown = String(tidy(bpm))
   const [text, setText] = useState(shown)
-  useEffect(() => setText(shown), [shown])
+  const [editing, setEditing] = useState(false)
+  const [dragging, setDragging] = useState(false)
+  const inputRef = useRef(null)
+  const boxRef = useRef(null)
+  const drag = useRef(null)
+  const bpmRef = useRef(bpm)
+  bpmRef.current = bpm
+  useEffect(() => { if (!editing) setText(shown) }, [shown, editing])
+
+  const set = useCallback((v) => {
+    const next = tidy(v)
+    if (String(next) !== String(tidy(bpmRef.current))) { bpmRef.current = next; onChange(next) }
+  }, [onChange])
+
+  // scroll to nudge (a non-passive listener, so the page doesn't scroll too)
+  useEffect(() => {
+    const el = boxRef.current
+    if (!el) return
+    const onWheel = (e) => {
+      if (editing) return
+      e.preventDefault()
+      set(bpmRef.current - Math.sign(e.deltaY) * (e.shiftKey ? 0.1 : 1))
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [editing, set])
+
   const commit = () => {
-    const next = Math.round(Number(text) * 10) / 10
-    if (Number.isFinite(next) && next >= 10 && next <= 400 && String(next) !== shown) onChange(next)
-    else setText(shown)
+    const next = Number(text)
+    if (Number.isFinite(next) && next >= MIN && next <= MAX) set(next)
+    setEditing(false)
+    setText(shown)
   }
+  const startTyping = () => {
+    setEditing(true)
+    requestAnimationFrame(() => { inputRef.current?.focus(); inputRef.current?.select() })
+  }
+
   return (
-    <label className="lcd tempo">
+    <label
+      ref={boxRef}
+      className={`lcd tempo ${editing ? 'editing' : ''} ${dragging ? 'dragging' : ''}`}
+      title="Tempo · drag up/down or scroll (shift: fine) · click to type · double-click for 120"
+      onPointerDown={(e) => {
+        if (editing || e.button !== 0) return
+        e.preventDefault()
+        e.currentTarget.setPointerCapture(e.pointerId)
+        drag.current = { y: e.clientY, from: bpmRef.current, moved: false }
+      }}
+      onPointerMove={(e) => {
+        const d = drag.current
+        if (!d) return
+        const dy = d.y - e.clientY
+        if (!d.moved && Math.abs(dy) < 3) return
+        if (!d.moved) { d.moved = true; setDragging(true) }
+        // 1 bpm per 3 px (a tenth with shift); re-anchor when shift changes so it doesn't jump
+        if (d.fine !== e.shiftKey) { d.fine = e.shiftKey; d.y = e.clientY; d.from = bpmRef.current; return }
+        set(d.from + Math.round(dy / 3) * (e.shiftKey ? 0.1 : 1))
+      }}
+      onPointerUp={() => {
+        const d = drag.current
+        drag.current = null
+        setDragging(false)
+        if (d && !d.moved) startTyping()
+      }}
+      onPointerCancel={() => { drag.current = null; setDragging(false) }}
+      onDoubleClick={() => { setEditing(false); set(120) }}
+    >
       <input
+        ref={inputRef}
         className="lcd-value"
         inputMode="decimal"
-        value={text}
+        role="spinbutton"
         aria-label="Tempo in BPM"
+        aria-valuemin={MIN}
+        aria-valuemax={MAX}
+        aria-valuenow={tidy(bpm)}
+        readOnly={!editing}
+        tabIndex={0}
+        value={editing ? text : shown}
         onChange={(e) => setText(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setText(shown); e.currentTarget.blur() } }}
+        onBlur={() => { if (editing) commit() }}
+        onKeyDown={(e) => {
+          if (editing) {
+            if (e.key === 'Enter') { e.preventDefault(); commit(); e.currentTarget.blur() }
+            if (e.key === 'Escape') { setEditing(false); setText(shown); e.currentTarget.blur() }
+            return
+          }
+          const step = { ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1, PageUp: 10, PageDown: -10 }[e.key]
+          if (step) { e.preventDefault(); e.stopPropagation(); set(bpmRef.current + step * (e.shiftKey && Math.abs(step) === 1 ? 0.1 : 1)); return }
+          if (e.key === 'Enter') { e.preventDefault(); startTyping() }
+          else if (e.key === 'Home') { e.preventDefault(); set(120) }
+          else if (/^[0-9.]$/.test(e.key)) { setEditing(true); setText(e.key); e.preventDefault(); requestAnimationFrame(() => inputRef.current?.focus()) }
+        }}
       />
       <span className="lcd-unit" aria-hidden>bpm</span>
     </label>
