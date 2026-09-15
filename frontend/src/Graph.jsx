@@ -499,6 +499,8 @@ const SEARCH_WORDS = {
   haas: 'stereo wide width delay precedence double doubler spread left right ms',
   widener: 'stereo wide width imager spread mid side ms mono bass imaging',
   fxrack: 'effects chain multiple fx rack bus insert',
+  reverb: 'reverb verb room hall plate space tail ambience wet size',
+  delay: 'delay echo ping pong repeat feedback tape dotted eighth sync',
   sidechain: 'duck ducking pump pumping compression compressor side chain kick bass edm',
   stack: 'layer mix together combine sum',
   sequence: 'cat order alternate chain one after another',

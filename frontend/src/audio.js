@@ -2,6 +2,7 @@ import { getAudioContext, getSampleBuffer, getSampleInfo, getSound, getSuperdoug
 import { getFontBufferSource } from '@strudel/soundfonts'
 import { getSoundIndex } from '@strudel/core'
 import { auditionCode, paramValue, paramsFor } from './project'
+import { GLOBAL_DELAY, GLOBAL_REVERB, routeVoice, silenceFx } from './fxbus.js'
 import { evaluate } from '@strudel/core'
 import { transpiler } from '@strudel/transpiler'
 
@@ -68,6 +69,7 @@ export function previewChannel(ch, { note, n } = {}) {
     const v = paramValue(ch, def.key)
     if (v === def.def) continue
     if (def.key === 'crush') value.crush = Math.round(16 - v * 14)
+    else if (def.key === 'room' || def.key === 'delay') (value.fxsends ??= []).push([def.key === 'room' ? GLOBAL_REVERB : GLOBAL_DELAY, v])
     else value[PREVIEW_KEYS[def.key] ?? def.key] = v
   }
   play(value, ch.kind === 'synth' ? 0.4 : 0.25)
@@ -86,7 +88,7 @@ function play(value, duration) {
   try {
     const ac = getAudioContext()
     if (ac.state !== 'running') ac.resume()
-    Promise.resolve(superdough(value, ac.currentTime + 0.03, duration)).catch(() => {})
+    Promise.resolve(superdough(routeVoice(value), ac.currentTime + 0.03, duration)).catch(() => {})
   } catch { /* audio not ready yet */ }
 }
 
@@ -173,7 +175,10 @@ export function silenceNow() {
       gain.cancelScheduledValues(ac.currentTime)
       gain.setTargetAtTime(0, ac.currentTime, 0.006)
     }
-    setTimeout(() => { try { resetGlobalEffects() } catch { /* nothing playing yet */ } }, 45)
+    setTimeout(() => {
+      try { resetGlobalEffects() } catch { /* nothing playing yet */ }
+      silenceFx() // reverb and delay tails too
+    }, 45)
   } catch { /* audio not started */ }
 }
 
@@ -198,7 +203,7 @@ export async function previewInPatch(project, patternId, ch, { note, n } = {}) {
       if (!hap.hasOnset()) continue
       const begin = hap.whole.begin.valueOf()
       const length = hap.whole.end.valueOf() - begin
-      Promise.resolve(superdough(hap.value, t0 + begin / cps, length / cps, cps, begin)).catch(() => {})
+      Promise.resolve(superdough(routeVoice(hap.value), t0 + begin / cps, length / cps, cps, begin)).catch(() => {})
     }
   } catch {
     previewChannel(ch, { note, n })

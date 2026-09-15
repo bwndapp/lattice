@@ -30,7 +30,11 @@ export const AUTO_PREFIX = 'auto:'
 /** Knobs on node types whose sound is processed outside Strudel can't follow a curve yet. */
 const NOT_AUTOMATABLE = new Set(['haas', 'widener', 'bus'])
 /** Knobs that change the timing of the pattern itself, which a curve would tear up. */
-const NOT_AUTOMATABLE_KEYS = new Set(['fast:amount'])
+const NOT_AUTOMATABLE_KEYS = new Set([
+  'fast:amount',
+  // reverb and delay settings live on the effect itself, not on each note (their amounts can move)
+  'space:delaytime', 'reverb:size', 'reverb:predelay', 'reverb:tone', 'reverb:lowcut', 'reverb:width', 'delay:feedback', 'delay:tone',
+])
 
 export function canAutomate(nodeType, key) {
   return !NOT_AUTOMATABLE.has(nodeType) && !NOT_AUTOMATABLE_KEYS.has(`${nodeType}:${key}`)

@@ -17,6 +17,7 @@ import ConfirmDialog from './ConfirmDialog.jsx'
 import Popover from './Popover.jsx'
 import { Glass } from './Glass.jsx'
 import { AutomationEditor } from './Automation.jsx'
+import { routeVoice } from './fxbus.js'
 import { AutomationContext, autoLive } from './autoLive.js'
 import { AUTO_PREFIX, activeAutos, autoValueFn, resolveTarget, toPos } from './automation.js'
 import { capturePatterns, parseLanes, tempoChange } from './lanes'
@@ -194,7 +195,7 @@ export default function App() {
   useEffect(() => {
     if (editorRef.current) return // StrictMode mounts twice in dev
     editorRef.current = new StrudelMirror({
-      defaultOutput: webaudioOutput,
+      defaultOutput: (hap, ...rest) => webaudioOutput(hap.value?.fxsends ? hap.withValue(routeVoice) : hap, ...rest), // reverb & delay sends (fxbus.js)
       getTime: () => getAudioContext().currentTime,
       transpiler,
       root: rootRef.current,

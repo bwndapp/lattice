@@ -2,6 +2,7 @@ import { parse } from 'acorn'
 import { defaultData, demoGraph, graphCode, normalizeGraph } from './graph.js'
 import { normalizeSong, songActive, songExpr } from './song.js'
 import { automationCode, channelTarget } from './automation.js'
+import { GLOBAL_DELAY, GLOBAL_REVERB } from './fxbus.js'
 
 /**
  * A project is what the UI edits: a library of patterns (instruments with steps or notes,
@@ -216,13 +217,19 @@ function sequenceOf(notes, total) {
 
 function paramCode(ch, auto) {
   let out = ''
+  const sends = [] // [effect, amount]: the reverb and delay knobs send to the shared pair (fxbus.js)
   for (const def of paramsFor(ch.kind)) {
     const v = paramValue(ch, def.key)
     const a = auto?.(def.key) // the name of the knob's automation, when it follows one
     if (!a && v === def.def) continue
     if (def.key === 'crush') out += a ? `.crush(${a}.fmap((v) => Math.round(16 - v * 14)))` : `.crush(${Math.round(16 - v * 14)})` // amount → bits: more crush, fewer bits
-    else if (def.key === 'delay') out += `.delay(${a ?? tidy(v)}).delaytime(.1875).delayfeedback(.35)`
+    else if (def.key === 'room' || def.key === 'delay') sends.push([def.key === 'room' ? GLOBAL_REVERB : GLOBAL_DELAY, a, tidy(v)])
     else out += `.${def.key}(${a ?? (def.log && v > 10 ? Math.round(v) : tidy(v))})`
+  }
+  if (sends.length) {
+    const autos = sends.filter(([, a]) => a)
+    const list = sends.map(([key, a, v], i) => `['${key}', ${a ? `_s${i}` : v}]`).join(', ')
+    out += `.fmap((v) => ${sends.map(([, a], i) => (a ? `(_s${i}) => ` : '')).join('')}({ ...v, fxsends: [...(v.fxsends ?? []), ${list}] }))${autos.map(([, a]) => `.appLeft(${a})`).join('')}`
   }
   return out
 }

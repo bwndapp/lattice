@@ -14,6 +14,7 @@
 
 import { liveBus } from './live'
 import { STEREO_ORBIT_BASE, beginInserts, commitInserts, declareInsert, declareRoute } from './stereo'
+import { DELAY_DEFAULTS, DELAY_DIVISIONS, GLOBAL_DELAY, GLOBAL_REVERB, REVERB_DEFAULTS, beginFx, commitFx, declareFx } from './fxbus.js'
 
 const clampNum = (v, fallback, lo, hi) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : fallback)
 const tidy = (v) => String(Math.round(Number(v) * 1000) / 1000)
@@ -43,6 +44,17 @@ const tapUnlessAuto = (ctx, key, ...rest) => (isAuto(ctx, key) ? '' : tap(ctx, k
  * key becomes a function argument fed by `.appLeft(itsPattern)`. `body(val)` gets val(key),
  * an expression for that key; `fmts` formats the plain numbers.
  */
+/**
+ * Send the sound to reverb / delay effects of its own (see fxbus.js): `sends` are
+ * [effect key, the knob that sets how much]. An automated amount rides on each note;
+ * otherwise the effect's input turns with the knob, ringing tails included.
+ */
+function sendCode(x, ctx, d, sends) {
+  if (!sends.length) return x
+  return fmapWith(x, ctx, d, sends.map(([, k]) => k), (val) => `{ ...v, fxsends: [...(v.fxsends ?? []), ${sends.map(([key, k]) => `['${key}', ${isAuto(ctx, k) ? val(k) : 1}]`).join(', ')}] }`)
+}
+const beatSeconds = (ctx) => 1 / ((ctx?.cps || 0.5) * (ctx?.beats || 4))
+
 function fmapWith(x, ctx, d, keys, body, fmts = {}) {
   const autos = keys.filter((k) => isAuto(ctx, k))
   const val = (k) => (autos.includes(k) ? `_${k}` : (fmts[k] ?? tidy)(d[k]))
@@ -189,10 +201,59 @@ export const NODE_TYPES = {
     params: [
       { key: 'room', type: 'knob', label: 'reverb', min: 0, max: 1, def: 0.4 },
       { key: 'delay', type: 'knob', label: 'delay', min: 0, max: 0.9, def: 0.25 },
-      { key: 'delaytime', type: 'knob', label: 'time', min: 0.05, max: 0.75, def: 0.1875, unit: 'c' },
+      { key: 'delaytime', type: 'knob', label: 'time', min: 0.05, max: 0.75, def: 0.1875, unit: 'bar' },
     ],
-    // a send only exists when it's above zero, so only then can its knob move ringing notes
-    code: (d, [x], ctx) => `${x}.room(${K(ctx, d, 'room')})${d.room > 0 ? tapUnlessAuto(ctx, 'room', 'room', tidy(d.room)) : ''}.delay(${K(ctx, d, 'delay')})${d.delay > 0 ? tapUnlessAuto(ctx, 'delay', 'delay', tidy(d.delay)) : ''}.delaytime(${K(ctx, d, 'delaytime')}).delayfeedback(.4)`,
+    // a quick reverb and a delay (time in bars) on effects of their own; see the reverb and
+    // delay nodes for every setting
+    code: (d, [x], ctx) => {
+      const sends = []
+      if (d.room > 0 || isAuto(ctx, 'room')) {
+        ctx?.declareFx?.(`rv_${ctx.nodeId}`, 'reverb', { ...REVERB_DEFAULTS, mix: d.room, automatedMix: isAuto(ctx, 'room') })
+        sends.push([`rv_${ctx?.nodeId}`, 'room'])
+      }
+      if (d.delay > 0 || isAuto(ctx, 'delay')) {
+        const seconds = d.delaytime * beatSeconds(ctx) * (ctx?.beats || 4)
+        ctx?.declareFx?.(`dl_${ctx.nodeId}`, 'delay', { ...DELAY_DEFAULTS, mix: d.delay, seconds, automatedMix: isAuto(ctx, 'delay') })
+        sends.push([`dl_${ctx?.nodeId}`, 'delay'])
+      }
+      return sendCode(x, ctx, d, sends)
+    },
+  },
+  reverb: {
+    group: 'effect', label: 'reverb', blurb: 'A room around the sound: how big, how bright, how wide',
+    inputs: 1,
+    params: [
+      { key: 'mix', type: 'knob', label: 'amount', min: 0, max: 1, def: 0.35 },
+      { key: 'size', type: 'knob', label: 'size', min: 0.2, max: 12, def: 2.2, log: true, unit: 's' },
+      { key: 'predelay', type: 'knob', label: 'pre-delay', min: 0, max: 0.2, def: 0.015, unit: 's' },
+      { key: 'tone', type: 'knob', label: 'tone', min: 0, max: 1, def: 0.55 },
+      { key: 'lowcut', type: 'knob', label: 'low cut', min: 20, max: 1000, def: 160, log: true, unit: 'hz' },
+      { key: 'width', type: 'knob', label: 'width', min: 0, max: 1, def: 1 },
+    ],
+    code: (d, [x], ctx) => {
+      if (!(d.mix > 0) && !isAuto(ctx, 'mix')) return x
+      const key = `rv_${ctx?.nodeId}`
+      ctx?.declareFx?.(key, 'reverb', { mix: d.mix, size: d.size, predelay: d.predelay, tone: d.tone, lowcut: d.lowcut, width: d.width, automatedMix: isAuto(ctx, 'mix') })
+      return sendCode(x, ctx, d, [[key, 'mix']])
+    },
+  },
+  delay: {
+    group: 'effect', label: 'delay', blurb: 'Echoes in time with the track, fading through a tone filter',
+    inputs: 1,
+    params: [
+      { key: 'mix', type: 'knob', label: 'amount', min: 0, max: 1, def: 0.3 },
+      { key: 'time', type: 'select', label: 'time', options: Object.keys(DELAY_DIVISIONS), def: '1/8 dotted' },
+      { key: 'feedback', type: 'knob', label: 'feedback', min: 0, max: 0.95, def: 0.4 },
+      { key: 'tone', type: 'knob', label: 'tone', min: 0, max: 1, def: 0.6 },
+      { key: 'mode', type: 'select', label: 'echoes', options: ['ping-pong', 'stereo'], def: 'ping-pong' },
+    ],
+    code: (d, [x], ctx) => {
+      if (!(d.mix > 0) && !isAuto(ctx, 'mix')) return x
+      const key = `dl_${ctx?.nodeId}`
+      const seconds = (DELAY_DIVISIONS[d.time] ?? 0.75) * beatSeconds(ctx)
+      ctx?.declareFx?.(key, 'delay', { mix: d.mix, seconds, feedback: d.feedback, tone: d.tone, mode: d.mode, automatedMix: isAuto(ctx, 'mix') })
+      return sendCode(x, ctx, d, [[key, 'mix']])
+    },
   },
   level: {
     group: 'effect', label: 'level', blurb: 'Volume and pan',
@@ -469,7 +530,7 @@ function stereoCode(kind, params) {
 const STEREO_TYPES = new Set(['haas', 'widener', 'bus'])
 
 /** Effects that can sit inside an fx rack: every plain effect node. */
-export const FX_UNITS = ['eq3', 'compressor', 'saturator', 'clipper', 'punch', 'haas', 'widener', 'filter', 'djfilter', 'space', 'level', 'drive', 'phaser', 'tremolo', 'vowel', 'lofi']
+export const FX_UNITS = ['eq3', 'compressor', 'saturator', 'clipper', 'punch', 'haas', 'widener', 'filter', 'djfilter', 'reverb', 'delay', 'space', 'level', 'drive', 'phaser', 'tremolo', 'vowel', 'lofi']
 
 /** Whether an eq node or unit changes anything (a flat eq isn't in the code at all). */
 const eqActive = (d) => [d.low, d.mid, d.high].some((db) => Math.abs(db) >= 0.05)
@@ -617,6 +678,11 @@ export function graphCode(project, { solo = null, song = null, audition = false,
   }
   const stereoOrbit = (key) => STEREO_ORBIT_BASE + Math.max(0, stereoKeys.indexOf(key))
   const inserts = beginInserts()
+  // reverbs and delays: the patch's own, and the shared pair the instruments' knobs send to
+  const fx = beginFx()
+  const beats = Number(project.beats) || 4
+  declareFx(fx, GLOBAL_REVERB, 'reverb', { ...REVERB_DEFAULTS, mix: 1 })
+  declareFx(fx, GLOBAL_DELAY, 'delay', { ...DELAY_DEFAULTS, mix: 1, feedback: 0.35, seconds: 0.75 / (cps * beats) })
   const declare = (orbit, key, kind, params) => declareInsert(inserts, orbit, key, kind, params)
   const routeBus = (from, to) => declareRoute(inserts, from, to)
   const orbitOf = new Map() // node id → the bus its sound ends up on, when not the main one
@@ -641,7 +707,7 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     // a single input passes its bus on; mixing several inputs lands back on the main bus
     const route = { orbit: inputs.length === 1 && spec.inputs !== 'many' ? inputOrbits[0] : null }
     const autoOf = auto ? (key) => auto(`n:${id}:${key}`) : null
-    let expr = spec.code(node.data, inputs, { patternIds, slots, nodeId: id, orbit: 2 + sidechains.indexOf(id), eqAbove, cps, route, inputOrbits, stereoOrbit, declare, routeBus, auto, autoOf })
+    let expr = spec.code(node.data, inputs, { patternIds, slots, nodeId: id, orbit: 2 + sidechains.indexOf(id), eqAbove, cps, beats, route, inputOrbits, stereoOrbit, declare, routeBus, auto, autoOf, declareFx: (key, kind, params) => declareFx(fx, key, kind, params) })
     if (!expr) { exprs.set(id, null); return null }
     // a source making sound on its own plays when the song says (patterns are handled where they're defined)
     if (song && spec.group === 'source' && node.type !== 'pattern' && !wires.length) expr = song(`node:${id}`, expr)
@@ -669,6 +735,7 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     }
   }
   commitInserts(inserts, { partial: !!solo || audition }) // an audition must not rewire the playing mix
+  commitFx(fx, { partial: !!solo || audition })
   return { lines, lanes }
 }
 
