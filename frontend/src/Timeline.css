@@ -185,7 +185,6 @@
 .song-part-list li:hover .btn.song-color-btn, .btn.song-color-btn:focus-visible, .btn.song-color-btn.on { opacity: 1; }
 .btn.song-color-btn:hover { border-color: var(--acid); color: var(--acid); }
 .song-color-dot { display: block; flex: none; width: 9px; height: 9px; box-shadow: 0 0 0 1px rgba(242, 240, 230, 0.35); }
-.song-color-dot { display: block; width: 10px; height: 100%; }
 .song-colors { padding: 0.55rem; display: grid; gap: 0.5rem; width: 188px; }
 .song-color-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
 .song-color-pick { aspect-ratio: 1; min-width: 0; border: 1px solid rgba(0, 0, 0, 0.5); cursor: var(--ring); padding: 0; }
