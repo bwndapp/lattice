@@ -18,6 +18,7 @@ import Popover from './Popover.jsx'
 import { Glass } from './Glass.jsx'
 import { AutomationEditor } from './Automation.jsx'
 import { routeVoice } from './fxbus.js'
+import Versions from './Versions.jsx'
 import { AutomationContext, autoLive } from './autoLive.js'
 import { AUTO_PREFIX, activeAutos, autoValueFn, resolveTarget, toPos } from './automation.js'
 import { capturePatterns, parseLanes, tempoChange } from './lanes'
@@ -166,7 +167,7 @@ export default function App() {
   genRef.current = { solo }
   const readOnlyRef = useRef(null)
   const [busy, setBusy] = useState(false)
-  const [toast, setToast] = useState('')
+  const [toast, setToast] = useState(null) // { msg, action: { label, run } }
   const [refreshKey, setRefreshKey] = useState(0)
 
   const isNew = !trackId
@@ -177,7 +178,13 @@ export default function App() {
     const p = parseProject(code)
     return p ? generateCode(p) : code
   }, [code])
-  const codeChanged = !!track && savedCode !== track.code
+  // edited = the project differs from the saved one (not just written out by a newer app)
+  const codeChanged = useMemo(() => {
+    if (!track || savedCode === track.code) return false
+    const mine = parseProject(code)
+    const saved = parseProject(track.code)
+    return !(mine && saved && JSON.stringify(mine) === JSON.stringify(saved))
+  }, [track, savedCode, code])
   const metaChanged = isOwner && (title !== track.title || visibility !== track.visibility)
   const dirty = isNew || codeChanged || metaChanged
 
@@ -185,10 +192,10 @@ export default function App() {
   const preparingRef = useRef(false)
   const preloadRunRef = useRef(0)
   const toastTimer = useRef(null)
-  const flash = useCallback((msg) => {
-    setToast(msg)
+  const flash = useCallback((msg, action = null) => {
+    setToast({ msg, action })
     clearTimeout(toastTimer.current)
-    toastTimer.current = setTimeout(() => setToast(''), 2200)
+    toastTimer.current = setTimeout(() => setToast(null), action ? 9000 : 2200) // time to reach an undo
   }, [])
 
   // One editor for the life of the page; tracks are swapped into it.
@@ -334,6 +341,24 @@ export default function App() {
     liveUpdate()
   }, [replaceCode, liveUpdate])
 
+  /** Swap in another version of the project (saved, or from history) as one undoable change. */
+  const openVersion = useCallback((text) => {
+    const editor = editorRef.current
+    const next = parseProject(text)
+    if (!editor || !next) { editorRef.current && replaceCode(text); return }
+    const current = parseProject(editor.code)
+    if (current) {
+      const h = historyRef.current
+      h.past.push(JSON.stringify(current))
+      if (h.past.length > 200) h.past.shift()
+      h.future = []
+      h.lastAt = 0
+      setHistoryTick((n) => n + 1)
+    }
+    replaceCode(generateCode(next, genRef.current))
+    liveUpdate()
+  }, [replaceCode, liveUpdate])
+
   /** Change the project: `mutate` edits a copy; the code is regenerated from it. */
   const updateProject = useCallback((mutate) => {
     const editor = editorRef.current
@@ -371,11 +396,13 @@ export default function App() {
       if (p.song) p.song = { ...p.song, clips: [], autos: [] }
     })
     setSolo(null)
-    flash('Patch cleared · ctrl/cmd + Z brings it back')
+    flash(loadedIdRef.current ? 'Patch cleared · your saved version is untouched' : 'Patch cleared', { label: 'undo', run: () => undoRef.current?.() })
   }, [updateProject, flash])
 
   // ── automation: right-click a knob → a curve on the timeline (see automation.js) ──
   const [autoEditing, setAutoEditing] = useState(null) // { id, x, y }
+  const [draftNotice, setDraftNotice] = useState(null) // { id, savedAt }: this track opened with unsaved changes
+  const [showVersions, setShowVersions] = useState(false)
   const closeAutoEditor = useCallback(() => setAutoEditing(null), [])
   const automation = useMemo(() => {
     const autos = project?.song?.autos ?? []
@@ -447,6 +474,7 @@ export default function App() {
     return () => { cancelAnimationFrame(raf); autoLive.clear() }
   }, [started, autoFns, transport])
 
+  const undoRef = useRef(null)
   const undo = useCallback(() => {
     const editor = editorRef.current
     const h = historyRef.current
@@ -457,6 +485,7 @@ export default function App() {
     h.lastAt = 0
     setHistoryTick((n) => n + 1)
   }, [applySnapshot])
+  undoRef.current = undo
   const redo = useCallback(() => {
     const editor = editorRef.current
     const h = historyRef.current
@@ -552,7 +581,13 @@ export default function App() {
         setTitle(t.title)
         setVisibility(t.visibility)
         rememberTrack(trackId)
-        putCode(trackId, readDraft(trackId, t.updated_at) ?? t.code)
+        const draft = readDraft(trackId, t.updated_at)
+        putCode(trackId, draft ?? t.code)
+        // say so when what opens isn't the saved version, and offer the saved one
+        const mine = draft && parseProject(draft)
+        const saved = parseProject(t.code)
+        const differs = draft && (mine && saved ? JSON.stringify(mine) !== JSON.stringify(saved) : draft !== t.code)
+        setDraftNotice(differs && t.is_owner ? { id: trackId, savedAt: t.updated_at } : null)
         if (pendingPlayRef.current === trackId) {
           pendingPlayRef.current = null
           play()
@@ -602,6 +637,7 @@ export default function App() {
         setTrack(t)
         setTitle(t.title)
         clearDraft(trackId)
+        setDraftNotice(null)
       }
       setRefreshKey((k) => k + 1)
       flash('Saved')
@@ -665,8 +701,10 @@ export default function App() {
   }
 
   const revert = () => {
-    putCode(track.id, track.code)
+    openVersion(track.code)
     clearDraft(track.id)
+    setDraftNotice(null)
+    flash('Back to your saved version', { label: 'undo', run: () => undoRef.current?.() })
   }
 
   const playFromList = (id) => {
@@ -876,9 +914,16 @@ export default function App() {
                       {isNew ? 'Scratch pad · not saved yet' : <>♥{track.likes} · {track.plays} plays · saved {timeAgo(track.updated_at)}</>}
                       {track?.parent && <> · remix of <Link className="linkish" to={`/t/${track.parent.id}`} onClick={close}>{track.parent.title}</Link></>}
                     </p>
+                    {isOwner && codeChanged && (
+                      <div className="track-menu-action">
+                        <button className="btn" onClick={() => { close(); revert() }}>go back to the saved version</button>
+                        <p className="track-menu-note">You have unsaved changes (kept in this browser). This swaps in the version saved {timeAgo(track.updated_at)}; ctrl/cmd + Z brings your changes back.</p>
+                      </div>
+                    )}
                     {isOwner && (
                       <div className="track-menu-actions">
                         <button className="btn" onClick={() => { close(); share() }}>copy link</button>
+                        <button className="btn" onClick={() => { close(); setShowVersions(true) }} title="Every save is kept: open an earlier one">saved versions</button>
                       </div>
                     )}
                     {project && (
@@ -959,6 +1004,28 @@ export default function App() {
         </span>
       </header>
 
+      {draftNotice && draftNotice.id === trackId && codeChanged && track && (
+        <div className="draft-notice" role="status">
+          <span>You're looking at <b>unsaved changes</b> kept in this browser. Your saved version is from {timeAgo(draftNotice.savedAt)} and hasn't changed.</span>
+          <span className="spacer" />
+          <button type="button" className="btn" onClick={revert}>open the saved version</button>
+          <button type="button" className="btn" onClick={() => setShowVersions(true)}>saved versions</button>
+          <button type="button" className="btn ghost" onClick={() => setDraftNotice(null)}>keep editing</button>
+        </div>
+      )}
+      {showVersions && track?.is_owner && (
+        <Versions
+          trackId={track.id}
+          savedCode={track.code}
+          onClose={() => setShowVersions(false)}
+          onOpen={(v) => {
+            setShowVersions(false)
+            setDraftNotice(null)
+            openVersion(v.code)
+            flash(`Opened the version from ${timeAgo(v.saved_at)} · save to keep it`, { label: 'undo', run: () => undoRef.current?.() })
+          }}
+        />
+      )}
       <AutomationContext.Provider value={project ? automation : null}>
       <div className="body">
         <main className="main">
@@ -1055,7 +1122,12 @@ export default function App() {
       )}
       </AutomationContext.Provider>
 
-      {toast && <div className="toast" role="status">{toast}</div>}
+      {toast && (
+        <div className={`toast ${toast.action ? 'with-action' : ''}`} role="status">
+          <span>{toast.msg}</span>
+          {toast.action && <button type="button" className="toast-action" onClick={() => { setToast(null); toast.action.run() }}>{toast.action.label}</button>}
+        </div>
+      )}
     </div>
   )
 }

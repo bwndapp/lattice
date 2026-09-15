@@ -3,6 +3,7 @@
 Anyone can browse public tracks and open unlisted ones by link; saving, liking
 and forking need a blue wind sign-in. Ownership is keyed on the SSO `sub`.
 """
+import json
 import secrets
 import time
 
@@ -47,6 +48,15 @@ def _conn():
             );
             CREATE INDEX IF NOT EXISTS tracks_owner ON tracks(owner_sub);
             CREATE INDEX IF NOT EXISTS tracks_vis_updated ON tracks(visibility, updated_at);
+            -- every saved version of a track, so a bad save (or a cleared patch) can be undone
+            CREATE TABLE IF NOT EXISTS track_versions (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              track_id TEXT NOT NULL,
+              title TEXT NOT NULL,
+              code TEXT NOT NULL,
+              saved_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS track_versions_track ON track_versions(track_id, id);
             CREATE TABLE IF NOT EXISTS likes (
               track_id TEXT NOT NULL,
               sub TEXT NOT NULL,
@@ -58,6 +68,51 @@ def _conn():
         conn.commit()
         _ready.add(path)
     return conn
+
+
+KEEP_VERSIONS = 60
+
+
+def _keep_version(conn, track_id):
+    """Remember the track as it is now, unless its latest version already has this code."""
+    row = conn.execute("SELECT title, code, updated_at FROM tracks WHERE id = ?", (track_id,)).fetchone()
+    if not row:
+        return
+    last = conn.execute(
+        "SELECT code FROM track_versions WHERE track_id = ? ORDER BY id DESC LIMIT 1", (track_id,)
+    ).fetchone()
+    if last and last["code"] == row["code"]:
+        return
+    conn.execute(
+        "INSERT INTO track_versions (track_id, title, code, saved_at) VALUES (?,?,?,?)",
+        (track_id, row["title"], row["code"], row["updated_at"]),
+    )
+    conn.execute(
+        """DELETE FROM track_versions WHERE track_id = ? AND id NOT IN (
+             SELECT id FROM track_versions WHERE track_id = ? ORDER BY id DESC LIMIT ?)""",
+        (track_id, track_id, KEEP_VERSIONS),
+    )
+
+
+def _summary(code):
+    """What's in a version, from its project header: counts to recognise it by."""
+    first = code.split("\n", 1)[0]
+    if not first.startswith("// @project "):
+        return {"kind": "code", "lines": code.count("\n") + 1}
+    try:
+        p = json.loads(first[len("// @project "):])
+    except ValueError:
+        return {"kind": "code", "lines": code.count("\n") + 1}
+    nodes = [n for n in p.get("nodes", []) if isinstance(n, dict) and n.get("type") != "output"]
+    song = p.get("song") or {}
+    return {
+        "kind": "patch",
+        "nodes": len(nodes),
+        "effects": sum(len((n.get("data") or {}).get("chain") or []) for n in nodes),
+        "patterns": len(p.get("patterns", [])),
+        "clips": len([c for c in song.get("clips", []) if not str(c.get("src", "")).startswith("auto:")]),
+        "automations": len(song.get("autos", [])),
+    }
 
 
 def _err(msg, status):
@@ -182,6 +237,7 @@ async def create_track(request: Request):
             (track_id, user["sub"], _author(user), data["title"], data["code"], data["visibility"],
              forked_from, now, now),
         )
+        _keep_version(conn, track_id)
         conn.commit()
         row = conn.execute("SELECT * FROM tracks WHERE id = ?", (track_id,)).fetchone()
     finally:
@@ -207,7 +263,9 @@ async def update_track(track_id: str, request: Request):
         data["author"] = _author(user)
         data["updated_at"] = int(time.time())
         sets = ", ".join(f"{k} = ?" for k in data)
+        _keep_version(conn, track_id)  # the version being replaced (tracks saved before history existed)
         conn.execute(f"UPDATE tracks SET {sets} WHERE id = ?", [*data.values(), track_id])
+        _keep_version(conn, track_id)  # and the new one
         conn.commit()
         row = conn.execute("SELECT * FROM tracks WHERE id = ?", (track_id,)).fetchone()
         liked = conn.execute("SELECT 1 FROM likes WHERE track_id = ? AND sub = ?",
@@ -215,6 +273,57 @@ async def update_track(track_id: str, request: Request):
     finally:
         conn.close()
     return _public(row, user, liked)
+
+
+def _owned(conn, track_id, user):
+    row = conn.execute("SELECT owner_sub FROM tracks WHERE id = ?", (track_id,)).fetchone()
+    if not row:
+        return _err("track not found", 404)
+    if not user or row["owner_sub"] != user["sub"]:
+        return _err("only the owner can see a track's saved versions", 403)
+    return None
+
+
+@router.get("/{track_id}/versions")
+def list_versions(track_id: str, request: Request):
+    """The owner's saved versions of a track, newest first."""
+    user = sso_user(request)
+    conn = _conn()
+    try:
+        denied = _owned(conn, track_id, user)
+        if denied:
+            return denied
+        _keep_version(conn, track_id)  # a track saved before history existed starts with what it has
+        conn.commit()
+        rows = conn.execute(
+            "SELECT id, title, code, saved_at FROM track_versions WHERE track_id = ? ORDER BY id DESC",
+            (track_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+    return {"versions": [
+        {"id": r["id"], "title": r["title"], "saved_at": r["saved_at"], "size": len(r["code"]), **_summary(r["code"])}
+        for r in rows
+    ]}
+
+
+@router.get("/{track_id}/versions/{version_id}")
+def get_version(track_id: str, version_id: int, request: Request):
+    user = sso_user(request)
+    conn = _conn()
+    try:
+        denied = _owned(conn, track_id, user)
+        if denied:
+            return denied
+        row = conn.execute(
+            "SELECT id, title, code, saved_at FROM track_versions WHERE track_id = ? AND id = ?",
+            (track_id, version_id),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return _err("version not found", 404)
+    return dict(row)
 
 
 @router.delete("/{track_id}")
@@ -230,6 +339,7 @@ def delete_track(track_id: str, request: Request):
         if row["owner_sub"] != user["sub"]:
             return _err("not your track", 403)
         conn.execute("DELETE FROM likes WHERE track_id = ?", (track_id,))
+        conn.execute("DELETE FROM track_versions WHERE track_id = ?", (track_id,))
         conn.execute("DELETE FROM tracks WHERE id = ?", (track_id,))
         conn.commit()
     finally:

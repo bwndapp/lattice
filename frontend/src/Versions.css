@@ -1,0 +1,62 @@
+/* saved versions of a track (see Versions.jsx) */
+.versions-dialog {
+  width: min(620px, calc(100vw - 32px));
+  max-height: min(640px, calc(100vh - 48px));
+  padding: 0;
+  color: var(--paper);
+  background: var(--panel);
+  border: 1px solid #3a3a33;
+  border-radius: 12px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.75);
+}
+.versions-dialog::backdrop { background: rgba(0, 0, 0, 0.7); }
+.vs-body { display: grid; gap: 0.7rem; padding: 1rem 1.1rem 1.1rem; }
+.vs-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.vs-title { margin: 0; font-family: var(--display); font-weight: 900; font-stretch: 118%; font-size: 24px; line-height: 1; letter-spacing: -0.02em; }
+.vs-head .btn { border-radius: 999px; }
+.vs-note { margin: 0; font-size: 11.5px; line-height: 1.55; color: var(--muted); max-width: 60ch; }
+.vs-error { margin: 0; font-size: 12px; color: var(--danger); }
+.vs-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; overflow-y: auto; max-height: min(460px, calc(100vh - 220px)); }
+.vs-row {
+  display: grid;
+  grid-template-columns: 9.5rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.55rem 0.7rem;
+  background: #121210;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+}
+.vs-row:first-child { border-color: rgba(228, 255, 26, 0.35); }
+.vs-row.empty .vs-summary { color: var(--danger); }
+.vs-when, .vs-what { display: grid; gap: 2px; min-width: 0; }
+.vs-time { font-size: 12px; font-variant-numeric: tabular-nums; }
+.vs-ago { font-size: 10px; color: var(--muted); }
+.vs-name { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vs-summary { font-size: 10.5px; color: var(--muted); }
+.btn.vs-open { border-radius: 999px; padding: 0.25rem 0.75rem; font-size: 11.5px; }
+@media (max-width: 560px) {
+  .vs-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .vs-when { grid-column: 1 / -1; }
+}
+
+/* the notice when a track opens with unsaved changes from this browser */
+.draft-notice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.9rem;
+  padding: 0.5rem 1rem;
+  font-size: 12px;
+  color: var(--paper);
+  background: #1c1a0b;
+  border-bottom: 1px solid rgba(228, 255, 26, 0.4);
+}
+.draft-notice b { color: var(--acid); font-weight: 700; }
+.draft-notice .spacer { flex: 1; }
+.draft-notice .btn { border-radius: 999px; padding: 0.22rem 0.75rem; font-size: 11.5px; }
+
+/* a toast with something to do (undo) */
+.toast.with-action { display: flex; align-items: center; gap: 0.8rem; }
+.toast-action { font: inherit; font-weight: 800; color: var(--ink); background: none; border: 2px solid var(--ink); padding: 0.1rem 0.6rem; cursor: var(--ring); text-transform: uppercase; letter-spacing: 0.04em; }
+.toast-action:hover { background: var(--ink); color: var(--acid); }
