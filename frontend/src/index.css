@@ -141,33 +141,43 @@ body {
 /* ── main column: the tool ────────────────────────────── */
 .body { flex: 1; display: flex; min-height: 0; position: relative; }
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-.trackbar {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  padding: 0.6rem 1rem;
-  border-bottom: 1px solid var(--line);
-  min-height: 60px;
-}
-.title-input {
-  flex: 0 1 22rem;
+/* the track: title, save and its menu, in the header */
+.track { display: flex; align-items: center; gap: 0.35rem; flex: 0 1 auto; min-width: 12.5rem; } /* the title gives way first */
+.bar > .btn, .bar > .user, .bar > .lcd, .bar > .transport { flex-shrink: 0; }
+.track > :not(.title-input) { flex-shrink: 0; }
+.bar .seg.views { font-size: inherit; padding: 0; align-items: center; gap: 0; flex-wrap: nowrap; } /* not the browse page's .views */
+.bar .title-input {
+  width: 13rem;
+  min-width: 5rem;
+  flex: 1 1 13rem;
   font-family: var(--display);
   font-weight: 800;
   font-stretch: 112%;
-  font-size: 1.6rem;
-  letter-spacing: -0.02em;
-  border-color: transparent;
-  border-bottom-color: var(--line);
-  padding: 0.1rem 0.2rem;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+  color: var(--paper);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 0.25rem 0.2rem;
+  text-overflow: ellipsis;
 }
 .title-input::placeholder { color: var(--muted); }
 .title-input:hover, .title-input:focus { border-bottom-color: var(--acid); outline: none; }
-.trackbar .meta { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.track-heading { display: flex; flex-direction: column; margin-right: 0.75rem; min-width: 0; }
+.btn.track-more { padding-inline: 0.55rem; font-weight: 700; letter-spacing: 0.05em; }
+.track-status { max-width: 22rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.popover { position: fixed; z-index: 80; background: var(--panel); border: 1px solid var(--acid); box-shadow: 8px 8px 0 #000; }
+.track-menu { width: 300px; max-width: calc(100vw - 16px); display: grid; gap: 0.6rem; padding: 0.7rem; }
+.track-menu-field { display: grid; gap: 0.25rem; font-size: 11px; color: var(--muted); }
+.track-menu-field .node-input, .track-menu-field .select { width: 100%; }
+.track-menu-meta { margin: 0; line-height: 1.5; }
+.track-menu-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; padding-top: 0.2rem; border-top: 1px solid var(--line); }
+.track-menu-actions .btn { margin-top: 0.4rem; }
+.track-heading { display: flex; flex-direction: column; margin-right: 0.35rem; min-width: 0; max-width: 16rem; }
+.track-heading .meta { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .track-title {
   font-family: var(--display); font-weight: 800; font-stretch: 112%;
-  font-size: 1.6rem; line-height: 1.05; letter-spacing: -0.02em;
+  font-size: 1.05rem; line-height: 1.05; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .meta { color: var(--muted); font-size: 11.5px; }
 .editor { flex: 1; overflow: auto; position: relative; background: var(--ink) !important; }
@@ -824,13 +834,23 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
   .lcd-unit { display: none; }
   .btn.loop .loop-range { display: none; }
 }
+@media (max-width: 1560px) {
+  .logo { font-size: 44px; }
+  .bar .title-input { flex-basis: 9rem; width: 9rem; }
+  .seg.history { display: none; } /* ctrl/cmd + Z and shift + Z still undo and redo */
+}
 @media (max-width: 1400px) {
+  .bar .title-input { flex-basis: 7rem; width: 7rem; }
+  .btn.tport.to-start { display: none; } /* Home goes back to the start */
+  .track-heading { max-width: 9rem; }
   .code-word { display: none; }
   .meter { display: none; }
   .btn.tport { padding-inline: 0.4rem; }
 }
 
 @media (max-width: 1180px) {
+  .bar .title-input, .track-heading { display: none; } /* the title is in the ··· menu */
+  .track { min-width: 0; }
   .logo { font-size: 40px; }
   .btn.loop, .seg:not(.views), .btn.tport { display: none; } /* loop: drag the ruler · pattern mode: in the rack */
   .bar { gap: 0.3rem; }
@@ -849,9 +869,7 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
   .bar .btn { padding: 0.3rem 0.45rem; font-size: 12px; }
   .btn.play, .btn.stop { font-size: 0.85rem; padding-inline: 0.6rem; }
   .spacer { display: none; }
-  .trackbar { padding: 0.5rem 0.75rem; }
-  .title-input { flex: 1 1 100%; font-size: 1.35rem; }
-  .trackbar .meta { flex-basis: 100%; order: 5; white-space: normal; }
+  .track .btn.save:not(.primary), .track .btn.save.signed-out { display: none; } /* phones: sign in is right there */
   .playlist { --head: 96px; }
   .channel { grid-template-columns: 1fr; padding: 0.3rem 0.4rem; }
   .channel-num, .channel-source, .lanes-tip { display: none; }

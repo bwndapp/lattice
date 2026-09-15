@@ -14,6 +14,7 @@ import Browser from './Browser.jsx'
 import Graph from './Graph.jsx'
 import Timeline from './Timeline.jsx'
 import ConfirmDialog from './ConfirmDialog.jsx'
+import Popover from './Popover.jsx'
 import { capturePatterns, parseLanes, tempoChange } from './lanes'
 import { PROJECT_MARK, blankProject, demoProject, generateCode, normalizeProject, parseProject, projectFromCode } from './project'
 import { createTransport, formatBarBeat, parseBarBeat } from './transport'
@@ -582,7 +583,7 @@ export default function App() {
           <span>lattice</span>
         </Link>
         <span className="transport" role="group" aria-label="Transport">
-          <button className="btn tport" onClick={toStart} title="Back to the start (Home)" aria-label="Back to the start">|&lt;</button>
+          <button className="btn tport to-start" onClick={toStart} title="Back to the start (Home)" aria-label="Back to the start">|&lt;</button>
           <button className={`btn play ${started ? 'on' : ''} ${preparing ? 'preparing' : ''}`} onClick={play} aria-busy={preparing} title="Play (space) · update while playing (ctrl/cmd + enter)">{started ? 'update' : preparing ? 'loading' : 'play'}</button>
           <button className="btn tport" onClick={pause} disabled={!started} title="Pause (space)">pause</button>
           <button className="btn stop" onClick={stop} title="Stop, cut every sound still ringing, and return to the cue (ctrl/cmd + .)">stop</button>
@@ -626,6 +627,86 @@ export default function App() {
         {project && solo && (
           <button className="btn solo-chip" onClick={() => setSolo(null)} title="You're hearing one part only. Click to hear the whole output again">soloing ×</button>
         )}
+        <span className="spacer" />
+        <span className="track" role="group" aria-label="Track">
+          {loadError ? (
+            <span className="meta track-status" title={loadError}>{loadError} <Link className="linkish" to="/">new track</Link></span>
+          ) : trackId && !track ? (
+            <span className="meta track-status">Loading…</span>
+          ) : canEdit ? (
+            <>
+              <input
+                className="title-input"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="untitled"
+                maxLength={80}
+                aria-label="Track title"
+                title={isNew ? 'Scratch pad · not saved yet' : `saved ${timeAgo(track.updated_at)}`}
+              />
+              <button className={`btn save ${dirty || !user ? 'primary' : ''} ${user ? '' : 'signed-out'}`} onClick={save} disabled={busy || (!!user && !dirty)} title={!user ? 'Sign in to save this track' : dirty ? 'Save (ctrl/cmd + S)' : 'Everything is saved'}>
+                {busy ? 'saving…' : !user || dirty ? 'save' : 'saved'}
+              </button>
+              <Popover label="···" title="Track: title, who can see it, share, clear, delete" className="track-more" panelClassName="track-menu">
+                {(close) => (
+                  <>
+                    <label className="track-menu-field">
+                      <span>title</span>
+                      <input className="node-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="untitled" maxLength={80} />
+                    </label>
+                    <label className="track-menu-field">
+                      <span>who can see it</span>
+                      <select className="select" value={visibility} onChange={(e) => setVisibility(e.target.value)}>
+                        <option value="public">Public</option>
+                        <option value="unlisted">Unlisted (link only)</option>
+                        <option value="private">Private</option>
+                      </select>
+                    </label>
+                    <p className="meta track-menu-meta">
+                      {isNew ? 'Scratch pad · not saved yet' : <>♥{track.likes} · {track.plays} plays · saved {timeAgo(track.updated_at)}</>}
+                      {track?.parent && <> · remix of <Link className="linkish" to={`/t/${track.parent.id}`} onClick={close}>{track.parent.title}</Link></>}
+                    </p>
+                    <div className="track-menu-actions">
+                      {isOwner && <button className="btn" onClick={() => { close(); share() }}>share</button>}
+                      {project && (
+                        <button
+                          className="btn ghost danger"
+                          onClick={() => { close(); setConfirmClear(true) }}
+                          disabled={!project.nodes.some((n) => n.type !== 'output')}
+                          title="Remove every node, wire and pattern from this patch"
+                        >clear nodes</button>
+                      )}
+                      {isOwner && <button className="btn ghost danger" onClick={() => { close(); remove() }}>delete track</button>}
+                    </div>
+                  </>
+                )}
+              </Popover>
+            </>
+          ) : track ? (
+            <>
+              <span className="track-heading" title={`by ${track.author}`}>
+                <span className="track-title">{track.title}</span>
+                <span className="meta">by {track.author}</span>
+              </span>
+              <button className={`btn ${track.liked ? 'on' : ''}`} onClick={like} title="Like">♥{track.likes}</button>
+              <button className="btn" onClick={remix} disabled={busy} title="Make your own copy to change">remix</button>
+              <Popover label="···" title="Track: share, details" className="track-more" panelClassName="track-menu">
+                {(close) => (
+                  <>
+                    <p className="meta track-menu-meta">
+                      by {track.author} · {track.plays} plays · {timeAgo(track.updated_at)}
+                      {track.parent && <> · remix of <Link className="linkish" to={`/t/${track.parent.id}`} onClick={close}>{track.parent.title}</Link></>}
+                    </p>
+                    {codeChanged && <p className="meta track-menu-meta">edited locally · <button className="linkish" onClick={() => { close(); revert() }}>revert</button></p>}
+                    <div className="track-menu-actions">
+                      <button className="btn" onClick={() => { close(); share() }}>share</button>
+                    </div>
+                  </>
+                )}
+              </Popover>
+            </>
+          ) : null}
+        </span>
         <span className="seg views" role="group" aria-label="View">
           <button className={`btn ${view === 'browse' ? 'on' : ''}`} aria-pressed={view === 'browse'} onClick={() => setView('browse')} title="Tracks people have shared, and yours">browse</button>
           <button className={`btn ${view === 'graph' ? 'on' : ''}`} aria-pressed={view === 'graph'} onClick={() => setView('graph')} title="The patch: what each part goes through">patch</button>
@@ -637,7 +718,6 @@ export default function App() {
             onClick={toggleView}
           >{'{ }'}<span className="code-word"> code</span>{evalError && view !== 'code' ? ' !' : ''}</button>
         </span>
-        <span className="spacer" />
         {userLoading ? null : user ? (
           <span className="user">
             <span className="avatar" aria-hidden>{(user.name || user.email || '?').trim()[0].toUpperCase()}</span>
@@ -661,60 +741,6 @@ export default function App() {
               onPick={() => setView('graph')}
             />
           )}
-          <div className="trackbar" hidden={view === 'browse'}>
-            {loadError ? (
-              <span className="meta">{loadError} <Link className="linkish" to="/">Start a new track</Link></span>
-            ) : trackId && !track ? (
-              <span className="meta">Loading…</span>
-            ) : canEdit ? (
-              <>
-                <input
-                  className="title-input"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="untitled"
-                  maxLength={80}
-                  aria-label="Track title"
-                />
-                <select className="select" value={visibility} onChange={(e) => setVisibility(e.target.value)} aria-label="Who can see it">
-                  <option value="public">Public</option>
-                  <option value="unlisted">Unlisted (link only)</option>
-                  <option value="private">Private</option>
-                </select>
-                <button className="btn primary" onClick={save} disabled={busy || (!!user && !dirty)}>
-                  {!user ? 'Sign in to save' : busy ? 'Saving…' : dirty ? 'Save' : 'Saved'}
-                </button>
-                {project && (
-                  <button
-                    className="btn ghost danger"
-                    onClick={() => setConfirmClear(true)}
-                    disabled={!project.nodes.some((n) => n.type !== 'output')}
-                    title="Remove every node, wire and pattern from this patch"
-                  >Clear nodes</button>
-                )}
-                {isOwner && <button className="btn" onClick={share}>Share</button>}
-                {isOwner && <button className="btn ghost danger" onClick={remove}>Delete</button>}
-                <span className="meta">
-                  {isNew ? 'Scratch pad · not saved yet' : <>♥{track.likes} · {track.plays} plays · saved {timeAgo(track.updated_at)}</>}
-                  {track?.parent && <> · remix of <Link className="linkish" to={`/t/${track.parent.id}`}>{track.parent.title}</Link></>}
-                </span>
-              </>
-            ) : (
-              <>
-                <div className="track-heading">
-                  <span className="track-title">{track.title}</span>
-                  <span className="meta">
-                    by {track.author} · {track.plays} plays · {timeAgo(track.updated_at)}
-                    {track.parent && <> · remix of <Link className="linkish" to={`/t/${track.parent.id}`}>{track.parent.title}</Link></>}
-                  </span>
-                </div>
-                <button className={`btn ${track.liked ? 'on' : ''}`} onClick={like}>♥{track.likes}</button>
-                <button className="btn" onClick={remix} disabled={busy}>Remix</button>
-                <button className="btn" onClick={share}>Share</button>
-                {codeChanged && <span className="meta">edited locally · <button className="linkish" onClick={revert}>revert</button></span>}
-              </>
-            )}
-          </div>
           {confirmClear && project && (
             <ConfirmDialog
               title="Clear the whole patch?"
