@@ -893,13 +893,21 @@ export default function App() {
 
   // ── the program menu ──
   const hasPatch = !!project?.nodes.some((n) => n.type !== 'output')
+  // who's signed in (the track itself is edited from the track menu)
   const menuHeader = (
     <div className="pm-head">
-      <span className="pm-head-title">{isNew ? (title.trim() || 'scratch pad') : track?.title ?? (loadError ? 'no track' : 'loading…')}</span>
-      <span className="pm-head-status">
-        {isNew ? 'not saved as a track yet' : track ? (isOwner ? `saved ${timeAgo(track.updated_at)}` : `by ${track.author}`) : ''}
-        {codeChanged && <span className="unsaved"> · unsaved changes</span>}
-      </span>
+      {user ? (
+        <>
+          <span className="pm-head-face" aria-hidden>{(user.name || user.email || '?').trim()[0].toUpperCase()}</span>
+          <span className="pm-head-title">{user.name || user.email}</span>
+          {user.name && user.email && <span className="pm-head-status">{user.email}</span>}
+        </>
+      ) : (
+        <>
+          <span className="pm-head-title">{userLoading ? 'checking…' : 'not signed in'}</span>
+          <span className="pm-head-status">sign in to save, like and remix</span>
+        </>
+      )}
     </div>
   )
   const programMenus = [
@@ -950,7 +958,6 @@ export default function App() {
     {
       label: 'account',
       items: user ? [
-        { heading: user.name || user.email },
         { label: 'your tracks', onSelect: () => setView('browse') },
         { label: 'sign out', onSelect: () => logout(window.location.pathname) },
       ] : [
