@@ -7,6 +7,8 @@ const LOW = 24 // c1
 const HIGH = 96 // c7
 const ROWS = HIGH - LOW + 1
 const ROW_SIZES = { s: 8, m: 12, l: 18 }
+const MIN_ROW = 6
+const MAX_ROW = 36
 const MAX_CANVAS = 12000 // px; beyond this browsers start dropping canvas pixels
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
@@ -73,10 +75,12 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
   const panRef = useRef(null)
   const lastLen = useRef(2)
   const anchorRef = useRef(null) // keep a step under the pointer while zooming
+  const rowAnchorRef = useRef(null) // … and a pitch, while zooming the rows
 
   const total = stepCount(pattern)
   const stepsPerBeat = Math.max(1, Math.round(pattern.stepsPerBar / beats))
-  const rowH = ROW_SIZES[rowSize] ?? 12
+  // a named size (s / m / l) or any height in px, from zooming the rows
+  const rowH = typeof rowSize === 'number' ? clamp(Math.round(rowSize), MIN_ROW, MAX_ROW) : ROW_SIZES[rowSize] ?? 12
   const maxCol = Math.max(8, Math.floor(MAX_CANVAS / total))
   const fitCol = clamp(Math.floor((viewW - KEY_W) / total), 4, maxCol)
   const colW = zoom === null ? fitCol : clamp(zoom, 4, maxCol)
@@ -107,6 +111,22 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
     el.scrollLeft = a.step * colW - a.offset
     anchorRef.current = null
   }, [colW])
+  useLayoutEffect(() => {
+    const a = rowAnchorRef.current
+    const el = scrollRef.current
+    if (!a || !el) return
+    el.scrollTop = a.row * rowH - a.offset
+    rowAnchorRef.current = null
+  }, [rowH])
+
+  /** Set the row height, keeping the pitch `offset` px below the ruler where it is. */
+  const zoomRows = useCallback((next, offset = null) => {
+    const el = scrollRef.current
+    if (!el) return
+    const at = offset ?? (el.clientHeight - RULER_H) / 2
+    rowAnchorRef.current = { row: (el.scrollTop + at) / rowH, offset: at }
+    setRowSize(clamp(Math.round(next), MIN_ROW, MAX_ROW))
+  }, [rowH])
 
   const zoomTo = useCallback((next, pointerX = null) => {
     const el = scrollRef.current
@@ -279,6 +299,13 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
     const el = scrollRef.current
     if (!el) return
     const onWheel = (e) => {
+      if (e.altKey && !(e.ctrlKey || e.metaKey)) {
+        // alt + wheel: taller or shorter rows around the pointer
+        e.preventDefault()
+        const pointerY = e.clientY - el.getBoundingClientRect().top - RULER_H
+        zoomRows(rowH * Math.exp(-(e.deltaY || e.deltaX) * 0.004), Math.max(0, pointerY))
+        return
+      }
       if (!(e.ctrlKey || e.metaKey)) return
       e.preventDefault()
       const pointerX = e.clientX - el.getBoundingClientRect().left - KEY_W
@@ -286,7 +313,7 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
-  }, [colW, zoomTo])
+  }, [colW, rowH, zoomTo, zoomRows])
 
   useEffect(() => {
     if (!full) return
@@ -338,12 +365,31 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
     e.stopPropagation()
     el.setPointerCapture(e.pointerId)
     el.focus({ preventScroll: true })
-    panRef.current = { id: e.pointerId, x: e.clientX, y: e.clientY, left: el.scrollLeft, top: el.scrollTop }
-    el.classList.add('panning')
+    const rect = el.getBoundingClientRect()
+    // ctrl/cmd + middle-drag zooms instead (as in the song view): sideways the steps, up and
+    // down the rows, around where the drag started
+    const zoom = e.button === 1 && (e.ctrlKey || e.metaKey)
+      ? (() => {
+          const dx = Math.max(0, e.clientX - rect.left - KEY_W)
+          const dy = Math.max(0, e.clientY - rect.top - RULER_H)
+          return { col: colW, row: rowH, dx, dy, step: (el.scrollLeft + dx) / colW, pitchRow: (el.scrollTop + dy) / rowH }
+        })()
+      : null
+    panRef.current = { id: e.pointerId, x: e.clientX, y: e.clientY, left: el.scrollLeft, top: el.scrollTop, zoom }
+    el.classList.add(zoom ? 'zooming' : 'panning')
   }
   const movePan = (e) => {
     const pan = panRef.current
     if (!pan || e.pointerId !== pan.id) return
+    if (pan.zoom) {
+      // anchored to the spot under the drag's start, not recomputed per move (that drifts)
+      const z = pan.zoom
+      anchorRef.current = { step: z.step, offset: z.dx }
+      rowAnchorRef.current = { row: z.pitchRow, offset: z.dy }
+      setZoom(clamp(Math.round(z.col * Math.exp((e.clientX - pan.x) * 0.006) * 10) / 10, 4, maxCol))
+      setRowSize(clamp(Math.round(z.row * Math.exp((e.clientY - pan.y) * 0.006)), MIN_ROW, MAX_ROW))
+      return
+    }
     const el = scrollRef.current
     el.scrollLeft = pan.left - (e.clientX - pan.x)
     el.scrollTop = pan.top - (e.clientY - pan.y)
@@ -351,7 +397,7 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
   const endPan = () => {
     if (!panRef.current) return
     panRef.current = null
-    scrollRef.current?.classList.remove('panning')
+    scrollRef.current?.classList.remove('panning', 'zooming')
   }
 
   const selectedNotes = (list = channel.notes) => list.filter((nt) => selection.has(keyOf(nt)))
@@ -581,7 +627,7 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
           <button type="button" className={`node-btn ${follow ? 'on' : ''}`} aria-pressed={follow} onClick={() => setFollow((v) => !v)} title="Keep the playhead in view while playing">follow</button>
           <span className="pr-spacer" />
           {selection.size > 0 && <span className="pr-selected">{selection.size} selected</span>}
-          <span className="pr-hint" title="ctrl/cmd + A selects all · shift + click adds · ctrl/cmd + drag draws a box · drag moves the selection · ctrl/cmd + drag a note copies · ctrl/cmd + C / X / V / D · arrows move · delete removes · ctrl/cmd + scroll zooms · middle-drag or alt + drag pans">{barCount} bar{barCount === 1 ? '' : 's'} · ctrl/cmd+A all · ctrl/cmd+drag box · ctrl/cmd+C/V/D · middle-drag pans</span>
+          <span className="pr-hint" title="ctrl/cmd + A selects all · shift + click adds · ctrl/cmd + drag draws a box · drag moves the selection · ctrl/cmd + drag a note copies · ctrl/cmd + C / X / V / D · arrows move · delete removes · ctrl/cmd + scroll zooms · alt + scroll sizes rows · ctrl/cmd + middle-drag zooms steps and rows · middle-drag or alt + drag pans">{barCount} bar{barCount === 1 ? '' : 's'} · ctrl/cmd+A all · ctrl/cmd+drag box · ctrl/cmd+C/V/D · middle-drag pans</span>
           <button type="button" className={`node-btn ${full ? 'on' : ''}`} onClick={() => setFull((v) => !v)} title="Full screen (F, Esc to close)">{full ? 'close' : 'full screen'}</button>
         </div>
         <canvas

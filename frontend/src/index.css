@@ -539,6 +539,7 @@ body {
   outline: none; overscroll-behavior: contain;
 }
 .piano-roll:focus-visible { box-shadow: inset 0 0 0 1px var(--acid); }
+.piano-roll.zooming, .piano-roll.zooming canvas { cursor: move; }
 .pr-inner { display: grid; position: relative; }
 .pr-corner { position: sticky; left: 0; top: 0; z-index: 4; background: #0c0c0b; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .pr-ruler { position: sticky; top: 0; z-index: 3; display: block; cursor: pointer; }
