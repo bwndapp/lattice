@@ -292,6 +292,12 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
                   pattern={pattern}
                   beats={project.beats}
                   cursorRef={cursorRef}
+                  onSeek={(bars, { fine } = {}) => {
+                    // the pattern repeats, so land in the repetition that's playing now
+                    const local = mod(fine ? bars : Math.round(bars * pattern.stepsPerBar) / pattern.stepsPerBar, pattern.bars)
+                    const at = transport.position()
+                    transport.seek(Math.max(0, Math.floor(at / pattern.bars) * pattern.bars + local))
+                  }}
                   onPreview={(midi) => { if (!started) previewInPatch(project, pattern.id, ch, { note: midi }) }}
                   onChangeNotes={(notes) => updateChannel(ch.id, (c) => { c.notes = notes; if (notes.length) c.note = midiToNote(notes[notes.length - 1].n) })}
                 />

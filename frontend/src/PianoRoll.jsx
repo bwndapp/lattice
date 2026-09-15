@@ -55,11 +55,12 @@ function fitCanvas(canvas, w, h, { keepCss = false } = {}) {
  * shows every bar with a draggable view box, middle-drag or alt + drag pans, follow keeps the playhead
  * in view, and the roll can be dragged taller or opened full screen.
  */
-export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPreview, cursorRef }) {
+export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPreview, cursorRef, onSeek }) {
   const scrollRef = useRef(null)
   const gridRef = useRef(null)
   const keysRef = useRef(null)
   const rulerRef = useRef(null)
+  const seekRef = useRef(null) // dragging the playhead along the ruler
   const overviewRef = useRef(null)
   const lineRef = useRef(null)
   const [viewW, setViewW] = useState(600)
@@ -446,21 +447,17 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
     if (h.note) {
       const key = keyOf(h.note)
       let sel = selection
-      if (e.shiftKey) {
-        // shift-click adds or removes a note, without starting a drag
-        sel = new Set(selection)
-        sel.has(key) ? sel.delete(key) : sel.add(key)
-        setSelection(sel)
-        return
-      }
-      if (!sel.has(key)) { sel = new Set([key]); setSelection(sel) }
+      // shift: drag out a copy (as on the timeline); a shift-click without moving
+      // adds the note to the selection or takes it out
+      if (e.shiftKey && !sel.has(key)) sel = new Set([key])
+      if (!e.shiftKey && !sel.has(key)) { sel = new Set([key]); setSelection(sel) }
       onPreview(h.note.n)
       const group = channel.notes.filter((nt) => sel.has(keyOf(nt)))
       if (h.edge) {
         dragRef.current = { mode: 'resize', group, anchor: h.note }
       } else {
-        // ctrl/cmd + drag moves copies and leaves the originals where they were
-        dragRef.current = { mode: 'move', group, copy: mod, grabStep: h.step, grabMidi: h.midi, moved: false }
+        // shift or ctrl/cmd + drag moves copies and leaves the originals where they were
+        dragRef.current = { mode: 'move', group, copy: mod || e.shiftKey, toggle: e.shiftKey ? key : null, grabStep: h.step, grabMidi: h.midi, moved: false }
       }
       return
     }
@@ -528,6 +525,10 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
     if (d.mode === 'move' && d.current && d.moved) {
       selectKeys(d.current)
       return commit(merge(channel.notes, d.copy ? [] : d.group, d.current))
+    }
+    // a shift-click that didn't move adds the note to the selection, or takes it out
+    if (d.mode === 'move' && d.toggle && !d.moved) {
+      setSelection((sel) => { const next = new Set(sel); next.has(d.toggle) ? next.delete(d.toggle) : next.add(d.toggle); return next })
     }
     setDraft(null)
   }
@@ -627,7 +628,7 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
           <button type="button" className={`node-btn ${follow ? 'on' : ''}`} aria-pressed={follow} onClick={() => setFollow((v) => !v)} title="Keep the playhead in view while playing">follow</button>
           <span className="pr-spacer" />
           {selection.size > 0 && <span className="pr-selected">{selection.size} selected</span>}
-          <span className="pr-hint" title="ctrl/cmd + A selects all · shift + click adds · ctrl/cmd + drag draws a box · drag moves the selection · ctrl/cmd + drag a note copies · ctrl/cmd + C / X / V / D · arrows move · delete removes · ctrl/cmd + scroll zooms · alt + scroll sizes rows · ctrl/cmd + middle-drag zooms steps and rows · middle-drag or alt + drag pans">{barCount} bar{barCount === 1 ? '' : 's'} · ctrl/cmd+A all · ctrl/cmd+drag box · ctrl/cmd+C/V/D · middle-drag pans</span>
+          <span className="pr-hint" title="ctrl/cmd + A selects all · shift + click adds, shift + drag copies · drag the ruler moves the playhead · ctrl/cmd + drag draws a box · drag moves the selection · ctrl/cmd + drag a note copies · ctrl/cmd + C / X / V / D · arrows move · delete removes · ctrl/cmd + scroll zooms · alt + scroll sizes rows · ctrl/cmd + middle-drag zooms steps and rows · middle-drag or alt + drag pans">{barCount} bar{barCount === 1 ? '' : 's'} · shift+drag copies · drag the ruler to move the playhead · ctrl/cmd+A all · middle-drag pans</span>
           <button type="button" className={`node-btn ${full ? 'on' : ''}`} onClick={() => setFull((v) => !v)} title="Full screen (F, Esc to close)">{full ? 'close' : 'full screen'}</button>
         </div>
         <canvas
@@ -661,12 +662,25 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
             <canvas
               className="pr-ruler"
               ref={rulerRef}
-              title="Click a bar to jump there"
+              title={onSeek ? 'Drag to move the playhead · alt: off the step grid · shift-click to scroll here' : 'Click a bar to jump there'}
               onPointerDown={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect()
-                const bar = Math.floor((e.clientX - rect.left) / colW / pattern.stepsPerBar)
-                scrollRef.current.scrollTo({ left: bar * pattern.stepsPerBar * colW, behavior: 'smooth' })
+                const at = (x) => (x - rect.left) / colW / pattern.stepsPerBar // bars into the pattern
+                if (!onSeek || e.shiftKey || e.button !== 0) {
+                  scrollRef.current.scrollTo({ left: Math.floor(at(e.clientX)) * pattern.stepsPerBar * colW, behavior: 'smooth' })
+                  return
+                }
+                e.currentTarget.setPointerCapture(e.pointerId)
+                seekRef.current = true
+                onSeek(at(e.clientX), { fine: e.altKey })
               }}
+              onPointerMove={(e) => {
+                if (!seekRef.current) return
+                const rect = e.currentTarget.getBoundingClientRect()
+                onSeek((e.clientX - rect.left) / colW / pattern.stepsPerBar, { fine: e.altKey })
+              }}
+              onPointerUp={() => { seekRef.current = null }}
+              onPointerCancel={() => { seekRef.current = null }}
             />
             <canvas
               className="pr-keys"
