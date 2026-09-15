@@ -48,9 +48,30 @@ function scratchCode() {
 }
 
 /** What was open last in this browser: a track id, or 'scratch'. Opening the site goes back to it. */
+/*
+ * What to reopen when the site is opened at /. Three notes in this browser:
+ *   lattice:last-track   the last saved track that was open (a scratch pad never overwrites it)
+ *   lattice:last-open    'track' or 'scratch': which of the two was worked on last
+ *   lattice:scratch-work 'yes' once you've changed something on the scratch pad
+ * The scratch pad only wins when you actually changed it; loading, re-saving or starting a
+ * new track doesn't count, so the default template never takes over from your track.
+ */
+const LAST_TRACK = 'lattice:last-track'
 const LAST_OPEN = 'lattice:last-open'
-const rememberOpen = (id) => { try { localStorage.setItem(LAST_OPEN, id || 'scratch') } catch { /* storage unavailable */ } }
-const lastOpen = () => { try { return localStorage.getItem(LAST_OPEN) } catch { return null } }
+const SCRATCH_WORK = 'lattice:scratch-work'
+const store = {
+  get: (key) => { try { return localStorage.getItem(key) } catch { return null } },
+  set: (key, value) => { try { value == null ? localStorage.removeItem(key) : localStorage.setItem(key, value) } catch { /* storage unavailable */ } },
+}
+const rememberTrack = (id) => { store.set(LAST_TRACK, id); store.set(LAST_OPEN, 'track') }
+const rememberScratchWork = () => { store.set(SCRATCH_WORK, 'yes'); store.set(LAST_OPEN, 'scratch') }
+const forgetScratchWork = () => store.set(SCRATCH_WORK, null)
+const lastTrack = () => {
+  const id = store.get(LAST_TRACK)
+  if (id) return id
+  const old = store.get(LAST_OPEN) // before these notes: the id itself, or 'scratch'
+  return old && old !== 'scratch' && old !== 'track' ? old : null
+}
 
 // start the audio engine on the first click or key, so a keyboard play gets effects too
 for (const type of ['pointerdown', 'keydown']) window.addEventListener(type, () => ensureAudio(), { once: true, capture: true })
@@ -77,9 +98,10 @@ export default function App() {
   useEffect(() => {
     if (reopened.current) return
     if (trackId || location.state?.fresh || location.key !== 'default') { reopened.current = true; return }
-    const last = lastOpen()
-    if (last && last !== 'scratch') { reopened.current = true; navigate(`/t/${last}`, { replace: true }); return }
-    if (hadScratch.current) { reopened.current = true; return } // the scratch pad has your work
+    const scratchWins = store.get(LAST_OPEN) === 'scratch' && store.get(SCRATCH_WORK) === 'yes' && hadScratch.current
+    if (scratchWins) { reopened.current = true; return } // you were last working on the scratch pad
+    const last = lastTrack()
+    if (last) { reopened.current = true; navigate(`/t/${last}`, { replace: true }); return }
     if (userLoading) return // wait to know who's here
     reopened.current = true
     if (!user) return
@@ -311,7 +333,6 @@ export default function App() {
     const editor = editorRef.current
     const base = editor && parseProject(editor.code)
     if (!base) return
-    rememberOpen(loadedIdRef.current) // working on it makes it the one to come back to
     const before = JSON.stringify(base)
     const draft = JSON.parse(before)
     const result = mutate(draft)
@@ -319,6 +340,8 @@ export default function App() {
     const next = normalizeProject(result && Array.isArray(result.patterns) && Array.isArray(result.tracks) ? result : draft)
     const text = generateCode(next, genRef.current)
     if (text === editor.code) return
+    // a real change on the scratch pad makes it the thing to come back to (regenerating doesn't)
+    if (loadedIdRef.current == null && JSON.stringify(next) !== before) rememberScratchWork()
     const h = historyRef.current
     const now = Date.now()
     if (JSON.stringify(next) !== before && now - h.lastAt > 500) {
@@ -426,7 +449,7 @@ export default function App() {
       // once per click (not again on sign-in), and only just after it: a reload of that page later is not a click
       const startOver = fresh && freshHandledRef.current !== fresh && Date.now() - fresh < 10000
       freshHandledRef.current = fresh
-      if (startOver) rememberOpen(null)
+      if (startOver) forgetScratchWork() // a fresh pad isn't work yet
       const previous = readDraft(null)
       putCode(null, startOver ? generateCode(freshTemplate === 'demo' ? demoProject() : blankProject()) : scratchCode())
       // The "start over" note rides along in the history entry, and a reload keeps it: drop it
@@ -449,7 +472,7 @@ export default function App() {
         setTrack(t)
         setTitle(t.title)
         setVisibility(t.visibility)
-        rememberOpen(trackId)
+        rememberTrack(trackId)
         putCode(trackId, readDraft(trackId, t.updated_at) ?? t.code)
         if (pendingPlayRef.current === trackId) {
           pendingPlayRef.current = null
@@ -458,7 +481,7 @@ export default function App() {
       })
       .catch((e) => {
         if (!alive) return
-        if (lastOpen() === trackId) rememberOpen(null) // don't keep reopening a track that's gone
+        if (lastTrack() === trackId) store.set(LAST_TRACK, null) // don't keep reopening a track that's gone
         setLoadError(e.status === 404 ? 'This track doesn’t exist, or it’s private.' : e.message)
       })
     return () => { alive = false }
@@ -493,6 +516,7 @@ export default function App() {
       if (isNew) {
         const t = await api('/tracks', { method: 'POST', body })
         clearDraft(null)
+        forgetScratchWork() // it's a saved track now
         navigate(`/t/${t.id}`)
       } else {
         const t = await api(`/tracks/${trackId}`, { method: 'PUT', body })
