@@ -809,8 +809,26 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
   const removeNodes = useCallback((ids) => {
     const gone = new Set(ids)
     onUpdateProject((p) => {
+      // Taking a node out of a line keeps the line: whatever fed it now feeds what it fed.
+      // Only for a node with a single wire in (through any other removed nodes in a row);
+      // a node mixing several inputs has no one thing to pass on, so its wires just go.
+      const feed = (id, seen = new Set()) => {
+        if (seen.has(id)) return null
+        seen.add(id)
+        const ins = p.edges.filter((e) => e.target === id)
+        if (ins.length !== 1) return null
+        return gone.has(ins[0].source) ? feed(ins[0].source, seen) : ins[0].source
+      }
+      const bridges = p.edges
+        .filter((e) => gone.has(e.source) && !gone.has(e.target))
+        .map((e) => ({ source: feed(e.source), target: e.target, targetHandle: e.targetHandle }))
+        .filter((b) => b.source)
       p.nodes = p.nodes.filter((n) => !gone.has(n.id))
       p.edges = p.edges.filter((e) => !gone.has(e.source) && !gone.has(e.target))
+      for (const b of bridges) {
+        const taken = p.edges.some((e) => e.target === b.target && e.targetHandle === b.targetHandle)
+        if (!taken && !makesCycle(p.edges, b.source, b.target)) p.edges.push(b)
+      }
     })
     if (gone.has(solo)) onSolo(null)
   }, [onUpdateProject, solo, onSolo])
@@ -1024,10 +1042,13 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
             }}
             onNodesChange={(changes) => setNodes((ns) => applyNodeChanges(changes.filter((c) => c.type !== 'remove'), ns))}
             onEdgesChange={(changes) => setEdges((es) => applyEdgeChanges(changes.filter((c) => c.type !== 'remove'), es))}
-            onNodesDelete={(deleted) => removeNodes(deleted.map((n) => n.id))}
-            onEdgesDelete={(deleted) => {
-              const gone = new Set(deleted.map((e) => e.id))
-              onUpdateProject((p) => { p.edges = p.edges.filter((e) => !gone.has(e.id)) })
+            onDelete={({ nodes: deletedNodes, edges: deletedEdges }) => {
+              // one handler for both: the wires React Flow deletes along with nodes must still be
+              // there when removeNodes bridges the line around them
+              const gone = new Set(deletedNodes.map((n) => n.id))
+              const wires = new Set(deletedEdges.filter((e) => !gone.has(e.source) && !gone.has(e.target)).map((e) => e.id))
+              if (wires.size) onUpdateProject((p) => { p.edges = p.edges.filter((e) => !wires.has(e.id)) })
+              if (gone.size) removeNodes([...gone])
             }}
             onNodeDrag={(_, node, dragged) => {
               // a lone, unwired node that has an input and an output can drop into a wire, and so
