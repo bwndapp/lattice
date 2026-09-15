@@ -34,7 +34,8 @@ export function declareInsert(list, orbit, key, kind, params) {
 export function commitInserts(list, { partial = false } = {}) {
   const next = partial ? new Map([...declared, ...list]) : list
   declared = next
-  apply()
+  // the audio side must never break generating the code (and so the whole app)
+  try { apply() } catch (err) { console.warn('[stereo] could not update the stereo inserts', err) }
 }
 
 function apply() {
@@ -53,7 +54,11 @@ function install() {
   if (!navigator.userActivation?.hasBeenActive) {
     if (!armed) {
       armed = true
-      const go = () => { window.removeEventListener('pointerdown', go, true); window.removeEventListener('keydown', go, true); apply() }
+      const go = () => {
+        window.removeEventListener('pointerdown', go, true)
+        window.removeEventListener('keydown', go, true)
+        try { apply() } catch (err) { console.warn('[stereo] could not update the stereo inserts', err) }
+      }
       window.addEventListener('pointerdown', go, true)
       window.addEventListener('keydown', go, true)
     }
@@ -67,7 +72,9 @@ function install() {
   ctl.getOrbit = (n, channels) => {
     const fresh = ctl.nodes[n] == null
     const orbit = getOrbit(n, channels)
-    if ((n >= STEREO_ORBIT_BASE || declared.has(n)) && (fresh || racks.get(n)?.orbit !== orbit)) mount(n, orbit, channels)
+    if ((n >= STEREO_ORBIT_BASE || declared.has(n)) && (fresh || racks.get(n)?.orbit !== orbit)) {
+      try { mount(n, orbit, channels) } catch (err) { console.warn('[stereo] could not insert on bus', n, err) }
+    }
     return orbit
   }
   return true
@@ -123,7 +130,9 @@ function wire(n, rack, inserts) {
   from.connect(rack.output)
 }
 
-const smooth = (param, value) => param.setTargetAtTime(value, param.context.currentTime, 0.02)
+const smooth = (param, value) => {
+  if (Number.isFinite(value)) param.setTargetAtTime(value, getAudioContext().currentTime, 0.02)
+}
 
 const UNITS = {
   /** Delay one ear by a few milliseconds: the ear hears the other side first, and the sound spreads. */

@@ -30,7 +30,8 @@ export function liveBus(nodeId, param, base, scale = 1) {
   const id = 1_000_000 + (hash(`${key}|${base}`) % 8_000_000)
   buses.set(id, { key, base, scale, at: Date.now() })
   knobs.set(key, base) // the code is generated from the knobs, so this is where the knob is now
-  sync(key)
+  // the audio side must never break generating the code (and so the whole app)
+  try { sync(key) } catch (err) { console.warn('[live] could not move ringing notes', err) }
   return id
 }
 
@@ -59,7 +60,11 @@ function install() {
   if (!navigator.userActivation?.hasBeenActive) {
     if (!armed) {
       armed = true
-      const go = () => { window.removeEventListener('pointerdown', go, true); window.removeEventListener('keydown', go, true); sync() }
+      const go = () => {
+        window.removeEventListener('pointerdown', go, true)
+        window.removeEventListener('keydown', go, true)
+        try { sync() } catch (err) { console.warn('[live] could not move ringing notes', err) }
+      }
       window.addEventListener('pointerdown', go, true)
       window.addEventListener('keydown', go, true)
     }
