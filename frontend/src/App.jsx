@@ -603,15 +603,30 @@ export default function App() {
   const keysRef = useRef({})
   keysRef.current = { play, save, stop, pause, toStart, undo, redo, isProject: !!project }
   useEffect(() => {
-    const typing = (el) => el?.closest?.('input, textarea, select, button, [contenteditable="true"]')
+    // only places you type text keep space and Home for themselves. A focused button, slider,
+    // checkbox or dropdown doesn't: clicking one leaves focus on it, and space must still play.
+    const TEXT_INPUT = 'input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]):not([type=color]):not([type=file]), textarea'
+    const typing = (el) => {
+      if (el?.closest?.(TEXT_INPUT)) return true
+      const editable = el?.closest?.('[contenteditable="true"]')
+      if (!editable || !editable.getClientRects().length) return false
+      // the code editor keeps space only while you can type in it: a patch's code is read-only
+      return !(keysRef.current.isProject && editable.closest('.cm-editor'))
+    }
+    let spaceDown = false
     const onKeyDown = (e) => {
       const mod = e.ctrlKey || e.metaKey
       if (!mod && !e.altKey && !typing(e.target)) {
         // DAW keys outside text fields: space plays/pauses, Home goes to the start
-        if (e.key === ' ') editorRef.current?.repl.scheduler.started ? keysRef.current.pause() : keysRef.current.play()
-        else if (e.key === 'Home') keysRef.current.toStart()
+        const space = e.key === ' ' || e.code === 'Space'
+        if (space) {
+          // held down, the key repeats: one press is one toggle
+          if (!e.repeat && !spaceDown) editorRef.current?.repl.scheduler.started ? keysRef.current.pause() : keysRef.current.play()
+          spaceDown = true
+        } else if (e.key === 'Home') keysRef.current.toStart()
         else return
-        e.preventDefault()
+        e.preventDefault() // no page scroll, and no click on the focused button
+        e.stopPropagation() // nor a second use of the key by the canvas, piano roll or a dropdown
         return
       }
       if (!(mod || e.altKey)) return
@@ -630,8 +645,22 @@ export default function App() {
       e.preventDefault()
       e.stopPropagation()
     }
+    // a focused button clicks itself when space comes back up: that's the press we already used
+    const onKeyUp = (e) => {
+      if (e.key !== ' ' && e.code !== 'Space') return
+      const handled = spaceDown
+      spaceDown = false
+      if (handled && !typing(e.target)) { e.preventDefault(); e.stopPropagation() }
+    }
+    const reset = () => { spaceDown = false }
     window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
+    window.addEventListener('keyup', onKeyUp, true)
+    window.addEventListener('blur', reset)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true)
+      window.removeEventListener('keyup', onKeyUp, true)
+      window.removeEventListener('blur', reset)
+    }
   }, [])
 
   // ctrl/cmd + scroll (and trackpad pinch, which browsers send the same way) zooms things
