@@ -127,6 +127,13 @@ export default function App() {
   const [solo, setSolo] = useState(null)
   const [confirmClear, setConfirmClear] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  // the canvas switch slides first, then the (heavier) canvas changes, so the slide starts at once
+  const [switching, setSwitching] = useState(null)
+  const switchCanvas = (to) => {
+    if (to === view) return
+    setSwitching(to)
+    requestAnimationFrame(() => requestAnimationFrame(() => { setView(to); setSwitching(null) }))
+  }
   const genRef = useRef({ solo: null })
   genRef.current = { solo }
   const readOnlyRef = useRef(null)
@@ -674,9 +681,10 @@ export default function App() {
         )}
         </div>
         {/* what the canvas shows: the patch or the song */}
-        <span className="canvas-switch" role="group" aria-label="Canvas">
-          <button className={`btn ${view === 'graph' ? 'on' : ''}`} aria-pressed={view === 'graph'} onClick={() => setView('graph')} title="The patch: what each part goes through">patch</button>
-          <button className={`btn ${view === 'song' ? 'on' : ''}`} aria-pressed={view === 'song'} onClick={() => setView('song')} title="The song: when each part plays" disabled={!project}>song</button>
+        <span className={`canvas-switch ${(switching ?? view) === 'song' ? 'at-first' : (switching ?? view) === 'graph' ? 'at-second' : 'at-neither'}`} role="group" aria-label="Canvas">
+          <span className="cs-thumb" aria-hidden />
+          <button className={`cs-opt ${(switching ?? view) === 'song' ? 'on' : ''}`} aria-pressed={view === 'song'} onClick={() => switchCanvas('song')} title="The timeline: when each part plays" disabled={!project}>timeline</button>
+          <button className={`cs-opt ${(switching ?? view) === 'graph' ? 'on' : ''}`} aria-pressed={view === 'graph'} onClick={() => switchCanvas('graph')} title="The patch: what each part goes through">patch</button>
         </span>
         <div className="bar-side right">
         {project && (
@@ -808,8 +816,8 @@ export default function App() {
         {/* phones: every view in a tab bar along the bottom */}
         <span className="seg views phone-tabs" role="group" aria-label="View">
           <button className={`btn ${view === 'browse' ? 'on' : ''}`} aria-pressed={view === 'browse'} onClick={() => setView('browse')} title="Tracks people have shared, and yours">browse</button>
+          {project && <button className={`btn ${view === 'song' ? 'on' : ''}`} aria-pressed={view === 'song'} onClick={() => setView('song')} title="The timeline: when each part plays">timeline</button>}
           <button className={`btn ${view === 'graph' ? 'on' : ''}`} aria-pressed={view === 'graph'} onClick={() => setView('graph')} title="The patch: what each part goes through">patch</button>
-          {project && <button className={`btn ${view === 'song' ? 'on' : ''}`} aria-pressed={view === 'song'} onClick={() => setView('song')} title="The song: when each part plays">song</button>}
           <button
             className={`btn code-toggle ${view === 'code' ? 'on' : ''} ${evalError && view !== 'code' ? 'has-error' : ''}`}
             aria-pressed={view === 'code'}
