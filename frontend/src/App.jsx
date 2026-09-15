@@ -19,6 +19,7 @@ import { Glass } from './Glass.jsx'
 import { AutomationEditor } from './Automation.jsx'
 import { routeVoice } from './fxbus.js'
 import Versions from './Versions.jsx'
+import ProgramMenu from './ProgramMenu.jsx'
 import { AutomationContext, autoLive } from './autoLive.js'
 import { AUTO_PREFIX, activeAutos, autoValueFn, resolveTarget, toPos } from './automation.js'
 import { capturePatterns, parseLanes, tempoChange } from './lanes'
@@ -855,6 +856,83 @@ export default function App() {
     }
   }, [])
 
+  // ── the program menu ──
+  const hasPatch = !!project?.nodes.some((n) => n.type !== 'output')
+  const menuHeader = (
+    <div className="pm-head">
+      <span className="pm-head-title">{isNew ? (title.trim() || 'scratch pad') : track?.title ?? (loadError ? 'no track' : 'loading…')}</span>
+      <span className="pm-head-status">
+        {isNew ? 'not saved as a track yet' : track ? (isOwner ? `saved ${timeAgo(track.updated_at)}` : `by ${track.author}`) : ''}
+        {codeChanged && <span className="unsaved"> · unsaved changes</span>}
+      </span>
+    </div>
+  )
+  const programMenus = [
+    {
+      label: 'file',
+      items: [
+        { label: 'new track', onSelect: () => newTrack('blank'), hint: 'The open track stays as it is' },
+        { label: 'new from the demo patch', onSelect: () => newTrack('demo') },
+        { label: 'open…', onSelect: () => setView('browse'), hint: 'Your tracks and shared ones' },
+        'line',
+        canEdit && { label: isNew ? 'save as a track' : 'save', shortcut: 'ctrl/cmd S', onSelect: () => save(), disabled: busy || (!!user && !dirty) },
+        isOwner && { label: 'save as a new track', shortcut: 'ctrl/cmd shift S', onSelect: () => saveAsNew(), disabled: busy, hint: 'This track stays as it was saved' },
+        !canEdit && track && { label: 'remix into your tracks', onSelect: () => remix(), disabled: busy },
+        isOwner && { label: 'saved versions…', onSelect: () => setShowVersions(true), hint: 'Every save is kept' },
+        codeChanged && track && { label: isOwner ? 'go back to the saved version' : 'undo my changes', onSelect: () => revert() },
+        track && 'line',
+        track && { label: 'copy link', onSelect: () => share() },
+      ],
+    },
+    {
+      label: 'edit',
+      items: [
+        { label: 'undo', shortcut: 'ctrl/cmd Z', onSelect: () => undo(), disabled: !historyRef.current.past.length },
+        { label: 'redo', shortcut: 'ctrl/cmd shift Z', onSelect: () => redo(), disabled: !historyRef.current.future.length },
+        project && canEdit && 'line',
+        project && canEdit && { label: 'clear the patch…', onSelect: () => setConfirmClear(true), disabled: !hasPatch, hint: 'Empty the patch: nodes, wires, patterns and the song' },
+      ],
+    },
+    {
+      label: 'view',
+      items: [
+        project && { label: 'timeline', checked: view === 'song', onSelect: () => switchCanvas('song') },
+        project && { label: 'patch', checked: view === 'graph', onSelect: () => switchCanvas('graph') },
+        { label: evalError ? 'code (has an error)' : 'code', shortcut: 'ctrl/cmd J', checked: view === 'code', onSelect: () => setView('code') },
+        { label: 'browse tracks', checked: view === 'browse', onSelect: () => setView('browse') },
+      ],
+    },
+    canEdit && {
+      label: 'track',
+      items: [
+        { heading: 'name' },
+        { custom: <input className="tm-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="untitled" maxLength={80} aria-label="Track title" /> },
+        { heading: 'visible to' },
+        ...[['public', 'anyone', 'Listed in explore'], ['unlisted', 'anyone with the link', 'Not listed'], ['private', 'only me', 'Only you']].map(([v, label, hint]) => ({ label, hint, checked: visibility === v, onSelect: () => setVisibility(v) })),
+        project && { heading: 'beats per bar' },
+        project && {
+          custom: (
+            <select className="select tm-select" value={transport.beats} aria-label="Beats per bar" onChange={(e) => { const beats = Number(e.target.value); transport.setBeats(beats); updateProject((p) => { p.beats = beats }) }}>
+              {[2, 3, 4, 5, 6, 7, 8].map((n) => <option key={n} value={n}>{n}/4</option>)}
+            </select>
+          ),
+        },
+        isOwner && 'line',
+        isOwner && { label: 'delete track…', danger: true, onSelect: () => setConfirmDelete(true), hint: 'Remove the saved track for everyone' },
+      ],
+    },
+    {
+      label: 'account',
+      items: user ? [
+        { heading: user.name || user.email },
+        { label: 'your tracks', onSelect: () => setView('browse') },
+        { label: 'sign out', onSelect: () => logout(window.location.pathname) },
+      ] : [
+        { label: userLoading ? 'checking…' : 'sign in', disabled: userLoading, onSelect: () => login(), hint: 'Save, like and remix with your blue wind account' },
+      ],
+    },
+  ].filter(Boolean)
+
   return (
     <div className="studio">
       <header className="bar">
@@ -917,12 +995,6 @@ export default function App() {
           <button className={`cs-opt ${(switching ?? view) === 'graph' ? 'on' : ''}`} aria-pressed={view === 'graph'} onClick={() => switchCanvas('graph')} title="The patch: what each part goes through">patch</button>
         </span>
         <div className="bar-side right">
-        {project && (
-          <span className="seg history" role="group" aria-label="History">
-            <button className="btn" onClick={undo} disabled={!historyRef.current.past.length} title="Undo (ctrl/cmd + Z)" aria-label="Undo">undo</button>
-            <button className="btn" onClick={redo} disabled={!historyRef.current.future.length} title="Redo (ctrl/cmd + shift + Z)" aria-label="Redo">redo</button>
-          </span>
-        )}
         <span className="track" role="group" aria-label="Track">
           {loadError ? (
             <span className="meta track-status" title={loadError}>{loadError} <Link className="linkish" to="/">new track</Link></span>
@@ -940,79 +1012,9 @@ export default function App() {
                 aria-label="Track title"
                 title={isNew ? 'Scratch pad · not saved yet' : `saved ${timeAgo(track.updated_at)}`}
               />
-              <span className="save-split" role="group" aria-label="Save">
-                <button className={`btn save ${dirty || !user ? 'primary' : ''} ${user ? '' : 'signed-out'}`} onClick={() => save()} disabled={busy || (!!user && !dirty)} title={!user ? 'Sign in to save this track' : dirty ? (isNew ? 'Save as a track (ctrl/cmd + S)' : `Save “${track?.title}” (ctrl/cmd + S)`) : 'Everything is saved'}>
-                  {busy ? 'saving…' : !user || dirty ? 'save' : 'saved'}
-                </button>
-                <Popover label={<svg viewBox="0 0 10 10" width="10" height="10" aria-hidden><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>} title="Save, save as a new track, new track" className={`save-more ${dirty || !user ? 'primary' : ''}`} panelClassName="file-menu">
-                  {(close) => (
-                    <>
-                      <button type="button" className="file-item" disabled={busy || (!!user && !dirty)} onClick={() => { close(); save() }}>
-                        <span>{isNew ? 'save as a track' : 'save'}</span><kbd>ctrl/cmd S</kbd>
-                      </button>
-                      <button type="button" className="file-item" disabled={busy || isNew} onClick={() => { close(); saveAsNew() }} title={isNew ? 'The scratch pad isn\'t a track yet: save makes it one' : undefined}>
-                        <span>save as a new track</span><kbd>ctrl/cmd ⇧ S</kbd>
-                      </button>
-                      <hr className="file-line" />
-                      <button type="button" className="file-item" onClick={() => { close(); newTrack('blank') }}><span>new track</span></button>
-                      <button type="button" className="file-item" onClick={() => { close(); newTrack('demo') }}><span>new from the demo patch</span></button>
-                      <button type="button" className="file-item" onClick={() => { close(); setView('browse') }}><span>open a track…</span></button>
-                      {isOwner && (
-                        <>
-                          <hr className="file-line" />
-                          <button type="button" className="file-item" onClick={() => { close(); setShowVersions(true) }}><span>saved versions</span></button>
-                        </>
-                      )}
-                    </>
-                  )}
-                </Popover>
-              </span>
-              <button className="btn new-track-btn" onClick={() => newTrack('blank')} title="Start a new track: the open one stays as it is" aria-label="New track">+<span className="new-word"> new</span></button>
-              <Popover label="···" title="Track: title, who can see it, share, clear, delete" className="track-more" panelClassName="track-menu">
-                {(close) => (
-                  <>
-                    <input className="tm-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="untitled" maxLength={80} aria-label="Track title" />
-                    <p className="tm-status">
-                      {isNew ? 'scratch pad · not saved as a track yet' : <>saved {timeAgo(track.updated_at)} · ♥{track.likes} · {track.plays} play{track.plays === 1 ? '' : 's'}</>}
-                      {codeChanged && <span className="tm-unsaved"> · unsaved changes</span>}
-                      {track?.parent && <> · remix of <Link className="linkish" to={`/t/${track.parent.id}`} onClick={close}>{track.parent.title}</Link></>}
-                    </p>
-                    <div className="tm-row">
-                      <span>visible to</span>
-                      <span className="tm-seg" role="group" aria-label="Who can see it">
-                        {[['public', 'anyone'], ['unlisted', 'link'], ['private', 'only me']].map(([v, label]) => (
-                          <button key={v} type="button" className={visibility === v ? 'on' : ''} aria-pressed={visibility === v} onClick={() => setVisibility(v)} title={{ public: 'Listed in explore', unlisted: 'Anyone with the link, not listed', private: 'Only you' }[v]}>{label}</button>
-                        ))}
-                      </span>
-                    </div>
-                    {project && (
-                      <label className="tm-row">
-                        <span>beats per bar</span>
-                        <select
-                          className="select tm-select"
-                          value={transport.beats}
-                          onChange={(e) => { const beats = Number(e.target.value); transport.setBeats(beats); updateProject((p) => { p.beats = beats }) }}
-                        >
-                          {[2, 3, 4, 5, 6, 7, 8].map((n) => <option key={n} value={n}>{n}/4</option>)}
-                        </select>
-                      </label>
-                    )}
-                    <hr className="file-line" />
-                    {isOwner && <button type="button" className="file-item" onClick={() => { close(); share() }}><span>copy link</span></button>}
-                    {isOwner && <button type="button" className="file-item" onClick={() => { close(); setShowVersions(true) }} title="Every save is kept: open an earlier one"><span>saved versions…</span></button>}
-                    {isOwner && codeChanged && (
-                      <button type="button" className="file-item" onClick={() => { close(); revert() }} title={`Swap in the version saved ${timeAgo(track.updated_at)} · ctrl/cmd + Z brings your changes back`}><span>go back to the saved version</span></button>
-                    )}
-                    {project && (
-                      <>
-                        <hr className="file-line" />
-                        <button type="button" className="file-item" onClick={() => { close(); setConfirmClear(true) }} disabled={!project.nodes.some((n) => n.type !== 'output')} title="Empty the patch: nodes, wires, patterns and the song"><span>clear the patch…</span></button>
-                      </>
-                    )}
-                    {isOwner && <button type="button" className="file-item danger" onClick={() => { close(); setConfirmDelete(true) }} title="Remove the saved track for everyone"><span>delete track…</span></button>}
-                  </>
-                )}
-              </Popover>
+              <button className={`btn save ${dirty || !user ? 'primary' : ''} ${user ? '' : 'signed-out'}`} onClick={() => save()} disabled={busy || (!!user && !dirty)} title={!user ? 'Sign in to save this track' : dirty ? (isNew ? 'Save as a track (ctrl/cmd + S)' : `Save “${track?.title}” (ctrl/cmd + S)`) : 'Everything is saved'}>
+                {busy ? 'saving…' : !user || dirty ? 'save' : 'saved'}
+              </button>
             </>
           ) : track ? (
             <>
@@ -1021,50 +1023,18 @@ export default function App() {
                 <span className="meta">by {track.author}</span>
               </span>
               <button className={`btn ${track.liked ? 'on' : ''}`} onClick={like} title="Like">♥{track.likes}</button>
-              <button className="btn" onClick={remix} disabled={busy} title="Make your own copy to change">remix</button>
-              <Popover label="···" title="Track: share, details" className="track-more" panelClassName="track-menu">
-                {(close) => (
-                  <>
-                    <p className="tm-heading">{track.title}</p>
-                    <p className="tm-status">
-                      by {track.author} · {track.plays} play{track.plays === 1 ? '' : 's'} · {timeAgo(track.updated_at)}
-                      {track.parent && <> · remix of <Link className="linkish" to={`/t/${track.parent.id}`} onClick={close}>{track.parent.title}</Link></>}
-                    </p>
-                    <hr className="file-line" />
-                    <button type="button" className="file-item" onClick={() => { close(); share() }}><span>copy link</span></button>
-                    <button type="button" className="file-item" onClick={() => { close(); remix() }} disabled={busy}><span>remix into your tracks</span></button>
-                    {codeChanged && <button type="button" className="file-item" onClick={() => { close(); revert() }} title="Your changes here aren't saved anywhere: go back to the track as its author saved it"><span>undo my changes</span></button>}
-                  </>
-                )}
-              </Popover>
             </>
           ) : null}
         </span>
-        <span className="seg side-views" role="group" aria-label="More views">
-          <button className={`btn ${view === 'browse' ? 'on' : ''}`} aria-pressed={view === 'browse'} onClick={() => setView('browse')} title="Tracks people have shared, and yours">browse</button>
-          <button
-            className={`btn code-toggle ${view === 'code' ? 'on' : ''} ${evalError && view !== 'code' ? 'has-error' : ''}`}
-            aria-pressed={view === 'code'}
-            title="Show the code (ctrl/cmd + J)"
-            onClick={toggleView}
-          >{'{ }'}<span className="code-word"> code</span>{evalError && view !== 'code' ? ' !' : ''}</button>
-        </span>
-        {userLoading ? null : user ? (
-          <span className="user">
-            {/* who's signed in, and signing out, behind the initial: the bar keeps its room for the track */}
-            <Popover label={(user.name || user.email || '?').trim()[0].toUpperCase()} title={`Signed in as ${user.name || user.email}`} className="avatar-btn" panelClassName="user-menu">
-              {(close) => (
-                <>
-                  <p className="user-menu-who">Signed in as <strong>{user.name || user.email}</strong>{user.name && user.email ? <span>{user.email}</span> : null}</p>
-                  <button type="button" className="file-item" onClick={() => { close(); setView('browse') }}><span>your tracks</span></button>
-                  <button type="button" className="file-item" onClick={() => { close(); logout(window.location.pathname) }}><span>sign out</span></button>
-                </>
-              )}
-            </Popover>
-          </span>
-        ) : (
-          <button className="btn primary" onClick={() => login()}>Sign in</button>
-        )}
+        {/* everything else lives in one menu, like a desktop program's */}
+        <Popover
+          label={<><svg viewBox="0 0 14 12" width="14" height="12" aria-hidden><path d="M1 2h12M1 6h12M1 10h12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg><span className="menu-word">menu</span></>}
+          title="File, edit, view, track, account"
+          className={`menu-btn ${evalError && view !== 'code' ? 'has-error' : ''}`}
+          panelClassName="program-menu"
+        >
+          {(close) => <ProgramMenu close={close} header={menuHeader} menus={programMenus} />}
+        </Popover>
         </div>
         {/* phones: every view in a tab bar along the bottom */}
         <span className="seg views phone-tabs" role="group" aria-label="View">

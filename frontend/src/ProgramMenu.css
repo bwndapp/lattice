@@ -1,0 +1,64 @@
+/* the one menu in the header (see ProgramMenu.jsx) */
+.btn.menu-btn { display: inline-flex; align-items: center; gap: 0.45rem; font-weight: 700; }
+.btn.menu-btn svg { display: block; }
+.btn.menu-btn.has-error { border-color: var(--danger); color: var(--danger); } /* the code has an error: view › code */
+@media (max-width: 1180px) { .menu-word { display: none; } }
+.popover.program-menu { padding: 0; overflow: visible; }
+
+.pm { width: 230px; padding: 0.3rem; }
+.pm-head { padding: 0.45rem 0.55rem 0.5rem; margin-bottom: 0.25rem; border-bottom: 1px solid var(--line); }
+.pm-head-title { display: block; font-family: var(--display); font-weight: 800; font-stretch: 112%; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pm-head-status { display: block; margin-top: 0.15rem; font-size: 10.5px; color: var(--muted); }
+.pm-head-status .unsaved { color: var(--acid); }
+
+.pm-list { list-style: none; margin: 0; padding: 0; }
+.pm-entry { position: relative; }
+.pm-menu, .pm-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.45rem 0.55rem;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  color: var(--paper);
+  background: none;
+  border: 0;
+  cursor: var(--ring);
+}
+.pm-menu span { flex: 1; }
+.pm-menu svg { color: var(--muted); }
+.pm-menu:hover, .pm-menu:focus-visible, .pm-entry.open > .pm-menu { background: rgba(255, 255, 255, 0.07); outline: none; }
+.pm-entry.open > .pm-menu svg { color: var(--acid); }
+
+/* a menu's items open to the left of the list (the menu sits at the right edge of the window) */
+.pm-sub {
+  position: absolute;
+  top: -0.3rem;
+  right: calc(100% + 0.35rem);
+  width: 285px;
+  padding: 0.3rem;
+  background: var(--panel);
+  border: 1px solid var(--acid);
+  box-shadow: 8px 8px 0 #000;
+  z-index: 1;
+}
+.pm-item:hover:not(:disabled), .pm-item:focus-visible { background: rgba(255, 255, 255, 0.07); outline: none; }
+.pm-item:disabled { color: #5a5a53; cursor: var(--dot); }
+.pm-item.danger { color: #e8836f; }
+.pm-item.danger:hover:not(:disabled) { color: var(--danger); }
+.pm-check { width: 0.7rem; flex: none; font-size: 8px; color: var(--acid); }
+.pm-label { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pm-item kbd { font: inherit; font-size: 9.5px; letter-spacing: -0.02em; color: var(--muted); white-space: nowrap; }
+.pm-line { margin: 0.25rem 0.2rem; border: 0; border-top: 1px solid var(--line); }
+.pm-heading { padding: 0.45rem 0.55rem 0.15rem 1.75rem; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.pm-custom { padding: 0.3rem 0.55rem 0.3rem 1.75rem; }
+.pm-custom .tm-title { width: 100%; margin: 0; }
+
+/* phones: no room to the side, so a menu's items open underneath */
+@media (max-width: 700px) {
+  .pm { width: min(300px, calc(100vw - 24px)); }
+  .pm-sub { position: static; width: auto; margin: 0.1rem 0 0.3rem 0.6rem; box-shadow: none; border-width: 0 0 0 1px; }
+  .pm-menu svg { transform: rotate(-90deg); }
+}
