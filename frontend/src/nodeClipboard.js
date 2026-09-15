@@ -1,8 +1,9 @@
 /**
  * Copy and paste for patch nodes. A copy holds the nodes (positions relative to their
  * top-left), the wires between them, and the patterns their pattern nodes play, so it
- * pastes the same way into this track or another one. Pasted patterns are copies too:
- * editing the pasted steps doesn't change the originals.
+ * pastes the same way into this track or another one. Pasted patterns are copies too, so
+ * editing the pasted steps doesn't change the originals, except when the original pattern
+ * is no longer played by any node (after a cut): then the paste plays it again.
  */
 import { newId } from './project'
 
@@ -54,6 +55,10 @@ function copyName(project, name) {
 export function pasteNodes(p, clip, at) {
   const patternIds = new Map()
   for (const pattern of clip.patterns ?? []) {
+    // the pattern is still here and nothing plays it (the nodes were cut, or deleted): paste
+    // plays that same pattern again instead of leaving it behind and making a copy
+    const idle = p.patterns.some((x) => x.id === pattern.id) && !p.nodes.some((node) => node.type === 'pattern' && node.data?.patternId === pattern.id)
+    if (idle) { patternIds.set(pattern.id, pattern.id); continue }
     const id = newId()
     patternIds.set(pattern.id, id)
     p.patterns.push({ ...clone(pattern), id, name: copyName(p, pattern.name), channels: (pattern.channels ?? []).map((c) => ({ ...clone(c), id: newId() })) })

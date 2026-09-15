@@ -44,6 +44,8 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const parts = useMemo(() => songParts(project), [project])
   const partBySrc = useMemo(() => new Map(parts.map((p) => [p.src, p])), [parts])
   const length = songLength(song)
+  const inPatch = parts.filter((p) => p.inPatch)
+  const unused = parts.filter((p) => !p.inPatch)
 
   const [ppb, setPpb] = useState(readZoom) // pixels per bar
   const [laneH, setLaneH] = useState(readRows) // row height
@@ -500,6 +502,36 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     setActivePart(src)
   }
 
+  const partRow = (part) => {
+    const count = song.clips.filter((c) => c.src === part.src).length
+    return (
+      <li key={part.src}>
+        <button
+          className={`song-part ${activePart === part.src ? 'active' : ''} ${part.inPatch ? '' : 'unused'}`}
+          style={{ '--clip': colorFor(part.src) }}
+          draggable
+          onDragStart={(e) => {
+            e.dataTransfer.setData(PART_MIME, part.src)
+            e.dataTransfer.effectAllowed = 'copy'
+            setActivePart(part.src)
+            setGhost({ src: part.src, start: 0, lane: -1, len: part.bars })
+          }}
+          onDragEnd={() => setGhost(null)}
+          onClick={() => setActivePart((a) => (a === part.src ? null : part.src))}
+          onDoubleClick={(e) => part.kind === 'pattern' && setEditing({ patternId: part.id, x: e.clientX + 60, y: e.clientY })}
+          title={part.kind === 'pattern' ? 'Double-click to edit its steps and notes' : 'A sound source from the patch'}
+        >
+          <span className="song-swatch" aria-hidden />
+          <span className="song-part-name">{part.name}</span>
+          <span className="song-part-meta">
+            {part.trigger ? 'trigger · always on' : part.kind === 'pattern' ? `${part.bars} bar${part.bars === 1 ? '' : 's'}${part.inPatch ? '' : ' · drop to add to the patch'}` : part.kind === 'sound' ? 'rhythm' : part.kind === 'notes' ? 'melody' : part.kind}
+            {count > 0 ? ` · ${count} clip${count === 1 ? '' : 's'}` : part.inPatch && song.on && song.clips.length && !part.trigger ? ' · silent in the song' : ''}
+          </span>
+        </button>
+      </li>
+    )
+  }
+
   const loop = transport.loop
   const songBars = Math.max(1, Math.ceil(length - 1e-9))
   const editingPattern = editing && project.patterns.find((p) => p.id === editing.patternId)
@@ -513,36 +545,19 @@ export default function Timeline({ project, onUpdateProject, transport, started 
         </div>
         <p className="song-parts-hint">Drag onto the timeline. Selected, you can also draw it on empty rows.</p>
         <ul className="song-part-list">
-          {parts.map((part) => {
-            const count = song.clips.filter((c) => c.src === part.src).length
-            return (
-              <li key={part.src}>
-                <button
-                  className={`song-part ${activePart === part.src ? 'active' : ''}`}
-                  style={{ '--clip': colorFor(part.src) }}
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData(PART_MIME, part.src)
-                    e.dataTransfer.effectAllowed = 'copy'
-                    setActivePart(part.src)
-                    setGhost({ src: part.src, start: 0, lane: -1, len: part.bars })
-                  }}
-                  onDragEnd={() => setGhost(null)}
-                  onClick={() => setActivePart((a) => (a === part.src ? null : part.src))}
-                  onDoubleClick={(e) => part.kind === 'pattern' && setEditing({ patternId: part.id, x: e.clientX + 60, y: e.clientY })}
-                  title={part.kind === 'pattern' ? 'Double-click to edit its steps and notes' : 'A sound source from the patch'}
-                >
-                  <span className="song-swatch" aria-hidden />
-                  <span className="song-part-name">{part.name}</span>
-                  <span className="song-part-meta">
-                    {part.trigger ? 'trigger · always on' : part.kind === 'pattern' ? `${part.bars} bar${part.bars === 1 ? '' : 's'}${part.inPatch ? '' : ' · not in patch'}` : part.kind === 'sound' ? 'rhythm' : part.kind === 'notes' ? 'melody' : part.kind}
-                    {count > 0 ? ` · ${count} clip${count === 1 ? '' : 's'}` : song.on && song.clips.length && !part.trigger ? ' · silent in the song' : ''}
-                  </span>
-                </button>
-              </li>
-            )
-          })}
+          {inPatch.map(partRow)}
         </ul>
+        {unused.length > 0 && (
+          <details className="song-unused">
+            <summary>
+              not in the patch <span className="song-unused-count">{unused.length}</span>
+            </summary>
+            <p className="song-parts-hint">Patterns no node plays (left over after deleting or pasting nodes). Dropping one on the timeline adds a pattern node for it to the patch.</p>
+            <ul className="song-part-list">
+              {unused.map(partRow)}
+            </ul>
+          </details>
+        )}
       </aside>
 
       <div className="song-main">
