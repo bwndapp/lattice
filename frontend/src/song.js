@@ -1,7 +1,8 @@
 /**
  * The song: when each part plays. A part is a pattern, or a source node in the patch that
  * makes sound on its own (a rhythm, a melody, a code node, a synth playing its own notes).
- * Clips put a part on the timeline: { id, src, lane, start, len }, in bars (cycles).
+ * Clips put a part on the timeline: { id, src, lane, start, len, offset }, in bars (cycles).
+ * `offset` is how far into the part the clip begins (after a cut or a trimmed left edge).
  *
  *   src   "pattern:<id>" or "node:<id>"
  *   lane  the row it sits on (rows are free, like a calendar)
@@ -68,7 +69,10 @@ export function normalizeSong(raw, project) {
     if (!id || seen.has(id)) continue
     seen.add(id)
     const start = snapTo(num(c.start, 0, 0, MAX_BARS - 0.25), 1 / 64)
-    clips.push({ id, src: c.src, lane: Math.round(num(c.lane, 0, 0, 63)), start, len: snapTo(num(c.len, 1, 1 / 16, MAX_BARS - start), 1 / 64) })
+    const clip = { id, src: c.src, lane: Math.round(num(c.lane, 0, 0, 63)), start, len: snapTo(num(c.len, 1, 1 / 16, MAX_BARS - start), 1 / 64) }
+    const offset = snapTo(num(c.offset, 0, -MAX_BARS, MAX_BARS), 1 / 64)
+    if (offset) clip.offset = offset
+    clips.push(clip)
     if (clips.length >= MAX_CLIPS) break
   }
   return { on: raw?.on !== false, snap: raw?.snap === 'beat' ? 'beat' : 'bar', clips }
@@ -104,7 +108,8 @@ const tidy = (v) => String(Math.round(v * 10000) / 10000)
 
 /**
  * The expression for part `src` playing along the song, given its looping expression
- * `expr`. Clips starting at the same point share one copy of the part.
+ * `expr`. A clip plays the part from `offset` bars in, starting at its start; clips that
+ * line up the same way share one copy of the part.
  */
 export function songExpr(project, src, expr) {
   const song = project.song
@@ -115,11 +120,11 @@ export function songExpr(project, src, expr) {
   const beats = Math.max(1, Math.round(project.beats || 4))
   const byStart = new Map()
   for (const c of clips) {
-    const key = tidy(c.start)
+    const key = tidy(c.start - (c.offset ?? 0)) // where the part's own bar 1 falls
     if (!byStart.has(key)) byStart.set(key, [])
     byStart.get(key).push([c.start, c.start + c.len])
   }
-  const layers = [...byStart.entries()].map(([start, spans]) => `p => p${Number(start) ? `.late(${start})` : ''}.mask("${maskMini(spans, total, beats)}")`)
+  const layers = [...byStart.entries()].map(([shift, spans]) => `p => p${Number(shift) ? `.late(${shift})` : ''}.mask("${maskMini(spans, total, beats)}")`)
   if (layers.length === 1) return `(${expr})${layers[0].slice(6)}`
   return `(${expr}).layer(${layers.join(', ')})`
 }

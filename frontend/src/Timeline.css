@@ -42,7 +42,7 @@
 .song-field { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 11px; color: var(--muted); }
 .song-length { font-size: 11px; color: var(--paper); font-variant-numeric: tabular-nums; padding: 0 0.3rem; }
 .song-hint { font-size: 10px; color: var(--muted); }
-.song-zoom { display: inline-flex; gap: 2px; }
+.song-zoom, .song-tools { display: inline-flex; gap: 2px; }
 @media (max-width: 1100px) { .song-hint { display: none; } }
 
 /* the timeline */
@@ -113,6 +113,9 @@
 .clip-repeat { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed rgba(0, 0, 0, 0.45); pointer-events: none; }
 .song-lanes.dragging .clip { cursor: grabbing; }
 .song-lanes.zooming, .song-lanes.zooming .clip { cursor: move; }
+.song-lanes.slicing, .song-lanes.slicing .clip { cursor: crosshair; }
+.song-slice { position: absolute; z-index: 5; width: 0; margin-left: -1px; border-left: 2px dashed var(--danger); pointer-events: none; }
+.song-slice::before { content: ''; position: absolute; top: -4px; left: -6px; border: 5px solid transparent; border-top-color: var(--danger); }
 
 .song-marquee { position: absolute; z-index: 4; background: rgba(228, 255, 26, 0.07); border: 1px dashed var(--acid); pointer-events: none; }
 .song-playhead { position: absolute; top: 0; bottom: 0; left: 0; z-index: 6; width: 0; border-left: 2px solid var(--acid); pointer-events: none; will-change: transform; }

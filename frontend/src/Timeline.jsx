@@ -6,8 +6,8 @@ import './Timeline.css'
 
 /**
  * The song view: parts on the left, a timeline on the right. Drag a part onto a row to
- * place a clip; drag a clip to move it (alt: a copy), its edges to stretch it; right-click
- * (or right-drag across several) deletes; shift-click
+ * place a clip; drag a clip to move it (shift: a copy), its edges to stretch or trim it; right-click
+ * (or right-drag across several) deletes; the slice tool (C) cuts clips in two; ctrl/cmd-click
  * or drag across empty rows to select several. Clicking the ruler moves the playhead,
  * dragging along it sets a loop. Ctrl/cmd + scroll zooms, middle-drag pans, ctrl/cmd +
  * middle-drag zooms both ways (sideways: wider bars, up and down: taller rows), alt + scroll
@@ -54,6 +54,8 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const [marquee, setMarquee] = useState(null)
   const [ghost, setGhost] = useState(null) // where a part dragged from the sidebar would land
   const [editing, setEditing] = useState(null) // { patternId, x, y }
+  const [tool, setTool] = useState('pointer') // or 'slice'
+  const [sliceLine, setSliceLine] = useState(null) // { bar, l0, l1 } where the slice tool would cut
   const scrollRef = useRef(null)
   const lanesRef = useRef(null)
   const playheadRef = useRef(null)
@@ -209,7 +211,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       e.currentTarget.classList.add('zooming')
       return
     }
-    if (e.button === 1 || (e.button === 0 && e.altKey && !e.target.closest('.clip'))) {
+    if (e.button === 1) {
       e.preventDefault()
       panRef.current = { x: e.clientX, y: e.clientY, left: scrollRef.current.scrollLeft, top: scrollRef.current.scrollTop }
       e.currentTarget.setPointerCapture(e.pointerId)
@@ -230,16 +232,29 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     const bar = barAt(e.clientX)
     const lane = laneAt(e.clientY)
 
+    if (tool === 'slice') {
+      // click a clip to cut it there; drag up or down to cut every clip the line crosses
+      const at = snap(bar, e.altKey)
+      dragRef.current = { mode: 'slice', bar: at, l0: lane }
+      setSliceLine({ bar: at, l0: lane, l1: lane })
+      return
+    }
+
     if (el) {
       const id = el.dataset.id
       const clip = song.clips.find((c) => c.id === id)
       if (!clip) return
       let sel = selected
-      if (e.shiftKey || e.ctrlKey || e.metaKey) {
+      const wasSelected = selected.has(id)
+      if (e.ctrlKey || e.metaKey) {
         sel = new Set(selected)
         sel.has(id) ? sel.delete(id) : sel.add(id)
         setSelected(sel)
         if (!sel.has(id)) return
+      } else if (e.shiftKey) {
+        // shift: drag out a copy of this clip (of the whole selection when the clip is in it);
+        // a shift-click without moving adds the clip to the selection or takes it out
+        if (!wasSelected) sel = new Set([id])
       } else if (!sel.has(id)) {
         sel = new Set([id])
         setSelected(sel)
@@ -248,7 +263,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       const rect = el.getBoundingClientRect()
       const mode = e.clientX - rect.left < EDGE ? 'start' : rect.right - e.clientX < EDGE ? 'end' : 'move'
       const group = mode === 'move' ? song.clips.filter((c) => sel.has(c.id)) : [clip]
-      dragRef.current = { mode, bar, lane, group, copy: mode === 'move' && e.altKey, moved: false }
+      dragRef.current = { mode, bar, lane, group, copy: mode === 'move' && e.shiftKey, toggle: e.shiftKey ? id : null, moved: false }
       return
     }
 
@@ -284,6 +299,12 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       return
     }
     const d = dragRef.current
+    if (!d && tool === 'slice') {
+      const lane = laneAt(e.clientY)
+      const bar = snap(barAt(e.clientX), e.altKey)
+      setSliceLine((l) => (l && l.bar === bar && l.l0 === lane && l.l1 === lane ? l : { bar, l0: lane, l1: lane }))
+      return
+    }
     if (!d) {
       const el = e.target.closest?.('.clip')
       if (el) {
@@ -292,9 +313,13 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       }
       return
     }
-    const fine = e.shiftKey
+    const fine = e.altKey // alt: snap to beats (finer than the setting)
     const bar = barAt(e.clientX)
     const lane = laneAt(e.clientY)
+    if (d.mode === 'slice') {
+      setSliceLine({ bar: d.bar, l0: d.l0, l1: lane })
+      return
+    }
     if (d.mode === 'erase') {
       // pointer capture keeps events on the rows, so find the clip under the pointer by position
       const hit = song.clips.find((c) => c.lane === lane && bar >= c.start && bar < c.start + c.len)
@@ -316,7 +341,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       const end = c.start + c.len
       const min = 1 / beats
       const change = d.mode === 'start'
-        ? (() => { const start = clamp(snap(bar, fine), 0, end - min); return { start, len: end - start } })()
+        ? (() => { const start = clamp(snap(bar, fine), 0, end - min); return { start, len: end - start, offset: (c.offset ?? 0) + (start - c.start) } })()
         : { len: clamp(snap(bar, fine) - c.start, min, MAX_BARS - c.start) }
       d.moved = true
       setDrag({ changes: { [c.id]: change } })
@@ -341,6 +366,27 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     setDrag(null)
     setMarquee(null)
     if (!d) return
+    if (d.mode === 'slice') {
+      const line = sliceLine ?? { bar: d.bar, l0: d.l0, l1: d.l0 }
+      const [l0, l1] = [Math.min(line.l0, line.l1), Math.max(line.l0, line.l1)]
+      const cut = line.bar
+      const hit = song.clips.filter((c) => c.lane >= l0 && c.lane <= l1 && cut > c.start + 1e-6 && cut < c.start + c.len - 1e-6)
+      if (hit.length) {
+        const halves = []
+        updateSong((s) => {
+          for (const c of s.clips) {
+            if (!hit.some((h) => h.id === c.id)) continue
+            const right = { ...c, id: `c${newId()}`, start: cut, len: c.start + c.len - cut, offset: (c.offset ?? 0) + (cut - c.start) }
+            c.len = cut - c.start
+            halves.push(right)
+          }
+          s.clips.push(...halves)
+        })
+        setSelected(new Set(halves.map((c) => c.id)))
+      }
+      setSliceLine(e ? { bar: cut, l0: laneAt(e.clientY), l1: laneAt(e.clientY) } : null)
+      return
+    }
     if (d.mode === 'erase') {
       if (d.gone.size) {
         updateSong((s) => { s.clips = s.clips.filter((c) => !d.gone.has(c.id)) })
@@ -354,7 +400,8 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       return
     }
     if (!d.moved || !preview) {
-      // a plain click on a pattern clip, with nothing moved: nothing else to do
+      // a shift-click (no drag) adds the clip to the selection, or takes it out
+      if (d.toggle) setSelected((sel) => { const next = new Set(sel); next.has(d.toggle) ? next.delete(d.toggle) : next.add(d.toggle); return next })
       return
     }
     if (preview.copy) {
@@ -383,7 +430,9 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     const chosen = song.clips.filter((c) => selected.has(c.id))
     const done = () => { e.preventDefault(); e.stopPropagation() }
     if (mod && k === 'a') { done(); return setSelected(new Set(song.clips.map((c) => c.id))) }
-    if (k === 'escape') { done(); setSelected(new Set()); setActivePart(null); return }
+    if (!mod && k === 'c') { done(); setTool((t) => (t === 'slice' ? 'pointer' : 'slice')); setSliceLine(null); return }
+    if (!mod && k === 'v') { done(); setTool('pointer'); setSliceLine(null); return }
+    if (k === 'escape') { done(); if (tool !== 'pointer') { setTool('pointer'); setSliceLine(null); return } setSelected(new Set()); setActivePart(null); return }
     if (!chosen.length) return
     if (k === 'delete' || k === 'backspace') {
       done()
@@ -415,14 +464,14 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const onRulerDown = (e) => {
     if (e.button !== 0) return
     e.currentTarget.setPointerCapture(e.pointerId)
-    const bar = snapDown(barAt(e.clientX), e.shiftKey)
+    const bar = snapDown(barAt(e.clientX), e.altKey)
     rulerRef.current = { from: bar, to: bar, moved: false }
   }
   const onRulerMove = (e) => {
     const r = rulerRef.current
     if (!r) return
-    const bar = snap(barAt(e.clientX), e.shiftKey)
-    if (Math.abs(bar - r.from) >= (e.shiftKey ? 1 / beats : 1)) r.moved = true
+    const bar = snap(barAt(e.clientX), e.altKey)
+    if (Math.abs(bar - r.from) >= (e.altKey ? 1 / beats : 1)) r.moved = true
     r.to = bar
     if (r.moved) transport.setLoop({ on: true, from: Math.min(r.from, r.to), to: Math.max(r.from, r.to) })
   }
@@ -513,8 +562,12 @@ export default function Timeline({ project, onUpdateProject, transport, started 
             </select>
           </label>
           <span className="song-length" title="The song loops after its last clip">{length ? `${songBars} bar${songBars === 1 ? '' : 's'}` : 'empty'}</span>
+          <span className="song-tools" role="group" aria-label="Tool">
+            <button className={`btn ${tool === 'pointer' ? 'on' : ''}`} aria-pressed={tool === 'pointer'} onClick={() => { setTool('pointer'); setSliceLine(null) }} title="Move, stretch and draw clips (V)">move</button>
+            <button className={`btn ${tool === 'slice' ? 'on' : ''}`} aria-pressed={tool === 'slice'} onClick={() => setTool('slice')} title="Cut clips in two: click a clip, or drag up or down to cut every clip on those rows (C)">slice</button>
+          </span>
           <span className="spacer" />
-          <span className="song-hint">right-click deletes · alt-drag copies · shift snaps finer · ctrl/cmd + D duplicates · drag the ruler to loop</span>
+          <span className="song-hint">{tool === 'slice' ? 'click a clip to cut it · drag up or down to cut several · alt snaps finer · V or Esc to go back' : 'shift-drag copies · right-click deletes · alt snaps finer · ctrl/cmd + D duplicates · C slices'}</span>
           <span className="song-zoom" role="group" aria-label="Zoom">
             <button className="btn" onClick={() => zoomTo(ppb / 1.5)} aria-label="Zoom out">−</button>
             <button className="btn" onClick={fit} title="Fit the song">fit</button>
@@ -549,13 +602,14 @@ export default function Timeline({ project, onUpdateProject, transport, started 
             </div>
 
             <div
-              className={`song-lanes ${drag ? 'dragging' : ''}`}
+              className={`song-lanes ${drag ? 'dragging' : ''} ${tool === 'slice' ? 'slicing' : ''}`}
               ref={lanesRef}
               style={{ height: lanes * LANE_H }}
               onPointerDown={onLanesDown}
               onPointerMove={onLanesMove}
               onPointerUp={onLanesUp}
               onPointerCancel={() => { dragRef.current = null; panRef.current = null; setDrag(null); setMarquee(null) }}
+              onPointerLeave={() => { if (!dragRef.current) setSliceLine(null) }}
               onDoubleClick={onClipDoubleClick}
               onContextMenu={(e) => e.preventDefault()}
               onDragOver={onDragOver}
@@ -566,7 +620,10 @@ export default function Timeline({ project, onUpdateProject, transport, started 
               {clips.map((c) => {
                 const part = partBySrc.get(c.src)
                 if (!part) return null
-                const repeats = part.kind === 'pattern' && part.bars > 0 ? Math.floor((c.len - 1e-9) / part.bars) : 0
+                // where the pattern starts over inside the clip (it may begin part-way in, after a cut)
+                const into = part.kind === 'pattern' && part.bars > 0 ? (((c.offset ?? 0) % part.bars) + part.bars) % part.bars : 0
+                const firstRepeat = part.bars - into
+                const repeats = part.kind === 'pattern' && part.bars > 0 ? Math.max(0, Math.ceil((c.len - firstRepeat - 1e-9) / part.bars)) : 0
                 return (
                   <div
                     key={c.id}
@@ -577,7 +634,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
                   >
                     <span className="clip-name">{part.name}</span>
                     {Array.from({ length: repeats }, (_, i) => (
-                      <span key={i} className="clip-repeat" style={{ left: (i + 1) * part.bars * ppb }} aria-hidden />
+                      <span key={i} className="clip-repeat" style={{ left: (firstRepeat + i * part.bars) * ppb }} aria-hidden />
                     ))}
                   </div>
                 )
@@ -586,6 +643,13 @@ export default function Timeline({ project, onUpdateProject, transport, started 
                 <div className="clip preview ghost" style={{ left: ghost.start * ppb, top: ghost.lane * LANE_H + 3, width: ghost.len * ppb - 1, height: LANE_H - 6, '--clip': colorFor(ghost.src ?? '') }}>
                   <span className="clip-name">{partBySrc.get(ghost.src)?.name}</span>
                 </div>
+              )}
+              {tool === 'slice' && sliceLine && (
+                <div
+                  className="song-slice"
+                  style={{ left: sliceLine.bar * ppb, top: Math.min(sliceLine.l0, sliceLine.l1) * LANE_H, height: (Math.abs(sliceLine.l1 - sliceLine.l0) + 1) * LANE_H }}
+                  aria-hidden
+                />
               )}
               {marquee && (
                 <div
