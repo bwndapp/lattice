@@ -11,6 +11,7 @@ import SoundPicker from './SoundPicker.jsx'
 import PatternEditor from './PatternEditor.jsx'
 import AddMenu from './AddMenu.jsx'
 import { ADD_INTO_WIRE, EDGE_TYPES } from './WireEdge.jsx'
+import { copyNodes, pasteNodes, readClipboard, writeClipboard } from './nodeClipboard'
 import Phyllo, { PhylloFace } from './phyllo/Phyllo.jsx'
 import { normalizePatch } from './phyllo/engine'
 import { onSoundsChange, previewSound, soundCatalog } from './audio'
@@ -420,8 +421,8 @@ const SEARCH_WORDS = {
   clipper: 'clip clipping limiter loud ceiling hard peaks mastering bass mixing',
   compressor: 'compression comp dynamics glue squash level even punch bass mixing',
   punch: 'transient shaper attack snap punch tail sustain drums',
-  haas: 'stereo wide width delay precedence double doubler spread left right ms',
   bus: 'mixer bus track insert group submix route send null merge combine channel fader sum',
+  haas: 'stereo wide width delay precedence double doubler spread left right ms',
   widener: 'stereo wide width imager spread mid side ms mono bass imaging',
   phyllo: 'synth instrument serum vital phase plant wavetable supersaw analog fm lfo envelope modulation pad lead bass pluck',
   fxrack: 'effects chain multiple fx rack bus insert',
@@ -701,10 +702,10 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
   const selectNext = useRef(null) // a node just added from the pane becomes the selection
   useEffect(() => setNodes((prev) => {
     const next = toRf(prev)
-    const pick = selectNext.current
-    if (!pick || !next.some((n) => n.id === pick)) return next
+    const pick = selectNext.current == null ? null : new Set([].concat(selectNext.current)) // an id, or ids (a paste)
+    if (!pick || !next.some((n) => pick.has(n.id))) return next
     selectNext.current = null
-    return next.map((n) => (n.selected === (n.id === pick) ? n : { ...n, selected: n.id === pick }))
+    return next.map((n) => (n.selected === pick.has(n.id) ? n : { ...n, selected: pick.has(n.id) }))
   }), [toRf])
   const nodesRef = useRef(nodes)
   nodesRef.current = nodes
@@ -800,6 +801,57 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
     }
     return set
   }, [project.nodes, project.edges])
+
+  // Copy and paste nodes: ctrl/cmd + C, X, V, and D to duplicate. A paste lands at the
+  // pointer (or just below the copied nodes), keeps the wires between the pasted nodes,
+  // selects what it pasted, and is one undo. Copies work across tracks.
+  const projectRef = useRef(project)
+  projectRef.current = project
+  const lastPaste = useRef(null)
+  const pasteClip = useCallback((clip, at) => {
+    let ids = []
+    onUpdateProject((p) => { ids = pasteNodes(p, clip, at) })
+    selectNext.current = ids
+  }, [onUpdateProject])
+  const pasteAt = useCallback((clip) => {
+    const canvas = wrapRef.current?.querySelector('.react-flow')
+    const r = canvas?.getBoundingClientRect()
+    const ptr = pointerRef.current
+    let at = r && ptr && ptr.x >= r.left && ptr.x <= r.right && ptr.y >= r.top && ptr.y <= r.bottom
+      ? flow.screenToFlowPosition({ x: ptr.x - 20, y: ptr.y - 20 })
+      : { x: (clip.origin?.x ?? 0) + 40, y: (clip.origin?.y ?? 0) + 60 }
+    // pasting again without moving the pointer steps down-right instead of stacking exactly
+    const last = lastPaste.current
+    if (last && Math.abs(last.from.x - at.x) < 1 && Math.abs(last.from.y - at.y) < 1) at = { x: last.at.x + 40, y: last.at.y + 40 }
+    lastPaste.current = { from: last && Math.abs(last.from.x - at.x) < 41 ? last.from : at, at }
+    pasteClip(clip, at)
+  }, [flow, pasteClip])
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return
+      const key = e.key.toLowerCase()
+      if (!['c', 'x', 'v', 'd'].includes(key)) return
+      if (e.target.closest?.('input, textarea, select, [contenteditable="true"], dialog, [role="dialog"], .pattern-pop, .add-menu')) return
+      if (key === 'c' && window.getSelection()?.toString()) return // copying text on the page
+      const selected = nodesRef.current.filter((n) => n.selected).map((n) => n.id)
+      if (key === 'v') {
+        const clip = readClipboard()
+        if (!clip) return
+        e.preventDefault()
+        pasteAt(clip)
+        return
+      }
+      const clip = copyNodes(projectRef.current, selected)
+      if (!clip) return
+      e.preventDefault()
+      if (key === 'd') return pasteClip(clip, { x: clip.origin.x + 40, y: clip.origin.y + 60 })
+      writeClipboard(clip)
+      lastPaste.current = null
+      if (key === 'x') removeNodes(clip.nodes.map((n) => n.id))
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [pasteAt, pasteClip, removeNodes])
 
   const ctx = useMemo(() => ({
     project,
