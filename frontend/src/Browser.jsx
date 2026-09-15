@@ -1,15 +1,22 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, timeAgo } from './api'
+import './Browser.css'
 
-const VIEWS = ['explore', 'mine', 'liked']
+const VIEWS = [['explore', 'explore'], ['mine', 'mine'], ['liked', 'liked']]
 const SORTS = [['new', 'new'], ['top', 'top'], ['played', 'played']]
 
-/** 0..1 — how loud a track is in this list. Sets the size of its title. */
-function weights(tracks) {
-  const score = (t) => Math.log1p(t.plays + 3 * t.likes)
-  const max = Math.max(1, ...tracks.map(score))
-  return new Map(tracks.map((t) => [t.id, score(t) / max]))
+/** A soft sliding switch between a few options (same family as the canvas switch). */
+function Switch({ options, value, onChange, label, small = false }) {
+  const at = Math.max(0, options.findIndex(([key]) => key === value))
+  return (
+    <div className={`b-switch ${small ? 'small' : ''}`} role="group" aria-label={label} style={{ '--n': options.length, '--at': at }}>
+      <span className="b-switch-thumb" aria-hidden />
+      {options.map(([key, text]) => (
+        <button key={key} type="button" className={`b-switch-opt ${value === key ? 'on' : ''}`} aria-pressed={value === key} onClick={() => onChange(key)}>{text}</button>
+      ))}
+    </div>
+  )
 }
 
 export default function Browser({ user, login, activeId, refreshKey, onPlay, onPick }) {
@@ -24,6 +31,7 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
   useEffect(() => {
     if (needsUser) { setTracks([]); setError(''); return }
     let alive = true
+    setTracks(null)
     const timer = setTimeout(() => {
       const params = new URLSearchParams({ view, sort, q })
       api(`/tracks?${params}`)
@@ -33,60 +41,77 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
     return () => { alive = false; clearTimeout(timer) }
   }, [view, sort, q, needsUser, refreshKey, user?.id])
 
-  const weight = tracks ? weights(tracks) : new Map()
+  const heading = view === 'mine' ? 'Your tracks' : view === 'liked' ? 'Tracks you liked' : 'Shared tracks'
 
   return (
     <section className="browser" aria-label="Browse tracks">
-      <div className="browser-controls">
-      <h2 className="browser-title">browse</h2>
-      {/* The controls are written as a Strudel pattern: <a b c> alternates, .method("x") chains. */}
-      <div className="views" role="group" aria-label="Which tracks">
-        <span className="syn" aria-hidden>&lt;</span>
-        {VIEWS.map((key) => (
-          <button key={key} className={`view ${view === key ? 'on' : ''}`} aria-pressed={view === key} onClick={() => setView(key)}>{key}</button>
-        ))}
-        <span className="syn" aria-hidden>&gt;</span>
-      </div>
-      <label className="chain">
-        <span className="syn" aria-hidden>.filter("</span>
-        <input className="chain-input" aria-label="Search tracks or people" placeholder="anything" value={q} onChange={(e) => setQ(e.target.value)} />
-        <span className="syn" aria-hidden>")</span>
-      </label>
-      <label className="chain">
-        <span className="syn" aria-hidden>.sort("</span>
-        <select className="chain-input" aria-label="Sort" value={sort} onChange={(e) => setSort(e.target.value)}>
-          {SORTS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-        </select>
-        <span className="syn" aria-hidden>")</span>
-      </label>
+      <aside className="b-side">
+        <h2 className="b-title">Browse</h2>
 
-      <Link to="/" state={{ fresh: Date.now(), template: 'blank' }} className="new-track" onClick={onPick}>+ new track</Link>
-      <Link to="/" state={{ fresh: Date.now(), template: 'demo' }} className="linkish new-demo" onClick={onPick}>or start from the demo patch</Link>
-      <p className="legend">bigger = played &amp; liked more</p>
-      </div>
+        <Switch label="Which tracks" options={VIEWS} value={view} onChange={setView} />
 
-      <ol className="setlist">
+        <label className="b-search">
+          <svg viewBox="0 0 16 16" aria-hidden><circle cx="7" cy="7" r="4.6" /><path d="M10.4 10.4 14 14" /></svg>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search tracks or people" aria-label="Search tracks or people" spellCheck={false} />
+          {q && <button type="button" className="b-search-clear" onClick={() => setQ('')} aria-label="Clear the search">×</button>}
+        </label>
+
+        <div className="b-field">
+          <span className="b-label">Sort</span>
+          <Switch small label="Sort" options={SORTS} value={sort} onChange={setSort} />
+        </div>
+
+        <div className="b-new">
+          <Link to="/" state={{ fresh: Date.now(), template: 'blank' }} className="b-button primary new-track" onClick={onPick}>New track</Link>
+          <Link to="/" state={{ fresh: Date.now(), template: 'demo' }} className="b-button new-demo" onClick={onPick}>Demo patch</Link>
+        </div>
+      </aside>
+
+      <div className="b-main">
+        <div className="b-main-head">
+          <h3>{heading}</h3>
+          {tracks?.length > 0 && <span className="b-count">{tracks.length}{tracks.length === 50 ? '+' : ''}</span>}
+        </div>
+
         {needsUser ? (
-          <li className="empty">
-            <button className="linkish" onClick={() => login()}>Sign in</button> to see {view === 'mine' ? 'your tracks' : 'tracks you liked'}.
-          </li>
+          <div className="b-empty">
+            <p>Sign in to see {view === 'mine' ? 'your tracks' : 'the tracks you liked'}.</p>
+            <button type="button" className="b-button primary" onClick={() => login()}>Sign in</button>
+          </div>
         ) : error ? (
-          <li className="empty">Couldn’t load tracks: {error}</li>
+          <div className="b-empty"><p>Couldn’t load tracks: {error}</p></div>
         ) : tracks === null ? (
-          <li className="empty">loading…</li>
+          <ul className="b-grid" aria-busy="true">
+            {Array.from({ length: 6 }, (_, i) => <li key={i} className="b-card skeleton" aria-hidden />)}
+          </ul>
         ) : tracks.length === 0 ? (
-          <li className="empty">{q ? 'Nothing matches that.' : view === 'explore' ? 'silence. share the first track.' : view === 'mine' ? 'You haven’t saved anything yet.' : 'No likes yet.'}</li>
-        ) : tracks.map((t) => (
-          <li key={t.id} className={`item ${t.id === activeId ? 'active' : ''}`} style={{ '--w': weight.get(t.id) }}>
-            <Link to={`/t/${t.id}`} className="item-title" onClick={onPick}>{t.title}</Link>
-            <span className="item-meta">
-              <button className="item-play" aria-label={`Play ${t.title}`} onClick={() => onPlay(t.id)}>play</button>
-              {' '}{t.author} · {timeAgo(t.updated_at)} · <span className={t.liked ? 'liked' : ''}>♥{t.likes}</span> · {t.plays} plays
-              {view === 'mine' && t.visibility !== 'public' && <span className="pill">{t.visibility}</span>}
-            </span>
-          </li>
-        ))}
-      </ol>
+          <div className="b-empty">
+            <p>{q ? 'Nothing matches that.' : view === 'explore' ? 'Nothing shared yet. Make the first track.' : view === 'mine' ? 'You haven’t saved anything yet.' : 'No likes yet.'}</p>
+            {!q && view !== 'liked' && <Link to="/" state={{ fresh: Date.now(), template: 'blank' }} className="b-button primary" onClick={onPick}>New track</Link>}
+          </div>
+        ) : (
+          <ul className="b-grid">
+            {tracks.map((t) => (
+              <li key={t.id} className={`b-card ${t.id === activeId ? 'active' : ''}`}>
+                <button type="button" className="b-play" aria-label={`Play ${t.title}`} title="Play" onClick={() => onPlay(t.id)}>
+                  <svg viewBox="0 0 16 16" aria-hidden><path d="M5 3.5v9l8-4.5z" /></svg>
+                </button>
+                <div className="b-card-body">
+                  <Link to={`/t/${t.id}`} className="b-card-title" onClick={onPick} title={t.title}>{t.title}</Link>
+                  <span className="b-card-author">{t.author}</span>
+                </div>
+                <div className="b-card-meta">
+                  <span className={t.liked ? 'liked' : ''}>♥ {t.likes}</span>
+                  <span>{t.plays} play{t.plays === 1 ? '' : 's'}</span>
+                  <span className="b-card-time">{timeAgo(t.updated_at)}</span>
+                  {view === 'mine' && t.visibility !== 'public' && <span className="b-tag">{t.visibility}</span>}
+                  {t.id === activeId && <span className="b-tag on">open</span>}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </section>
   )
 }
