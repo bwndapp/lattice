@@ -372,8 +372,9 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       setActivePart(clip.src)
       const rect = el.getBoundingClientRect()
       const mode = e.clientX - rect.left < EDGE ? 'start' : rect.right - e.clientX < EDGE ? 'end' : 'move'
-      const group = mode === 'move' ? song.clips.filter((c) => sel.has(c.id)) : [clip]
-      dragRef.current = { mode, bar, lane, group, copy: mode === 'move' && e.shiftKey, toggle: e.shiftKey ? id : null, moved: false }
+      // moving and stretching both act on the whole selection; the clip you grabbed leads
+      const group = sel.has(id) ? song.clips.filter((c) => sel.has(c.id)) : [clip]
+      dragRef.current = { mode, bar, lane, group, anchor: clip, copy: mode === 'move' && e.shiftKey, toggle: e.shiftKey ? id : null, moved: false }
       return
     }
 
@@ -447,14 +448,22 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       if (d.copy) setDrag({ copy: true, changes: {}, added: d.group.map((c) => ({ ...c, ...place(c), id: `__copy${c.id}` })) })
       else setDrag({ changes: Object.fromEntries(d.group.map((c) => [c.id, place(c)])) })
     } else if (d.mode === 'start' || d.mode === 'end') {
-      const c = d.group[0]
-      const end = c.start + c.len
+      // every selected clip stretches by as much as the one under the pointer
+      const c = d.anchor
       const min = 1 / beats
-      const change = d.mode === 'start'
-        ? (() => { const start = clamp(snap(bar, fine), 0, end - min); return { start, len: end - start, offset: (c.offset ?? 0) + (start - c.start) } })()
-        : { len: clamp(snap(bar, fine) - c.start, min, MAX_BARS - c.start) }
+      const changes = {}
+      if (d.mode === 'end') {
+        const delta = clamp(snap(bar, fine) - c.start, min, MAX_BARS - c.start) - c.len
+        for (const x of d.group) changes[x.id] = { len: clamp(x.len + delta, min, MAX_BARS - x.start) }
+      } else {
+        const delta = clamp(snap(bar, fine), 0, c.start + c.len - min) - c.start
+        for (const x of d.group) {
+          const start = clamp(x.start + delta, 0, x.start + x.len - min)
+          changes[x.id] = { start, len: x.start + x.len - start, offset: (x.offset ?? 0) + (start - x.start) }
+        }
+      }
       d.moved = true
-      setDrag({ changes: { [c.id]: change } })
+      setDrag({ changes })
     } else if (d.mode === 'draw') {
       const end = Math.max(d.start + (fine ? 1 / beats : step), snap(bar, fine))
       setDrag({ changes: {}, added: [{ id: '__draw', src: d.src, lane: d.lane, start: d.start, len: end - d.start }] })
