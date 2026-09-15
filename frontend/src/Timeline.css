@@ -26,12 +26,12 @@
   color: var(--paper);
   background: none;
   border: 1px solid var(--line);
-  cursor: grab;
+  cursor: var(--ring);
 }
 .song-part:hover { border-color: #55554d; }
 .song-part.active { border-color: var(--clip); background: #14140f; }
 .song-part:focus-visible { outline: 1px solid var(--acid); outline-offset: 1px; }
-.song-swatch { grid-row: 1 / 3; align-self: stretch; } /* the colour button sits over this spot */
+.song-swatch { grid-row: 1 / 3; align-self: stretch; background: var(--clip); }
 .song-part-name { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .song-part-meta { font-size: 10px; color: var(--muted); }
 .song-part.unused { border-style: dashed; }
@@ -41,7 +41,7 @@
 .song-part-dup, .song-part-del {
   position: absolute; top: 5px; right: 30px;
   padding: 0.1rem 0.35rem; font: inherit; font-size: 10px; color: var(--paper);
-  background: var(--panel); border: 1px solid var(--line); cursor: pointer; opacity: 0;
+  background: var(--panel); border: 1px solid var(--line); cursor: var(--ring); opacity: 0;
 }
 .song-part-del { right: 5px; width: 22px; padding-inline: 0; text-align: center; }
 .song-part-list li:hover .song-part-dup, .song-part-dup:focus-visible, .song-part-list li:hover .song-part-del, .song-part-del:focus-visible { opacity: 1; }
@@ -50,7 +50,7 @@
 .song-parts-hint b { color: var(--paper); font-weight: 600; }
 .song-part.unused .song-part-name { color: var(--muted); }
 .song-unused { border-top: 1px solid var(--line); }
-.song-unused summary { padding: 0.45rem 0.6rem; font-size: 11px; color: var(--muted); cursor: pointer; list-style-position: inside; }
+.song-unused summary { padding: 0.45rem 0.6rem; font-size: 11px; color: var(--muted); cursor: var(--ring); list-style-position: inside; }
 .song-unused summary:hover { color: var(--paper); }
 .song-unused[open] summary { color: var(--paper); }
 .song-unused-count { display: inline-block; min-width: 1.4em; padding: 0 0.3em; text-align: center; border: 1px solid var(--line); font-variant-numeric: tabular-nums; }
@@ -97,8 +97,8 @@
 .song-loop-edge.from { left: 0; }
 .song-loop-edge.to { right: 0; }
 .song-loop.off { opacity: 0.28; } /* the last loop, while looping is off: the loop button brings it back */
-.song-ruler { cursor: ew-resize; }
-.song-ruler.scrubbing { cursor: grabbing; }
+.song-ruler { cursor: var(--ring); }
+.song-ruler.scrubbing { cursor: var(--ring); }
 /* the playhead's handle: a notch on the ruler, always in view */
 .song-head { position: absolute; left: 0; bottom: 0; z-index: 2; width: 0; height: 100%; pointer-events: none; will-change: transform; }
 .song-head::before { content: ''; position: absolute; left: -7px; bottom: 0; border: 7px solid transparent; border-bottom: 0; border-top: 10px solid var(--acid); }
@@ -129,7 +129,7 @@
   background: var(--clip);
   border: 1px solid rgba(0, 0, 0, 0.55);
   box-shadow: inset 3px 0 0 rgba(0, 0, 0, 0.28);
-  cursor: grab;
+  cursor: var(--ring);
   touch-action: none;
 }
 .clip::before, .clip::after { content: ''; position: absolute; top: 25%; bottom: 25%; width: 2px; background: rgba(0, 0, 0, 0.3); opacity: 0; }
@@ -142,7 +142,7 @@
 .clip.off { filter: saturate(0.25) brightness(0.7); }
 .clip-name { position: relative; z-index: 1; font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
 .clip-repeat { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed rgba(0, 0, 0, 0.45); pointer-events: none; }
-.song-lanes.dragging .clip { cursor: grabbing; }
+.song-lanes.dragging .clip { cursor: var(--ring); }
 .song-lanes.zooming, .song-lanes.zooming .clip { cursor: move; }
 .song-lanes.slicing, .song-lanes.slicing .clip { cursor: crosshair; }
 .song-slice { position: absolute; z-index: 5; width: 0; margin-left: -1px; border-left: 2px dashed var(--danger); pointer-events: none; }
@@ -175,13 +175,21 @@
 .part-panel-hint { margin: 0; font-size: 10px; color: var(--muted); }
 
 /* colour picker on each part (the dot over its swatch) */
-.btn.song-color-btn { position: absolute; left: 1px; top: 1px; bottom: 1px; width: 20px; padding: 0; border: 0; background: transparent; display: grid; place-items: center; cursor: pointer; }
-.btn.song-color-btn:hover .song-color-dot, .btn.song-color-btn.on .song-color-dot { outline: 2px solid var(--paper); outline-offset: 1px; }
+.btn.song-color-btn {
+  position: absolute; top: 5px; right: 58px;
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  padding: 0.1rem 0.35rem; font: inherit; font-size: 10px; color: var(--paper); text-transform: none;
+  background: var(--panel); border: 1px solid var(--line); opacity: 0;
+}
+.btn.song-color-btn.solo { right: 5px; } /* sources have no dup or delete */
+.song-part-list li:hover .btn.song-color-btn, .btn.song-color-btn:focus-visible, .btn.song-color-btn.on { opacity: 1; }
+.btn.song-color-btn:hover { border-color: var(--acid); color: var(--acid); }
+.song-color-dot { display: block; flex: none; width: 9px; height: 9px; box-shadow: 0 0 0 1px rgba(242, 240, 230, 0.35); }
 .song-color-dot { display: block; width: 10px; height: 100%; }
 .song-colors { padding: 0.55rem; display: grid; gap: 0.5rem; width: 188px; }
 .song-color-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
-.song-color-pick { aspect-ratio: 1; min-width: 0; border: 1px solid rgba(0, 0, 0, 0.5); cursor: pointer; padding: 0; }
+.song-color-pick { aspect-ratio: 1; min-width: 0; border: 1px solid rgba(0, 0, 0, 0.5); cursor: var(--ring); padding: 0; }
 .song-color-pick:hover, .song-color-pick.on { outline: 2px solid var(--paper); outline-offset: 1px; }
 .song-color-custom { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; font-size: 11px; color: var(--muted); }
-.song-color-custom input { width: 42px; height: 22px; padding: 0; border: 1px solid var(--line); background: none; cursor: pointer; }
+.song-color-custom input { width: 42px; height: 22px; padding: 0; border: 1px solid var(--line); background: none; cursor: var(--ring); }
 .song-color-reset { justify-self: start; font-size: 11px; }

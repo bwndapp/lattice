@@ -352,7 +352,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       const el = e.target.closest?.('.clip')
       if (el) {
         const r = el.getBoundingClientRect()
-        el.style.cursor = e.clientX - r.left < EDGE || r.right - e.clientX < EDGE ? 'ew-resize' : 'grab'
+        el.style.cursor = e.clientX - r.left < EDGE || r.right - e.clientX < EDGE ? 'ew-resize' : 'var(--ring)'
       }
       return
     }
@@ -568,7 +568,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     const r = rulerRef.current
     if (!r) {
       const part = loopPartAt(e)
-      e.currentTarget.style.cursor = part === 'band' ? 'grab' : part ? 'col-resize' : ''
+      e.currentTarget.style.cursor = part === 'band' ? 'var(--ring)' : part ? 'col-resize' : ''
       return
     }
     if (r.mode.startsWith('loop-')) {
@@ -681,9 +681,9 @@ export default function Timeline({ project, onUpdateProject, transport, started 
           </span>
         </button>
         <Popover
-          label={<span className="song-color-dot" style={{ background: colorFor(part.src, song.colors) }} />}
+          label={<><span className="song-color-dot" style={{ background: colorFor(part.src, song.colors) }} />colour</>}
           title={`Colour of ${part.name} and its clips`}
-          className="song-color-btn"
+          className={`song-color-btn ${part.kind === 'pattern' ? '' : 'solo'}`}
           panelClassName="song-colors"
           align="left"
         >

@@ -33,7 +33,7 @@
   background: none;
   border: 1px solid transparent;
   border-left: 3px solid var(--acid);
-  cursor: pointer;
+  cursor: var(--ring);
 }
 .am-row.am-group { border-left-color: transparent; }
 .am-row.cursor, .am-row:hover, .am-row.open { background: #1c1c14; border-color: var(--acid); }
@@ -67,7 +67,7 @@
   background: var(--ink);
   border: 1px solid #6f7a1c;
   border-radius: 50%;
-  cursor: pointer;
+  cursor: var(--ring);
   opacity: 0.85;
   transition: opacity 0.12s, color 0.12s, border-color 0.12s;
 }

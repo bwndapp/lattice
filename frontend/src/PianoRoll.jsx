@@ -685,7 +685,7 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
                   onMove(e)
                   if (!dragRef.current && !panRef.current) {
                     const h = hit(e)
-                    e.currentTarget.style.cursor = h.note ? (h.edge ? 'ew-resize' : 'grab') : 'crosshair'
+                    e.currentTarget.style.cursor = h.note ? (h.edge ? 'ew-resize' : 'var(--ring)') : 'crosshair'
                   }
                 }}
                 onPointerUp={onUp}
