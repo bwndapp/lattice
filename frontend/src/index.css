@@ -89,11 +89,11 @@ body {
 }
 .logo {
   align-self: flex-end;
-  margin: 0 0.6rem -0.2em 0;
+  margin: 0 0.6rem 0.1em 0; /* the whole wordmark sits inside the bar, big as it is */
   font-family: var(--display);
   font-weight: 900;
   font-stretch: 125%;
-  font-size: 84px;
+  font-size: 66px; /* the largest that fits whole in the 64px bar */
   line-height: 0.78;
   letter-spacing: -0.05em;
   color: var(--acid);
