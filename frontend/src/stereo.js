@@ -175,7 +175,40 @@ const smooth = (param, value) => {
   if (Number.isFinite(value)) param.setTargetAtTime(value, getAudioContext().currentTime, 0.02)
 }
 
+const dbGain = (db) => (Number.isFinite(db) ? db : 0)
+
 const UNITS = {
+  /**
+   * Three-band EQ on the summed sound: a shelf at each end and a bell in the middle, the
+   * way a mixer's EQ works. (It used to split each note into three filtered copies and add
+   * them back, which never summed flat and made any filter after it far too steep.)
+   */
+  eq(ac) {
+    const input = new GainNode(ac, { channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' })
+    const low = new BiquadFilterNode(ac, { type: 'lowshelf', frequency: 200 })
+    const mid = new BiquadFilterNode(ac, { type: 'peaking', frequency: 800, Q: 0.9 })
+    const high = new BiquadFilterNode(ac, { type: 'highshelf', frequency: 3000 })
+    input.connect(low).connect(mid).connect(high)
+    return {
+      input,
+      output: high,
+      set(params) {
+        const lowf = Number.isFinite(params.lowf) ? params.lowf : 200
+        const highf = Number.isFinite(params.highf) ? params.highf : 3000
+        smooth(low.frequency, lowf)
+        smooth(high.frequency, highf)
+        // the bell sits between the two crossovers, wide enough to cover the middle
+        smooth(mid.frequency, Math.sqrt(Math.max(20, lowf) * Math.max(40, highf)))
+        // as wide as the gap between the crossovers, so the middle moves as one
+        const octaves = Math.min(6, Math.max(0.5, Math.log2(Math.max(2, highf / Math.max(20, lowf)))))
+        mid.Q.value = Math.max(0.3, 1 / (2 * Math.sinh((Math.LN2 / 2) * octaves)))
+        smooth(low.gain, dbGain(params.low))
+        smooth(mid.gain, dbGain(params.mid))
+        smooth(high.gain, dbGain(params.high))
+      },
+      dispose() { for (const node of [input, low, mid, high]) node.disconnect() },
+    }
+  },
   /** A mixer bus's level and pan, on the summed sound. */
   fader(ac) {
     const input = new GainNode(ac, { channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' })

@@ -184,15 +184,8 @@ export const NODE_TYPES = {
     ],
     code: (d, [x], ctx) => {
       const hpOn = d.hpf > 20 || isAuto(ctx, 'hpf')
-      if (!ctx?.eqAbove) {
-        const lp = `.lpf(${K(ctx, d, 'lpf', round)})${tapUnlessAuto(ctx, 'lpf', 'cutoff', Math.round(d.lpf))}.lpq(${K(ctx, d, 'lpq')})${tapUnlessAuto(ctx, 'lpq', 'resonance', tidy(d.lpq))}`
-        return `${x}${lp}${hpOn ? `.hpf(${K(ctx, d, 'hpf', round)})${tapUnlessAuto(ctx, 'hpf', 'hcutoff', Math.round(d.hpf))}` : ''}`
-      }
-      // after an eq, tighten each band's filters instead of replacing them (the last .lpf wins in Strudel)
-      return fmapWith(x, ctx, d, ['lpf', 'lpq', 'hpf'], (val) => {
-        const hp = hpOn ? `, ...(v.hcutoff >= ${val('hpf')} ? {} : { hcutoff: ${val('hpf')} })` : ''
-        return `{ ...v, ...(v.cutoff <= ${val('lpf')} ? {} : { cutoff: ${val('lpf')}, resonance: ${val('lpq')} })${hp} }`
-      }, { lpf: round, hpf: round })
+      const lp = `.lpf(${K(ctx, d, 'lpf', round)})${tapUnlessAuto(ctx, 'lpf', 'cutoff', Math.round(d.lpf))}.lpq(${K(ctx, d, 'lpq')})${tapUnlessAuto(ctx, 'lpq', 'resonance', tidy(d.lpq))}`
+      return `${x}${lp}${hpOn ? `.hpf(${K(ctx, d, 'hpf', round)})${tapUnlessAuto(ctx, 'hpf', 'hcutoff', Math.round(d.hpf))}` : ''}`
     },
   },
   space: {
@@ -337,7 +330,7 @@ export const NODE_TYPES = {
     },
   },
   eq3: {
-    group: 'mixing', label: '3-band eq', blurb: 'Boost or cut lows, mids and highs',
+    group: 'mixing', label: '3-band eq', blurb: 'Boost or cut lows, mids and highs on the sound going through it',
     inputs: 1,
     params: [
       { key: 'low', type: 'knob', label: 'low', min: -24, max: 12, def: 0, unit: 'db', origin: 0 },
@@ -346,23 +339,8 @@ export const NODE_TYPES = {
       { key: 'lowf', type: 'knob', label: 'low / mid', min: 40, max: 1000, def: 200, log: true, unit: 'hz' },
       { key: 'highf', type: 'knob', label: 'mid / high', min: 1000, max: 12000, def: 3000, log: true, unit: 'hz' },
     ],
-    // Strudel has no shelving eq, so the sound is split into three bands with steep (24 dB,
-    // Linkwitz-Riley) crossovers that add back up flat, and each band gets its own gain.
-    // A band's filter never opens up a filter that's already on the sound. Fully down = off.
-    code: (d, [x], ctx) => {
-      // [band gain, its low edge, its high edge]
-      const bands = [['low', null, 'lowf'], ['mid', 'lowf', 'highf'], ['high', 'highf', null]]
-      if (!eqActive(d) && !bands.some(([k]) => isAuto(ctx, k))) return x
-      const live = bands.filter(([k]) => isAuto(ctx, k) || d[k] > -24)
-      if (!live.length) return `${x}.gain(0)`
-      const band = ([k, lo, hi]) => fmapWith('p', ctx, d, [k, lo, hi].filter(Boolean), (val) => {
-        const lp = hi ? `, ...(v.cutoff <= ${val(hi)} ? {} : { cutoff: ${val(hi)}, resonance: .71 })` : ''
-        const hp = lo ? `, ...(v.hcutoff >= ${val(lo)} ? {} : { hcutoff: ${val(lo)}, hresonance: .71 })` : ''
-        const gain = isAuto(ctx, k) ? `(${val(k)} <= -24 ? 0 : 10 ** (${val(k)} / 20))` : tidy(10 ** (d[k] / 20))
-        return `{ ...v${lp}${hp}, ftype: '24db', gain: (v.gain ?? .8) * ${gain} }`
-      }, { lowf: round, highf: round })
-      return `${x}.layer(${live.map((b) => `(p) => ${band(b)}`).join(', ')})`
-    },
+    // a shelf at each end and a bell in the middle, on the summed sound (see stereo.js)
+    code: stereoCode('eq', (d) => ({ low: d.low, mid: d.mid, high: d.high, lowf: d.lowf, highf: d.highf })),
   },
   saturator: {
     group: 'mixing', label: 'saturator', blurb: 'Warmth and grit: rounds off peaks and adds harmonics',
@@ -446,12 +424,9 @@ export const NODE_TYPES = {
     params: [],
     code: (d, [x], ctx) => {
       const chain = (d.chain ?? []).filter((u) => u.on && FX_UNITS.includes(u.type))
-      let eqAbove = !!ctx?.eqAbove
       return chain.reduce((acc, u) => {
         const autoOf = ctx?.auto ? (key) => ctx.auto(`u:${ctx.nodeId}:${u.id}:${key}`) : null
-        const out = NODE_TYPES[u.type].code(u.data, [acc], { ...ctx, eqAbove, autoOf, nodeId: ctx?.nodeId && `${ctx.nodeId}_${u.id}` })
-        eqAbove ||= splitsBands(u, autoOf)
-        return out
+        return NODE_TYPES[u.type].code(u.data, [acc], { ...ctx, autoOf, nodeId: ctx?.nodeId && `${ctx.nodeId}_${u.id}` })
       }, x)
     },
   },
@@ -527,18 +502,10 @@ function stereoCode(kind, params) {
     return `${x}${tail}`
   }
 }
-const STEREO_TYPES = new Set(['haas', 'widener', 'bus'])
+const STEREO_TYPES = new Set(['haas', 'widener', 'bus', 'eq3'])
 
 /** Effects that can sit inside an fx rack: every plain effect node. */
 export const FX_UNITS = ['eq3', 'compressor', 'saturator', 'clipper', 'punch', 'haas', 'widener', 'filter', 'djfilter', 'reverb', 'delay', 'space', 'level', 'drive', 'phaser', 'tremolo', 'vowel', 'lofi']
-
-/** Whether an eq node or unit changes anything (a flat eq isn't in the code at all). */
-const eqActive = (d) => [d.low, d.mid, d.high].some((db) => Math.abs(db) >= 0.05)
-
-/** Whether a node splits the sound into eq bands, so later filters must merge with them. */
-const bandsAutomated = (autoOf) => !!autoOf && ['low', 'mid', 'high'].some((k) => autoOf(k))
-const splitsBands = (node, autoOf = null) => (node.type === 'eq3' && (eqActive(node.data) || bandsAutomated(autoOf)))
-  || (node.type === 'fxrack' && (node.data.chain ?? []).some((u) => u.on && u.type === 'eq3' && eqActive(u.data)))
 
 /** Saturator characters → Strudel's waveshaping curves. */
 const SATURATION = { warm: 'scurve', tape: 'soft', tube: 'diode', asym: 'asym', harmonics: 'chebyshev', fold: 'fold' }
@@ -665,7 +632,6 @@ export function graphCode(project, { solo = null, song = null, audition = false,
   const byId = new Map(nodes.map((n) => [n.id, n]))
   const patternIds = new Set(project.patterns.map((p) => p.id))
   const exprs = new Map() // id → variable name, or null when the node makes nothing
-  const banded = new Set() // ids whose output has been split into eq bands somewhere upstream
   const lines = []
   // each sidechain gets its own audio bus; bus 1 is where everything else plays
   const sidechains = nodes.filter((n) => n.type === 'sidechain').map((n) => n.id)
@@ -701,18 +667,16 @@ export function graphCode(project, { solo = null, song = null, audition = false,
       const v = visit(w.source, trail)
       if (v) { inputs.push(v); slots.push(w.targetHandle) }
     }
-    const eqAbove = wires.some((w) => banded.has(w.source))
     if (spec.inputs === 1 && !inputs.length) { exprs.set(id, null); return null }
     const inputOrbits = wires.filter((w) => exprs.get(w.source)).map((w) => orbitOf.get(w.source) ?? null)
     // a single input passes its bus on; mixing several inputs lands back on the main bus
     const route = { orbit: inputs.length === 1 && spec.inputs !== 'many' ? inputOrbits[0] : null }
     const autoOf = auto ? (key) => auto(`n:${id}:${key}`) : null
-    let expr = spec.code(node.data, inputs, { patternIds, slots, nodeId: id, orbit: 2 + sidechains.indexOf(id), eqAbove, cps, beats, route, inputOrbits, stereoOrbit, declare, routeBus, auto, autoOf, declareFx: (key, kind, params) => declareFx(fx, key, kind, params) })
+    let expr = spec.code(node.data, inputs, { patternIds, slots, nodeId: id, orbit: 2 + sidechains.indexOf(id), cps, beats, route, inputOrbits, stereoOrbit, declare, routeBus, auto, autoOf, declareFx: (key, kind, params) => declareFx(fx, key, kind, params) })
     if (!expr) { exprs.set(id, null); return null }
     // a source making sound on its own plays when the song says (patterns are handled where they're defined)
     if (song && spec.group === 'source' && node.type !== 'pattern' && !wires.length) expr = song(`node:${id}`, expr)
     if (route.orbit != null) orbitOf.set(id, route.orbit)
-    if (eqAbove || splitsBands(node, autoOf)) banded.add(id)
     const name = nodeVar(id)
     lines.push(`// ${node.data.name ?? spec.label}`, `const ${name} = ${expr}`)
     exprs.set(id, name)
