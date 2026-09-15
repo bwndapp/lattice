@@ -570,7 +570,7 @@ export const nodeVar = (id) => `n_${id}`
  * Code for the graph: one `const` per node that makes a pattern, in dependency order,
  * then one lane per wire into each output node. `solo` (a node id) plays only that node.
  */
-export function graphCode(project, { solo = null } = {}) {
+export function graphCode(project, { solo = null, song = null } = {}) {
   const { nodes, edges } = project
   const byId = new Map(nodes.map((n) => [n.id, n]))
   const patternIds = new Set(project.patterns.map((p) => p.id))
@@ -611,8 +611,10 @@ export function graphCode(project, { solo = null } = {}) {
     const inputOrbits = wires.filter((w) => exprs.get(w.source)).map((w) => orbitOf.get(w.source) ?? null)
     // a single input passes its bus on; mixing several inputs lands back on the main bus
     const route = { orbit: inputs.length === 1 && spec.inputs !== 'many' ? inputOrbits[0] : null }
-    const expr = spec.code(node.data, inputs, { patternIds, slots, nodeId: id, orbit: 2 + sidechains.indexOf(id), eqAbove, cps, route, inputOrbits, stereoOrbit, declare, routeBus })
+    let expr = spec.code(node.data, inputs, { patternIds, slots, nodeId: id, orbit: 2 + sidechains.indexOf(id), eqAbove, cps, route, inputOrbits, stereoOrbit, declare, routeBus })
     if (!expr) { exprs.set(id, null); return null }
+    // a source making sound on its own plays when the song says (patterns are handled where they're defined)
+    if (song && spec.group === 'source' && node.type !== 'pattern' && !wires.length) expr = song(`node:${id}`, expr)
     if (route.orbit != null) orbitOf.set(id, route.orbit)
     if (eqAbove || splitsBands(node)) banded.add(id)
     const name = nodeVar(id)

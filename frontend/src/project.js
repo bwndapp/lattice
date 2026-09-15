@@ -1,5 +1,6 @@
 import { parse } from 'acorn'
 import { defaultData, demoGraph, graphCode, normalizeGraph } from './graph.js'
+import { normalizeSong, songActive, songExpr } from './song.js'
 
 /**
  * A project is what the UI edits: a library of patterns (instruments with steps or notes,
@@ -162,6 +163,7 @@ export function normalizeProject(raw) {
   project.edges = edges
   if (typeof raw.prelude === 'string' && raw.prelude.trim()) project.prelude = raw.prelude.slice(0, 20000)
   if (!nodes.some((n) => n.type === 'output')) project.nodes.push({ id: 'out', type: 'output', x: 700, y: 200, data: { muted: {}, solo: null } })
+  if (raw.song) project.song = normalizeSong(raw.song, project)
   return project
 }
 
@@ -248,15 +250,17 @@ export function generateCode(project, { solo = null } = {}) {
     '',
   ]
   if (project.prelude) lines.push('// setup, kept from the original code', project.prelude, '')
+  // the song decides when each part plays (not while auditioning one thing)
+  const song = songActive(project) && !solo ? (src, expr) => songExpr(project, src, expr) : null
+  if (song) lines.push('// song: each part plays inside its clips on the timeline', '')
   for (const pattern of project.patterns) {
     const live = pattern.channels.filter((c) => !c.mute)
     lines.push(`// pattern: ${commentText(pattern.name)} (${pattern.bars} bar${pattern.bars === 1 ? '' : 's'})`)
-    lines.push(live.length
-      ? `const ${patternVar(pattern.id)} = stack(\n${live.map((c) => `  ${channelCode(c, pattern)},`).join('\n')}\n)`
-      : `const ${patternVar(pattern.id)} = silence`)
+    const expr = live.length ? `stack(\n${live.map((c) => `  ${channelCode(c, pattern)},`).join('\n')}\n)` : 'silence'
+    lines.push(`const ${patternVar(pattern.id)} = ${song && live.length ? song(`pattern:${pattern.id}`, expr) : expr}`)
   }
   const patternSolo = typeof solo === 'string' && solo.startsWith('pattern:') && project.patterns.some((p) => `pattern:${p.id}` === solo)
-  const graph = graphCode(project, { solo: patternSolo ? null : solo })
+  const graph = graphCode(project, { solo: patternSolo ? null : solo, song })
   lines.push('', ...graph.lines.map((l) => (l.startsWith('// ') ? `// ${commentText(l.slice(3))}` : l)))
   if (patternSolo) lines.push('', '// auditioning one pattern', ...graph.lanes.map((l) => `_${l.replace(/^_/, '')}`), `solo: ${patternVar(solo.slice(8))}`)
   else lines.push('', solo ? '// auditioning one node' : '// output', ...(graph.lanes.length ? graph.lanes : ['$: silence']))

@@ -12,6 +12,7 @@ import { useUser } from './bwnd'
 import { api, clearDraft, readDraft, timeAgo, trackUrl, writeDraft } from './api'
 import Browser from './Browser.jsx'
 import Graph from './Graph.jsx'
+import Timeline from './Timeline.jsx'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import { capturePatterns, parseLanes, tempoChange } from './lanes'
 import { PROJECT_MARK, blankProject, demoProject, generateCode, normalizeProject, parseProject, projectFromCode } from './project'
@@ -79,7 +80,7 @@ export default function App() {
   // the evaluated pattern, each labeled pattern in it, and which track (null = scratch) it belongs to
   const [evaluated, setEvaluated] = useState({ pattern: null, lanes: new Map(), forId: undefined })
   const capturedRef = useRef(new Map())
-  const [view, setView] = useState(() => (['browse', 'graph', 'code'].includes(readPref('strudel:view', 'graph')) ? readPref('strudel:view', 'graph') : 'graph'))
+  const [view, setView] = useState(() => (['browse', 'graph', 'song', 'code'].includes(readPref('strudel:view', 'graph')) ? readPref('strudel:view', 'graph') : 'graph'))
   const codeViewRef = useRef(null)
   const lastViewRef = useRef('graph') // where ctrl/cmd+J returns to from the code
   const toggleView = useCallback(() => setView((v) => (v === 'code' ? lastViewRef.current : 'code')), [])
@@ -87,6 +88,7 @@ export default function App() {
 
   // Project mode: the code's header line holds the patterns/tracks the UI edits.
   const project = useMemo(() => parseProject(code), [code])
+  useEffect(() => { if (view === 'song' && code && !project) setView('graph') }, [view, code, project]) // hand-written code has no song
   // auditioning: a node id; null plays the output
   const [solo, setSolo] = useState(null)
   const [confirmClear, setConfirmClear] = useState(false)
@@ -622,7 +624,8 @@ export default function App() {
         )}
         <span className="seg views" role="group" aria-label="View">
           <button className={`btn ${view === 'browse' ? 'on' : ''}`} aria-pressed={view === 'browse'} onClick={() => setView('browse')} title="Tracks people have shared, and yours">browse</button>
-          <button className={`btn ${view === 'graph' ? 'on' : ''}`} aria-pressed={view === 'graph'} onClick={() => setView('graph')}>patch</button>
+          <button className={`btn ${view === 'graph' ? 'on' : ''}`} aria-pressed={view === 'graph'} onClick={() => setView('graph')} title="The patch: what each part goes through">patch</button>
+          {project && <button className={`btn ${view === 'song' ? 'on' : ''}`} aria-pressed={view === 'song'} onClick={() => setView('song')} title="The song: when each part plays">song</button>}
           <button
             className={`btn code-toggle ${view === 'code' ? 'on' : ''} ${evalError && view !== 'code' ? 'has-error' : ''}`}
             aria-pressed={view === 'code'}
@@ -722,6 +725,9 @@ export default function App() {
               <p>This removes <strong>{project.nodes.filter((n) => n.type !== 'output').length} nodes</strong>, their wires and <strong>{project.patterns.length} pattern{project.patterns.length === 1 ? '' : 's'}</strong> with all their steps and notes. The output and tempo stay.</p>
               <p>{isNew ? 'You can bring it back with ctrl/cmd + Z.' : 'You can bring it back with ctrl/cmd + Z, and nothing changes on the saved track until you save.'}</p>
             </ConfirmDialog>
+          )}
+          {view === 'song' && project && (
+            <Timeline project={project} onUpdateProject={updateProject} transport={transport} started={started} />
           )}
           {view === 'graph' && project && (
             <Graph
