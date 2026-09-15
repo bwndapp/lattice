@@ -33,7 +33,12 @@ function CommitInput({ value, onCommit, ...props }) {
 
 /** Which step of `pattern` is sounding at position `pos` (patterns loop from bar 1), or -1. */
 export function stepAt(project, pattern, pos) {
-  return Math.floor(mod(pos, pattern.bars) * pattern.stepsPerBar) % stepCount(pattern)
+  return Math.floor(exactStepAt(project, pattern, pos)) % stepCount(pattern)
+}
+
+/** Where playback is inside the pattern, in steps and fractions of one (for a smooth playhead). */
+export function exactStepAt(project, pattern, pos) {
+  return mod(pos, pattern.bars) * pattern.stepsPerBar
 }
 
 /** Instrument chips: click to add, or drag onto a pattern. */
@@ -131,6 +136,10 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
 
   const cursorRef = useRef(() => -1)
   cursorRef.current = () => (started ? stepAt(project, pattern, transport.position(), playMode) : -1)
+  // the piano roll's playhead glides like the timeline's, so it isn't stuck to whole steps
+  const exactRef = useRef(() => -1)
+  // also while stopped: the playhead sits at the cue, as the timeline's does
+  exactRef.current = () => exactStepAt(project, pattern, transport.position())
 
   // live step cursor for the drum grids
   useEffect(() => {
@@ -291,14 +300,14 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
                   channel={ch}
                   pattern={pattern}
                   beats={project.beats}
-                  cursorRef={cursorRef}
+                  cursorRef={exactRef}
                   onSeek={(bars, { fine } = {}) => {
                     // the pattern repeats, so land in the repetition that's playing now
                     const local = mod(fine ? bars : Math.round(bars * pattern.stepsPerBar) / pattern.stepsPerBar, pattern.bars)
                     const at = transport.position()
                     transport.seek(Math.max(0, Math.floor(at / pattern.bars) * pattern.bars + local))
                   }}
-                  onPreview={(midi) => { if (!started) previewInPatch(project, pattern.id, ch, { note: midi }) }}
+                  onPreview={(midi) => previewInPatch(project, pattern.id, ch, { note: midi })}
                   onChangeNotes={(notes) => updateChannel(ch.id, (c) => { c.notes = notes; if (notes.length) c.note = midiToNote(notes[notes.length - 1].n) })}
                 />
               </div>
