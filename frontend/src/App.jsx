@@ -47,6 +47,11 @@ function scratchCode() {
   return generateCode(demoProject())
 }
 
+/** What was open last in this browser: a track id, or 'scratch'. Opening the site goes back to it. */
+const LAST_OPEN = 'lattice:last-open'
+const rememberOpen = (id) => { try { localStorage.setItem(LAST_OPEN, id || 'scratch') } catch { /* storage unavailable */ } }
+const lastOpen = () => { try { return localStorage.getItem(LAST_OPEN) } catch { return null } }
+
 // start the audio engine on the first click or key, so a keyboard play gets effects too
 for (const type of ['pointerdown', 'keydown']) window.addEventListener(type, () => ensureAudio(), { once: true, capture: true })
 
@@ -57,6 +62,16 @@ export default function App() {
   const freshTemplate = location.state?.template === 'demo' ? 'demo' : 'blank'
   const freshHandledRef = useRef(null)
   const navigate = useNavigate()
+  // Opening the site at / (typed or bookmarked, not a click inside the app) goes back to the
+  // track that was open last time; the scratch pad only if that's what was open.
+  const reopened = useRef(false)
+  useEffect(() => {
+    if (reopened.current) return
+    reopened.current = true
+    if (trackId || location.state?.fresh || location.key !== 'default') return
+    const last = lastOpen()
+    if (last && last !== 'scratch') navigate(`/t/${last}`, { replace: true })
+  }, [trackId, location, navigate])
   const { user, loading: userLoading, login, logout } = useUser()
 
   const rootRef = useRef(null)
@@ -270,6 +285,7 @@ export default function App() {
     const editor = editorRef.current
     const base = editor && parseProject(editor.code)
     if (!base) return
+    rememberOpen(loadedIdRef.current) // working on it makes it the one to come back to
     const before = JSON.stringify(base)
     const draft = JSON.parse(before)
     const result = mutate(draft)
@@ -382,6 +398,7 @@ export default function App() {
       setVisibility('public')
       const startOver = fresh && freshHandledRef.current !== fresh // once per click, not again on sign-in
       freshHandledRef.current = fresh
+      if (startOver) rememberOpen(null)
       const previous = readDraft(null)
       putCode(null, startOver ? generateCode(freshTemplate === 'demo' ? demoProject() : blankProject()) : scratchCode())
       // starting over is one undo away from the patch that was there
@@ -396,13 +413,18 @@ export default function App() {
         setTrack(t)
         setTitle(t.title)
         setVisibility(t.visibility)
+        rememberOpen(trackId)
         putCode(trackId, readDraft(trackId, t.updated_at) ?? t.code)
         if (pendingPlayRef.current === trackId) {
           pendingPlayRef.current = null
           play()
         }
       })
-      .catch((e) => { if (alive) setLoadError(e.status === 404 ? 'This track doesn’t exist, or it’s private.' : e.message) })
+      .catch((e) => {
+        if (!alive) return
+        if (lastOpen() === trackId) rememberOpen(null) // don't keep reopening a track that's gone
+        setLoadError(e.status === 404 ? 'This track doesn’t exist, or it’s private.' : e.message)
+      })
     return () => { alive = false }
   }, [trackId, fresh, freshTemplate, user?.id, putCode, play])
 
