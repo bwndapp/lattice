@@ -1,5 +1,6 @@
 /**
- * Stereo inserts: Haas and the stereo widener. Strudel only processes sound per note, and
+ * Bus inserts: Haas, the stereo widener and a mixer bus's fader, plus routing one bus into
+ * another. Strudel only processes sound per note, and
  * a note can't delay one ear or trade mid for side, so these run on the audio bus (the
  * "orbit") a sound plays on, between the orbit and the speakers. The generated code only
  * moves the sound onto its own orbit; the processing lives here, so knobs act at once.
@@ -12,19 +13,26 @@ import { getAudioContext, getSuperdoughAudioController } from '@strudel/webaudio
 export const STEREO_ORBIT_BASE = 40
 
 let declared = new Map() // orbit → [{ key, kind, params }] from the latest generated code
+let routed = new Map() // orbit → the orbit it plays into (a mixer bus), instead of the speakers
 const racks = new Map() // orbit → { orbit (Orbit object), input, output, units: Map(key → unit) }
 let controller = null
 let armed = false
 
 /** Start collecting the inserts a code generation declares. */
 export function beginInserts() {
-  return new Map()
+  return { inserts: new Map(), routes: new Map() }
 }
 
 /** A stereo insert on an orbit, in signal order. */
 export function declareInsert(list, orbit, key, kind, params) {
-  if (!list.has(orbit)) list.set(orbit, [])
-  list.get(orbit).push({ key, kind, params })
+  if (!list.inserts.has(orbit)) list.inserts.set(orbit, [])
+  list.inserts.get(orbit).push({ key, kind, params })
+}
+
+/** Send everything on one orbit into another (a mixer bus) instead of the speakers. */
+export function declareRoute(list, from, to) {
+  if (!list.inserts.has(from)) list.inserts.set(from, [])
+  list.routes.set(from, to)
 }
 
 /**
@@ -32,8 +40,8 @@ export function declareInsert(list, orbit, key, kind, params) {
  * so the rest of the patch keeps its processing for when playback comes back to it.
  */
 export function commitInserts(list, { partial = false } = {}) {
-  const next = partial ? new Map([...declared, ...list]) : list
-  declared = next
+  declared = partial ? new Map([...declared, ...list.inserts]) : list.inserts
+  routed = partial ? new Map([...routed, ...list.routes]) : list.routes
   // the audio side must never break generating the code (and so the whole app)
   try { apply() } catch (err) { console.warn('[stereo] could not update the stereo inserts', err) }
 }
@@ -43,6 +51,7 @@ function apply() {
   for (const [n, rack] of racks) {
     if (controller.nodes[n] !== rack.orbit) { teardown(n); continue } // the controller was reset
     wire(n, rack, declared.get(n) ?? [])
+    aim(n, rack)
   }
   // a bus that was already playing before it got an insert (a sidechain's, say)
   for (const n of declared.keys()) if (!racks.has(n) && controller.nodes[n]) mount(n, controller.nodes[n])
@@ -92,10 +101,20 @@ function mount(n, orbit, channels) {
   const output = stereo()
   orbit.output.disconnect() // it went straight to the speakers
   orbit.output.connect(input)
-  controller.output.connectToDestination(output, channels)
-  const rack = { orbit, input, output, units: new Map(), order: '' }
+  const rack = { orbit, input, output, units: new Map(), order: '', channels, to: undefined }
   racks.set(n, rack)
   wire(n, rack, declared.get(n) ?? [])
+  aim(n, rack)
+}
+
+/** Point a rack at the speakers, or into the mixer bus its orbit is routed to. */
+function aim(n, rack) {
+  const to = routed.get(n) ?? null
+  if (rack.to === to) return
+  rack.output.disconnect()
+  if (to != null && to !== n) rack.output.connect(controller.getOrbit(to).summingNode)
+  else controller.output.connectToDestination(rack.output, rack.channels)
+  rack.to = to
 }
 
 function teardown(n) {
@@ -135,6 +154,22 @@ const smooth = (param, value) => {
 }
 
 const UNITS = {
+  /** A mixer bus's level and pan, on the summed sound. */
+  fader(ac) {
+    const input = new GainNode(ac, { channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' })
+    const panner = new StereoPannerNode(ac)
+    input.connect(panner)
+    return {
+      input,
+      output: panner,
+      set({ gain, pan }) {
+        smooth(input.gain, gain)
+        smooth(panner.pan, pan * 2 - 1)
+      },
+      dispose() { input.disconnect(); panner.disconnect() },
+    }
+  },
+
   /** Delay one ear by a few milliseconds: the ear hears the other side first, and the sound spreads. */
   haas(ac) {
     const input = new GainNode(ac, { channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' })

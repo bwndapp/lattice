@@ -14,7 +14,7 @@
 
 import { normalizePatch, phylloCode } from './phyllo/engine'
 import { liveBus } from './phyllo/live'
-import { STEREO_ORBIT_BASE, beginInserts, commitInserts, declareInsert } from './stereo'
+import { STEREO_ORBIT_BASE, beginInserts, commitInserts, declareInsert, declareRoute } from './stereo'
 
 const clampNum = (v, fallback, lo, hi) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : fallback)
 const tidy = (v) => String(Math.round(Number(v) * 1000) / 1000)
@@ -366,6 +366,32 @@ export const NODE_TYPES = {
     },
   },
 
+  bus: {
+    group: 'combine', label: 'mixer bus', blurb: 'Route several sounds into one track: level, pan and effects after it act on them all',
+    inputs: 'many',
+    params: [
+      { key: 'name', type: 'text', label: 'name', def: 'bus' },
+      { key: 'vol', type: 'knob', label: 'vol', min: 0, max: 1.5, def: 1 },
+      { key: 'pan', type: 'knob', label: 'pan', min: 0, max: 1, def: 0.5 },
+    ],
+    // Like a mixer insert: everything wired in plays on one audio bus (an orbit), so reverb,
+    // delay, stereo effects and sidechain ducking after it treat the group as one sound.
+    // A sound that already has a bus of its own (a haas, a sidechain) keeps it, and the app
+    // plays that bus into this one. Level and pan act on the summed sound, live.
+    code: (d, xs, ctx) => {
+      if (!xs.length || !ctx?.route) return xs.length ? `stack(${xs.join(', ')})` : null
+      const orbit = ctx.stereoOrbit(ctx.nodeId)
+      const parts = xs.map((x, i) => {
+        const from = ctx.inputOrbits?.[i]
+        if (from == null) return `${x}.orbit(${orbit})`
+        if (from !== orbit) ctx.routeBus(from, orbit)
+        return x
+      })
+      ctx.declare(orbit, ctx.nodeId, 'fader', { gain: d.vol, pan: d.pan })
+      ctx.route.orbit = orbit
+      return parts.length === 1 ? parts[0] : `stack(${parts.join(', ')})`
+    },
+  },
   stack: {
     group: 'combine', label: 'stack', blurb: 'Play inputs together',
     inputs: 'many',
@@ -411,7 +437,7 @@ function stereoCode(kind, params) {
     return `${x}${tail}`
   }
 }
-const STEREO_TYPES = new Set(['haas', 'widener'])
+const STEREO_TYPES = new Set(['haas', 'widener', 'bus'])
 
 /** Effects that can sit inside an fx rack: every plain effect node. */
 export const FX_UNITS = ['eq3', 'compressor', 'saturator', 'clipper', 'punch', 'haas', 'widener', 'filter', 'djfilter', 'space', 'level', 'drive', 'phaser', 'tremolo', 'vowel', 'lofi']
@@ -563,6 +589,7 @@ export function graphCode(project, { solo = null } = {}) {
   const stereoOrbit = (key) => STEREO_ORBIT_BASE + Math.max(0, stereoKeys.indexOf(key))
   const inserts = beginInserts()
   const declare = (orbit, key, kind, params) => declareInsert(inserts, orbit, key, kind, params)
+  const routeBus = (from, to) => declareRoute(inserts, from, to)
   const orbitOf = new Map() // node id → the bus its sound ends up on, when not the main one
 
   const visit = (id, trail = new Set()) => {
@@ -584,7 +611,7 @@ export function graphCode(project, { solo = null } = {}) {
     const inputOrbits = wires.filter((w) => exprs.get(w.source)).map((w) => orbitOf.get(w.source) ?? null)
     // a single input passes its bus on; mixing several inputs lands back on the main bus
     const route = { orbit: inputs.length === 1 && spec.inputs !== 'many' ? inputOrbits[0] : null }
-    const expr = spec.code(node.data, inputs, { patternIds, slots, nodeId: id, orbit: 2 + sidechains.indexOf(id), eqAbove, cps, route, inputOrbits, stereoOrbit, declare })
+    const expr = spec.code(node.data, inputs, { patternIds, slots, nodeId: id, orbit: 2 + sidechains.indexOf(id), eqAbove, cps, route, inputOrbits, stereoOrbit, declare, routeBus })
     if (!expr) { exprs.set(id, null); return null }
     if (route.orbit != null) orbitOf.set(id, route.orbit)
     if (eqAbove || splitsBands(node)) banded.add(id)

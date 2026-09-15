@@ -421,6 +421,7 @@ const SEARCH_WORDS = {
   compressor: 'compression comp dynamics glue squash level even punch bass mixing',
   punch: 'transient shaper attack snap punch tail sustain drums',
   haas: 'stereo wide width delay precedence double doubler spread left right ms',
+  bus: 'mixer bus track insert group submix route send null merge combine channel fader sum',
   widener: 'stereo wide width imager spread mid side ms mono bass imaging',
   phyllo: 'synth instrument serum vital phase plant wavetable supersaw analog fm lfo envelope modulation pad lead bass pluck',
   fxrack: 'effects chain multiple fx rack bus insert',
