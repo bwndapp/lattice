@@ -647,6 +647,29 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
   const [menu, setMenu] = useState(null) // right-click add menu: { x, y, at (flow position), wire (edge id or null) }
   const menuItems = useMemo(() => paletteItems(), [])
   const closeMenu = useCallback(() => setMenu(null), [])
+  const pointerRef = useRef(null) // last pointer position over the canvas, for shift + A
+
+  // Shift + A (as in Blender): the add menu at the pointer, ready to search
+  useEffect(() => {
+    const onMove = (e) => { pointerRef.current = { x: e.clientX, y: e.clientY } }
+    const onKey = (e) => {
+      if (e.code !== 'KeyA' || !e.shiftKey || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return
+      if (e.target.closest?.('input, textarea, select, [contenteditable="true"], dialog, .pattern-pop, .add-menu')) return
+      const canvas = wrapRef.current?.querySelector('.react-flow')
+      if (!canvas) return
+      const r = canvas.getBoundingClientRect()
+      const p = pointerRef.current
+      const inside = p && p.x >= r.left && p.x <= r.right && p.y >= r.top && p.y <= r.bottom
+      const x = inside ? p.x : r.left + r.width / 2
+      const y = inside ? p.y : r.top + r.height / 2
+      e.preventDefault()
+      setMenu({ x, y, at: flow.screenToFlowPosition({ x: x - 20, y: y - 20 }), wire: null })
+    }
+    const el = wrapRef.current
+    el?.addEventListener('pointermove', onMove)
+    window.addEventListener('keydown', onKey)
+    return () => { el?.removeEventListener('pointermove', onMove); window.removeEventListener('keydown', onKey) }
+  }, [flow])
   const [synth, setSynth] = useState(null) // the phyllo node whose synth window is open: { nodeId, x, y }
   const synthNode = synth && project.nodes.find((n) => n.id === synth.nodeId && n.type === 'phyllo')
 

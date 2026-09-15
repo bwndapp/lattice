@@ -4,7 +4,7 @@ import './AddMenu.css'
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 
 /**
- * Right-click on the patch: an add menu at the pointer. Groups open into their items
+ * Right-click on the patch, or Shift + A: an add menu at the pointer. Groups open into their items
  * (hover, click or arrow right); typing searches everything at once. Enter or a click
  * adds the item where you right-clicked. Esc, a click outside or scrolling closes it.
  *
@@ -128,7 +128,7 @@ export default function AddMenu({ x, y, items, groups, score, onPick, onClose, i
     >
       <div className="am-main">
         <div className="am-head">
-          <span className="am-title">add{intoWire ? ' into this wire' : ''}</span>
+          <span className="am-title">add{intoWire ? ' into this wire' : ''}<kbd className="am-kbd">shift A</kbd></span>
           <input
             ref={searchRef}
             className="node-input am-search"

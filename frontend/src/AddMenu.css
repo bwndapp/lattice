@@ -12,9 +12,9 @@
   border: 1px solid var(--acid);
   box-shadow: 6px 6px 0 #000;
 }
-.am-main { width: 220px; }
-.am-flyout { width: 270px; margin-left: -1px; border-color: var(--line); max-height: min(420px, 70vh); overflow-y: auto; }
-.am-head { display: grid; gap: 0.35rem; padding: 0.5rem 0.5rem 0.45rem; border-bottom: 1px solid var(--line); }
+.am-main { width: 190px; }
+.am-flyout { width: 200px; margin-left: -1px; border-color: var(--line); max-height: min(420px, 70vh); overflow-y: auto; }
+.am-head { display: grid; gap: 0.3rem; padding: 0.4rem 0.4rem 0.35rem; border-bottom: 1px solid var(--line); }
 .am-title { font-family: var(--display); font-weight: 800; font-stretch: 112%; font-size: 14px; color: var(--acid); }
 .am-search { width: 100%; font-size: 12px; }
 .am-list { display: grid; padding: 0.25rem; gap: 1px; }
@@ -25,7 +25,7 @@
   align-items: baseline;
   gap: 0.1rem 0.5rem;
   width: 100%;
-  padding: 0.3rem 0.45rem;
+  padding: 0.2rem 0.4rem;
   text-align: left;
   font: inherit;
   font-size: 12px;
@@ -41,9 +41,12 @@
 .am-row:focus-visible { outline: 1px solid var(--acid); outline-offset: -1px; }
 .am-label { font-weight: 600; }
 .am-count { font-size: 10px; color: var(--muted); }
-.am-blurb { grid-column: 1 / -1; font-size: 10px; line-height: 1.35; color: var(--muted); }
+/* compact: only the highlighted row says what it does (the others have it as a tooltip) */
+.am-blurb { display: none; grid-column: 1 / -1; font-size: 10px; line-height: 1.35; color: var(--muted); }
+.am-row.cursor .am-blurb { display: block; }
 .am-transform { border-left-color: var(--paper); }
 .am-effect, .am-mixing { border-left-color: var(--muted); }
 .am-combine { border-left-color: #6b6b63; }
 .am-instruments { border-left-color: #b9c96a; }
 .am-empty { margin: 0.4rem 0.45rem; font-size: 11px; color: var(--muted); }
+.am-kbd { float: right; margin-top: 2px; font-family: var(--mono); font-weight: 400; font-size: 9px; color: var(--muted); border: 1px solid var(--line); padding: 0 0.25rem; }
