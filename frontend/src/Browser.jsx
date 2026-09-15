@@ -62,16 +62,16 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
           <Switch small label="Sort" options={SORTS} value={sort} onChange={setSort} />
         </div>
 
-        <div className="b-new">
-          <Link to="/" state={{ fresh: Date.now(), template: 'blank' }} className="b-button primary new-track" onClick={onPick}>New track</Link>
-          <Link to="/" state={{ fresh: Date.now(), template: 'demo' }} className="b-button new-demo" onClick={onPick}>Demo patch</Link>
-        </div>
       </aside>
 
       <div className="b-main">
         <div className="b-main-head">
           <h3>{heading}</h3>
           {tracks?.length > 0 && <span className="b-count">{tracks.length}{tracks.length === 50 ? '+' : ''}</span>}
+          <div className="b-new" role="group" aria-label="Start a track">
+            <Link to="/" state={{ fresh: Date.now(), template: 'demo' }} className="b-button small new-demo" onClick={onPick} title="Open the demo patch to pull apart">Demo patch</Link>
+            <Link to="/" state={{ fresh: Date.now(), template: 'blank' }} className="b-button small primary new-track" onClick={onPick}><span aria-hidden>+</span> New track</Link>
+          </div>
         </div>
 
         {needsUser ? (
