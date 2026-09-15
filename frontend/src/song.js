@@ -32,13 +32,18 @@ export function triggerOnly(project, nodeId) {
 
 /** Everything that can go on the timeline, in sidebar order. */
 export function songParts(project) {
-  const patterns = project.patterns.map((p) => ({
+  // originals, each followed by its variations (which play through the original's node)
+  const byId = new Map(project.patterns.map((p) => [p.id, p]))
+  const ordered = project.patterns.filter((p) => !p.parent).flatMap((p) => [p, ...project.patterns.filter((v) => v.parent === p.id)])
+  const patterns = ordered.map((p) => ({
     src: `pattern:${p.id}`,
     kind: 'pattern',
     id: p.id,
     name: p.name,
     bars: p.bars,
-    inPatch: project.nodes.some((n) => n.type === 'pattern' && n.data.patternId === p.id),
+    parent: p.parent ?? null,
+    parentName: p.parent ? byId.get(p.parent)?.name : null,
+    inPatch: project.nodes.some((n) => n.type === 'pattern' && n.data.patternId === (p.parent ?? p.id)),
   }))
   const nodes = sourceNodes(project).map((n) => ({
     src: `node:${n.id}`,
@@ -75,7 +80,10 @@ export function normalizeSong(raw, project) {
     clips.push(clip)
     if (clips.length >= MAX_CLIPS) break
   }
-  return { on: raw?.on !== false, snap: raw?.snap === 'beat' ? 'beat' : 'bar', clips }
+  // colours people picked for parts (the rest get one from the part's id)
+  const colors = {}
+  for (const [src, color] of Object.entries(raw?.colors ?? {})) if (valid.has(src) && /^#[0-9a-f]{6}$/i.test(color)) colors[src] = color.toLowerCase()
+  return { on: raw?.on !== false, snap: raw?.snap === 'beat' ? 'beat' : 'bar', clips, ...(Object.keys(colors).length ? { colors } : {}) }
 }
 
 /** Bars the song lasts: to the end of its last clip. */

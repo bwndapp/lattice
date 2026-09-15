@@ -108,6 +108,7 @@ export function normalizeProject(raw) {
       stepsPerBar: [4, 8, 12, 16, 24, 32].includes(p.stepsPerBar) ? p.stepsPerBar : 16,
       channels: [],
     }
+    if (typeof p.parent === 'string' && p.parent) pattern.parent = p.parent.replace(/\W/g, '')
     const n = stepCount(pattern)
     for (const c of Array.isArray(p.channels) ? p.channels : []) {
       if (!c || !['drum', 'synth', 'code'].includes(c.kind)) continue
@@ -154,6 +155,16 @@ export function normalizeProject(raw) {
       pattern.channels.push(ch)
     }
     project.patterns.push(pattern)
+  }
+  // a variation plays through its original's pattern node: the original must exist and be
+  // an original itself (a variation of a variation hangs off the first original)
+  const byId = new Map(project.patterns.map((p) => [p.id, p]))
+  for (const p of project.patterns) {
+    if (!p.parent) continue
+    let root = byId.get(p.parent)
+    for (let hops = 0; root?.parent && hops < 8; hops++) root = byId.get(root.parent)
+    if (!root || root.id === p.id || root.parent) delete p.parent
+    else p.parent = root.id
   }
   const patternIds = new Set(project.patterns.map((p) => p.id))
   let graph = raw
@@ -238,6 +249,35 @@ function channelCode(ch, pattern) {
 
 export const patternVar = (id) => `p_${id}`
 
+/** The pattern whose node a pattern plays through: its original, or itself. */
+export function rootPatternId(project, patternId) {
+  return project.patterns.find((p) => p.id === patternId)?.parent ?? patternId
+}
+
+/**
+ * Duplicate a pattern as a variation (as FL's clone): same instruments, steps and notes to
+ * change, and it plays through the original's pattern node, so the patch doesn't grow.
+ * Goes right after the original's last variation. Mutates the draft; returns the new id.
+ */
+export function makeVariation(p, patternId) {
+  const source = p.patterns.find((x) => x.id === patternId)
+  if (!source) return null
+  const rootId = source.parent ?? source.id
+  const root = p.patterns.find((x) => x.id === rootId)
+  const taken = new Set(p.patterns.map((x) => x.name))
+  const base = String(root.name).replace(/ \d+$/, '')
+  let i = 2
+  while (taken.has(`${base} ${i}`)) i++
+  const copy = JSON.parse(JSON.stringify(source))
+  copy.id = newId()
+  copy.name = `${base} ${i}`.slice(0, 40)
+  copy.parent = rootId
+  copy.channels = copy.channels.map((c) => ({ ...c, id: newId() }))
+  const family = p.patterns.map((x, at) => (x.id === rootId || x.parent === rootId ? at : -1)).filter((at) => at >= 0)
+  p.patterns.splice(Math.max(...family) + 1, 0, copy)
+  return copy.id
+}
+
 /**
  * Code that plays one hit of one channel (a note, or a drum step) through the patch, as
  * the song would: that pattern plays just the hit, every other part is silent, and it goes
@@ -254,10 +294,11 @@ export function auditionCode(project, patternId, channelId, { midi = 48, steps =
     ? { ...ch, mute: false, notes: [{ s: 0, l: Math.min(steps, bar.stepsPerBar), n: midi }] }
     : { ...ch, mute: false, steps: Array.from({ length: bar.stepsPerBar }, (_, i) => (i === 0 ? 1 : 0)) }
   const hit = channelCode(one, bar)
+  const rootId = pattern.parent ?? patternId // a variation sounds through its original's node
   // does a pattern node for it reach an output?
   const outputs = new Set(project.nodes.filter((n) => n.type === 'output').map((n) => n.id))
   const seen = new Set()
-  const queue = project.nodes.filter((n) => n.type === 'pattern' && n.data.patternId === patternId).map((n) => n.id)
+  const queue = project.nodes.filter((n) => n.type === 'pattern' && n.data.patternId === rootId).map((n) => n.id)
   let heard = false
   while (queue.length && !heard) {
     const id = queue.shift()
@@ -270,7 +311,7 @@ export function auditionCode(project, patternId, channelId, { midi = 48, steps =
   const lanes = graph.lanes.filter((l) => !l.startsWith('_')).map((l) => l.slice(l.indexOf(':') + 1).trim())
   if (!lanes.length) return hit
   return [
-    ...project.patterns.map((p) => `const ${patternVar(p.id)} = ${p.id === patternId ? hit : 'silence'}`),
+    ...project.patterns.map((p) => `const ${patternVar(p.id)} = ${p.id === rootId ? hit : 'silence'}`),
     ...graph.lines,
     `stack(${lanes.join(', ')})`,
   ].join('\n')
@@ -291,11 +332,21 @@ export function generateCode(project, { solo = null } = {}) {
   // the song decides when each part plays (not while auditioning one thing)
   const song = songActive(project) && !solo ? (src, expr) => songExpr(project, src, expr) : null
   if (song) lines.push('// song: each part plays inside its clips on the timeline', '')
-  for (const pattern of project.patterns) {
+  const patternExpr = (pattern) => {
     const live = pattern.channels.filter((c) => !c.mute)
-    lines.push(`// pattern: ${commentText(pattern.name)} (${pattern.bars} bar${pattern.bars === 1 ? '' : 's'})`)
-    const expr = live.length ? `stack(\n${live.map((c) => `  ${channelCode(c, pattern)},`).join('\n')}\n)` : 'silence'
-    lines.push(`const ${patternVar(pattern.id)} = ${song && live.length ? song(`pattern:${pattern.id}`, expr) : expr}`)
+    return live.length ? `stack(\n${live.map((c) => `  ${channelCode(c, pattern)},`).join('\n')}\n)` : 'silence'
+  }
+  for (const pattern of project.patterns) {
+    const variations = pattern.parent ? [] : project.patterns.filter((v) => v.parent === pattern.id)
+    lines.push(`// pattern: ${commentText(pattern.name)} (${pattern.bars} bar${pattern.bars === 1 ? '' : 's'})${pattern.parent ? `, a variation of ${commentText(project.patterns.find((x) => x.id === pattern.parent)?.name)}` : ''}${variations.length ? ` + ${variations.length} variation${variations.length === 1 ? '' : 's'} in the song` : ''}`)
+    const expr = patternExpr(pattern)
+    let value = song && expr !== 'silence' ? song(`pattern:${pattern.id}`, expr) : expr
+    // in the song, an original's node also plays its variations, each inside its own clips
+    if (song && variations.length) {
+      const parts = [value, ...variations.map((v) => { const e = patternExpr(v); return e === 'silence' ? 'silence' : song(`pattern:${v.id}`, e) })].filter((x) => x !== 'silence')
+      value = parts.length === 0 ? 'silence' : parts.length === 1 ? parts[0] : `stack(\n${parts.join(',\n')}\n)`
+    }
+    lines.push(`const ${patternVar(pattern.id)} = ${value}`)
   }
   const patternSolo = typeof solo === 'string' && solo.startsWith('pattern:') && project.patterns.some((p) => `pattern:${p.id}` === solo)
   const graph = graphCode(project, { solo: patternSolo ? null : solo, song })

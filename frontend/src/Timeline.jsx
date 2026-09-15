@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { makePattern, newId } from './project'
+import { makePattern, makeVariation, newId } from './project'
 import { MAX_BARS, songLength, songParts } from './song'
 import PatternEditor from './PatternEditor.jsx'
+import Popover from './Popover.jsx'
 import { KitSelect } from './Graph.jsx'
 import { NODE_TYPES } from './graph'
 import './Timeline.css'
@@ -24,12 +25,22 @@ const EDGE = 7 // px at each end of a clip that stretch it
 const MIN_PPB = 10
 const MAX_PPB = 260
 const COLORS = ['#e4ff1a', '#f2f0e6', '#b9c96a', '#ffb347', '#86d8cc', '#c8a2ff', '#ff8fa3', '#9fb4ff']
+const PICKS = [...COLORS, '#ff6b3d', '#ffd23f', '#7dff9a', '#5ad1ff', '#4d7cff', '#b06bff', '#ff4fd8', '#8a8a80']
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 
-function colorFor(src) {
+/** A part's colour: the one picked for it, or one from its id. */
+function colorFor(src, colors) {
+  if (colors?.[src]) return colors[src]
   let h = 0
   for (const ch of src) h = (h * 31 + ch.charCodeAt(0)) >>> 0
   return COLORS[h % COLORS.length]
+}
+
+/** Dark text on light clip colours, light text on dark ones. */
+function inkFor(hex) {
+  const n = parseInt(hex.slice(1), 16)
+  const lum = (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255
+  return lum > 0.55 ? '#0a0a09' : '#f2f0e6'
 }
 
 function readRows() {
@@ -170,7 +181,8 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   /** Make sure a pattern is heard: if no pattern node plays it, add one wired to the output. */
   const ensureInPatch = (p, src) => {
     if (!src.startsWith('pattern:')) return
-    const patternId = src.slice(8)
+    // a variation plays through its original's node: that's the one that has to be there
+    const patternId = p.patterns.find((x) => x.id === src.slice(8))?.parent ?? src.slice(8)
     if (p.nodes.some((n) => n.type === 'pattern' && n.data.patternId === patternId)) return
     const out = p.nodes.find((n) => n.type === 'output')
     const id = `pattern${newId().slice(-5)}`
@@ -455,6 +467,24 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     const done = () => { e.preventDefault(); e.stopPropagation() }
     if (mod && k === 'a') { done(); return setSelected(new Set(song.clips.map((c) => c.id))) }
     if (!mod && k === 'c') { done(); setTool((t) => (t === 'slice' ? 'pointer' : 'slice')); setSliceLine(null); return }
+    if (!mod && k === 'u') {
+      // make unique (as in FL): each selected pattern clip gets its own variation to change
+      const picked = song.clips.filter((c) => selected.has(c.id) && c.src.startsWith('pattern:'))
+      if (!picked.length) return
+      done()
+      let last = null
+      onUpdateProject((p) => {
+        const made = new Map() // one variation per pattern, shared by the clips picked from it
+        for (const c of p.song?.clips ?? []) {
+          if (!picked.some((x) => x.id === c.id)) continue
+          const from = c.src.slice(8)
+          if (!made.has(from)) made.set(from, makeVariation(p, from))
+          if (made.get(from)) { c.src = `pattern:${made.get(from)}`; last = made.get(from) }
+        }
+      })
+      if (last) { setActivePart(`pattern:${last}`); setTimeout(() => setEditing({ patternId: last, x: window.innerWidth / 2, y: 180 }), 0) }
+      return
+    }
     if (!mod && k === 'v') { done(); setTool('pointer'); setSliceLine(null); return }
     if (k === 'escape') { done(); if (tool !== 'pointer') { setTool('pointer'); setSliceLine(null); return } setSelected(new Set()); setActivePart(null); return }
     if (!chosen.length) return
@@ -590,13 +620,22 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     setActivePart(src)
   }
 
+  /** Duplicate a pattern as a variation of its original, and open it to change. */
+  const duplicatePart = (part, e) => {
+    let made = null
+    onUpdateProject((p) => { made = makeVariation(p, part.id) })
+    if (!made) return
+    setActivePart(`pattern:${made}`)
+    setEditing({ patternId: made, x: e.clientX + 60, y: e.clientY })
+  }
+
   const partRow = (part) => {
     const count = song.clips.filter((c) => c.src === part.src).length
     return (
-      <li key={part.src}>
+      <li key={part.src} className={part.parent ? 'variant' : ''}>
         <button
           className={`song-part ${activePart === part.src ? 'active' : ''} ${part.inPatch ? '' : 'unused'}`}
-          style={{ '--clip': colorFor(part.src) }}
+          style={{ '--clip': colorFor(part.src, song.colors) }}
           draggable
           onDragStart={(e) => {
             e.dataTransfer.setData(PART_MIME, part.src)
@@ -612,10 +651,50 @@ export default function Timeline({ project, onUpdateProject, transport, started 
           <span className="song-swatch" aria-hidden />
           <span className="song-part-name">{part.name}</span>
           <span className="song-part-meta">
-            {part.trigger ? 'trigger · always on' : part.kind === 'pattern' ? `${part.bars} bar${part.bars === 1 ? '' : 's'}${part.inPatch ? '' : ' · drop to add to the patch'}` : part.kind === 'sound' ? 'rhythm' : part.kind === 'notes' ? 'melody' : part.kind}
+            {part.trigger ? 'trigger · always on' : part.kind === 'pattern' ? `${part.bars} bar${part.bars === 1 ? '' : 's'}${part.parent ? ` · plays through ${part.parentName}` : ''}${part.inPatch ? '' : ' · drop to add to the patch'}` : part.kind === 'sound' ? 'rhythm' : part.kind === 'notes' ? 'melody' : part.kind}
             {count > 0 ? ` · ${count} clip${count === 1 ? '' : 's'}` : part.inPatch && song.on && song.clips.length && !part.trigger ? ' · silent in the song' : ''}
           </span>
         </button>
+        <Popover
+          label={<span className="song-color-dot" style={{ background: colorFor(part.src, song.colors) }} />}
+          title={`Colour of ${part.name} and its clips`}
+          className="song-color-btn"
+          panelClassName="song-colors"
+          align="left"
+        >
+          {(close) => (
+            <>
+              <div className="song-color-grid" role="group" aria-label="Colours">
+                {PICKS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    className={`song-color-pick ${colorFor(part.src, song.colors) === c ? 'on' : ''}`}
+                    style={{ background: c }}
+                    aria-label={c}
+                    onClick={() => { updateSong((s) => { s.colors = { ...(s.colors ?? {}), [part.src]: c } }); close() }}
+                  />
+                ))}
+              </div>
+              <label className="song-color-custom">
+                <span>any colour</span>
+                <input type="color" value={colorFor(part.src, song.colors)} onChange={(e) => updateSong((s) => { s.colors = { ...(s.colors ?? {}), [part.src]: e.target.value } })} />
+              </label>
+              {song.colors?.[part.src] && (
+                <button type="button" className="linkish song-color-reset" onClick={() => { updateSong((s) => { const next = { ...(s.colors ?? {}) }; delete next[part.src]; s.colors = next }); close() }}>back to its own colour</button>
+              )}
+            </>
+          )}
+        </Popover>
+        {part.kind === 'pattern' && (
+          <button
+            type="button"
+            className="song-part-dup"
+            onClick={(e) => duplicatePart(part, e)}
+            title={`Duplicate as a variation: change it freely, it still plays through ${part.parentName ?? part.name}'s spot in the patch`}
+            aria-label={`Duplicate ${part.name} as a variation`}
+          >dup</button>
+        )}
       </li>
     )
   }
@@ -632,7 +711,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
           <span className="song-title">parts</span>
           <button className="btn" onClick={newPattern} title="A new pattern, added to the patch and opened for editing">+ pattern</button>
         </div>
-        <p className="song-parts-hint">Drag onto the timeline. Selected, you can also draw it on empty rows.</p>
+        <p className="song-parts-hint">Drag onto the timeline; selected, draw it on empty rows. <b>dup</b> makes a variation that plays through the same spot in the patch.</p>
         <ul className="song-part-list">
           {inPatch.map(partRow)}
         </ul>
@@ -671,7 +750,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
             <button className={`btn ${tool === 'slice' ? 'on' : ''}`} aria-pressed={tool === 'slice'} onClick={() => setTool('slice')} title="Cut clips in two: click a clip, or drag up or down to cut every clip on those rows (C)">slice</button>
           </span>
           <span className="spacer" />
-          <span className="song-hint">{tool === 'slice' ? 'click a clip to cut it · drag up or down to cut several · alt snaps finer · V or Esc to go back' : 'drag the ruler to move the playhead · shift-drag it to loop, drag loop edges to resize · shift-drag copies · right-click deletes · C slices'}</span>
+          <span className="song-hint">{tool === 'slice' ? 'click a clip to cut it · drag up or down to cut several · alt snaps finer · V or Esc to go back' : 'dup a pattern for a variation · U makes selected clips unique · shift-drag copies · right-click deletes · C slices · drag the ruler to move the playhead'}</span>
           <span className="song-zoom" role="group" aria-label="Zoom">
             <button className="btn" onClick={() => zoomTo(ppb / 1.5)} aria-label="Zoom out">−</button>
             <button className="btn" onClick={fit} title="Fit the song">fit</button>
@@ -737,7 +816,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
                     key={c.id}
                     data-id={c.id}
                     className={`clip ${selected.has(c.id) ? 'selected' : ''} ${c.id.startsWith('__') ? 'preview' : ''} ${!song.on ? 'off' : ''}`}
-                    style={{ left: c.start * ppb, top: c.lane * LANE_H + 3, width: Math.max(4, c.len * ppb - 1), height: LANE_H - 6, '--clip': colorFor(c.src) }}
+                    style={{ left: c.start * ppb, top: c.lane * LANE_H + 3, width: Math.max(4, c.len * ppb - 1), height: LANE_H - 6, '--clip': colorFor(c.src, song.colors), '--clip-ink': inkFor(colorFor(c.src, song.colors)) }}
                     title={`${part.name} · bar ${Math.floor(c.start) + 1}${c.start % 1 ? `.${Math.round((c.start % 1) * beats) + 1}` : ''} · ${Math.round(c.len * beats) / beats} bar${c.len === 1 ? '' : 's'}`}
                   >
                     <span className="clip-name">{part.name}</span>
@@ -748,7 +827,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
                 )
               })}
               {ghost && ghost.lane >= 0 && (
-                <div className="clip preview ghost" style={{ left: ghost.start * ppb, top: ghost.lane * LANE_H + 3, width: ghost.len * ppb - 1, height: LANE_H - 6, '--clip': colorFor(ghost.src ?? '') }}>
+                <div className="clip preview ghost" style={{ left: ghost.start * ppb, top: ghost.lane * LANE_H + 3, width: ghost.len * ppb - 1, height: LANE_H - 6, '--clip': colorFor(ghost.src ?? '', song.colors), '--clip-ink': inkFor(colorFor(ghost.src ?? '', song.colors)) }}>
                   <span className="clip-name">{partBySrc.get(ghost.src)?.name}</span>
                 </div>
               )}

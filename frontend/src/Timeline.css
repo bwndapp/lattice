@@ -31,10 +31,21 @@
 .song-part:hover { border-color: #55554d; }
 .song-part.active { border-color: var(--clip); background: #14140f; }
 .song-part:focus-visible { outline: 1px solid var(--acid); outline-offset: 1px; }
-.song-swatch { grid-row: 1 / 3; align-self: stretch; background: var(--clip); }
+.song-swatch { grid-row: 1 / 3; align-self: stretch; } /* the colour button sits over this spot */
 .song-part-name { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .song-part-meta { font-size: 10px; color: var(--muted); }
 .song-part.unused { border-style: dashed; }
+.song-part-list li { position: relative; }
+.song-part-list li.variant { margin-left: 14px; }
+.song-part-list li.variant::before { content: ''; position: absolute; left: -9px; top: -3px; height: 21px; width: 7px; border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.song-part-dup {
+  position: absolute; top: 5px; right: 5px;
+  padding: 0.1rem 0.35rem; font: inherit; font-size: 10px; color: var(--paper);
+  background: var(--panel); border: 1px solid var(--line); cursor: pointer; opacity: 0;
+}
+.song-part-list li:hover .song-part-dup, .song-part-dup:focus-visible { opacity: 1; }
+.song-part-dup:hover { border-color: var(--acid); color: var(--acid); }
+.song-parts-hint b { color: var(--paper); font-weight: 600; }
 .song-part.unused .song-part-name { color: var(--muted); }
 .song-unused { border-top: 1px solid var(--line); }
 .song-unused summary { padding: 0.45rem 0.6rem; font-size: 11px; color: var(--muted); cursor: pointer; list-style-position: inside; }
@@ -112,7 +123,7 @@
   align-items: center;
   overflow: hidden;
   padding: 0 0.45rem;
-  color: #0a0a09;
+  color: var(--clip-ink, #0a0a09);
   background: var(--clip);
   border: 1px solid rgba(0, 0, 0, 0.55);
   box-shadow: inset 3px 0 0 rgba(0, 0, 0, 0.28);
@@ -160,3 +171,15 @@
 .part-panel-body { display: grid; gap: 0.6rem; padding: 0.6rem; }
 .part-panel-body textarea.node-input { resize: vertical; min-height: 5rem; font-family: var(--mono); }
 .part-panel-hint { margin: 0; font-size: 10px; color: var(--muted); }
+
+/* colour picker on each part (the dot over its swatch) */
+.btn.song-color-btn { position: absolute; left: 1px; top: 1px; bottom: 1px; width: 20px; padding: 0; border: 0; background: transparent; display: grid; place-items: center; cursor: pointer; }
+.btn.song-color-btn:hover .song-color-dot, .btn.song-color-btn.on .song-color-dot { outline: 2px solid var(--paper); outline-offset: 1px; }
+.song-color-dot { display: block; width: 10px; height: 100%; }
+.song-colors { padding: 0.55rem; display: grid; gap: 0.5rem; width: 188px; }
+.song-color-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
+.song-color-pick { aspect-ratio: 1; min-width: 0; border: 1px solid rgba(0, 0, 0, 0.5); cursor: pointer; padding: 0; }
+.song-color-pick:hover, .song-color-pick.on { outline: 2px solid var(--paper); outline-offset: 1px; }
+.song-color-custom { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; font-size: 11px; color: var(--muted); }
+.song-color-custom input { width: 42px; height: 22px; padding: 0; border: 1px solid var(--line); background: none; cursor: pointer; }
+.song-color-reset { justify-self: start; font-size: 11px; }
