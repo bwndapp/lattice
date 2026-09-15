@@ -101,7 +101,9 @@ function mount(n, orbit, channels) {
   const output = stereo()
   orbit.output.disconnect() // it went straight to the speakers
   orbit.output.connect(input)
-  const rack = { orbit, input, output, units: new Map(), order: '', channels, to: undefined }
+  // order starts unset so the first wiring always connects input → output, even with no
+  // units (a bus that only plays into a mixer bus has none)
+  const rack = { orbit, input, output, units: new Map(), order: null, channels, to: undefined }
   racks.set(n, rack)
   wire(n, rack, declared.get(n) ?? [])
   aim(n, rack)
