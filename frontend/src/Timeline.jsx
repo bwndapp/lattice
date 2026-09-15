@@ -2,6 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { makePattern, newId } from './project'
 import { MAX_BARS, songLength, songParts } from './song'
 import PatternEditor from './PatternEditor.jsx'
+import Phyllo from './phyllo/Phyllo.jsx'
+import { normalizePatch } from './phyllo/engine'
+import { KitSelect } from './Graph.jsx'
+import { NODE_TYPES } from './graph'
 import './Timeline.css'
 
 /**
@@ -57,6 +61,9 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const [ghost, setGhost] = useState(null) // where a part dragged from the sidebar would land
   const [editing, setEditing] = useState(null) // { patternId, x, y }
   const [tool, setTool] = useState('pointer') // or 'slice'
+  const [synth, setSynth] = useState(null) // a phyllo part's synth window: { nodeId, x, y }
+  const [panel, setPanel] = useState(null) // a rhythm / melody / code part's settings: { nodeId, x, y }
+  const lastPress = useRef(null) // for double-clicks (pointer capture keeps dblclick off the clips)
   const [sliceLine, setSliceLine] = useState(null) // { bar, l0, l1 } where the slice tool would cut
   const scrollRef = useRef(null)
   const lanesRef = useRef(null)
@@ -195,6 +202,19 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     setEditing({ patternId: pattern.id, x: e.clientX + 40, y: e.clientY })
   }
 
+  /** Double-click a part (a clip, or in the sidebar): edit it right here, without the patch. */
+  const openPart = (src, e) => {
+    const x = e.clientX
+    const y = e.clientY
+    const node = project.nodes.find((n) => `node:${n.id}` === src)
+    // after this press is over: a window opened during it would take the press for a click outside
+    setTimeout(() => {
+      if (src.startsWith('pattern:')) setEditing({ patternId: src.slice(8), x, y })
+      else if (node?.type === 'phyllo') setSynth({ nodeId: node.id, x, y })
+      else if (node) setPanel({ nodeId: node.id, x, y })
+    }, 0)
+  }
+
   // ── pointer: clips, empty rows, panning ──
   const onLanesDown = (e) => {
     if (e.button === 1 && (e.ctrlKey || e.metaKey)) {
@@ -246,6 +266,14 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       const id = el.dataset.id
       const clip = song.clips.find((c) => c.id === id)
       if (!clip) return
+      const now = performance.now()
+      const last = lastPress.current
+      lastPress.current = { id, t: now }
+      if (last?.id === id && now - last.t < 350 && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        lastPress.current = null
+        openPart(clip.src, e)
+        return
+      }
       let sel = selected
       const wasSelected = selected.has(id)
       if (e.ctrlKey || e.metaKey) {
@@ -418,15 +446,10 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     if (e) e.preventDefault()
   }
 
-  const onClipDoubleClick = (e) => {
-    const el = e.target.closest('.clip')
-    const clip = el && song.clips.find((c) => c.id === el.dataset.id)
-    if (clip?.src.startsWith('pattern:')) setEditing({ patternId: clip.src.slice(8), x: e.clientX, y: e.clientY })
-  }
-
   // ── keys ──
   const onKeyDown = (e) => {
     if (e.target.closest('input, select, textarea')) return
+    if (editing || synth || panel) return // an open window's keys (Esc closes it) come first
     const mod = e.ctrlKey || e.metaKey
     const k = e.key.toLowerCase()
     const chosen = song.clips.filter((c) => selected.has(c.id))
@@ -518,8 +541,8 @@ export default function Timeline({ project, onUpdateProject, transport, started 
           }}
           onDragEnd={() => setGhost(null)}
           onClick={() => setActivePart((a) => (a === part.src ? null : part.src))}
-          onDoubleClick={(e) => part.kind === 'pattern' && setEditing({ patternId: part.id, x: e.clientX + 60, y: e.clientY })}
-          title={part.kind === 'pattern' ? 'Double-click to edit its steps and notes' : 'A sound source from the patch'}
+          onDoubleClick={(e) => openPart(part.src, { clientX: e.clientX + 60, clientY: e.clientY })}
+          title={part.kind === 'pattern' ? 'Double-click to edit its instruments, sounds, steps and notes' : part.kind === 'phyllo' ? 'Double-click to open the synth' : 'Double-click to change its settings'}
         >
           <span className="song-swatch" aria-hidden />
           <span className="song-part-name">{part.name}</span>
@@ -535,6 +558,8 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const loop = transport.loop
   const songBars = Math.max(1, Math.ceil(length - 1e-9))
   const editingPattern = editing && project.patterns.find((p) => p.id === editing.patternId)
+  const synthNode = synth && project.nodes.find((n) => n.id === synth.nodeId && n.type === 'phyllo')
+  const panelNode = panel && project.nodes.find((n) => n.id === panel.nodeId)
 
   return (
     <section className="song" aria-label="Song timeline">
@@ -625,7 +650,6 @@ export default function Timeline({ project, onUpdateProject, transport, started 
               onPointerUp={onLanesUp}
               onPointerCancel={() => { dragRef.current = null; panRef.current = null; setDrag(null); setMarquee(null) }}
               onPointerLeave={() => { if (!dragRef.current) setSliceLine(null) }}
-              onDoubleClick={onClipDoubleClick}
               onContextMenu={(e) => e.preventDefault()}
               onDragOver={onDragOver}
               onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setGhost((g) => (g ? { ...g, lane: -1 } : g)) }}
@@ -689,6 +713,20 @@ export default function Timeline({ project, onUpdateProject, transport, started 
         </div>
       </div>
 
+      {synthNode && (
+        <Phyllo
+          key={synthNode.id}
+          node={synthNode}
+          cps={(project.bpm || 120) / (project.beats || 4) / 60}
+          anchor={synth}
+          onEdit={(fn) => onUpdateProject((p) => {
+            const n = p.nodes.find((x) => x.id === synthNode.id)
+            if (n) { n.data.patch = normalizePatch(n.data.patch); fn(n.data.patch) }
+          })}
+          onClose={() => setSynth(null)}
+        />
+      )}
+      {panelNode && <PartPanel node={panelNode} anchor={panel} onUpdateProject={onUpdateProject} onClose={() => setPanel(null)} />}
       {editingPattern && (
         <PatternEditor
           project={project}
@@ -701,5 +739,68 @@ export default function Timeline({ project, onUpdateProject, transport, started 
         />
       )}
     </section>
+  )
+}
+
+/** A text setting that applies on Enter (ctrl/cmd + Enter for code) or when you leave it. */
+function PanelInput({ value, multiline, onCommit, ...props }) {
+  const [text, setText] = useState(value ?? '')
+  useEffect(() => setText(value ?? ''), [value])
+  const commit = () => { if (text !== value) onCommit(text) }
+  const Tag = multiline ? 'textarea' : 'input'
+  return (
+    <Tag
+      {...props}
+      className="node-input"
+      value={text}
+      spellCheck={false}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' && (!multiline || e.ctrlKey || e.metaKey)) { e.preventDefault(); commit() }
+        if (e.key === 'Escape') { setText(value ?? ''); e.currentTarget.blur() }
+      }}
+    />
+  )
+}
+
+/**
+ * The settings of a rhythm, melody or code part, over the song: what it plays and on what.
+ * What it goes through (effects) stays in the patch.
+ */
+function PartPanel({ node, anchor, onUpdateProject, onClose }) {
+  const ref = useRef(null)
+  const spec = NODE_TYPES[node.type]
+  const set = (key, v) => onUpdateProject((p) => { const n = p.nodes.find((x) => x.id === node.id); if (n) n.data[key] = v })
+  useEffect(() => {
+    const away = (e) => { if (!ref.current?.contains(e.target)) onClose() }
+    const onKey = (e) => { if (e.key === 'Escape' && !e.target.closest?.('input, textarea, select')) onClose() }
+    window.addEventListener('pointerdown', away, true)
+    window.addEventListener('keydown', onKey)
+    return () => { window.removeEventListener('pointerdown', away, true); window.removeEventListener('keydown', onKey) }
+  }, [onClose])
+  const left = clamp(anchor.x - 40, 12, window.innerWidth - 372)
+  const top = clamp(anchor.y + 14, 12, window.innerHeight - 320)
+  return (
+    <div className="part-panel" ref={ref} role="dialog" aria-label={`${spec?.label ?? node.type} settings`} style={{ left, top }} onKeyDown={(e) => e.stopPropagation()}>
+      <div className="part-panel-head">
+        <span className="part-panel-title">{spec?.label ?? node.type}</span>
+        <span className="part-panel-sub">{spec?.blurb}</span>
+        <button className="btn ghost" onClick={onClose} aria-label="Close">close</button>
+      </div>
+      <div className="part-panel-body">
+        {(spec?.params ?? []).map((param) => {
+          const value = node.data[param.key] ?? param.def
+          if (param.type === 'kit') return <KitSelect key={param.key} node={node} param={param} value={value} onChange={(v) => set(param.key, v)} />
+          return (
+            <label key={param.key} className="node-field wide">
+              <span>{param.label}{param.type === 'mini' ? ' · mini-notation' : ''}</span>
+              <PanelInput value={String(value)} multiline={param.type === 'code'} rows={param.type === 'code' ? 5 : undefined} onCommit={(v) => set(param.key, v)} aria-label={param.label} />
+            </label>
+          )
+        })}
+        <p className="part-panel-hint">Enter applies{spec?.params?.some((p) => p.type === 'code') ? ' (ctrl/cmd + Enter in code)' : ''}. Effects on this part are in the patch.</p>
+      </div>
+    </div>
   )
 }

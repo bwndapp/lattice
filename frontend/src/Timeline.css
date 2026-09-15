@@ -140,3 +140,13 @@
 }
 .song-empty strong { display: block; margin-bottom: 0.3rem; font-family: var(--display); font-size: 20px; color: var(--paper); }
 .song-empty p { margin: 0; font-size: 12px; line-height: 1.55; }
+
+/* settings of a rhythm / melody / code part over the song */
+.part-panel { position: fixed; z-index: 70; width: 360px; max-width: calc(100vw - 24px); background: var(--panel); border: 1px solid var(--acid); box-shadow: 8px 8px 0 #000; }
+.part-panel-head { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 0 0.5rem; padding: 0.55rem 0.6rem 0.45rem; border-bottom: 1px solid var(--line); }
+.part-panel-title { font-family: var(--display); font-weight: 900; font-stretch: 118%; font-size: 18px; }
+.part-panel-sub { grid-column: 1; grid-row: 2; font-size: 10px; color: var(--muted); }
+.part-panel-head .btn { grid-column: 2; grid-row: 1 / 3; align-self: center; }
+.part-panel-body { display: grid; gap: 0.6rem; padding: 0.6rem; }
+.part-panel-body textarea.node-input { resize: vertical; min-height: 5rem; font-family: var(--mono); }
+.part-panel-hint { margin: 0; font-size: 10px; color: var(--muted); }

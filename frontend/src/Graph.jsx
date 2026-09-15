@@ -191,7 +191,7 @@ function useKits() {
 }
 
 /** A dropdown of drum kits; picking one plays a hit from the node's rhythm in that kit. */
-function KitSelect({ node, param, value: given, onChange }) {
+export function KitSelect({ node, param, value: given, onChange }) {
   const kits = useKits()
   const value = String(given ?? node.data[param.key] ?? '')
   const current = kits.find((k) => k.bank === value.toLowerCase())
