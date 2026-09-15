@@ -6,7 +6,8 @@ import './Timeline.css'
 
 /**
  * The song view: parts on the left, a timeline on the right. Drag a part onto a row to
- * place a clip; drag a clip to move it (alt: a copy), its edges to stretch it; shift-click
+ * place a clip; drag a clip to move it (alt: a copy), its edges to stretch it; right-click
+ * (or right-drag across several) deletes; shift-click
  * or drag across empty rows to select several. Clicking the ruler moves the playhead,
  * dragging along it sets a loop. Ctrl/cmd + scroll zooms, middle-drag pans.
  */
@@ -67,6 +68,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   // clips as shown: the project's, with a drag's changes laid over them
   const clips = useMemo(() => {
     if (!drag) return song.clips
+    if (drag.erased) return song.clips.filter((c) => !drag.erased.has(c.id))
     const moved = song.clips.map((c) => (drag.changes[c.id] ? { ...c, ...drag.changes[c.id] } : c))
     return drag.copy ? [...song.clips, ...drag.added] : [...moved, ...(drag.added ?? [])]
   }, [song.clips, drag])
@@ -176,6 +178,14 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       e.currentTarget.setPointerCapture(e.pointerId)
       return
     }
+    if (e.button === 2) {
+      // right-click deletes a clip; keep holding and sweep to delete every clip you pass over
+      e.currentTarget.setPointerCapture(e.pointerId)
+      const hit = e.target.closest('.clip:not(.preview)')?.dataset.id
+      dragRef.current = { mode: 'erase', gone: new Set(hit ? [hit] : []) }
+      setDrag({ changes: {}, erased: new Set(dragRef.current.gone) })
+      return
+    }
     if (e.button !== 0) return
     scrollRef.current?.focus({ preventScroll: true })
     e.currentTarget.setPointerCapture(e.pointerId)
@@ -236,6 +246,12 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     const fine = e.shiftKey
     const bar = barAt(e.clientX)
     const lane = laneAt(e.clientY)
+    if (d.mode === 'erase') {
+      // pointer capture keeps events on the rows, so find the clip under the pointer by position
+      const hit = song.clips.find((c) => c.lane === lane && bar >= c.start && bar < c.start + c.len)
+      if (hit && !d.gone.has(hit.id)) { d.gone.add(hit.id); setDrag({ changes: {}, erased: new Set(d.gone) }) }
+      return
+    }
     if (d.mode === 'move') {
       const minStart = Math.min(...d.group.map((c) => c.start))
       const minLane = Math.min(...d.group.map((c) => c.lane))
@@ -276,6 +292,13 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     setDrag(null)
     setMarquee(null)
     if (!d) return
+    if (d.mode === 'erase') {
+      if (d.gone.size) {
+        updateSong((s) => { s.clips = s.clips.filter((c) => !d.gone.has(c.id)) })
+        setSelected((sel) => new Set([...sel].filter((id) => !d.gone.has(id))))
+      }
+      return
+    }
     if (d.mode === 'draw') {
       const c = preview?.added?.[0]
       if (c) addClip(c.src, c.start, c.lane, c.len)
@@ -442,7 +465,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
           </label>
           <span className="song-length" title="The song loops after its last clip">{length ? `${songBars} bar${songBars === 1 ? '' : 's'}` : 'empty'}</span>
           <span className="spacer" />
-          <span className="song-hint">alt-drag copies · shift snaps finer · ctrl/cmd + D duplicates · drag the ruler to loop</span>
+          <span className="song-hint">right-click deletes · alt-drag copies · shift snaps finer · ctrl/cmd + D duplicates · drag the ruler to loop</span>
           <span className="song-zoom" role="group" aria-label="Zoom">
             <button className="btn" onClick={() => zoomTo(ppb / 1.5)} aria-label="Zoom out">−</button>
             <button className="btn" onClick={fit} title="Fit the song">fit</button>
@@ -485,6 +508,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
               onPointerUp={onLanesUp}
               onPointerCancel={() => { dragRef.current = null; panRef.current = null; setDrag(null); setMarquee(null) }}
               onDoubleClick={onClipDoubleClick}
+              onContextMenu={(e) => e.preventDefault()}
               onDragOver={onDragOver}
               onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setGhost((g) => (g ? { ...g, lane: -1 } : g)) }}
               onDrop={onDrop}
