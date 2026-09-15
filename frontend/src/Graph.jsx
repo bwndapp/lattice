@@ -392,7 +392,7 @@ function StudioNode({ id, selected }) {
               </div>
             )}
             <div className="node-actions nodrag">
-              <button className="btn primary" onClick={(e) => ctx.editPattern(node.data.patternId, e)} disabled={!pattern}>edit steps &amp; notes</button>
+              <button className="btn primary" onClick={(e) => ctx.editPattern(node.data.patternId, e)} disabled={!pattern} title="Open the rack (or double-click the node)">edit steps &amp; notes</button>
             </div>
           </>
         )}
@@ -1032,6 +1032,13 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
               e.preventDefault()
               setMenu({ x: e.clientX, y: e.clientY, at: flow.screenToFlowPosition({ x: e.clientX - 20, y: e.clientY - 20 }), wire: edge.id })
             }}
+            onNodeDoubleClick={(e, n) => {
+              // double-click a pattern node (not its controls) to open its rack
+              const node = project.nodes.find((x) => x.id === n.id)
+              if (node?.type !== 'pattern' || e.target.closest('input, select, textarea, button')) return
+              if (project.patterns.some((p) => p.id === node.data.patternId)) ctx.editPattern(node.data.patternId, e)
+              else ctx.newPatternFor(node.id)
+            }}
             onNodesChange={(changes) => setNodes((ns) => applyNodeChanges(changes.filter((c) => c.type !== 'remove'), ns))}
             onEdgesChange={(changes) => setEdges((es) => applyEdgeChanges(changes.filter((c) => c.type !== 'remove'), es))}
             onDelete={({ nodes: deletedNodes, edges: deletedEdges }) => {
@@ -1108,7 +1115,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
             {solo
               ? <>auditioning <b>{nodeTitle(project.nodes.find((n) => n.id === solo), project)}</b> · <button className="linkish" onClick={() => onSolo(null)}>back to the output</button></>
               : selected ? <>{NODE_TYPES[selected.type]?.blurb}{selected.type !== 'output' && <> · click an effect in the pane to chain it after this</>}</>
-              : 'wire: drag right dot → left dot · pull a wire off an input to remove it · drop a node on a wire to insert it'}
+              : 'double-click a pattern to open its rack · wire: drag right dot → left dot · pull a wire off an input to remove it · drop a node on a wire to insert it'}
           </div>
         </div>
       </div>
