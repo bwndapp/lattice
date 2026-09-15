@@ -909,14 +909,6 @@ export default function App() {
         { custom: <input className="tm-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="untitled" maxLength={80} aria-label="Track title" /> },
         { heading: 'visible to' },
         ...[['public', 'anyone', 'Listed in explore'], ['unlisted', 'anyone with the link', 'Not listed'], ['private', 'only me', 'Only you']].map(([v, label, hint]) => ({ label, hint, checked: visibility === v, onSelect: () => setVisibility(v) })),
-        project && { heading: 'beats per bar' },
-        project && {
-          custom: (
-            <select className="select tm-select" value={transport.beats} aria-label="Beats per bar" onChange={(e) => { const beats = Number(e.target.value); transport.setBeats(beats); updateProject((p) => { p.beats = beats }) }}>
-              {[2, 3, 4, 5, 6, 7, 8].map((n) => <option key={n} value={n}>{n}/4</option>)}
-            </select>
-          ),
-        },
         isOwner && 'line',
         isOwner && { label: 'delete track…', danger: true, onSelect: () => setConfirmDelete(true), hint: 'Remove the saved track for everyone' },
       ],

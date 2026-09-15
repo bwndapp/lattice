@@ -879,7 +879,7 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
   .canvas-switch { --cs-w: 6.3rem; }
   .cs-opt { font-size: 0.78rem; }
   .logo { font-size: 44px; }
-  .bar-side .meter { display: none; } /* beats per bar is in the ··· menu */
+
 }
 @media (max-width: 1560px) {
   .bar .title-input { flex-basis: 9rem; }
@@ -892,7 +892,6 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
   .btn.tport.to-start { display: none; } /* Home goes back to the start */
   .track-heading { max-width: 9rem; }
   .code-word { display: none; }
-  .meter { display: none; }
   .btn.tport { padding-inline: 0.4rem; }
 }
 
