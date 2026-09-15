@@ -170,7 +170,7 @@ body {
 .bar-side.left { min-width: max-content; }
 .bar-side.right { min-width: min-content; justify-content: flex-end; }
 .canvas-switch {
-  --cs-w: 6.6rem; /* each option */
+  --cs-w: 7.4rem; /* each option */
   position: relative;
   display: grid;
   grid-template-columns: var(--cs-w) var(--cs-w);
@@ -210,8 +210,8 @@ body {
   font-weight: 800;
   font-stretch: 112%;
   font-size: 0.95rem;
-  letter-spacing: 0.02em;
-  text-transform: lowercase;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: #6f6f67;
   background: none;
   border: 0;
@@ -918,8 +918,8 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
   .btn.loop .loop-range { display: none; }
 }
 @media (max-width: 1600px) {
-  .canvas-switch { --cs-w: 5.4rem; }
-  .cs-opt { font-size: 0.85rem; }
+  .canvas-switch { --cs-w: 6.3rem; }
+  .cs-opt { font-size: 0.78rem; }
   .logo { font-size: 44px; }
   .bar-side .meter { display: none; } /* beats per bar is in the ··· menu */
 }
@@ -943,14 +943,15 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
   .track { flex-basis: auto; }
 }
 @media (max-width: 1180px) {
-  .canvas-switch { margin-inline: 0.4rem; --cs-w: 4.7rem; }
-  .cs-opt { font-size: 0.8rem; }
+  .canvas-switch { margin-inline: 0.4rem; --cs-w: 5.5rem; }
+  .cs-opt { font-size: 0.7rem; letter-spacing: 0.05em; }
   .logo { font-size: 40px; }
   .btn.loop, .seg:not(.views):not(.side-views), .btn.tport { display: none; } /* loop: drag the ruler · pattern mode: in the rack */
   .bar { gap: 0.3rem; }
 }
 
 @media (max-width: 960px) {
+  .canvas-switch { --cs-w: 5rem; }
   .lcd.position { display: none; }
 }
 
