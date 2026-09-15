@@ -403,6 +403,7 @@ export default function App() {
   const [autoEditing, setAutoEditing] = useState(null) // { id, x, y }
   const [draftNotice, setDraftNotice] = useState(null) // { id, savedAt }: this track opened with unsaved changes
   const [showVersions, setShowVersions] = useState(false)
+  const [askSave, setAskSave] = useState(false)
   const closeAutoEditor = useCallback(() => setAutoEditing(null), [])
   const automation = useMemo(() => {
     const autos = project?.song?.autos ?? []
@@ -621,9 +622,11 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [code, activeCode, started, shownId, previewAllowed, evaluated.forId])
 
-  const save = useCallback(async () => {
+  const save = useCallback(async ({ replace = false } = {}) => {
     if (!canEdit || busy) return
     if (!user) return login()
+    // a new name and a changed patch: probably a new track, not a new version of this one
+    if (!isNew && !replace && track && (title.trim() || 'untitled') !== track.title && codeChanged) return setAskSave(true)
     setBusy(true)
     try {
       const body = { title: title.trim() || 'untitled', code: songCodeOf(editorRef.current.code), visibility }
@@ -646,7 +649,27 @@ export default function App() {
     } finally {
       setBusy(false)
     }
-  }, [canEdit, busy, user, login, title, visibility, isNew, trackId, navigate, flash])
+  }, [canEdit, busy, user, login, title, visibility, isNew, trackId, navigate, flash, track, codeChanged])
+
+  /** Save what's open as a track of its own; the track it came from keeps its saved version. */
+  const saveAsNew = async () => {
+    if (!user) return login()
+    setBusy(true)
+    try {
+      const from = track
+      const name = (title.trim() || from?.title || 'untitled').slice(0, 80)
+      const t = await api('/tracks', { method: 'POST', body: { title: name, code: songCodeOf(editorRef.current.code), visibility } })
+      if (from) clearDraft(from.id) // its unsaved changes live on in the new track
+      setDraftNotice(null)
+      navigate(`/t/${t.id}`)
+      setRefreshKey((k) => k + 1)
+      flash(from ? `Saved as a new track · “${from.title}” is unchanged` : 'Saved')
+    } catch (e) {
+      flash(`Couldn’t save: ${e.message}`)
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const remix = async () => {
     if (!user) return login()
@@ -880,7 +903,7 @@ export default function App() {
                 aria-label="Track title"
                 title={isNew ? 'Scratch pad · not saved yet' : `saved ${timeAgo(track.updated_at)}`}
               />
-              <button className={`btn save ${dirty || !user ? 'primary' : ''} ${user ? '' : 'signed-out'}`} onClick={save} disabled={busy || (!!user && !dirty)} title={!user ? 'Sign in to save this track' : dirty ? 'Save (ctrl/cmd + S)' : 'Everything is saved'}>
+              <button className={`btn save ${dirty || !user ? 'primary' : ''} ${user ? '' : 'signed-out'}`} onClick={() => save()} disabled={busy || (!!user && !dirty)} title={!user ? 'Sign in to save this track' : dirty ? 'Save (ctrl/cmd + S)' : 'Everything is saved'}>
                 {busy ? 'saving…' : !user || dirty ? 'save' : 'saved'}
               </button>
               <Popover label="···" title="Track: title, who can see it, share, clear, delete" className="track-more" panelClassName="track-menu">
@@ -924,6 +947,7 @@ export default function App() {
                       <div className="track-menu-actions">
                         <button className="btn" onClick={() => { close(); share() }}>copy link</button>
                         <button className="btn" onClick={() => { close(); setShowVersions(true) }} title="Every save is kept: open an earlier one">saved versions</button>
+                        <button className="btn" onClick={() => { close(); saveAsNew() }} disabled={busy} title="Save what's open as a track of its own; this track stays as it was saved">save as a new track</button>
                       </div>
                     )}
                     {project && (
@@ -1022,6 +1046,7 @@ export default function App() {
             setShowVersions(false)
             setDraftNotice(null)
             openVersion(v.code)
+            if (v.title) setTitle(v.title)
             flash(`Opened the version from ${timeAgo(v.saved_at)} · save to keep it`, { label: 'undo', run: () => undoRef.current?.() })
           }}
         />
@@ -1052,6 +1077,19 @@ export default function App() {
             >
               <p>This removes <strong>{project.nodes.filter((n) => n.type !== 'output').length} nodes</strong>, their wires, <strong>{project.patterns.length} pattern{project.patterns.length === 1 ? '' : 's'}</strong> with all their steps and notes, and the song's clips. The output and tempo stay.</p>
               <p>{isNew ? 'Ctrl/cmd + Z brings it back.' : 'Ctrl/cmd + Z brings it back, and the saved track doesn\'t change unless you save.'}</p>
+            </ConfirmDialog>
+          )}
+          {askSave && track && (
+            <ConfirmDialog
+              title="A new track, or replace this one?"
+              confirmLabel="save as a new track"
+              altLabel={`replace “${track.title}”`}
+              onCancel={() => setAskSave(false)}
+              onAlt={() => { setAskSave(false); save({ replace: true }) }}
+              onConfirm={() => { setAskSave(false); saveAsNew() }}
+            >
+              <p>You renamed it to <strong>“{title.trim() || 'untitled'}”</strong> and changed the patch. Save it as a <strong>new track</strong>, and “{track.title}” stays as it was saved.</p>
+              <p>Or <strong>replace</strong> “{track.title}” with it (its earlier saves stay in <em>saved versions</em>).</p>
             </ConfirmDialog>
           )}
           {confirmDelete && track && (
