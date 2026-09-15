@@ -21,7 +21,9 @@ import { routeVoice } from './fxbus.js'
 import Versions from './Versions.jsx'
 import ProgramMenu from './ProgramMenu.jsx'
 import { AutomationContext, autoLive } from './autoLive.js'
-import { AUTO_PREFIX, activeAutos, autoValueFn, resolveTarget, toPos } from './automation.js'
+import { AUTO_PREFIX, activeAutos, appParam, autoValueFn, resolveTarget, toPos } from './automation.js'
+import { setFxParams } from './fxbus.js'
+import { setInsertParams } from './stereo.js'
 import { capturePatterns, parseLanes, tempoChange } from './lanes'
 import { PROJECT_MARK, blankProject, demoProject, generateCode, newId, normalizeProject, parseProject, projectFromCode } from './project'
 import { createTransport, formatBarBeat, parseBarBeat } from './transport'
@@ -463,9 +465,23 @@ export default function App() {
   }, [project, updateProject, transport, flash]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // automated knobs turn with their curves while the song plays
-  const autoFns = useMemo(() => (project ? activeAutos(project).map((a) => [a.target, autoValueFn(project, a)]).filter(([, fn]) => fn) : []), [project])
+  const autoFns = useMemo(() => (project ? activeAutos(project).map((a) => {
+    const fn = autoValueFn(project, a)
+    // reverb, delay and stereo knobs are the app's own: it moves them as the curve goes
+    return fn && { target: a.target, fn, app: appParam(project, a.target), base: resolveTarget(project, a.target)?.value }
+  }).filter(Boolean) : []), [project])
   useEffect(() => {
     if (!started || !autoFns.length) { autoLive.clear(); return }
+    const apply = (a, value) => {
+      const v = value * (a.app.scale ?? 1)
+      // a reverb's room is rebuilt when its size changes, so only move in steps
+      const stepped = ['size', 'tone', 'width'].includes(a.app.param) ? Math.round(v * 40) / 40 : v
+      if (a.last === stepped) return
+      a.last = stepped
+      const patch = { [a.app.param]: stepped }
+      if (a.app.where === 'fx') setFxParams(a.app.key, patch)
+      else setInsertParams(a.app.key, patch)
+    }
     let raf = 0
     let last = 0
     const tick = (now) => {
@@ -473,10 +489,27 @@ export default function App() {
       if (now - last < 40) return // 25 times a second is plenty for a knob
       last = now
       const at = transport.position()
-      autoLive.set(new Map(autoFns.map(([target, fn]) => [target, fn(at)])))
+      const values = new Map()
+      for (const a of autoFns) {
+        const value = a.fn(at)
+        values.set(a.target, value)
+        if (a.app) apply(a, value)
+      }
+      autoLive.set(values)
     }
     raf = requestAnimationFrame(tick)
-    return () => { cancelAnimationFrame(raf); autoLive.clear() }
+    return () => {
+      cancelAnimationFrame(raf)
+      autoLive.clear()
+      // stopped: the app's own knobs go back to where they're set
+      for (const a of autoFns) {
+        if (!a.app || a.base === undefined) continue
+        a.last = undefined
+        const patch = { [a.app.param]: a.base * (a.app.scale ?? 1) }
+        if (a.app.where === 'fx') setFxParams(a.app.key, patch)
+        else setInsertParams(a.app.key, patch)
+      }
+    }
   }, [started, autoFns, transport])
 
   const undoRef = useRef(null)

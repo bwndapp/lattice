@@ -134,6 +134,7 @@ function wire(n, rack, inserts) {
     let unit = rack.units.get(i.key)
     if (unit && unit.kind !== i.kind) { unit.dispose(); rack.units.delete(i.key); unit = null }
     if (!unit) { unit = UNITS[i.kind](getAudioContext()); unit.kind = i.kind; rack.units.set(i.key, unit) }
+    unit.params = i.params
     unit.set(i.params)
   }
   if (order === rack.order) return
@@ -149,6 +150,25 @@ function wire(n, rack, inserts) {
     from = unit.output
   }
   from.connect(rack.output)
+}
+
+/**
+ * Move one insert's knobs while it plays (automation, see automation.js): what the code
+ * declared is patched too, so the value sticks if the insert is rebuilt.
+ */
+export function setInsertParams(key, patch) {
+  // an insert declared while the sound was already playing isn't mounted yet: mount it now
+  try { apply() } catch (err) { console.warn('[stereo] could not update the stereo inserts', err) }
+  for (const list of declared.values()) {
+    const found = list.find((i) => i.key === key)
+    if (found) found.params = { ...found.params, ...patch }
+  }
+  for (const rack of racks.values()) {
+    const unit = rack.units.get(key)
+    if (!unit) continue
+    unit.params = { ...unit.params, ...patch }
+    try { unit.set(unit.params) } catch (err) { console.warn('[stereo] could not move a knob', err) }
+  }
 }
 
 const smooth = (param, value) => {

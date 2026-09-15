@@ -158,6 +158,17 @@ function effectFor(key, orbit) {
   return fx
 }
 
+/** Move a reverb's or delay's knobs while it plays (automation, see automation.js). */
+export function setFxParams(key, patch) {
+  const d = declared.get(key)
+  if (!d) return
+  d.params = { ...d.params, ...patch }
+  for (const inst of instances.values()) {
+    if (inst.key !== key) continue
+    try { inst.set(d.params) } catch (err) { console.warn('[fx] could not move a knob', err) }
+  }
+}
+
 /** Stop: every tail goes at once (Strudel's own reset has already muted the buses). */
 export function silenceFx() {
   for (const fx of instances.values()) { try { fx.destroy() } catch { /* already gone */ } }

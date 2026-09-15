@@ -27,17 +27,39 @@ export const MAX_AUTOS = 64
 export const MAX_POINTS = 256
 export const AUTO_PREFIX = 'auto:'
 
-/** Knobs on node types whose sound is processed outside Strudel can't follow a curve yet. */
-const NOT_AUTOMATABLE = new Set(['haas', 'widener', 'bus'])
-/** Knobs that change the timing of the pattern itself, which a curve would tear up. */
-const NOT_AUTOMATABLE_KEYS = new Set([
-  'fast:amount',
-  // reverb and delay settings live on the effect itself, not on each note (their amounts can move)
-  'space:delaytime', 'reverb:size', 'reverb:predelay', 'reverb:tone', 'reverb:lowcut', 'reverb:width', 'delay:feedback', 'delay:tone',
-])
+/** Every knob can follow a curve. */
+export function canAutomate() {
+  return true
+}
 
-export function canAutomate(nodeType, key) {
-  return !NOT_AUTOMATABLE.has(nodeType) && !NOT_AUTOMATABLE_KEYS.has(`${nodeType}:${key}`)
+/**
+ * Knobs whose sound is made by the app rather than by each note: reverb and delay settings
+ * (fxbus.js) and the stereo inserts (stereo.js). They don't go in the code; while the song
+ * plays the app moves them, which is what `appParam` describes:
+ *   { where: 'fx' | 'insert', key, param, scale }   value → param, times `scale` if given
+ */
+const APP_PARAMS = {
+  reverb: { prefix: 'rv_', where: 'fx', keys: { size: 'size', predelay: 'predelay', tone: 'tone', lowcut: 'lowcut', width: 'width' } },
+  delay: { prefix: 'dl_', where: 'fx', keys: { feedback: 'feedback', tone: 'tone' } },
+  space: { prefix: 'dl_', where: 'fx', keys: { delaytime: 'seconds' } }, // bars → seconds below
+  bus: { prefix: '', where: 'insert', keys: { vol: 'gain', pan: 'pan' } },
+  haas: { prefix: '', where: 'insert', keys: { time: 'time', mix: 'mix' } },
+  widener: { prefix: '', where: 'insert', keys: { width: 'width', spread: 'spread', mono: 'mono' } },
+}
+
+export function appParam(project, target) {
+  const parts = String(target ?? '').split(':')
+  const node = project.nodes.find((n) => n.id === parts[1])
+  const type = parts[0] === 'u' ? node?.data.chain?.find((u) => u.id === parts[2])?.type : node?.type
+  const key = parts[0] === 'u' ? parts[3] : parts[2]
+  const spec = APP_PARAMS[type]
+  const param = spec?.keys[key]
+  if (!param) return null
+  const id = parts[0] === 'u' ? `${parts[1]}_${parts[2]}` : parts[1]
+  const cps = (Number(project.bpm) || 120) / (Number(project.beats) || 4) / 60
+  // the space node's delay time is in bars
+  const scale = type === 'space' && key === 'delaytime' ? 1 / cps : 1
+  return { where: spec.where, key: `${spec.prefix}${id}`, param, scale }
 }
 
 export const nodeTarget = (nodeId, key) => `n:${nodeId}:${key}`
@@ -200,7 +222,8 @@ export const autoVar = (id) => `a_${id}`
  * Returns { lines, lookup } where lookup(target) is the pattern's name for an automated knob.
  */
 export function automationCode(project) {
-  const autos = activeAutos(project)
+  // knobs the app moves itself (reverb size, a bus fader, …) aren't read from the code
+  const autos = activeAutos(project).filter((a) => !appParam(project, a.target))
   if (!autos.length) return { lines: [], lookup: () => null }
   const lines = [
     '// automation: knobs that follow a curve along the song (read at each note)',
