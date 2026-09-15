@@ -169,6 +169,11 @@ body {
 .bar-side { display: flex; align-items: center; gap: inherit; flex: 1 1 0; align-self: stretch; }
 .bar-side.left { min-width: max-content; }
 .bar-side.right { min-width: min-content; justify-content: flex-end; }
+.btn.browse-btn { display: inline-flex; align-items: center; gap: 0.4rem; flex: none; font-weight: 700; margin-left: auto; }
+.btn.browse-btn svg { display: block; color: var(--muted); }
+.btn.browse-btn:hover svg, .btn.browse-btn.on svg { color: inherit; }
+@media (max-width: 1180px) { .browse-word { display: none; } }
+
 .canvas-switch {
   --cs-w: 7.4rem; /* each option */
   position: relative;

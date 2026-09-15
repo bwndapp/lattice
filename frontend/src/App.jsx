@@ -151,8 +151,10 @@ export default function App() {
   const [view, setView] = useState(() => (['browse', 'graph', 'song', 'code'].includes(readPref('strudel:view', 'graph')) ? readPref('strudel:view', 'graph') : 'graph'))
   const codeViewRef = useRef(null)
   const lastViewRef = useRef('graph') // where ctrl/cmd+J returns to from the code
+  const lastCanvasRef = useRef('graph') // where browse goes back to
   const toggleView = useCallback(() => setView((v) => (v === 'code' ? lastViewRef.current : 'code')), [])
   useEffect(() => { if (view !== 'code') lastViewRef.current = view }, [view])
+  useEffect(() => { if (view === 'song' || view === 'graph') lastCanvasRef.current = view }, [view])
 
   // Project mode: the code's header line holds the patterns/tracks the UI edits.
   const project = useMemo(() => parseProject(code), [code])
@@ -1012,6 +1014,16 @@ export default function App() {
           <button className="btn solo-chip" onClick={() => setSolo(null)} title="You're hearing one part only. Click to hear the whole output again">soloing ×</button>
         )}
         </div>
+        {/* the track catalogue is one click away, wherever you are */}
+        <button
+          className={`btn browse-btn ${view === 'browse' ? 'on' : ''}`}
+          aria-pressed={view === 'browse'}
+          onClick={() => setView(view === 'browse' ? lastCanvasRef.current : 'browse')}
+          title={view === 'browse' ? 'Back to your track' : 'Browse tracks: yours, and what people have shared'}
+        >
+          <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden><path d="M1.5 1.5h3.6v3.6H1.5zM6.9 1.5h3.6v3.6H6.9zM1.5 6.9h3.6v3.6H1.5zM6.9 6.9h3.6v3.6H6.9z" fill="currentColor" /></svg>
+          <span className="browse-word">browse</span>
+        </button>
         {/* what the canvas shows: the patch or the song */}
         <span className={`canvas-switch ${(switching ?? view) === 'song' ? 'at-first' : (switching ?? view) === 'graph' ? 'at-second' : 'at-neither'}`} role="group" aria-label="Canvas">
           <Glass className="cs-thumb" aria-hidden />
