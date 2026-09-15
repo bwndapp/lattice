@@ -12,8 +12,6 @@ function format(v, def) {
   if (def.unit === 'x') return `${v.toFixed(2)}x`
   if (def.unit === 's') return v < 0.1 ? `${Math.round(v * 1000)}ms` : `${v.toFixed(2)}s`
   if (def.unit === 'db') return `${v > 0.05 && def.origin === 0 ? '+' : ''}${Math.abs(v) >= 10 ? Math.round(v) : v.toFixed(1)}${def.origin === 0 && v <= def.min ? ' off' : ''}`
-  if (def.unit === 'ct') return `${v > 0.5 ? '+' : ''}${Math.round(v)}`
-  if (def.unit === 'raw') return v.toFixed(1)
   if (def.unit === 'ratio') return `${v < 10 ? v.toFixed(1) : Math.round(v)}:1`
   if (def.unit === 'bi') return `${v > 0.005 ? '+' : ''}${Math.round(v * 100)}`
   return `${Math.round(v * 100)}`

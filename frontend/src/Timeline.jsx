@@ -2,8 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { makePattern, newId } from './project'
 import { MAX_BARS, songLength, songParts } from './song'
 import PatternEditor from './PatternEditor.jsx'
-import Phyllo from './phyllo/Phyllo.jsx'
-import { normalizePatch } from './phyllo/engine'
 import { KitSelect } from './Graph.jsx'
 import { NODE_TYPES } from './graph'
 import './Timeline.css'
@@ -61,7 +59,6 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const [ghost, setGhost] = useState(null) // where a part dragged from the sidebar would land
   const [editing, setEditing] = useState(null) // { patternId, x, y }
   const [tool, setTool] = useState('pointer') // or 'slice'
-  const [synth, setSynth] = useState(null) // a phyllo part's synth window: { nodeId, x, y }
   const [panel, setPanel] = useState(null) // a rhythm / melody / code part's settings: { nodeId, x, y }
   const lastPress = useRef(null) // for double-clicks (pointer capture keeps dblclick off the clips)
   const [sliceLine, setSliceLine] = useState(null) // { bar, l0, l1 } where the slice tool would cut
@@ -210,7 +207,6 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     // after this press is over: a window opened during it would take the press for a click outside
     setTimeout(() => {
       if (src.startsWith('pattern:')) setEditing({ patternId: src.slice(8), x, y })
-      else if (node?.type === 'phyllo') setSynth({ nodeId: node.id, x, y })
       else if (node) setPanel({ nodeId: node.id, x, y })
     }, 0)
   }
@@ -542,7 +538,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
           onDragEnd={() => setGhost(null)}
           onClick={() => setActivePart((a) => (a === part.src ? null : part.src))}
           onDoubleClick={(e) => openPart(part.src, { clientX: e.clientX + 60, clientY: e.clientY })}
-          title={part.kind === 'pattern' ? 'Double-click to edit its instruments, sounds, steps and notes' : part.kind === 'phyllo' ? 'Double-click to open the synth' : 'Double-click to change its settings'}
+          title={part.kind === 'pattern' ? 'Double-click to edit its instruments, sounds, steps and notes' : 'Double-click to change its settings'}
         >
           <span className="song-swatch" aria-hidden />
           <span className="song-part-name">{part.name}</span>
@@ -558,7 +554,6 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const loop = transport.loop
   const songBars = Math.max(1, Math.ceil(length - 1e-9))
   const editingPattern = editing && project.patterns.find((p) => p.id === editing.patternId)
-  const synthNode = synth && project.nodes.find((n) => n.id === synth.nodeId && n.type === 'phyllo')
   const panelNode = panel && project.nodes.find((n) => n.id === panel.nodeId)
 
   return (
@@ -713,19 +708,6 @@ export default function Timeline({ project, onUpdateProject, transport, started 
         </div>
       </div>
 
-      {synthNode && (
-        <Phyllo
-          key={synthNode.id}
-          node={synthNode}
-          cps={(project.bpm || 120) / (project.beats || 4) / 60}
-          anchor={synth}
-          onEdit={(fn) => onUpdateProject((p) => {
-            const n = p.nodes.find((x) => x.id === synthNode.id)
-            if (n) { n.data.patch = normalizePatch(n.data.patch); fn(n.data.patch) }
-          })}
-          onClose={() => setSynth(null)}
-        />
-      )}
       {panelNode && <PartPanel node={panelNode} anchor={panel} onUpdateProject={onUpdateProject} onClose={() => setPanel(null)} />}
       {editingPattern && (
         <PatternEditor

@@ -1,6 +1,6 @@
 /**
  * Live knobs. Strudel fixes a voice's filter, volume and so on when the note starts, so
- * turning a knob would only be heard on the next note. Phyllo adds a bus modulator
+ * turning a knob would only be heard on the next note. Effects add a bus modulator
  * (`.bmod`) to the few controls you sweep by hand: every voice adds a bus signal to its
  * value for as long as it sounds, and this module sets that signal to
  * (knob now − value the voice started with). Voices that started with different values

@@ -12,8 +12,6 @@ import PatternEditor from './PatternEditor.jsx'
 import AddMenu from './AddMenu.jsx'
 import { ADD_INTO_WIRE, EDGE_TYPES } from './WireEdge.jsx'
 import { copyNodes, pasteNodes, readClipboard, writeClipboard } from './nodeClipboard'
-import Phyllo, { PhylloFace } from './phyllo/Phyllo.jsx'
-import { normalizePatch } from './phyllo/engine'
 import { onSoundsChange, previewSound, soundCatalog } from './audio'
 
 const NODE_MIME = 'application/x-strudel-node'
@@ -365,7 +363,7 @@ function StudioNode({ id, selected }) {
       <div className="node-body">
         {node.type !== 'output' && !ctx.heard.has(id) && (
           <p className="node-warn">
-            {spec.inputs && node.type !== 'phyllo' && wires.length === 0
+            {spec.inputs && wires.length === 0
               ? 'not heard · drop it on a wire, or wire it between a sound and the output'
               : 'not heard · wire its right dot on toward the output'}
           </p>
@@ -400,7 +398,6 @@ function StudioNode({ id, selected }) {
         )}
 
         {node.type === 'fxrack' && <FxRack node={node} />}
-        {node.type === 'phyllo' && <PhylloFace node={node} onEdit={(fn) => ctx.editPatch(id, fn)} onOpen={(e) => ctx.openSynth(id, e)} />}
 
         {Array.isArray(spec.inputs) && (
           <ul className="node-inputs named">
@@ -497,7 +494,6 @@ const SEARCH_WORDS = {
   bus: 'mixer bus track insert group submix route send null merge combine channel fader sum',
   haas: 'stereo wide width delay precedence double doubler spread left right ms',
   widener: 'stereo wide width imager spread mid side ms mono bass imaging',
-  phyllo: 'synth instrument serum vital phase plant wavetable supersaw analog fm lfo envelope modulation pad lead bass pluck',
   fxrack: 'effects chain multiple fx rack bus insert',
   sidechain: 'duck ducking pump pumping compression compressor side chain kick bass edm',
   stack: 'layer mix together combine sum',
@@ -754,8 +750,6 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
     window.addEventListener(ADD_INTO_WIRE, onWirePlus)
     return () => { el?.removeEventListener('pointermove', onMove); window.removeEventListener('keydown', onKey); window.removeEventListener(ADD_INTO_WIRE, onWirePlus) }
   }, [flow])
-  const [synth, setSynth] = useState(null) // the phyllo node whose synth window is open: { nodeId, x, y }
-  const synthNode = synth && project.nodes.find((n) => n.id === synth.nodeId && n.type === 'phyllo')
 
   // React Flow keeps its own copy for dragging and selection; the project stays the source.
   // Existing nodes keep their object (and so their measured size): a fresh object makes
@@ -960,8 +954,6 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
     removeNode: (id) => removeNodes([id]),
     editPattern: (patternId, e) => setEditing({ patternId, x: e?.clientX ?? window.innerWidth / 2, y: e?.clientY ?? 200 }),
     pickSound: (nodeId, key, at) => setPicking({ nodeId, key, ...at }),
-    openSynth: (nodeId, e) => setSynth({ nodeId, x: e?.clientX ?? window.innerWidth / 2, y: e?.clientY ?? 160 }),
-    editPatch: (nodeId, fn) => updateNode(nodeId, (d) => { d.patch = normalizePatch(d.patch); fn(d.patch) }),
     newPatternFor: (nodeId) => {
       const patternId = newId()
       onUpdateProject((p) => {
@@ -1109,7 +1101,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
           {project.nodes.length === 1 && project.nodes[0].type === 'output' && (
             <div className="graph-empty">
               <strong>blank patch</strong>
-              <p>Click a sound in the pane (<b>phyllo</b>, <b>rhythm</b>, <b>pattern</b>): it wires into the output by itself. With it selected, click effects to chain them after it.</p>
+              <p>Click a sound in the pane (<b>pattern</b>, <b>rhythm</b>, <b>melody</b>): it wires into the output by itself. With it selected, click effects to chain them after it.</p>
             </div>
           )}
           <div className="graph-tip" aria-live="polite">
@@ -1129,17 +1121,6 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
           started={started}
           onUpdateProject={onUpdateProject}
           onClose={() => setEditing(null)}
-        />
-      )}
-      {synthNode && (
-        <Phyllo
-          key={synthNode.id}
-          node={synthNode}
-          cps={(project.bpm || 120) / (project.beats || 4) / 60}
-          anchor={synth}
-          onEdit={(fn) => ctx.editPatch(synthNode.id, fn)}
-          onClose={() => setSynth(null)}
-          fx={<FxRack node={synthNode} />}
         />
       )}
       {menu && (
