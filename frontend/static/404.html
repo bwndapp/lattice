@@ -1,0 +1,23 @@
+<!doctype html>
+<!--
+  The preview's static server answers a page it doesn't have (like /preview/t/abc, from a
+  reload or an old link) with this file. The preview app keeps its pages after a #, so send
+  the visitor there: /preview/t/abc → /preview/#/t/abc. Anywhere else, go home.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="robots" content="noindex" />
+    <title>lattice</title>
+    <script>
+      (function () {
+        var m = /^\/preview(\/.*)?$/.exec(location.pathname)
+        var rest = m && m[1] && m[1] !== '/' ? m[1] : '/'
+        location.replace(m ? '/preview/#' + rest + location.search : '/')
+      })()
+    </script>
+  </head>
+  <body style="background:#000;color:#a3a39a;font:14px ui-monospace,monospace;padding:2rem">
+    Opening… <a href="/preview/" style="color:#e4ff1a">go to the preview</a>
+  </body>
+</html>
