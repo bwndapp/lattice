@@ -112,6 +112,7 @@
 .clip-name { position: relative; z-index: 1; font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
 .clip-repeat { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed rgba(0, 0, 0, 0.45); pointer-events: none; }
 .song-lanes.dragging .clip { cursor: grabbing; }
+.song-lanes.zooming, .song-lanes.zooming .clip { cursor: move; }
 
 .song-marquee { position: absolute; z-index: 4; background: rgba(228, 255, 26, 0.07); border: 1px dashed var(--acid); pointer-events: none; }
 .song-playhead { position: absolute; top: 0; bottom: 0; left: 0; z-index: 6; width: 0; border-left: 2px solid var(--acid); pointer-events: none; will-change: transform; }

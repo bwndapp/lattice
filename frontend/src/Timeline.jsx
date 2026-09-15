@@ -9,10 +9,14 @@ import './Timeline.css'
  * place a clip; drag a clip to move it (alt: a copy), its edges to stretch it; right-click
  * (or right-drag across several) deletes; shift-click
  * or drag across empty rows to select several. Clicking the ruler moves the playhead,
- * dragging along it sets a loop. Ctrl/cmd + scroll zooms, middle-drag pans.
+ * dragging along it sets a loop. Ctrl/cmd + scroll zooms, middle-drag pans, ctrl/cmd +
+ * middle-drag zooms both ways (sideways: wider bars, up and down: taller rows), alt + scroll
+ * sizes the rows.
  */
 const PART_MIME = 'application/x-lattice-part'
-const LANE_H = 40
+const LANE_DEFAULT = 40
+const MIN_LANE = 22
+const MAX_LANE = 120
 const RULER_H = 26
 const EDGE = 7 // px at each end of a clip that stretch it
 const MIN_PPB = 10
@@ -24,6 +28,10 @@ function colorFor(src) {
   let h = 0
   for (const ch of src) h = (h * 31 + ch.charCodeAt(0)) >>> 0
   return COLORS[h % COLORS.length]
+}
+
+function readRows() {
+  try { return clamp(Number(localStorage.getItem('lattice:song:rows')) || LANE_DEFAULT, MIN_LANE, MAX_LANE) } catch { return LANE_DEFAULT }
 }
 
 function readZoom() {
@@ -38,6 +46,8 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const length = songLength(song)
 
   const [ppb, setPpb] = useState(readZoom) // pixels per bar
+  const [laneH, setLaneH] = useState(readRows) // row height
+  const LANE_H = laneH
   const [selected, setSelected] = useState(() => new Set())
   const [activePart, setActivePart] = useState(null) // src: empty-row drags draw this part
   const [drag, setDrag] = useState(null) // live preview while moving / stretching / drawing
@@ -58,7 +68,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     return () => ro.disconnect()
   }, [])
 
-  useEffect(() => { try { localStorage.setItem('lattice:song:zoom', String(ppb)) } catch { /* storage unavailable */ } }, [ppb])
+  useEffect(() => { try { localStorage.setItem('lattice:song:zoom', String(ppb)); localStorage.setItem('lattice:song:rows', String(laneH)) } catch { /* storage unavailable */ } }, [ppb, laneH])
 
   const updateSong = useCallback((fn) => onUpdateProject((p) => {
     p.song = p.song ?? { on: true, snap: 'bar', clips: [] }
@@ -74,7 +84,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   }, [song.clips, drag])
 
   const bars = Math.max(16, Math.ceil(length) + 8, Math.ceil((scrollRef.current?.clientWidth ?? 0) / ppb) + 1)
-  const lanes = Math.max(8, Math.ceil((viewH - RULER_H) / LANE_H), ...clips.map((c) => c.lane + 3))
+  const lanes = Math.max(8, Math.ceil((viewH - RULER_H) / LANE_H) + 4, ...clips.map((c) => c.lane + 3)) // a few spare rows below the view, so zooming rows can keep its spot
   const step = song.snap === 'beat' ? 1 / beats : 1
 
   // ── geometry ──
@@ -120,13 +130,24 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     const box = scrollRef.current
     if (!box) return
     const onWheel = (e) => {
+      if (e.altKey && !(e.ctrlKey || e.metaKey)) {
+        // alt + scroll: taller or shorter rows, keeping the row under the pointer there
+        e.preventDefault()
+        const rect = box.getBoundingClientRect()
+        const y = e.clientY - rect.top
+        const laneUnder = (box.scrollTop + y - RULER_H) / laneH
+        const next = clamp(laneH * Math.exp(-(e.deltaY || e.deltaX) * 0.0022), MIN_LANE, MAX_LANE)
+        setLaneH(next)
+        requestAnimationFrame(() => { box.scrollTop = Math.max(0, laneUnder * next + RULER_H - y) })
+        return
+      }
       if (!(e.ctrlKey || e.metaKey)) return
       e.preventDefault()
       zoomTo(ppb * Math.exp(-e.deltaY * 0.0022), e.clientX)
     }
     box.addEventListener('wheel', onWheel, { passive: false })
     return () => box.removeEventListener('wheel', onWheel)
-  }, [ppb, zoomTo])
+  }, [ppb, laneH, zoomTo])
   const fit = () => {
     const box = scrollRef.current
     if (!box) return
@@ -172,6 +193,22 @@ export default function Timeline({ project, onUpdateProject, transport, started 
 
   // ── pointer: clips, empty rows, panning ──
   const onLanesDown = (e) => {
+    if (e.button === 1 && (e.ctrlKey || e.metaKey)) {
+      // ctrl + middle-drag (as in FL): sideways stretches the bars, up and down the rows,
+      // around the spot where the drag started
+      e.preventDefault()
+      const box = scrollRef.current
+      const rect = box.getBoundingClientRect()
+      const x = e.clientX - rect.left
+      const y = e.clientY - rect.top
+      panRef.current = {
+        zoom: true, x: e.clientX, y: e.clientY, ppb, laneH, ax: x, ay: y,
+        bar: (box.scrollLeft + x) / ppb, lane: (box.scrollTop + y - RULER_H) / laneH,
+      }
+      e.currentTarget.setPointerCapture(e.pointerId)
+      e.currentTarget.classList.add('zooming')
+      return
+    }
     if (e.button === 1 || (e.button === 0 && e.altKey && !e.target.closest('.clip'))) {
       e.preventDefault()
       panRef.current = { x: e.clientX, y: e.clientY, left: scrollRef.current.scrollLeft, top: scrollRef.current.scrollTop }
@@ -229,6 +266,18 @@ export default function Timeline({ project, onUpdateProject, transport, started 
 
   const onLanesMove = (e) => {
     const pan = panRef.current
+    if (pan?.zoom) {
+      const box = scrollRef.current
+      const nextPpb = clamp(pan.ppb * Math.exp((e.clientX - pan.x) * 0.006), MIN_PPB, MAX_PPB)
+      const nextLane = clamp(pan.laneH * Math.exp((e.clientY - pan.y) * 0.006), MIN_LANE, MAX_LANE)
+      setPpb(nextPpb)
+      setLaneH(nextLane)
+      requestAnimationFrame(() => {
+        box.scrollLeft = Math.max(0, pan.bar * nextPpb - pan.ax)
+        box.scrollTop = Math.max(0, pan.lane * nextLane + RULER_H - pan.ay)
+      })
+      return
+    }
     if (pan) {
       scrollRef.current.scrollLeft = pan.left - (e.clientX - pan.x)
       scrollRef.current.scrollTop = pan.top - (e.clientY - pan.y)
@@ -285,7 +334,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   }
 
   const onLanesUp = (e) => {
-    if (panRef.current) { panRef.current = null; return }
+    if (panRef.current) { panRef.current = null; e?.currentTarget?.classList.remove('zooming'); return }
     const d = dragRef.current
     dragRef.current = null
     const preview = drag
