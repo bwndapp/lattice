@@ -3,6 +3,7 @@ import { makePattern, makeVariation, newId } from './project'
 import { MAX_BARS, songLength, songParts } from './song'
 import PatternEditor from './PatternEditor.jsx'
 import Popover from './Popover.jsx'
+import { Glass } from './Glass.jsx'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import { KitSelect } from './Graph.jsx'
 import { NODE_TYPES } from './graph'
@@ -814,7 +815,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       <div className="song-main">
         <div className="song-bar">
           <button
-            className={`btn ${song.on ? 'on' : ''}`}
+            className={`btn song-power ${song.on ? 'on' : ''}`}
             aria-pressed={song.on}
             onClick={() => updateSong((s) => { s.on = !s.on })}
             disabled={!song.clips.length}
@@ -828,9 +829,10 @@ export default function Timeline({ project, onUpdateProject, transport, started 
             </select>
           </label>
           <span className="song-length" title="The song loops after its last clip">{length ? `${songBars} bar${songBars === 1 ? '' : 's'}` : 'empty'}</span>
-          <span className="song-tools" role="group" aria-label="Tool">
-            <button className={`btn ${tool === 'pointer' ? 'on' : ''}`} aria-pressed={tool === 'pointer'} onClick={() => { setTool('pointer'); setSliceLine(null) }} title="Move, stretch and draw clips (V)">move</button>
-            <button className={`btn ${tool === 'slice' ? 'on' : ''}`} aria-pressed={tool === 'slice'} onClick={() => setTool('slice')} title="Cut clips in two: click a clip, or drag up or down to cut every clip on those rows (C)">slice</button>
+          <span className={`song-tools ${tool === 'slice' ? 'at-second' : ''}`} role="group" aria-label="Tool">
+            <Glass className="song-tools-thumb" aria-hidden />
+            <button className={`song-tool ${tool === 'pointer' ? 'on' : ''}`} aria-pressed={tool === 'pointer'} onClick={() => { setTool('pointer'); setSliceLine(null) }} title="Move, stretch and draw clips (V)">move</button>
+            <button className={`song-tool ${tool === 'slice' ? 'on' : ''}`} aria-pressed={tool === 'slice'} onClick={() => setTool('slice')} title="Cut clips in two: click a clip, or drag up or down to cut every clip on those rows (C)">slice</button>
           </span>
           <span className="spacer" />
           <span className="song-hint">{tool === 'slice' ? 'click a clip to cut it · drag up or down to cut several · alt snaps finer · V or Esc to go back' : 'dup a pattern for a variation · U makes selected clips unique · shift-drag copies · right-click deletes · C slices · drag the ruler to move the playhead'}</span>
@@ -898,7 +900,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
                   <div
                     key={c.id}
                     data-id={c.id}
-                    className={`clip ${selected.has(c.id) ? 'selected' : ''} ${c.id.startsWith('__') ? 'preview' : ''} ${!song.on ? 'off' : ''}`}
+                    className={`clip ${LANE_H >= 30 ? 'roomy' : ''} ${selected.has(c.id) ? 'selected' : ''} ${c.id.startsWith('__') ? 'preview' : ''} ${!song.on ? 'off' : ''}`}
                     style={{ left: c.start * ppb, top: c.lane * LANE_H + 3, width: Math.max(4, c.len * ppb - 1), height: LANE_H - 6, '--clip': colorFor(c.src, song.colors), '--clip-ink': inkFor(colorFor(c.src, song.colors)) }}
                     title={`${part.name} · bar ${Math.floor(c.start) + 1}${c.start % 1 ? `.${Math.round((c.start % 1) * beats) + 1}` : ''} · ${Math.round(c.len * beats) / beats} bar${c.len === 1 ? '' : 's'}`}
                   >
@@ -911,7 +913,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
                 )
               })}
               {ghost && ghost.lane >= 0 && (
-                <div className="clip preview ghost" style={{ left: ghost.start * ppb, top: ghost.lane * LANE_H + 3, width: ghost.len * ppb - 1, height: LANE_H - 6, '--clip': colorFor(ghost.src ?? '', song.colors), '--clip-ink': inkFor(colorFor(ghost.src ?? '', song.colors)) }}>
+                <div className={`clip preview ghost ${LANE_H >= 30 ? 'roomy' : ''}`} style={{ left: ghost.start * ppb, top: ghost.lane * LANE_H + 3, width: ghost.len * ppb - 1, height: LANE_H - 6, '--clip': colorFor(ghost.src ?? '', song.colors), '--clip-ink': inkFor(colorFor(ghost.src ?? '', song.colors)) }}>
                   <ClipSketch url={sketchFor(ghost.src)} bars={partBySrc.get(ghost.src)?.bars} ppb={ppb} into={0} laneH={LANE_H} />
                   <span className="clip-name">{partBySrc.get(ghost.src)?.name}</span>
                 </div>
