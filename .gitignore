@@ -12,3 +12,6 @@ src/api-live/
 src/api-live.bak/
 # python caches
 __pycache__/
+
+# save points: database snapshots and the live build at that moment
+saves/
