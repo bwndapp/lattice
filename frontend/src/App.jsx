@@ -396,7 +396,7 @@ export default function App() {
         setTrack(t)
         setTitle(t.title)
         setVisibility(t.visibility)
-        putCode(trackId, readDraft(trackId) ?? t.code)
+        putCode(trackId, readDraft(trackId, t.updated_at) ?? t.code)
         if (pendingPlayRef.current === trackId) {
           pendingPlayRef.current = null
           play()
@@ -411,7 +411,7 @@ export default function App() {
     const id = trackId || null
     if (loadedIdRef.current !== id) return
     if (id && track?.id === id && savedCode === track.code) clearDraft(id)
-    else if (code) writeDraft(id, code)
+    else if (code) writeDraft(id, code, id ? track?.updated_at ?? null : null)
   }, [code, savedCode, trackId, track])
 
   // While stopped, evaluate silently so the timeline follows your edits. Only for code you

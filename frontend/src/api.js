@@ -18,13 +18,28 @@ export async function api(path, { method = 'GET', body } = {}) {
   return data
 }
 
-/** Local, per-track unsaved edits ("new" = the scratch pad at /). */
-const draftKey = (id) => `strudel:draft:${id || 'new'}`
-export function readDraft(id) {
-  try { return localStorage.getItem(draftKey(id)) } catch { return null }
+/**
+ * Local, per-track unsaved edits ("new" = the scratch pad at /). The draft site at
+ * /preview/ and the live site share this browser storage (same origin) but not their
+ * tracks (separate databases), so each keeps its own drafts. A track's draft remembers
+ * which saved version it was edited from: once that track has been saved again since
+ * (here or anywhere else), the saved version wins over the older draft.
+ */
+const draftKey = (id) => `strudel:${BASE ? 'preview:' : ''}draft:${id || 'new'}`
+export function readDraft(id, savedAt = null) {
+  let raw = null
+  try { raw = localStorage.getItem(draftKey(id)) } catch { return null }
+  if (raw == null) return null
+  if (!raw.startsWith('{"lattice-draft":1')) return savedAt == null ? raw : null // from before drafts knew their version
+  try {
+    const d = JSON.parse(raw)
+    if (savedAt != null && (d.base ?? 0) < savedAt) return null
+    return typeof d.code === 'string' ? d.code : null
+  } catch { return null }
 }
-export function writeDraft(id, code) {
-  try { localStorage.setItem(draftKey(id), code) } catch { /* storage unavailable */ }
+export function writeDraft(id, code, savedAt = null) {
+  const value = savedAt == null ? code : JSON.stringify({ 'lattice-draft': 1, base: savedAt, code })
+  try { localStorage.setItem(draftKey(id), value) } catch { /* storage unavailable */ }
 }
 export function clearDraft(id) {
   try { localStorage.removeItem(draftKey(id)) } catch { /* storage unavailable */ }
