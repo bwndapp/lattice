@@ -20,7 +20,7 @@ function Switch({ options, value, onChange, label, small = false }) {
   )
 }
 
-export default function Browser({ user, login, activeId, refreshKey, onPlay, onPick }) {
+export default function Browser({ user, login, activeId, refreshKey, onPlay, onPick, onNew }) {
   const [view, setView] = useState('explore')
   const [sort, setSort] = useState('new')
   const [q, setQ] = useState('')
@@ -69,8 +69,8 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
           <h3>{heading}</h3>
           {tracks?.length > 0 && <span className="b-count">{tracks.length}{tracks.length === 50 ? '+' : ''}</span>}
           <div className="b-new" role="group" aria-label="Start a track">
-            <Link to="/" state={{ fresh: Date.now(), template: 'demo' }} className="b-button small new-demo" onClick={onPick} title="Open the demo patch to pull apart">Demo patch</Link>
-            <Link to="/" state={{ fresh: Date.now(), template: 'blank' }} className="b-button small primary new-track" onClick={onPick}><span aria-hidden>+</span> New track</Link>
+            <button type="button" className="b-button small new-demo" onClick={() => onNew('demo')} title="Open the demo patch to pull apart">Demo patch</button>
+            <button type="button" className="b-button small primary new-track" onClick={() => onNew('blank')}><span aria-hidden>+</span> New track</button>
           </div>
         </div>
 
@@ -88,7 +88,7 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
         ) : tracks.length === 0 ? (
           <div className="b-empty">
             <p>{q ? 'Nothing matches that.' : view === 'explore' ? 'Nothing shared yet. Make the first track.' : view === 'mine' ? 'You haven’t saved anything yet.' : 'No likes yet.'}</p>
-            {!q && view !== 'liked' && <Link to="/" state={{ fresh: Date.now(), template: 'blank' }} className="b-button primary" onClick={onPick}>New track</Link>}
+            {!q && view !== 'liked' && <button type="button" className="b-button primary" onClick={() => onNew('blank')}>New track</button>}
           </div>
         ) : (
           <ul className="b-grid">

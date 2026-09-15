@@ -263,6 +263,26 @@ body {
 .title-input::placeholder { color: var(--muted); }
 .title-input:hover, .title-input:focus { border-bottom-color: var(--acid); outline: none; }
 .btn.track-more { padding-inline: 0.55rem; font-weight: 700; letter-spacing: 0.05em; }
+/* save and its menu: save, save as a new track, new track (the file menu of a DAW) */
+.save-split { display: inline-flex; align-items: stretch; }
+.save-split .btn.save { border-right-width: 0; }
+.btn.save-more { padding-inline: 0.4rem; font-size: 10px; line-height: 1; }
+.btn.save-more.primary { background: var(--acid); border-color: var(--acid); color: var(--ink); border-left: 1px solid rgba(0, 0, 0, 0.35); }
+.btn.new-track-btn { font-weight: 700; }
+.btn.save-more svg { display: block; }
+.btn.avatar-btn { width: 30px; height: 30px; padding: 0; display: grid; place-items: center; font-family: var(--display); font-weight: 900; font-size: 0.9rem; color: var(--ink); background: var(--paper); border-color: var(--paper); }
+.btn.avatar-btn:hover:not(:disabled), .btn.avatar-btn.on { color: var(--ink); background: var(--acid); border-color: var(--acid); }
+.user-menu { width: 230px; padding: 0.3rem; display: grid; }
+.user-menu-who { margin: 0; padding: 0.45rem 0.55rem 0.55rem; font-size: 11px; color: var(--muted); border-bottom: 1px solid var(--line); margin-bottom: 0.25rem; }
+.user-menu-who strong { display: block; color: var(--paper); font-weight: 600; font-size: 12px; }
+.user-menu-who span { display: block; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 1600px) { .new-word { display: none; } }
+.file-menu { width: 250px; padding: 0.3rem; display: grid; }
+.file-item { display: flex; align-items: center; justify-content: space-between; gap: 1rem; width: 100%; padding: 0.45rem 0.55rem; font: inherit; font-size: 12px; color: var(--paper); background: none; border: 0; text-align: left; cursor: var(--ring); }
+.file-item:hover:not(:disabled), .file-item:focus-visible { background: rgba(255, 255, 255, 0.07); outline: none; }
+.file-item:disabled { color: #5a5a53; cursor: var(--dot); }
+.file-item kbd { font: inherit; font-size: 10px; color: var(--muted); white-space: nowrap; }
+.file-line { margin: 0.25rem 0.2rem; border: 0; border-top: 1px solid var(--line); }
 .track-status { max-width: 22rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .popover { position: fixed; z-index: 80; background: var(--panel); border: 1px solid var(--acid); box-shadow: 8px 8px 0 #000; }
 .track-menu { width: 300px; max-width: calc(100vw - 16px); display: grid; gap: 0.6rem; padding: 0.7rem; }

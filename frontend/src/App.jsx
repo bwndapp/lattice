@@ -72,6 +72,8 @@ const store = {
 const rememberTrack = (id) => { store.set(LAST_TRACK, id); store.set(LAST_OPEN, 'track') }
 const rememberScratchWork = () => { store.set(SCRATCH_WORK, 'yes'); store.set(LAST_OPEN, 'scratch') }
 const forgetScratchWork = () => store.set(SCRATCH_WORK, null)
+/** "3 nodes · 2 patterns · 5 clips" */
+const countText = (c) => (c ? [`${c.nodes} node${c.nodes === 1 ? '' : 's'}`, `${c.patterns} pattern${c.patterns === 1 ? '' : 's'}`, c.clips ? `${c.clips} clip${c.clips === 1 ? '' : 's'}` : null].filter(Boolean).join(' · ') : 'nothing')
 const lastTrack = () => {
   const id = store.get(LAST_TRACK)
   if (id) return id
@@ -403,7 +405,8 @@ export default function App() {
   const [autoEditing, setAutoEditing] = useState(null) // { id, x, y }
   const [draftNotice, setDraftNotice] = useState(null) // { id, savedAt }: this track opened with unsaved changes
   const [showVersions, setShowVersions] = useState(false)
-  const [askSave, setAskSave] = useState(false)
+  const [askSave, setAskSave] = useState(null) // why a save should ask first
+  const [askNew, setAskNew] = useState(null) // the template a new track would start from
   const closeAutoEditor = useCallback(() => setAutoEditing(null), [])
   const automation = useMemo(() => {
     const autos = project?.song?.autos ?? []
@@ -625,8 +628,11 @@ export default function App() {
   const save = useCallback(async ({ replace = false } = {}) => {
     if (!canEdit || busy) return
     if (!user) return login()
-    // a new name and a changed patch: probably a new track, not a new version of this one
-    if (!isNew && !replace && track && (title.trim() || 'untitled') !== track.title && codeChanged) return setAskSave(true)
+    // replacing the saved track with what looks like a different or emptied one: ask first
+    if (!isNew && !replace && track) {
+      const reason = replaceRisk()
+      if (reason) return setAskSave(reason)
+    }
     setBusy(true)
     try {
       const body = { title: title.trim() || 'untitled', code: songCodeOf(editorRef.current.code), visibility }
@@ -649,7 +655,37 @@ export default function App() {
     } finally {
       setBusy(false)
     }
-  }, [canEdit, busy, user, login, title, visibility, isNew, trackId, navigate, flash, track, codeChanged])
+  }, [canEdit, busy, user, login, title, visibility, isNew, trackId, navigate, flash, track, codeChanged]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /**
+   * Why saving over the open track might wipe work, or null: a new name on a changed patch
+   * (a new track, most likely), or a patch that keeps well under half of what was saved.
+   */
+  const replaceRisk = () => {
+    if (!track || !codeChanged) return null
+    const saved = parseProject(track.code)
+    const mine = parseProject(editorRef.current?.code ?? '')
+    const size = (p) => ({ nodes: p.nodes.filter((n) => n.type !== 'output').length, patterns: p.patterns.length, clips: p.song?.clips.length ?? 0 })
+    const before = saved && size(saved)
+    const after = mine && size(mine)
+    const total = (x) => x.nodes + x.patterns + x.clips
+    if ((title.trim() || 'untitled') !== track.title) return { kind: 'renamed', before, after }
+    if (before && after && total(before) >= 4 && total(after) <= total(before) * 0.5) return { kind: 'shrunk', before, after }
+    return null
+  }
+
+  /**
+   * Start a new track (blank, or the demo patch). The open track is never touched; unsaved
+   * changes to it stay in this browser. Only the scratch pad's own unsaved work would be
+   * replaced, so that asks first.
+   */
+  const newTrack = (template = 'blank', { force = false } = {}) => {
+    if (!force && ((isNew && store.get(SCRATCH_WORK) === 'yes') || (!isNew && codeChanged))) return setAskNew(template)
+    setDraftNotice(null)
+    if (view === 'browse' || view === 'code') setView('graph')
+    navigate('/', { state: { fresh: Date.now(), template } })
+    flash(template === 'demo' ? 'New track from the demo patch' : 'New track · nothing else changed')
+  }
 
   /** Save what's open as a track of its own; the track it came from keeps its saved version. */
   const saveAsNew = async () => {
@@ -739,7 +775,7 @@ export default function App() {
   // Page-wide shortcuts (Strudel's own only fire while the editor has focus). Capture
   // phase + stopPropagation so a focused editor doesn't run them a second time.
   const keysRef = useRef({})
-  keysRef.current = { play, save, stop, pause, toStart, undo, redo, isProject: !!project }
+  keysRef.current = { play, save, stop, pause, toStart, undo, redo, isProject: !!project, saveAsNew: () => (isNew || !isOwner ? save() : saveAsNew()) }
   useEffect(() => {
     // only places you type text keep space and Home for themselves. A focused button, slider,
     // checkbox or dropdown doesn't: clicking one leaves focus on it, and space must still play.
@@ -777,6 +813,7 @@ export default function App() {
       if (mod && e.key.toLowerCase() === 'y' && !textEntry) { e.preventDefault(); return keysRef.current.redo() }
       if (e.key === 'Enter') keysRef.current.play()
       else if (e.key === '.' || e.code === 'Period') keysRef.current.stop()
+      else if (mod && e.shiftKey && e.key.toLowerCase() === 's') keysRef.current.saveAsNew()
       else if (mod && e.key.toLowerCase() === 's') keysRef.current.save()
       else if (mod && e.key.toLowerCase() === 'j') setView((v) => (v === 'code' ? lastViewRef.current : 'code'))
       else return
@@ -903,9 +940,34 @@ export default function App() {
                 aria-label="Track title"
                 title={isNew ? 'Scratch pad · not saved yet' : `saved ${timeAgo(track.updated_at)}`}
               />
-              <button className={`btn save ${dirty || !user ? 'primary' : ''} ${user ? '' : 'signed-out'}`} onClick={() => save()} disabled={busy || (!!user && !dirty)} title={!user ? 'Sign in to save this track' : dirty ? 'Save (ctrl/cmd + S)' : 'Everything is saved'}>
-                {busy ? 'saving…' : !user || dirty ? 'save' : 'saved'}
-              </button>
+              <span className="save-split" role="group" aria-label="Save">
+                <button className={`btn save ${dirty || !user ? 'primary' : ''} ${user ? '' : 'signed-out'}`} onClick={() => save()} disabled={busy || (!!user && !dirty)} title={!user ? 'Sign in to save this track' : dirty ? (isNew ? 'Save as a track (ctrl/cmd + S)' : `Save “${track?.title}” (ctrl/cmd + S)`) : 'Everything is saved'}>
+                  {busy ? 'saving…' : !user || dirty ? 'save' : 'saved'}
+                </button>
+                <Popover label={<svg viewBox="0 0 10 10" width="10" height="10" aria-hidden><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>} title="Save, save as a new track, new track" className={`save-more ${dirty || !user ? 'primary' : ''}`} panelClassName="file-menu">
+                  {(close) => (
+                    <>
+                      <button type="button" className="file-item" disabled={busy || (!!user && !dirty)} onClick={() => { close(); save() }}>
+                        <span>{isNew ? 'save as a track' : 'save'}</span><kbd>ctrl/cmd S</kbd>
+                      </button>
+                      <button type="button" className="file-item" disabled={busy || isNew} onClick={() => { close(); saveAsNew() }} title={isNew ? 'The scratch pad isn\'t a track yet: save makes it one' : undefined}>
+                        <span>save as a new track</span><kbd>ctrl/cmd ⇧ S</kbd>
+                      </button>
+                      <hr className="file-line" />
+                      <button type="button" className="file-item" onClick={() => { close(); newTrack('blank') }}><span>new track</span></button>
+                      <button type="button" className="file-item" onClick={() => { close(); newTrack('demo') }}><span>new from the demo patch</span></button>
+                      <button type="button" className="file-item" onClick={() => { close(); setView('browse') }}><span>open a track…</span></button>
+                      {isOwner && (
+                        <>
+                          <hr className="file-line" />
+                          <button type="button" className="file-item" onClick={() => { close(); setShowVersions(true) }}><span>saved versions</span></button>
+                        </>
+                      )}
+                    </>
+                  )}
+                </Popover>
+              </span>
+              <button className="btn new-track-btn" onClick={() => newTrack('blank')} title="Start a new track: the open one stays as it is" aria-label="New track">+<span className="new-word"> new</span></button>
               <Popover label="···" title="Track: title, who can see it, share, clear, delete" className="track-more" panelClassName="track-menu">
                 {(close) => (
                   <>
@@ -1006,9 +1068,16 @@ export default function App() {
         </span>
         {userLoading ? null : user ? (
           <span className="user">
-            <span className="avatar" aria-hidden>{(user.name || user.email || '?').trim()[0].toUpperCase()}</span>
-            <span className="user-name">{user.name || user.email}</span>
-            <button className="linkish" onClick={() => logout(window.location.pathname)}>Sign out</button>
+            {/* who's signed in, and signing out, behind the initial: the bar keeps its room for the track */}
+            <Popover label={(user.name || user.email || '?').trim()[0].toUpperCase()} title={`Signed in as ${user.name || user.email}`} className="avatar-btn" panelClassName="user-menu">
+              {(close) => (
+                <>
+                  <p className="user-menu-who">Signed in as <strong>{user.name || user.email}</strong>{user.name && user.email ? <span>{user.email}</span> : null}</p>
+                  <button type="button" className="file-item" onClick={() => { close(); setView('browse') }}><span>your tracks</span></button>
+                  <button type="button" className="file-item" onClick={() => { close(); logout(window.location.pathname) }}><span>sign out</span></button>
+                </>
+              )}
+            </Popover>
           </span>
         ) : (
           <button className="btn primary" onClick={() => login()}>Sign in</button>
@@ -1062,6 +1131,7 @@ export default function App() {
               refreshKey={refreshKey}
               onPlay={playFromList}
               onPick={() => setView('graph')}
+              onNew={(template) => newTrack(template)}
             />
           )}
           {confirmClear && project && (
@@ -1069,6 +1139,8 @@ export default function App() {
               title="Clear the patch?"
               confirmLabel="clear the patch"
               danger
+              altLabel={isNew ? null : 'start a new track instead'}
+              onAlt={() => { setConfirmClear(false); newTrack('blank') }}
               onCancel={() => setConfirmClear(false)}
               onConfirm={() => {
                 setConfirmClear(false)
@@ -1076,20 +1148,36 @@ export default function App() {
               }}
             >
               <p>This removes <strong>{project.nodes.filter((n) => n.type !== 'output').length} nodes</strong>, their wires, <strong>{project.patterns.length} pattern{project.patterns.length === 1 ? '' : 's'}</strong> with all their steps and notes, and the song's clips. The output and tempo stay.</p>
-              <p>{isNew ? 'Ctrl/cmd + Z brings it back.' : 'Ctrl/cmd + Z brings it back, and the saved track doesn\'t change unless you save.'}</p>
+              <p>{isNew ? 'Ctrl/cmd + Z brings it back.' : <>Making something new? <strong>Start a new track instead</strong>: “{track?.title}” stays as it is. Clearing empties this track, and saving would replace it.</>}</p>
             </ConfirmDialog>
           )}
           {askSave && track && (
             <ConfirmDialog
-              title="A new track, or replace this one?"
+              title="Save as a new track, or replace this one?"
               confirmLabel="save as a new track"
               altLabel={`replace “${track.title}”`}
-              onCancel={() => setAskSave(false)}
-              onAlt={() => { setAskSave(false); save({ replace: true }) }}
-              onConfirm={() => { setAskSave(false); saveAsNew() }}
+              onCancel={() => setAskSave(null)}
+              onAlt={() => { setAskSave(null); save({ replace: true }) }}
+              onConfirm={() => { setAskSave(null); saveAsNew() }}
             >
-              <p>You renamed it to <strong>“{title.trim() || 'untitled'}”</strong> and changed the patch. Save it as a <strong>new track</strong>, and “{track.title}” stays as it was saved.</p>
-              <p>Or <strong>replace</strong> “{track.title}” with it (its earlier saves stay in <em>saved versions</em>).</p>
+              {askSave.kind === 'renamed'
+                ? <p>You renamed it to <strong>“{title.trim() || 'untitled'}”</strong> and changed the patch, so this looks like a new track.</p>
+                : <p>This would replace “{track.title}” with a much smaller patch: <strong>{countText(askSave.after)}</strong> instead of <strong>{countText(askSave.before)}</strong>.</p>}
+              <p><strong>Save as a new track</strong> keeps “{track.title}” exactly as it was saved. <strong>Replace</strong> saves over it (earlier saves stay in <em>saved versions</em>).</p>
+            </ConfirmDialog>
+          )}
+          {askNew && (
+            <ConfirmDialog
+              title="Start a new track?"
+              confirmLabel="start a new track"
+              altLabel={isNew ? 'save this first' : null}
+              onCancel={() => setAskNew(null)}
+              onAlt={() => { setAskNew(null); save() }}
+              onConfirm={() => { const template = askNew; setAskNew(null); newTrack(template, { force: true }) }}
+            >
+              {isNew
+                ? <p>The scratch pad has work that isn't saved as a track. A new track replaces it (ctrl/cmd + Z brings it back until you leave the page). Save it first to keep it.</p>
+                : <p>“{track?.title}” has unsaved changes. They stay in this browser and come back when you open it again, but they aren't saved. The saved track doesn't change.</p>}
             </ConfirmDialog>
           )}
           {confirmDelete && track && (
