@@ -64,8 +64,8 @@
   z-index: 5;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
-  cursor: pointer;
   user-select: none;
+  touch-action: none;
 }
 .song-tick {
   position: absolute;
@@ -79,7 +79,17 @@
   pointer-events: none;
 }
 .song-tick.major { color: var(--paper); border-left-color: #45453d; }
-.song-loop { position: absolute; top: 0; height: 5px; background: var(--acid); pointer-events: none; }
+.song-loop { position: absolute; top: 0; bottom: 0; pointer-events: none; background: linear-gradient(to bottom, var(--acid) 0 5px, rgba(228, 255, 26, 0.08) 5px); }
+.song-loop-edge { position: absolute; top: 0; bottom: 0; width: 4px; background: var(--acid); }
+.song-loop-edge.from { left: 0; }
+.song-loop-edge.to { right: 0; }
+.song-loop.off { opacity: 0.28; } /* the last loop, while looping is off: the loop button brings it back */
+.song-ruler { cursor: ew-resize; }
+.song-ruler.scrubbing { cursor: grabbing; }
+/* the playhead's handle: a notch on the ruler, always in view */
+.song-head { position: absolute; left: 0; bottom: 0; z-index: 2; width: 0; height: 100%; pointer-events: none; will-change: transform; }
+.song-head::before { content: ''; position: absolute; left: -7px; bottom: 0; border: 7px solid transparent; border-bottom: 0; border-top: 10px solid var(--acid); }
+.song-head::after { content: ''; position: absolute; left: -1px; top: 0; bottom: 0; width: 2px; background: var(--acid); }
 .song-end { position: absolute; top: 0; bottom: 0; width: 0; border-left: 2px solid var(--muted); pointer-events: none; }
 
 .song-lanes {

@@ -65,6 +65,8 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const scrollRef = useRef(null)
   const lanesRef = useRef(null)
   const playheadRef = useRef(null)
+  const headRef = useRef(null) // the playhead's handle on the ruler
+  const scrubbing = useRef(false)
   const dragRef = useRef(null)
   const panRef = useRef(null)
   const [viewH, setViewH] = useState(0) // rows fill the visible height
@@ -109,10 +111,11 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       let pos = transport.position()
       if (length > 0 && song.on) pos %= Math.max(1, Math.ceil(length - 1e-9))
       el.style.transform = `translateX(${pos * ppb}px)`
+      if (headRef.current) headRef.current.style.transform = `translateX(${pos * ppb}px)`
       if (started) {
         const box = scrollRef.current
         const x = pos * ppb
-        if (box && !dragRef.current && (x < box.scrollLeft || x > box.scrollLeft + box.clientWidth - 40)) box.scrollLeft = Math.max(0, x - 80)
+        if (box && !dragRef.current && !scrubbing.current && (x < box.scrollLeft || x > box.scrollLeft + box.clientWidth - 40)) box.scrollLeft = Math.max(0, x - 80)
       }
     }
     show()
@@ -480,26 +483,92 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     }
   }
 
-  // ── ruler: click to move the playhead, drag to set a loop ──
+  // ── ruler: click or drag to move the playhead (snapped to beats, alt: free);
+  //    shift-drag to set a loop ──
   const rulerRef = useRef(null)
+  const scrubTo = (clientX, free) => {
+    const raw = Math.max(0, barAt(clientX))
+    const bar = free ? raw : Math.round(raw * beats) / beats
+    const r = rulerRef.current
+    if (r && r.last === bar) return
+    if (r) r.last = bar
+    // seeking re-sets the playing pattern: at most once a frame
+    cancelAnimationFrame(r?.frame)
+    const go = () => transport.seek(bar)
+    if (r) r.frame = requestAnimationFrame(go)
+    else go()
+  }
+  /** What the ruler has under the pointer: a loop edge, the loop band itself, or nothing. */
+  const loopPartAt = (e) => {
+    const lp = transport.loop
+    if (!lp.on || lp.to <= lp.from) return null
+    const x = e.clientX - lanesRef.current.getBoundingClientRect().left
+    const y = e.clientY - e.currentTarget.getBoundingClientRect().top
+    if (Math.abs(x - lp.from * ppb) <= 6) return 'from'
+    if (Math.abs(x - lp.to * ppb) <= 6) return 'to'
+    if (y <= 9 && x > lp.from * ppb && x < lp.to * ppb) return 'band'
+    return null
+  }
+
   const onRulerDown = (e) => {
     if (e.button !== 0) return
+    e.preventDefault()
     e.currentTarget.setPointerCapture(e.pointerId)
-    const bar = snapDown(barAt(e.clientX), e.altKey)
-    rulerRef.current = { from: bar, to: bar, moved: false }
+    const part = !e.shiftKey && loopPartAt(e)
+    if (part) {
+      // drag a loop edge to resize the loop, or the band to move it
+      const lp = transport.loop
+      rulerRef.current = { mode: `loop-${part}`, grab: barAt(e.clientX), from: lp.from, to: lp.to }
+      e.currentTarget.classList.add('scrubbing')
+      return
+    }
+    if (e.shiftKey) {
+      const bar = snapDown(barAt(e.clientX), e.altKey)
+      rulerRef.current = { mode: 'loop', from: bar, to: bar }
+      return
+    }
+    rulerRef.current = { mode: 'scrub', last: null, frame: 0 }
+    scrubbing.current = true
+    e.currentTarget.classList.add('scrubbing')
+    scrubTo(e.clientX, e.altKey)
   }
   const onRulerMove = (e) => {
     const r = rulerRef.current
-    if (!r) return
+    if (!r) {
+      const part = loopPartAt(e)
+      e.currentTarget.style.cursor = part === 'band' ? 'grab' : part ? 'col-resize' : ''
+      return
+    }
+    if (r.mode.startsWith('loop-')) {
+      const min = 1 / beats
+      const at = snap(barAt(e.clientX), e.altKey)
+      if (r.mode === 'loop-from') transport.setLoop({ from: clamp(at, 0, r.to - min) })
+      else if (r.mode === 'loop-to') transport.setLoop({ to: Math.max(at, r.from + min) })
+      else {
+        const shift = Math.max(-r.from, snap(barAt(e.clientX) - r.grab, e.altKey))
+        transport.setLoop({ from: r.from + shift, to: r.to + shift })
+      }
+      return
+    }
+    if (r.mode === 'scrub') {
+      scrubTo(e.clientX, e.altKey)
+      // keep the handle in view while dragging past an edge
+      const box = scrollRef.current
+      const rect = box.getBoundingClientRect()
+      if (e.clientX > rect.right - 24) box.scrollLeft += 12
+      else if (e.clientX < rect.left + 24) box.scrollLeft -= 12
+      return
+    }
     const bar = snap(barAt(e.clientX), e.altKey)
-    if (Math.abs(bar - r.from) >= (e.altKey ? 1 / beats : 1)) r.moved = true
     r.to = bar
-    if (r.moved) transport.setLoop({ on: true, from: Math.min(r.from, r.to), to: Math.max(r.from, r.to) })
+    if (Math.abs(r.to - r.from) >= 1 / beats) transport.setLoop({ on: true, from: Math.min(r.from, r.to), to: Math.max(r.from, r.to) })
   }
-  const onRulerUp = () => {
+  const onRulerUp = (e) => {
     const r = rulerRef.current
     rulerRef.current = null
-    if (r && !r.moved) transport.seek(r.from)
+    scrubbing.current = false
+    e.currentTarget.classList.remove('scrubbing')
+    if (r?.mode === 'loop' && Math.abs(r.to - r.from) < 1 / beats) transport.setLoop({ on: false })
   }
 
   // ── dropping parts from the sidebar ──
@@ -602,7 +671,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
             <button className={`btn ${tool === 'slice' ? 'on' : ''}`} aria-pressed={tool === 'slice'} onClick={() => setTool('slice')} title="Cut clips in two: click a clip, or drag up or down to cut every clip on those rows (C)">slice</button>
           </span>
           <span className="spacer" />
-          <span className="song-hint">{tool === 'slice' ? 'click a clip to cut it · drag up or down to cut several · alt snaps finer · V or Esc to go back' : 'shift-drag copies · right-click deletes · alt snaps finer · ctrl/cmd + D duplicates · C slices'}</span>
+          <span className="song-hint">{tool === 'slice' ? 'click a clip to cut it · drag up or down to cut several · alt snaps finer · V or Esc to go back' : 'drag the ruler to move the playhead · shift-drag it to loop, drag loop edges to resize · shift-drag copies · right-click deletes · C slices'}</span>
           <span className="song-zoom" role="group" aria-label="Zoom">
             <button className="btn" onClick={() => zoomTo(ppb / 1.5)} aria-label="Zoom out">−</button>
             <button className="btn" onClick={fit} title="Fit the song">fit</button>
@@ -625,15 +694,20 @@ export default function Timeline({ project, onUpdateProject, transport, started 
               onPointerDown={onRulerDown}
               onPointerMove={onRulerMove}
               onPointerUp={onRulerUp}
-              title="Click to move the playhead · drag to loop a section"
+              onPointerCancel={onRulerUp}
+              title="Click or drag to move the playhead (alt: off the beat grid) · shift-drag to loop a section, shift-click to clear it · drag the loop's edges to resize it, its band to move it"
             >
               {Array.from({ length: bars }, (_, i) => (
                 (ppb >= 22 || i % Math.ceil(22 / ppb) === 0) && <span key={i} className={`song-tick ${i % 4 === 0 ? 'major' : ''}`} style={{ left: i * ppb }}>{i + 1}</span>
               ))}
-              {loop.on && loop.to > loop.from && (
-                <span className="song-loop" style={{ left: loop.from * ppb, width: (loop.to - loop.from) * ppb }} aria-label={`Loop bars ${loop.from + 1} to ${loop.to}`} />
+              {loop.to > loop.from && (
+                <span className={`song-loop ${loop.on ? '' : 'off'}`} style={{ left: loop.from * ppb, width: (loop.to - loop.from) * ppb }} aria-label={`Loop bars ${loop.from + 1} to ${loop.to}${loop.on ? '' : ' (off)'}`}>
+                  <span className="song-loop-edge from" aria-hidden />
+                  <span className="song-loop-edge to" aria-hidden />
+                </span>
               )}
               {length > 0 && <span className="song-end" style={{ left: songBars * ppb }} title="The song loops here" />}
+              <span ref={headRef} className="song-head" aria-hidden />
             </div>
 
             <div
