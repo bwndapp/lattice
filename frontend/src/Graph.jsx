@@ -88,6 +88,49 @@ function spliceChain(p, edgeId, { head, tail }) {
   return true
 }
 
+/**
+ * Ctrl/cmd + G: fold selected effect nodes (and fx racks) into one fx rack, in signal order.
+ * Wired as a chain, the rack takes the chain's place: its input is the first node's input
+ * and its output feeds wherever the last node fed. Unwired, they go in left to right.
+ * Anything else (a source in the selection, wires branching in or out of the middle) is
+ * left alone. Mutates the draft; returns the rack's id, or null.
+ */
+function groupIntoRack(p, ids) {
+  const group = new Set(ids)
+  const nodes = p.nodes.filter((n) => group.has(n.id))
+  if (nodes.length < 2 || !nodes.every((n) => n.type === 'fxrack' || FX_UNITS.includes(n.type))) return null
+  const inner = p.edges.filter((e) => group.has(e.source) && group.has(e.target))
+  const incoming = p.edges.filter((e) => !group.has(e.source) && group.has(e.target))
+  const outgoing = p.edges.filter((e) => group.has(e.source) && !group.has(e.target))
+  let order
+  if (!inner.length) {
+    if (incoming.length || outgoing.length) return null
+    order = [...nodes].sort((a, b) => a.x - b.x || a.y - b.y)
+  } else {
+    // one straight line: each node has at most one wire in from the group and one out to it
+    if (nodes.some((n) => inner.filter((e) => e.target === n.id).length > 1 || inner.filter((e) => e.source === n.id).length > 1)) return null
+    const head = nodes.filter((n) => !inner.some((e) => e.target === n.id))
+    if (head.length !== 1) return null
+    order = [head[0]]
+    for (let next; (next = inner.find((e) => e.source === order.at(-1).id)); ) order.push(p.nodes.find((n) => n.id === next.target))
+    if (order.length !== nodes.length) return null
+    const first = order[0].id
+    const last = order.at(-1).id
+    if (incoming.some((e) => e.target !== first) || incoming.length > 1 || outgoing.some((e) => e.source !== last)) return null
+  }
+  const chain = order.flatMap((n) => (n.type === 'fxrack'
+    ? (n.data.chain ?? []).map((u) => ({ ...JSON.parse(JSON.stringify(u)), id: `fx${newId().slice(-7)}` }))
+    : [{ id: `fx${newId().slice(-7)}`, type: n.type, on: true, data: JSON.parse(JSON.stringify(n.data ?? {})) }]))
+  if (chain.length > 16) return null
+  const id = `fxrack${newId().slice(-5)}`
+  p.nodes = p.nodes.filter((n) => !group.has(n.id))
+  p.nodes.push({ id, type: 'fxrack', x: order[0].x, y: order[0].y, data: { ...defaultData('fxrack'), chain } })
+  p.edges = p.edges.filter((e) => !group.has(e.source) && !group.has(e.target))
+  for (const e of incoming) p.edges.push({ source: e.source, target: id, targetHandle: 'in' })
+  for (const e of outgoing) p.edges.push({ source: id, target: e.target, targetHandle: e.targetHandle })
+  return id
+}
+
 /** What a node is called on wires and in lists. */
 function nodeTitle(node, project) {
   if (!node) return '?'
@@ -860,10 +903,17 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
     const onKey = (e) => {
       if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return
       const key = e.key.toLowerCase()
-      if (!['c', 'x', 'v', 'd'].includes(key)) return
+      if (!['c', 'x', 'v', 'd', 'g'].includes(key)) return
       if (e.target.closest?.('input, textarea, select, [contenteditable="true"], dialog, [role="dialog"], .pattern-pop, .add-menu')) return
       if (key === 'c' && window.getSelection()?.toString()) return // copying text on the page
       const selected = nodesRef.current.filter((n) => n.selected).map((n) => n.id)
+      if (key === 'g') {
+        e.preventDefault() // (the browser's find-next otherwise)
+        let rack = null
+        onUpdateProject((p) => { rack = groupIntoRack(p, selected) })
+        if (rack) { selectNext.current = rack; if (selected.includes(solo)) onSolo(null) }
+        return
+      }
       if (key === 'v') {
         const clip = readClipboard()
         if (!clip) return
@@ -881,7 +931,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [pasteAt, pasteClip, removeNodes])
+  }, [pasteAt, pasteClip, removeNodes, onUpdateProject, solo, onSolo])
 
   const ctx = useMemo(() => ({
     project,
