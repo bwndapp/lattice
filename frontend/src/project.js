@@ -283,6 +283,11 @@ function graphFromTracks(tracks, patternIds) {
   return { nodes, edges }
 }
 
+/** An empty project: nothing but the output, for starting from scratch. */
+export function blankProject() {
+  return normalizeProject({ v: 3, bpm: 120, beats: 4, patterns: [], nodes: [{ id: 'out', type: 'output', x: 640, y: 200, data: { muted: {}, solo: null } }], edges: [] })
+}
+
 /** A starter project: a beat and a bassline, patched through a few effects. */
 export function demoProject() {
   const on = (n, every, offset = 0) => Array.from({ length: n }, (_, i) => ((i - offset) % every === 0 && i >= offset ? 1 : 0))

@@ -867,3 +867,15 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
 .btn.play.preparing { animation: preparing 0.7s steps(2) infinite; }
 @keyframes preparing { 50% { opacity: 0.55; } }
 @media (prefers-reduced-motion: reduce) { .btn.play.preparing { animation: none; opacity: 0.7; } }
+
+/* nodes nobody hears, and the blank patch */
+.gnode.unheard { border-style: dashed; }
+.node-warn { margin: 0; padding: 0.3rem 0.4rem; font-size: 10px; line-height: 1.4; color: var(--danger); border: 1px dashed var(--danger); }
+.graph-empty {
+  position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); z-index: 4; pointer-events: none;
+  width: min(420px, calc(100% - 32px)); padding: 1rem 1.2rem; background: var(--panel); border: 1px dashed var(--line); color: var(--muted);
+}
+.graph-empty strong { display: block; font-family: var(--display); font-size: 20px; color: var(--paper); margin-bottom: 0.3rem; }
+.graph-empty p { margin: 0; font-size: 12px; line-height: 1.55; }
+.graph-empty b { color: var(--acid); font-weight: 400; }
+.new-demo { display: inline-block; font-size: 11px; margin-top: 0.45rem; }

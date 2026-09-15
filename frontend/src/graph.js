@@ -13,11 +13,20 @@
  */
 
 import { normalizePatch, phylloCode } from './phyllo/engine'
+import { liveBus } from './phyllo/live'
 
 const clampNum = (v, fallback, lo, hi) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : fallback)
 const tidy = (v) => String(Math.round(Number(v) * 1000) / 1000)
 // text that lands inside a double-quoted mini-notation string
 const miniText = (s) => String(s ?? '').replace(/["\\\n\r`]/g, ' ').slice(0, 400).trim() || '~'
+/**
+ * A knob that moves notes already ringing (see phyllo/live.js): the voice listens to a bus
+ * the app sets to (knob now − the value it started with). Only for controls a value sets
+ * outright, so that starting value is known.
+ */
+const tap = (ctx, param, control, value, scale = 1) => (ctx?.nodeId
+  ? `.bmod({ b: ${liveBus(ctx.nodeId, param, Number(value), scale)}, c: '${control}', da: 0.3 })`
+  : '')
 const soundName = (s) => String(s ?? '').replace(/[^\w:.#-]/g, '') || 'bd'
 
 /** Functions a transform like "every" or "sometimes" can apply. */
@@ -152,7 +161,10 @@ export const NODE_TYPES = {
       { key: 'hpf', type: 'knob', label: 'low cut', min: 20, max: 8000, def: 20, log: true, unit: 'hz' },
     ],
     code: (d, [x], ctx) => {
-      if (!ctx?.eqAbove) return `${x}.lpf(${Math.round(d.lpf)}).lpq(${tidy(d.lpq)})${d.hpf > 20 ? `.hpf(${Math.round(d.hpf)})` : ''}`
+      if (!ctx?.eqAbove) {
+        const lp = `.lpf(${Math.round(d.lpf)})${tap(ctx, 'lpf', 'cutoff', Math.round(d.lpf))}.lpq(${tidy(d.lpq)})${tap(ctx, 'lpq', 'resonance', tidy(d.lpq))}`
+        return `${x}${lp}${d.hpf > 20 ? `.hpf(${Math.round(d.hpf)})${tap(ctx, 'hpf', 'hcutoff', Math.round(d.hpf))}` : ''}`
+      }
       // after an eq, tighten each band's filters instead of replacing them (the last .lpf wins in Strudel)
       const hp = d.hpf > 20 ? `, ...(v.hcutoff >= ${Math.round(d.hpf)} ? {} : { hcutoff: ${Math.round(d.hpf)} })` : ''
       return `${x}.fmap(v => ({ ...v, ...(v.cutoff <= ${Math.round(d.lpf)} ? {} : { cutoff: ${Math.round(d.lpf)}, resonance: ${tidy(d.lpq)} })${hp} }))`
@@ -166,7 +178,8 @@ export const NODE_TYPES = {
       { key: 'delay', type: 'knob', label: 'delay', min: 0, max: 0.9, def: 0.25 },
       { key: 'delaytime', type: 'knob', label: 'time', min: 0.05, max: 0.75, def: 0.1875, unit: 'c' },
     ],
-    code: (d, [x]) => `${x}.room(${tidy(d.room)}).delay(${tidy(d.delay)}).delaytime(${tidy(d.delaytime)}).delayfeedback(.4)`,
+    // a send only exists when it's above zero, so only then can its knob move ringing notes
+    code: (d, [x], ctx) => `${x}.room(${tidy(d.room)})${d.room > 0 ? tap(ctx, 'room', 'room', tidy(d.room)) : ''}.delay(${tidy(d.delay)})${d.delay > 0 ? tap(ctx, 'delay', 'delay', tidy(d.delay)) : ''}.delaytime(${tidy(d.delaytime)}).delayfeedback(.4)`,
   },
   level: {
     group: 'effect', label: 'level', blurb: 'Volume and pan',
@@ -175,7 +188,7 @@ export const NODE_TYPES = {
       { key: 'gain', type: 'knob', label: 'vol', min: 0, max: 1.5, def: 0.8 },
       { key: 'pan', type: 'knob', label: 'pan', min: 0, max: 1, def: 0.5 },
     ],
-    code: (d, [x]) => `${x}.gain(${tidy(d.gain)})${d.pan !== 0.5 ? `.pan(${tidy(d.pan)})` : ''}`,
+    code: (d, [x], ctx) => `${x}.gain(${tidy(d.gain)})${tap(ctx, 'gain', 'gain', tidy(d.gain))}${d.pan !== 0.5 || ctx?.nodeId ? `.pan(${tidy(d.pan)})${tap(ctx, 'pan', 'pan', tidy(d.pan), 2)}` : ''}`,
   },
   drive: {
     group: 'effect', label: 'drive', blurb: 'Distortion and bitcrush',
@@ -184,7 +197,7 @@ export const NODE_TYPES = {
       { key: 'shape', type: 'knob', label: 'drive', min: 0, max: 0.9, def: 0.4 },
       { key: 'crush', type: 'knob', label: 'crush', min: 0, max: 1, def: 0 },
     ],
-    code: (d, [x]) => `${x}.shape(${tidy(d.shape)})${d.crush > 0 ? `.crush(${Math.round(16 - d.crush * 14)})` : ''}`,
+    code: (d, [x], ctx) => `${x}.shape(${tidy(d.shape)})${d.shape > 0 ? tap(ctx, 'shape', 'shape', tidy(d.shape)) : ''}${d.crush > 0 ? `.crush(${Math.round(16 - d.crush * 14)})` : ''}`,
   },
 
   djfilter: {
@@ -322,7 +335,7 @@ export const NODE_TYPES = {
       const chain = (d.chain ?? []).filter((u) => u.on && FX_UNITS.includes(u.type))
       let eqAbove = !!ctx?.eqAbove
       return chain.reduce((acc, u) => {
-        const out = NODE_TYPES[u.type].code(u.data, [acc], { ...ctx, eqAbove })
+        const out = NODE_TYPES[u.type].code(u.data, [acc], { ...ctx, eqAbove, nodeId: ctx?.nodeId && `${ctx.nodeId}_${u.id}` })
         eqAbove ||= splitsBands(u)
         return out
       }, x)

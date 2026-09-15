@@ -60,7 +60,8 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
         <span className="syn" aria-hidden>")</span>
       </label>
 
-      <Link to="/" state={{ fresh: Date.now() }} className="new-track" onClick={onPick}>+ new track</Link>
+      <Link to="/" state={{ fresh: Date.now(), template: 'blank' }} className="new-track" onClick={onPick}>+ new track</Link>
+      <Link to="/" state={{ fresh: Date.now(), template: 'demo' }} className="linkish new-demo" onClick={onPick}>or start from the demo patch</Link>
       <p className="legend">bigger = played &amp; liked more</p>
       </div>
 

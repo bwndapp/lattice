@@ -13,7 +13,7 @@ import { api, clearDraft, readDraft, timeAgo, trackUrl, writeDraft } from './api
 import Browser from './Browser.jsx'
 import Graph from './Graph.jsx'
 import { capturePatterns, parseLanes, tempoChange } from './lanes'
-import { PROJECT_MARK, demoProject, generateCode, normalizeProject, parseProject, projectFromCode } from './project'
+import { PROJECT_MARK, blankProject, demoProject, generateCode, normalizeProject, parseProject, projectFromCode } from './project'
 import { createTransport, formatBarBeat, parseBarBeat } from './transport'
 
 function readPref(key, fallback) {
@@ -49,7 +49,9 @@ for (const type of ['pointerdown', 'keydown']) window.addEventListener(type, () 
 
 export default function App() {
   const trackId = useMatch('/t/:id')?.params.id || null
-  const fresh = useLocation().state?.fresh ?? null // "+ new track": start over from the starter patch
+  const location = useLocation()
+  const fresh = location.state?.fresh ?? null // "+ new track": start over, blank or from the demo patch
+  const freshTemplate = location.state?.template === 'demo' ? 'demo' : 'blank'
   const freshHandledRef = useRef(null)
   const navigate = useNavigate()
   const { user, loading: userLoading, login, logout } = useUser()
@@ -360,7 +362,7 @@ export default function App() {
       const startOver = fresh && freshHandledRef.current !== fresh // once per click, not again on sign-in
       freshHandledRef.current = fresh
       const previous = readDraft(null)
-      putCode(null, startOver ? generateCode(demoProject()) : scratchCode())
+      putCode(null, startOver ? generateCode(freshTemplate === 'demo' ? demoProject() : blankProject()) : scratchCode())
       // starting over is one undo away from the patch that was there
       const before = startOver && previous && parseProject(previous)
       if (before) { historyRef.current.past.push(JSON.stringify(before)); setHistoryTick((n) => n + 1) }
@@ -381,7 +383,7 @@ export default function App() {
       })
       .catch((e) => { if (alive) setLoadError(e.status === 404 ? 'This track doesn’t exist, or it’s private.' : e.message) })
     return () => { alive = false }
-  }, [trackId, fresh, user?.id, putCode, play])
+  }, [trackId, fresh, freshTemplate, user?.id, putCode, play])
 
   // Keep unsaved edits per track in this browser, so nothing is lost on navigation or sign-in.
   useEffect(() => {

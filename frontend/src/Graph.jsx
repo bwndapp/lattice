@@ -270,7 +270,7 @@ function StudioNode({ id, selected }) {
   const pattern = node.type === 'pattern' && ctx.project.patterns.find((p) => p.id === node.data.patternId)
 
   return (
-    <div className={`gnode g-${spec.group} t-${node.type} ${selected ? 'selected' : ''} ${soloing ? 'soloing' : ''}`}>
+    <div className={`gnode g-${spec.group} t-${node.type} ${selected ? 'selected' : ''} ${soloing ? 'soloing' : ''} ${node.type !== 'output' && !ctx.heard.has(id) ? 'unheard' : ''}`}>
       {spec.inputs === 1 && <Handle type="target" position={Position.Left} id="in" className="port in" />}
       <div className="node-head">
         <span className="node-kind">{spec.label}</span>
@@ -288,6 +288,13 @@ function StudioNode({ id, selected }) {
 
       <div className="node-body">
         {node.type === 'pattern' && (
+        {node.type !== 'output' && !ctx.heard.has(id) && (
+          <p className="node-warn">
+            {spec.inputs && node.type !== 'phyllo' && wires.length === 0
+              ? 'not heard · drop it on a wire, or wire it between a sound and the output'
+              : 'not heard · wire its right dot on toward the output'}
+          </p>
+        )}
           <>
             <label className="node-field wide nodrag">
               <span>pattern</span>
@@ -654,7 +661,16 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
     })
   }, [project.nodes])
   const [nodes, setNodes] = useState(() => toRf([]))
-  useEffect(() => setNodes((prev) => toRf(prev)), [toRf])
+  const selectNext = useRef(null) // a node just added from the pane becomes the selection
+  useEffect(() => setNodes((prev) => {
+    const next = toRf(prev)
+    const pick = selectNext.current
+    if (!pick || !next.some((n) => n.id === pick)) return next
+    selectNext.current = null
+    return next.map((n) => (n.selected === (n.id === pick) ? n : { ...n, selected: n.id === pick }))
+  }), [toRf])
+  const nodesRef = useRef(nodes)
+  nodesRef.current = nodes
 
   const [spliceTarget, setSpliceTarget] = useState(null) // wire a dragged node would drop into
   const [detaching, setDetaching] = useState(null) // wire being pulled off its input (for its look)
@@ -701,6 +717,19 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
       const data = defaultData(type)
       if (type === 'pattern') {
         const pattern = makePattern(`pattern ${p.patterns.length + 1}`)
+    // Clicked in the pane (not dropped somewhere): wire it up so it's heard straight away.
+    // A sound goes into the output; an effect or transform goes after the selected node,
+    // taking over that node's wires, so clicking effects one by one builds a chain.
+    const clicked = !position && !intoWire
+    const selectedIds = nodesRef.current.filter((n) => n.selected).map((n) => n.id)
+    const after = clicked && selectedIds.length === 1 && splicable(type) ? project.nodes.find((n) => n.id === selectedIds[0] && n.type !== 'output') : null
+    const output = project.nodes.find((n) => n.type === 'output')
+    if (after) at = { x: after.x + 300, y: after.y }
+    else if (clicked && output && NODE_TYPES[type]?.group === 'source') {
+      // left of the output, below the sounds already going into it
+      const feeding = project.edges.filter((e) => e.target === output.id).map((e) => project.nodes.find((n) => n.id === e.source)).filter(Boolean)
+      at = { x: Math.min(output.x - 360, ...feeding.map((n) => n.x)), y: feeding.length ? Math.max(...feeding.map((n) => n.y)) + 230 : output.y }
+    }
         if (instrument) { pattern.channels.push(instrumentChannel(instrument, pattern)); pattern.name = instrument }
         p.patterns.push(pattern)
         data.patternId = pattern.id
@@ -711,12 +740,36 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
     return id
   }, [flow, onUpdateProject, project.nodes])
 
+      if (after) {
+        for (const e of p.edges) if (e.source === after.id) e.source = id
+        p.edges.push({ source: after.id, target: id, targetHandle: firstInput(type) })
+        // move whatever sat to the right of it along, so the chain reads left to right
+        for (const n of p.nodes) if (n.id !== id && n.id !== after.id && n.x > after.x && Math.abs(n.y - after.y) < 160) n.x += 300
+      } else if (clicked && NODE_TYPES[type]?.group === 'source') {
+        const out = p.nodes.find((n) => n.type === 'output')
+        if (out) {
+          const used = p.edges.filter((e) => e.target === out.id).map((e) => Number(/^in-(\d+)$/.exec(e.targetHandle)?.[1] ?? -1))
+          p.edges.push({ source: id, target: out.id, targetHandle: `in-${Math.max(-1, ...used) + 1}` })
+        }
+      }
   const ctx = useMemo(() => ({
+    if (clicked) selectNext.current = id
     project,
     solo,
     setSolo: onSolo,
+  // nodes with a path of wires to an output: everything else is silent
+  const heard = useMemo(() => {
+    const set = new Set(project.nodes.filter((n) => n.type === 'output').map((n) => n.id))
+    for (let grew = true; grew;) {
+      grew = false
+      for (const e of project.edges) if (set.has(e.target) && !set.has(e.source)) { set.add(e.source); grew = true }
+    }
+    return set
+  }, [project.nodes, project.edges])
+
     updateNode,
     removeNode: (id) => removeNodes([id]),
+    heard,
     editPattern: (patternId, e) => setEditing({ patternId, x: e?.clientX ?? window.innerWidth / 2, y: e?.clientY ?? 200 }),
     pickSound: (nodeId, key, at) => setPicking({ nodeId, key, ...at }),
     openSynth: (nodeId, e) => setSynth({ nodeId, x: e?.clientX ?? window.innerWidth / 2, y: e?.clientY ?? 160 }),
@@ -730,7 +783,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
       })
       setEditing({ patternId, x: window.innerWidth / 2, y: 160 })
     },
-  }), [project, solo, onSolo, updateNode, removeNodes, onUpdateProject])
+  }), [project, heard, solo, onSolo, updateNode, removeNodes, onUpdateProject])
 
   const isValidConnection = useCallback((c) => {
     if (c.source === c.target) return false
@@ -847,7 +900,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
           <div className="graph-tip" aria-live="polite">
             {solo
               ? <>auditioning <b>{nodeTitle(project.nodes.find((n) => n.id === solo), project)}</b> · <button className="linkish" onClick={() => onSolo(null)}>back to the output</button></>
-              : selected ? NODE_TYPES[selected.type]?.blurb
+              : selected ? <>{NODE_TYPES[selected.type]?.blurb}{selected.type !== 'output' && <> · click an effect in the pane to chain it after this</>}</>
               : 'wire: drag right dot → left dot · pull a wire off an input to remove it · drop a node on a wire to insert it'}
           </div>
         </div>
@@ -859,6 +912,12 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
           anchor={editing}
           transport={transport}
           started={started}
+          {project.nodes.length === 1 && project.nodes[0].type === 'output' && (
+            <div className="graph-empty">
+              <strong>blank patch</strong>
+              <p>Click a sound in the pane (<b>phyllo</b>, <b>rhythm</b>, <b>pattern</b>): it wires into the output by itself. With it selected, click effects to chain them after it.</p>
+            </div>
+          )}
           onUpdateProject={onUpdateProject}
           onClose={() => setEditing(null)}
         />
