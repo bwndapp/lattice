@@ -50,3 +50,27 @@
 .am-instruments { border-left-color: #b9c96a; }
 .am-empty { margin: 0.4rem 0.45rem; font-size: 11px; color: var(--muted); }
 .am-kbd { float: right; margin-top: 2px; font-family: var(--mono); font-weight: 400; font-size: 9px; color: var(--muted); border: 1px solid var(--line); padding: 0 0.25rem; }
+
+/* the + in the middle of each wire (see WireEdge.jsx) */
+.wire-add {
+  position: absolute;
+  pointer-events: all;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--mono);
+  font-size: 15px;
+  line-height: 1;
+  color: var(--acid);
+  background: var(--ink);
+  border: 1px solid #6f7a1c;
+  border-radius: 50%;
+  cursor: pointer;
+  opacity: 0.85;
+  transition: opacity 0.12s, color 0.12s, border-color 0.12s;
+}
+.wire-add:hover, .wire-add:focus-visible { opacity: 1; color: var(--ink); background: var(--acid); border-color: var(--acid); outline: none; }
+@media (prefers-reduced-motion: reduce) { .wire-add { transition: none; } }
+.wire-add.small { width: 16px; height: 16px; font-size: 12px; }

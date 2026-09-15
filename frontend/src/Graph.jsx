@@ -10,6 +10,7 @@ import Knob from './Knob.jsx'
 import SoundPicker from './SoundPicker.jsx'
 import PatternEditor from './PatternEditor.jsx'
 import AddMenu from './AddMenu.jsx'
+import { ADD_INTO_WIRE, EDGE_TYPES } from './WireEdge.jsx'
 import Phyllo, { PhylloFace } from './phyllo/Phyllo.jsx'
 import { normalizePatch } from './phyllo/engine'
 import { onSoundsChange, previewSound, soundCatalog } from './audio'
@@ -419,9 +420,9 @@ const SEARCH_WORDS = {
   clipper: 'clip clipping limiter loud ceiling hard peaks mastering bass mixing',
   compressor: 'compression comp dynamics glue squash level even punch bass mixing',
   punch: 'transient shaper attack snap punch tail sustain drums',
-  phyllo: 'synth instrument serum vital phase plant wavetable supersaw analog fm lfo envelope modulation pad lead bass pluck',
   haas: 'stereo wide width delay precedence double doubler spread left right ms',
   widener: 'stereo wide width imager spread mid side ms mono bass imaging',
+  phyllo: 'synth instrument serum vital phase plant wavetable supersaw analog fm lfo envelope modulation pad lead bass pluck',
   fxrack: 'effects chain multiple fx rack bus insert',
   sidechain: 'duck ducking pump pumping compression compressor side chain kick bass edm',
   stack: 'layer mix together combine sum',
@@ -669,8 +670,14 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
     }
     const el = wrapRef.current
     el?.addEventListener('pointermove', onMove)
+    // a wire's + button: the add menu there, adding into that wire, the new node centred on it
+    const onWirePlus = (e) => {
+      const { edgeId, x, y } = e.detail
+      setMenu({ x: x + 14, y: y - 14, at: flow.screenToFlowPosition({ x: x - 100, y: y - 40 }), wire: edgeId })
+    }
     window.addEventListener('keydown', onKey)
-    return () => { el?.removeEventListener('pointermove', onMove); window.removeEventListener('keydown', onKey) }
+    window.addEventListener(ADD_INTO_WIRE, onWirePlus)
+    return () => { el?.removeEventListener('pointermove', onMove); window.removeEventListener('keydown', onKey); window.removeEventListener(ADD_INTO_WIRE, onWirePlus) }
   }, [flow])
   const [synth, setSynth] = useState(null) // the phyllo node whose synth window is open: { nodeId, x, y }
   const synthNode = synth && project.nodes.find((n) => n.id === synth.nodeId && n.type === 'phyllo')
@@ -707,6 +714,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
   const spliceRef = useRef(null)
   const rfEdges = useMemo(() => project.edges.map((e) => ({
     ...e,
+    type: 'wire', // with a + in the middle to add a node into it
     sourceHandle: 'out',
     animated: started,
     className: e.id === spliceTarget ? 'splice-target' : e.id === detaching ? 'detaching' : '',
@@ -931,7 +939,8 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
             deleteKeyCode={['Backspace', 'Delete']}
             minZoom={0.2}
             maxZoom={2}
-            defaultEdgeOptions={{ type: 'default' }}
+            edgeTypes={EDGE_TYPES}
+            defaultEdgeOptions={{ type: 'wire' }}
           >
             <Background gap={24} size={1.2} color="#34342f" />
             <Controls showInteractive={false} />
@@ -982,8 +991,26 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
           score={matchScore}
           intoWire={!!menu.wire}
           onPick={(item) => {
-            if (item.kind === 'instrument') addNode('pattern', menu.at, item.key)
-            else addNode(item.key, menu.at, null, menu.wire && splicable(item.key) ? menu.wire : null)
+            if (item.kind === 'instrument') return addNode('pattern', menu.at, item.key)
+            const into = menu.wire && splicable(item.key) ? project.edges.find((e) => e.id === menu.wire) : null
+            const src = into && project.nodes.find((n) => n.id === into.source)
+            const dst = into && project.nodes.find((n) => n.id === into.target)
+            if (!src || !dst) return addNode(item.key, menu.at, null, null)
+            // into a wire: the new node sits between its two ends; when they're too close, the far
+            // end and what's right of it in that row move over a column (and anything they'd land on)
+            const room = dst.x - src.x >= 560
+            if (!room) {
+              onUpdateProject((p) => {
+                const moved = new Set(p.nodes.filter((n) => n.id !== src.id && n.x >= dst.x - 20 && Math.abs(n.y - dst.y) < 160).map((n) => n.id))
+                for (let pass = 0; pass < 6; pass++) {
+                  const hit = p.nodes.filter((n) => !moved.has(n.id) && n.id !== src.id && p.nodes.some((m) => moved.has(m.id) && Math.abs(m.x + 300 - n.x) < 270 && Math.abs(m.y - n.y) < 160))
+                  if (!hit.length) break
+                  hit.forEach((n) => moved.add(n.id))
+                }
+                for (const n of p.nodes) if (moved.has(n.id)) n.x += 300
+              })
+            }
+            addNode(item.key, room ? { x: (src.x + dst.x) / 2, y: (src.y + dst.y) / 2 } : { x: src.x + 300, y: src.y }, null, into.id)
           }}
           onClose={closeMenu}
         />
