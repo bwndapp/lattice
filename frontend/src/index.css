@@ -208,8 +208,11 @@ body {
 .track-menu-field { display: grid; gap: 0.25rem; font-size: 11px; color: var(--muted); }
 .track-menu-field .node-input, .track-menu-field .select { width: 100%; }
 .track-menu-meta { margin: 0; line-height: 1.5; }
-.track-menu-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; padding-top: 0.2rem; border-top: 1px solid var(--line); }
-.track-menu-actions .btn { margin-top: 0.4rem; }
+.track-menu-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; padding-top: 0.6rem; border-top: 1px solid var(--line); }
+.track-menu-action { display: grid; gap: 0.35rem; justify-items: start; padding-top: 0.6rem; border-top: 1px solid var(--line); }
+.track-menu-note { margin: 0; font-size: 10.5px; line-height: 1.5; color: var(--muted); }
+.track-menu-action.danger-zone { border-top-color: rgba(255, 90, 60, 0.45); }
+.track-menu-action.danger-zone .track-menu-note { color: #c98a7c; }
 .track-heading { display: flex; flex-direction: column; margin-right: 0.35rem; min-width: 0; max-width: 16rem; }
 .track-heading .meta { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .track-title {

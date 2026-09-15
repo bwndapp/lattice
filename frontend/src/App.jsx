@@ -108,6 +108,7 @@ export default function App() {
   // auditioning: a node id; null plays the output
   const [solo, setSolo] = useState(null)
   const [confirmClear, setConfirmClear] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const genRef = useRef({ solo: null })
   genRef.current = { solo }
   const readOnlyRef = useRef(null)
@@ -313,6 +314,7 @@ export default function App() {
       p.nodes = out ? [{ ...out, data: { ...out.data, muted: {}, solo: null } }] : []
       p.edges = []
       p.patterns = []
+      if (p.song) p.song = { ...p.song, clips: [] }
     })
     setSolo(null)
     flash('Patch cleared · ctrl/cmd + Z brings it back')
@@ -523,7 +525,6 @@ export default function App() {
   }
 
   const remove = async () => {
-    if (!window.confirm(`Delete “${track.title}”? This can’t be undone.`)) return
     try {
       await api(`/tracks/${track.id}`, { method: 'DELETE' })
       clearDraft(track.id)
@@ -717,18 +718,27 @@ export default function App() {
                       {isNew ? 'Scratch pad · not saved yet' : <>♥{track.likes} · {track.plays} plays · saved {timeAgo(track.updated_at)}</>}
                       {track?.parent && <> · remix of <Link className="linkish" to={`/t/${track.parent.id}`} onClick={close}>{track.parent.title}</Link></>}
                     </p>
-                    <div className="track-menu-actions">
-                      {isOwner && <button className="btn" onClick={() => { close(); share() }}>share</button>}
-                      {project && (
+                    {isOwner && (
+                      <div className="track-menu-actions">
+                        <button className="btn" onClick={() => { close(); share() }}>copy link</button>
+                      </div>
+                    )}
+                    {project && (
+                      <div className="track-menu-action">
                         <button
-                          className="btn ghost danger"
+                          className="btn"
                           onClick={() => { close(); setConfirmClear(true) }}
                           disabled={!project.nodes.some((n) => n.type !== 'output')}
-                          title="Remove every node, wire and pattern from this patch"
-                        >clear nodes</button>
-                      )}
-                      {isOwner && <button className="btn ghost danger" onClick={() => { close(); remove() }}>delete track</button>}
-                    </div>
+                        >clear the patch</button>
+                        <p className="track-menu-note">Empties what you're editing: nodes, wires, patterns and the song.{isNew ? '' : ' The track itself stays, and the saved copy doesn\'t change until you save.'} Ctrl/cmd + Z undoes it.</p>
+                      </div>
+                    )}
+                    {isOwner && (
+                      <div className="track-menu-action danger-zone">
+                        <button className="btn ghost danger" onClick={() => { close(); setConfirmDelete(true) }}>delete track</button>
+                        <p className="track-menu-note">Removes the saved track for good, for everyone, along with its likes and plays. Can't be undone.</p>
+                      </div>
+                    )}
                   </>
                 )}
               </Popover>
@@ -805,8 +815,8 @@ export default function App() {
           )}
           {confirmClear && project && (
             <ConfirmDialog
-              title="Clear the whole patch?"
-              confirmLabel="Clear nodes"
+              title="Clear the patch?"
+              confirmLabel="clear the patch"
               danger
               onCancel={() => setConfirmClear(false)}
               onConfirm={() => {
@@ -814,8 +824,20 @@ export default function App() {
                 clearPatch()
               }}
             >
-              <p>This removes <strong>{project.nodes.filter((n) => n.type !== 'output').length} nodes</strong>, their wires and <strong>{project.patterns.length} pattern{project.patterns.length === 1 ? '' : 's'}</strong> with all their steps and notes. The output and tempo stay.</p>
-              <p>{isNew ? 'You can bring it back with ctrl/cmd + Z.' : 'You can bring it back with ctrl/cmd + Z, and nothing changes on the saved track until you save.'}</p>
+              <p>This removes <strong>{project.nodes.filter((n) => n.type !== 'output').length} nodes</strong>, their wires, <strong>{project.patterns.length} pattern{project.patterns.length === 1 ? '' : 's'}</strong> with all their steps and notes, and the song's clips. The output and tempo stay.</p>
+              <p>{isNew ? 'Ctrl/cmd + Z brings it back.' : 'Ctrl/cmd + Z brings it back, and the saved track doesn\'t change unless you save.'}</p>
+            </ConfirmDialog>
+          )}
+          {confirmDelete && track && (
+            <ConfirmDialog
+              title={`Delete “${track.title}”?`}
+              confirmLabel="delete track"
+              danger
+              onCancel={() => setConfirmDelete(false)}
+              onConfirm={() => { setConfirmDelete(false); remove() }}
+            >
+              <p>This removes the saved track from lattice for good: its link stops working for everyone, and its <strong>♥{track.likes}</strong> and <strong>{track.plays} plays</strong> go with it.</p>
+              <p><strong>It can't be undone.</strong> To only empty the patch and keep the track, use <em>clear the patch</em> instead.</p>
             </ConfirmDialog>
           )}
           {view === 'song' && project && (
