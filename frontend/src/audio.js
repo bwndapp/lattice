@@ -1,4 +1,4 @@
-import { getAudioContext, getSampleBuffer, getSampleInfo, getSound, initAudio, soundMap, superdough } from '@strudel/webaudio'
+import { getAudioContext, getSampleBuffer, getSampleInfo, getSound, getSuperdoughAudioController, initAudio, resetGlobalEffects, soundMap, superdough } from '@strudel/webaudio'
 import { getFontBufferSource } from '@strudel/soundfonts'
 import { getSoundIndex } from '@strudel/core'
 import { paramValue, paramsFor } from './project'
@@ -156,4 +156,21 @@ export async function preloadPattern(pattern, { from = 0, cycles = 16, timeout =
     await yieldToAudio()
   }
   if (jobs.length) await Promise.race([Promise.all(jobs), new Promise((r) => setTimeout(r, timeout))])
+}
+
+/**
+ * Cut every sound now: notes still ringing or already queued, reverb and delay tails. A
+ * quick fade (no click), then the audio buses are rebuilt empty; the next notes make new
+ * ones (stereo inserts re-mount themselves on the fresh buses).
+ */
+export function silenceNow() {
+  try {
+    const ac = getAudioContext()
+    const gain = getSuperdoughAudioController()?.output?.destinationGain?.gain
+    if (gain) {
+      gain.cancelScheduledValues(ac.currentTime)
+      gain.setTargetAtTime(0, ac.currentTime, 0.006)
+    }
+    setTimeout(() => { try { resetGlobalEffects() } catch { /* nothing playing yet */ } }, 45)
+  } catch { /* audio not started */ }
 }

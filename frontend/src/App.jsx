@@ -6,7 +6,7 @@ import { Pattern, silence } from '@strudel/core'
 import { getDrawContext } from '@strudel/draw'
 import { transpiler } from '@strudel/transpiler'
 import { getAudioContext, webaudioOutput } from '@strudel/webaudio'
-import { ensureAudio, preloadPattern } from './audio'
+import { ensureAudio, preloadPattern, silenceNow } from './audio'
 import { prebake } from '@strudel/repl/prebake.mjs'
 import { useUser } from './bwnd'
 import { api, clearDraft, readDraft, timeAgo, trackUrl, writeDraft } from './api'
@@ -357,7 +357,18 @@ export default function App() {
   }, [transport])
 
   /** Stop: back to where playback started (the cue). */
-  const stop = useCallback(() => editorRef.current?.stop(), [])
+  // Stop, as in FL: the first press stops playing and lets what's sounding ring out; a second
+  // press (a double-click, or stop again once stopped) cuts everything, tails included.
+  const lastStop = useRef(0)
+  const stop = useCallback(() => {
+    const editor = editorRef.current
+    if (!editor) return
+    const now = performance.now()
+    const again = !editor.repl.scheduler.started || now - lastStop.current < 500
+    lastStop.current = now
+    editor.stop()
+    if (again) silenceNow()
+  }, [])
   /** Pause: stop, and resume from here next time. */
   const pause = useCallback(() => {
     const at = transport.position()
@@ -581,7 +592,7 @@ export default function App() {
           <button className="btn tport" onClick={toStart} title="Back to the start (Home)" aria-label="Back to the start">|&lt;</button>
           <button className={`btn play ${started ? 'on' : ''} ${preparing ? 'preparing' : ''}`} onClick={play} aria-busy={preparing} title="Play (space) · update while playing (ctrl/cmd + enter)">{started ? 'update' : preparing ? 'loading' : 'play'}</button>
           <button className="btn tport" onClick={pause} disabled={!started} title="Pause (space)">pause</button>
-          <button className="btn stop" onClick={stop} disabled={!started} title="Stop and return to the cue (ctrl/cmd + .)">stop</button>
+          <button className="btn stop" onClick={stop} title="Stop and return to the cue (ctrl/cmd + .) · press again, or double-click, to cut every sound still ringing">stop</button>
         </span>
         <Tempo
           bpm={project ? project.bpm : (evaluated.cps ?? 0.5) * 60 * transport.beats}
