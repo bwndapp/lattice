@@ -571,6 +571,7 @@ export default function App() {
   return (
     <div className="studio">
       <header className="bar">
+        <div className="bar-side left">
         <Link to="/" className="logo" aria-label="lattice, home">
           {/* the woven mark from the app icon: two strips over two, gaps cut in the header's black */}
           <svg className="logo-mark" viewBox="14 14 36 36" aria-hidden="true">
@@ -618,16 +619,22 @@ export default function App() {
           title="Loop the marked bars · drag across the ruler to mark them"
           onClick={() => transport.setLoop({ on: !transport.loop.on })}
         >loop <span className="loop-range">{formatBarBeat(transport.loop.from, transport.beats).replace(/^0+/, '')}–{formatBarBeat(transport.loop.to, transport.beats).replace(/^0+/, '')}</span></button>
+        {project && solo && (
+          <button className="btn solo-chip" onClick={() => setSolo(null)} title="You're hearing one part only. Click to hear the whole output again">soloing ×</button>
+        )}
+        </div>
+        {/* what the canvas shows: the patch or the song */}
+        <span className="canvas-switch" role="group" aria-label="Canvas">
+          <button className={`btn ${view === 'graph' ? 'on' : ''}`} aria-pressed={view === 'graph'} onClick={() => setView('graph')} title="The patch: what each part goes through">patch</button>
+          <button className={`btn ${view === 'song' ? 'on' : ''}`} aria-pressed={view === 'song'} onClick={() => setView('song')} title="The song: when each part plays" disabled={!project}>song</button>
+        </span>
+        <div className="bar-side right">
         {project && (
           <span className="seg history" role="group" aria-label="History">
             <button className="btn" onClick={undo} disabled={!historyRef.current.past.length} title="Undo (ctrl/cmd + Z)" aria-label="Undo">undo</button>
             <button className="btn" onClick={redo} disabled={!historyRef.current.future.length} title="Redo (ctrl/cmd + shift + Z)" aria-label="Redo">redo</button>
           </span>
         )}
-        {project && solo && (
-          <button className="btn solo-chip" onClick={() => setSolo(null)} title="You're hearing one part only. Click to hear the whole output again">soloing ×</button>
-        )}
-        <span className="spacer" />
         <span className="track" role="group" aria-label="Track">
           {loadError ? (
             <span className="meta track-status" title={loadError}>{loadError} <Link className="linkish" to="/">new track</Link></span>
@@ -637,6 +644,7 @@ export default function App() {
             <>
               <input
                 className="title-input"
+                size={6}
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="untitled"
@@ -662,6 +670,18 @@ export default function App() {
                         <option value="private">Private</option>
                       </select>
                     </label>
+                    {project && (
+                      <label className="track-menu-field">
+                        <span>beats per bar</span>
+                        <select
+                          className="select"
+                          value={transport.beats}
+                          onChange={(e) => { const beats = Number(e.target.value); transport.setBeats(beats); updateProject((p) => { p.beats = beats }) }}
+                        >
+                          {[2, 3, 4, 5, 6, 7, 8].map((n) => <option key={n} value={n}>{n}/4</option>)}
+                        </select>
+                      </label>
+                    )}
                     <p className="meta track-menu-meta">
                       {isNew ? 'Scratch pad · not saved yet' : <>♥{track.likes} · {track.plays} plays · saved {timeAgo(track.updated_at)}</>}
                       {track?.parent && <> · remix of <Link className="linkish" to={`/t/${track.parent.id}`} onClick={close}>{track.parent.title}</Link></>}
@@ -707,10 +727,8 @@ export default function App() {
             </>
           ) : null}
         </span>
-        <span className="seg views" role="group" aria-label="View">
+        <span className="seg side-views" role="group" aria-label="More views">
           <button className={`btn ${view === 'browse' ? 'on' : ''}`} aria-pressed={view === 'browse'} onClick={() => setView('browse')} title="Tracks people have shared, and yours">browse</button>
-          <button className={`btn ${view === 'graph' ? 'on' : ''}`} aria-pressed={view === 'graph'} onClick={() => setView('graph')} title="The patch: what each part goes through">patch</button>
-          {project && <button className={`btn ${view === 'song' ? 'on' : ''}`} aria-pressed={view === 'song'} onClick={() => setView('song')} title="The song: when each part plays">song</button>}
           <button
             className={`btn code-toggle ${view === 'code' ? 'on' : ''} ${evalError && view !== 'code' ? 'has-error' : ''}`}
             aria-pressed={view === 'code'}
@@ -727,6 +745,19 @@ export default function App() {
         ) : (
           <button className="btn primary" onClick={() => login()}>Sign in</button>
         )}
+        </div>
+        {/* phones: every view in a tab bar along the bottom */}
+        <span className="seg views phone-tabs" role="group" aria-label="View">
+          <button className={`btn ${view === 'browse' ? 'on' : ''}`} aria-pressed={view === 'browse'} onClick={() => setView('browse')} title="Tracks people have shared, and yours">browse</button>
+          <button className={`btn ${view === 'graph' ? 'on' : ''}`} aria-pressed={view === 'graph'} onClick={() => setView('graph')} title="The patch: what each part goes through">patch</button>
+          {project && <button className={`btn ${view === 'song' ? 'on' : ''}`} aria-pressed={view === 'song'} onClick={() => setView('song')} title="The song: when each part plays">song</button>}
+          <button
+            className={`btn code-toggle ${view === 'code' ? 'on' : ''} ${evalError && view !== 'code' ? 'has-error' : ''}`}
+            aria-pressed={view === 'code'}
+            title="Show the code (ctrl/cmd + J)"
+            onClick={toggleView}
+          >{'{ }'}<span className="code-word"> code</span>{evalError && view !== 'code' ? ' !' : ''}</button>
+        </span>
       </header>
 
       <div className="body">

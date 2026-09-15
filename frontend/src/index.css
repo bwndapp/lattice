@@ -142,13 +142,33 @@ body {
 .body { flex: 1; display: flex; min-height: 0; position: relative; }
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 /* the track: title, save and its menu, in the header */
-.track { display: flex; align-items: center; gap: 0.35rem; flex: 0 1 auto; min-width: 12.5rem; } /* the title gives way first */
+.track { display: flex; align-items: center; gap: 0.35rem; flex: 0 1 22rem; min-width: min-content; } /* the title gives way first */
+.track .title-input { max-width: 16rem; }
+.bar-side.right > :not(.track) { flex-shrink: 0; }
 .bar > .btn, .bar > .user, .bar > .lcd, .bar > .transport { flex-shrink: 0; }
 .track > :not(.title-input) { flex-shrink: 0; }
 .bar .seg.views { font-size: inherit; padding: 0; align-items: center; gap: 0; flex-wrap: nowrap; } /* not the browse page's .views */
+/* left and right halves grow alike, so the canvas switch sits in the middle whenever both fit */
+.bar-side { display: flex; align-items: center; gap: inherit; flex: 1 1 0; align-self: stretch; }
+.bar-side.left { min-width: max-content; }
+.bar-side.right { min-width: min-content; justify-content: flex-end; }
+.canvas-switch { display: inline-flex; flex: none; margin-inline: 0.75rem; border: 1px solid var(--line); padding: 3px; gap: 3px; background: #0b0b09; }
+.canvas-switch .btn {
+  font-family: var(--display);
+  font-weight: 800;
+  font-stretch: 112%;
+  font-size: 0.95rem;
+  letter-spacing: 0.01em;
+  padding: 0.35rem 1.15rem;
+  border-color: transparent;
+}
+.canvas-switch .btn:hover:not(:disabled) { border-color: var(--line); }
+.canvas-switch .btn.on { background: var(--acid); border-color: var(--acid); color: var(--ink); }
+.seg.side-views .btn { font-size: 12px; }
+.phone-tabs { display: none !important; }
 .bar .title-input {
-  width: 13rem;
-  min-width: 5rem;
+  width: auto;
+  min-width: 4rem;
   flex: 1 1 13rem;
   font-family: var(--display);
   font-weight: 800;
@@ -828,19 +848,24 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
 }
 
 /* ── mid-size: the toolbar needs the room the wordmark was using ─ */
-@media (max-width: 1720px) {
+@media (max-width: 2200px) {
   .logo { font-size: 58px; margin-right: 0.2rem; }
   .bar { gap: 0.4rem; }
   .lcd-unit { display: none; }
   .btn.loop .loop-range { display: none; }
 }
-@media (max-width: 1560px) {
+@media (max-width: 1600px) {
   .logo { font-size: 44px; }
-  .bar .title-input { flex-basis: 9rem; width: 9rem; }
+  .bar-side .meter { display: none; } /* beats per bar is in the ··· menu */
+}
+@media (max-width: 1560px) {
+  .bar .title-input { flex-basis: 9rem; }
+  .track { flex-basis: 17rem; }
   .seg.history { display: none; } /* ctrl/cmd + Z and shift + Z still undo and redo */
 }
 @media (max-width: 1400px) {
-  .bar .title-input { flex-basis: 7rem; width: 7rem; }
+  .bar .title-input { flex-basis: 7rem; }
+  .track { flex-basis: 14rem; }
   .btn.tport.to-start { display: none; } /* Home goes back to the start */
   .track-heading { max-width: 9rem; }
   .code-word { display: none; }
@@ -848,11 +873,15 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
   .btn.tport { padding-inline: 0.4rem; }
 }
 
-@media (max-width: 1180px) {
+@media (max-width: 1280px) {
   .bar .title-input, .track-heading { display: none; } /* the title is in the ··· menu */
-  .track { min-width: 0; }
+  .track { flex-basis: auto; }
+}
+@media (max-width: 1180px) {
+  .canvas-switch { margin-inline: 0.4rem; }
+  .canvas-switch .btn { padding-inline: 0.75rem; }
   .logo { font-size: 40px; }
-  .btn.loop, .seg:not(.views), .btn.tport { display: none; } /* loop: drag the ruler · pattern mode: in the rack */
+  .btn.loop, .seg:not(.views):not(.side-views), .btn.tport { display: none; } /* loop: drag the ruler · pattern mode: in the rack */
   .bar { gap: 0.3rem; }
 }
 
@@ -874,7 +903,8 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
   .channel { grid-template-columns: 1fr; padding: 0.3rem 0.4rem; }
   .channel-num, .channel-source, .lanes-tip { display: none; }
   .channel-name { font-size: 0.95rem; }
-  .tempo, .position, .meter, .btn.tport, .btn.loop, .seg:not(.views) { display: none; } /* phones: play/stop only; the ruler still seeks */
+  .tempo, .position, .meter, .btn.tport, .btn.loop, .seg:not(.views), .canvas-switch { display: none; }
+  .phone-tabs { display: grid !important; } /* phones: play/stop only; the ruler still seeks */
   /* phones: the view switch becomes a tab bar along the bottom */
   .studio { padding-bottom: 44px; }
   .seg.views { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--ink); border-top: 1px solid var(--line); }
