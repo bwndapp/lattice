@@ -27,12 +27,14 @@ const firstInput = (type) => (NODE_TYPES[type]?.inputs === 1 ? 'in' : 'in-0')
 
 /**
  * The wire under a screen rectangle (or near a point), found by sampling each rendered
- * edge path. `skip` leaves out wires touching a node.
+ * edge path. `skip` (a node id, or ids) leaves out wires touching those nodes.
  */
 function wireAt(box, skip = null) {
+  const skips = [].concat(skip ?? [])
   for (const el of document.querySelectorAll('.graph-canvas .react-flow__edge')) {
     const id = el.getAttribute('data-id') ?? el.dataset.id
-    if (!id || (skip && el.dataset.touches?.split(' ').includes(skip))) continue
+    const touches = el.dataset.touches?.split(' ') ?? []
+    if (!id || skips.some((s) => touches.includes(s))) continue
     const path = el.querySelector('path.react-flow__edge-path')
     const ctm = path?.getScreenCTM()
     if (!path || !ctm) continue
@@ -55,6 +57,34 @@ function spliceInto(p, edgeId, nodeId) {
   p.edges = p.edges.filter((e) => e !== wire && e.source !== nodeId && e.target !== nodeId)
   p.edges.push({ source: wire.source, target: nodeId, targetHandle: firstInput(node.type) })
   p.edges.push({ source: nodeId, target: wire.target, targetHandle: wire.targetHandle })
+  return true
+}
+
+/**
+ * A group of nodes that can drop into a wire as one: wired to nothing outside the group,
+ * with one way in (a node whose first input is free) and one way out (a node whose output
+ * goes nowhere in the group). Returns { head, tail } or null.
+ */
+function chainOf(project, ids) {
+  const group = new Set(ids)
+  const nodes = project.nodes.filter((n) => group.has(n.id))
+  if (nodes.length < 2 || nodes.some((n) => n.type === 'output')) return null
+  if (project.edges.some((e) => group.has(e.source) !== group.has(e.target))) return null
+  const inner = project.edges.filter((e) => group.has(e.source) && group.has(e.target))
+  const heads = nodes.filter((n) => splicable(n.type) && !inner.some((e) => e.target === n.id && e.targetHandle === firstInput(n.type)))
+  const tails = nodes.filter((n) => !inner.some((e) => e.source === n.id))
+  if (heads.length !== 1 || tails.length !== 1) return null
+  return { head: heads[0].id, tail: tails[0].id }
+}
+
+/** Rewire A → B into A → head … tail → B for a chain of nodes. Mutates the project draft. */
+function spliceChain(p, edgeId, { head, tail }) {
+  const wire = p.edges.find((e) => e.id === edgeId)
+  const first = p.nodes.find((n) => n.id === head)
+  if (!wire || !first || [head, tail].includes(wire.source) || [head, tail].includes(wire.target)) return false
+  p.edges = p.edges.filter((e) => e !== wire)
+  p.edges.push({ source: wire.source, target: head, targetHandle: firstInput(first.type) })
+  p.edges.push({ source: tail, target: wire.target, targetHandle: wire.targetHandle })
   return true
 }
 
@@ -950,15 +980,18 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
               onUpdateProject((p) => { p.edges = p.edges.filter((e) => !gone.has(e.id)) })
             }}
             onNodeDrag={(_, node, dragged) => {
-              // a lone, unwired node that has an input and an output can drop into a wire
+              // a lone, unwired node that has an input and an output can drop into a wire, and so
+              // can a selected group wired up as a chain (one way in, one way out, nothing outside)
+              const ids = dragged.map((d) => d.id)
               const model = project.nodes.find((n) => n.id === node.id)
               const wired = project.edges.some((e) => e.source === node.id || e.target === node.id)
-              if (dragged.length !== 1 || !model || !splicable(model.type) || wired) {
+              const ok = dragged.length === 1 ? model && splicable(model.type) && !wired : !!chainOf(project, ids)
+              if (!ok) {
                 if (spliceRef.current) { spliceRef.current = null; setSpliceTarget(null) }
                 return
               }
               const el = document.querySelector(`.graph-canvas .react-flow__node[data-id="${node.id}"]`)
-              const wire = el ? wireAt(el.getBoundingClientRect(), node.id) : null
+              const wire = el ? wireAt(el.getBoundingClientRect(), ids) : null
               if (wire !== spliceRef.current) { spliceRef.current = wire; setSpliceTarget(wire) }
             }}
             onNodeDragStop={(_, __, dragged) => {
@@ -971,6 +1004,8 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
                   if (n) { n.x = Math.round(d.position.x); n.y = Math.round(d.position.y) }
                 }
                 if (into && dragged.length === 1) spliceInto(p, into, dragged[0].id)
+                const chain = into && dragged.length > 1 && chainOf(p, dragged.map((d) => d.id))
+                if (chain) spliceChain(p, into, chain)
               })
             }}
             onConnectStart={(_, { nodeId, handleId, handleType }) => {
@@ -990,6 +1025,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
             onConnect={onConnect}
             isValidConnection={isValidConnection}
             deleteKeyCode={['Backspace', 'Delete']}
+            multiSelectionKeyCode={['Shift', 'Meta', 'Control']}
             minZoom={0.2}
             maxZoom={2}
             edgeTypes={EDGE_TYPES}
