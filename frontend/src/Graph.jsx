@@ -420,6 +420,8 @@ const SEARCH_WORDS = {
   compressor: 'compression comp dynamics glue squash level even punch bass mixing',
   punch: 'transient shaper attack snap punch tail sustain drums',
   phyllo: 'synth instrument serum vital phase plant wavetable supersaw analog fm lfo envelope modulation pad lead bass pluck',
+  haas: 'stereo wide width delay precedence double doubler spread left right ms',
+  widener: 'stereo wide width imager spread mid side ms mono bass imaging',
   fxrack: 'effects chain multiple fx rack bus insert',
   sidechain: 'duck ducking pump pumping compression compressor side chain kick bass edm',
   stack: 'layer mix together combine sum',

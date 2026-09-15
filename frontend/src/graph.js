@@ -14,6 +14,7 @@
 
 import { normalizePatch, phylloCode } from './phyllo/engine'
 import { liveBus } from './phyllo/live'
+import { STEREO_ORBIT_BASE, beginInserts, commitInserts, declareInsert } from './stereo'
 
 const clampNum = (v, fallback, lo, hi) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : fallback)
 const tidy = (v) => String(Math.round(Number(v) * 1000) / 1000)
@@ -252,8 +253,10 @@ export const NODE_TYPES = {
       const sound = xs[ctx.slots.indexOf('in-0')]
       const trigger = xs[ctx.slots.indexOf('in-1')]
       if (!sound) return null
-      if (!trigger) return sound
-      const orbit = ctx.orbit
+      if (!trigger) { if (ctx.route) ctx.route.orbit = ctx.inputOrbits?.[ctx.slots.indexOf('in-0')] ?? null; return sound }
+      // a sound already on its own bus (a haas or widener before this) keeps it, so both work
+      const orbit = ctx.inputOrbits?.[ctx.slots.indexOf('in-0')] ?? ctx.orbit
+      if (ctx.route) ctx.route.orbit = orbit
       return `stack(${sound}.orbit(${orbit}), ${trigger}.duckorbit(${orbit}).duckonset(${tidy(d.attack)}).duckattack(${tidy(d.release)}).duckdepth(${tidy(d.depth)})${d.hear === 'silent' ? '.postgain(0)' : ''})`
     },
   },
@@ -327,6 +330,27 @@ export const NODE_TYPES = {
     code: (d, [x]) => `${x}.transient("${tidy(d.attack)}:${tidy(d.sustain)}")`,
   },
 
+  haas: {
+    group: 'mixing', label: 'haas', blurb: 'Delay one ear by a few milliseconds: a mono sound opens up wide',
+    inputs: 1,
+    params: [
+      { key: 'time', type: 'knob', label: 'time', min: 0.001, max: 0.04, def: 0.015, unit: 's' },
+      { key: 'mix', type: 'knob', label: 'amount', min: 0, max: 1, def: 1 },
+      { key: 'side', type: 'select', label: 'delay', options: ['right', 'left'], def: 'right' },
+    ],
+    code: stereoCode('haas', (d) => ({ time: d.time, mix: d.mix, side: d.side })),
+  },
+  widener: {
+    group: 'mixing', label: 'stereo widener', blurb: 'Wider stereo image, with the low end kept in the middle',
+    inputs: 1,
+    params: [
+      { key: 'width', type: 'knob', label: 'width', min: 0, max: 2, def: 1.5, unit: 'x', origin: 1 },
+      { key: 'spread', type: 'knob', label: 'spread', min: 0, max: 1, def: 0.35 },
+      { key: 'mono', type: 'knob', label: 'mono below', min: 20, max: 500, def: 120, log: true, unit: 'hz' },
+    ],
+    code: stereoCode('widener', (d) => ({ width: d.width, spread: d.spread, mono: d.mono })),
+  },
+
   fxrack: {
     group: 'effect', label: 'fx rack', blurb: 'Several effects in one box, applied top to bottom',
     inputs: 1,
@@ -370,8 +394,27 @@ export const NODE_TYPES = {
   },
 }
 
+/**
+ * Haas and widener process the audio bus ("orbit") a sound plays on (see stereo.js). The
+ * code puts the sound on a bus of its own, unless it's already on one, and the app
+ * processes that bus.
+ */
+function stereoCode(kind, params) {
+  return (d, [x], ctx) => {
+    if (!ctx?.route) return x
+    let tail = ''
+    if (ctx.route.orbit == null) {
+      ctx.route.orbit = ctx.stereoOrbit(ctx.nodeId)
+      tail = `.orbit(${ctx.route.orbit})`
+    }
+    ctx.declare(ctx.route.orbit, ctx.nodeId, kind, params(d))
+    return `${x}${tail}`
+  }
+}
+const STEREO_TYPES = new Set(['haas', 'widener'])
+
 /** Effects that can sit inside an fx rack: every plain effect node. */
-export const FX_UNITS = ['eq3', 'compressor', 'saturator', 'clipper', 'punch', 'filter', 'djfilter', 'space', 'level', 'drive', 'phaser', 'tremolo', 'vowel', 'lofi']
+export const FX_UNITS = ['eq3', 'compressor', 'saturator', 'clipper', 'punch', 'haas', 'widener', 'filter', 'djfilter', 'space', 'level', 'drive', 'phaser', 'tremolo', 'vowel', 'lofi']
 
 /** Whether an eq node or unit changes anything (a flat eq isn't in the code at all). */
 const eqActive = (d) => [d.low, d.mid, d.high].some((db) => Math.abs(db) >= 0.05)
@@ -407,7 +450,7 @@ export const GROUPS = [
   ['source', 'sources'],
   ['transform', 'transform'],
   ['effect', 'effects'],
-  ['mixing', 'eq & dynamics'],
+  ['mixing', 'eq, dynamics & stereo'],
   ['combine', 'combine'],
   ['output', 'output'],
 ]
@@ -511,6 +554,16 @@ export function graphCode(project, { solo = null } = {}) {
   // each sidechain gets its own audio bus; bus 1 is where everything else plays
   const sidechains = nodes.filter((n) => n.type === 'sidechain').map((n) => n.id)
   const cps = (Number(project.bpm) || 120) / (Number(project.beats) || 4) / 60
+  // stereo inserts: a bus each, numbered in patch order so the numbers stay put
+  const stereoKeys = []
+  for (const n of nodes) {
+    if (STEREO_TYPES.has(n.type)) stereoKeys.push(n.id)
+    for (const u of n.data?.chain ?? []) if (STEREO_TYPES.has(u.type)) stereoKeys.push(`${n.id}_${u.id}`)
+  }
+  const stereoOrbit = (key) => STEREO_ORBIT_BASE + Math.max(0, stereoKeys.indexOf(key))
+  const inserts = beginInserts()
+  const declare = (orbit, key, kind, params) => declareInsert(inserts, orbit, key, kind, params)
+  const orbitOf = new Map() // node id → the bus its sound ends up on, when not the main one
 
   const visit = (id, trail = new Set()) => {
     if (exprs.has(id)) return exprs.get(id)
@@ -528,8 +581,12 @@ export function graphCode(project, { solo = null } = {}) {
     }
     const eqAbove = wires.some((w) => banded.has(w.source))
     if (spec.inputs === 1 && !inputs.length) { exprs.set(id, null); return null }
-    const expr = spec.code(node.data, inputs, { patternIds, slots, nodeId: id, orbit: 2 + sidechains.indexOf(id), eqAbove, cps })
+    const inputOrbits = wires.filter((w) => exprs.get(w.source)).map((w) => orbitOf.get(w.source) ?? null)
+    // a single input passes its bus on; mixing several inputs lands back on the main bus
+    const route = { orbit: inputs.length === 1 && spec.inputs !== 'many' ? inputOrbits[0] : null }
+    const expr = spec.code(node.data, inputs, { patternIds, slots, nodeId: id, orbit: 2 + sidechains.indexOf(id), eqAbove, cps, route, inputOrbits, stereoOrbit, declare })
     if (!expr) { exprs.set(id, null); return null }
+    if (route.orbit != null) orbitOf.set(id, route.orbit)
     if (eqAbove || splitsBands(node)) banded.add(id)
     const name = nodeVar(id)
     lines.push(`// ${node.data.name ?? spec.label}`, `const ${name} = ${expr}`)
@@ -552,6 +609,7 @@ export function graphCode(project, { solo = null } = {}) {
       }
     }
   }
+  commitInserts(inserts, { partial: !!solo })
   return { lines, lanes }
 }
 
