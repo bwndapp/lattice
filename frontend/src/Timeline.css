@@ -122,11 +122,12 @@
 .clip {
   position: absolute;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   overflow: hidden;
   padding: 0 0.45rem;
   color: var(--clip-ink, #0a0a09);
-  background: var(--clip);
+  /* see-through a touch, as FL's clips: the grid shows faintly behind the pattern */
+  background: color-mix(in srgb, var(--clip) 85%, transparent);
   border: 1px solid rgba(0, 0, 0, 0.55);
   box-shadow: inset 3px 0 0 rgba(0, 0, 0, 0.28);
   cursor: var(--ring);
@@ -140,7 +141,9 @@
 .clip.preview { opacity: 0.75; z-index: 3; }
 .clip.ghost { opacity: 0.45; pointer-events: none; border-style: dashed; }
 .clip.off { filter: saturate(0.25) brightness(0.7); }
-.clip-name { position: relative; z-index: 1; font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.clip-sketch { position: absolute; left: 3px; right: 0; top: 2px; bottom: 3px; background-repeat: repeat-x; opacity: 0.55; pointer-events: none; }
+.clip-sketch.roomy { top: 15px; opacity: 1; }
+.clip-name { position: relative; z-index: 1; line-height: 14px; padding-top: 1px; font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
 .clip-repeat { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed rgba(0, 0, 0, 0.45); pointer-events: none; }
 .song-lanes.dragging .clip { cursor: var(--ring); }
 .song-lanes.zooming, .song-lanes.zooming .clip { cursor: move; }

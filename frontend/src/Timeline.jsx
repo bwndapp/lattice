@@ -44,6 +44,43 @@ function inkFor(hex) {
   return lum > 0.55 ? '#0a0a09' : '#f2f0e6'
 }
 
+/**
+ * What's in a pattern, drawn as FL draws it on a clip: drum hits in a row per instrument,
+ * notes at their pitch. One pattern length as an SVG data URL, tiled along the clip.
+ */
+function patternSketch(pattern, ink) {
+  if (!pattern) return null
+  const total = pattern.bars * pattern.stepsPerBar
+  const live = pattern.channels.filter((c) => !c.mute)
+  const drums = live.filter((c) => c.kind === 'drum' && c.steps?.some(Boolean))
+  const notes = live.filter((c) => c.kind === 'synth').flatMap((c) => c.notes ?? [])
+  if (!total || (!drums.length && !notes.length)) return null
+  const H = 100
+  const noteH = notes.length ? (drums.length ? 62 : H) : 0
+  const rects = []
+  if (notes.length) {
+    const lo = Math.min(...notes.map((n) => n.n)), hi = Math.max(...notes.map((n) => n.n))
+    const rows = Math.max(8, hi - lo + 1)
+    const row = noteH / rows
+    const base = lo - Math.floor((rows - (hi - lo + 1)) / 2)
+    for (const n of notes) {
+      const y = noteH - (n.n - base + 1) * row
+      rects.push(`<rect x="${n.s + 0.06}" y="${y.toFixed(2)}" width="${Math.max(0.3, n.l - 0.12)}" height="${Math.max(2.5, row * 0.8).toFixed(2)}"/>`)
+    }
+  }
+  if (drums.length) {
+    const top = noteH ? noteH + 4 : 0
+    const row = (H - top) / drums.length
+    drums.forEach((c, r) => {
+      c.steps.forEach((on, i) => {
+        if (on) rects.push(`<rect x="${i + 0.12}" y="${(top + r * row + row * 0.12).toFixed(2)}" width="0.62" height="${(row * 0.76).toFixed(2)}"/>`)
+      })
+    })
+  }
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${total} ${H}" preserveAspectRatio="none"><g fill="${ink}" fill-opacity="0.72">${rects.join('')}</g></svg>`
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`
+}
+
 function readRows() {
   try { return clamp(Number(localStorage.getItem('lattice:song:rows')) || LANE_DEFAULT, MIN_LANE, MAX_LANE) } catch { return LANE_DEFAULT }
 }
@@ -57,6 +94,18 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const beats = Math.max(1, project.beats || 4)
   const parts = useMemo(() => songParts(project), [project])
   const partBySrc = useMemo(() => new Map(parts.map((p) => [p.src, p])), [parts])
+  // each pattern's sketch for its clips (redrawn only when the pattern or its colour changes)
+  const sketchCache = useRef(new Map())
+  const sketchFor = (src) => {
+    if (!src?.startsWith('pattern:')) return null
+    const pattern = project.patterns.find((p) => p.id === src.slice(8))
+    const ink = inkFor(colorFor(src, song.colors))
+    const hit = sketchCache.current.get(src)
+    if (hit && hit.pattern === pattern && hit.ink === ink) return hit.url
+    const url = patternSketch(pattern, ink)
+    sketchCache.current.set(src, { pattern, ink, url })
+    return url
+  }
   const length = songLength(song)
   const inPatch = parts.filter((p) => p.inPatch)
   const unused = parts.filter((p) => !p.inPatch)
@@ -853,6 +902,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
                     style={{ left: c.start * ppb, top: c.lane * LANE_H + 3, width: Math.max(4, c.len * ppb - 1), height: LANE_H - 6, '--clip': colorFor(c.src, song.colors), '--clip-ink': inkFor(colorFor(c.src, song.colors)) }}
                     title={`${part.name} · bar ${Math.floor(c.start) + 1}${c.start % 1 ? `.${Math.round((c.start % 1) * beats) + 1}` : ''} · ${Math.round(c.len * beats) / beats} bar${c.len === 1 ? '' : 's'}`}
                   >
+                    <ClipSketch url={sketchFor(c.src)} bars={part.bars} ppb={ppb} into={into} laneH={LANE_H} />
                     <span className="clip-name">{part.name}</span>
                     {Array.from({ length: repeats }, (_, i) => (
                       <span key={i} className="clip-repeat" style={{ left: (firstRepeat + i * part.bars) * ppb }} aria-hidden />
@@ -862,6 +912,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
               })}
               {ghost && ghost.lane >= 0 && (
                 <div className="clip preview ghost" style={{ left: ghost.start * ppb, top: ghost.lane * LANE_H + 3, width: ghost.len * ppb - 1, height: LANE_H - 6, '--clip': colorFor(ghost.src ?? '', song.colors), '--clip-ink': inkFor(colorFor(ghost.src ?? '', song.colors)) }}>
+                  <ClipSketch url={sketchFor(ghost.src)} bars={partBySrc.get(ghost.src)?.bars} ppb={ppb} into={0} laneH={LANE_H} />
                   <span className="clip-name">{partBySrc.get(ghost.src)?.name}</span>
                 </div>
               )}
@@ -993,5 +1044,18 @@ function PartPanel({ node, anchor, onUpdateProject, onClose }) {
         <p className="part-panel-hint">Enter applies{spec?.params?.some((p) => p.type === 'code') ? ' (ctrl/cmd + Enter in code)' : ''}. Effects on this part are in the patch.</p>
       </div>
     </div>
+  )
+}
+
+/** The pattern drawn inside a clip, starting where the clip starts in the pattern. */
+function ClipSketch({ url, bars, ppb, into, laneH }) {
+  if (!url || !bars) return null
+  const roomy = laneH >= 30 // tall rows keep a strip for the name; short ones draw under it
+  return (
+    <span
+      className={`clip-sketch ${roomy ? 'roomy' : ''}`}
+      aria-hidden
+      style={{ backgroundImage: url, backgroundSize: `${bars * ppb}px 100%`, backgroundPositionX: `${-into * ppb}px` }}
+    />
   )
 }
