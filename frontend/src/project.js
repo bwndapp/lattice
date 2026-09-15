@@ -239,6 +239,44 @@ function channelCode(ch, pattern) {
 export const patternVar = (id) => `p_${id}`
 
 /**
+ * Code that plays one hit of one channel (a note, or a drum step) through the patch, as
+ * the song would: that pattern plays just the hit, every other part is silent, and it goes
+ * through whatever the pattern is wired into (effects, buses, sidechains). The code ends in
+ * the expression to play. When no pattern node plays the pattern into an output, it's just
+ * the hit, raw. Null for a channel that isn't there (or code, which has no single hit).
+ */
+export function auditionCode(project, patternId, channelId, { midi = 48, steps = 2 } = {}) {
+  const pattern = project.patterns.find((p) => p.id === patternId)
+  const ch = pattern?.channels.find((c) => c.id === channelId)
+  if (!ch || ch.kind === 'code') return null
+  const bar = { ...pattern, bars: 1 }
+  const one = ch.kind === 'synth'
+    ? { ...ch, mute: false, notes: [{ s: 0, l: Math.min(steps, bar.stepsPerBar), n: midi }] }
+    : { ...ch, mute: false, steps: Array.from({ length: bar.stepsPerBar }, (_, i) => (i === 0 ? 1 : 0)) }
+  const hit = channelCode(one, bar)
+  // does a pattern node for it reach an output?
+  const outputs = new Set(project.nodes.filter((n) => n.type === 'output').map((n) => n.id))
+  const seen = new Set()
+  const queue = project.nodes.filter((n) => n.type === 'pattern' && n.data.patternId === patternId).map((n) => n.id)
+  let heard = false
+  while (queue.length && !heard) {
+    const id = queue.shift()
+    if (seen.has(id)) continue
+    seen.add(id)
+    for (const e of project.edges) if (e.source === id) { if (outputs.has(e.target)) heard = true; queue.push(e.target) }
+  }
+  if (!heard) return hit
+  const graph = graphCode(project, { song: () => 'silence', audition: true })
+  const lanes = graph.lanes.filter((l) => !l.startsWith('_')).map((l) => l.slice(l.indexOf(':') + 1).trim())
+  if (!lanes.length) return hit
+  return [
+    ...project.patterns.map((p) => `const ${patternVar(p.id)} = ${p.id === patternId ? hit : 'silence'}`),
+    ...graph.lines,
+    `stack(${lanes.join(', ')})`,
+  ].join('\n')
+}
+
+/**
  * The Strudel code for a project: every pattern as a const, then the graph. `solo` (a
  * node id) plays just that node, for auditioning part of the patch.
  */

@@ -557,7 +557,7 @@ export const nodeVar = (id) => `n_${id}`
  * Code for the graph: one `const` per node that makes a pattern, in dependency order,
  * then one lane per wire into each output node. `solo` (a node id) plays only that node.
  */
-export function graphCode(project, { solo = null, song = null } = {}) {
+export function graphCode(project, { solo = null, song = null, audition = false } = {}) {
   const { nodes, edges } = project
   const byId = new Map(nodes.map((n) => [n.id, n]))
   const patternIds = new Set(project.patterns.map((p) => p.id))
@@ -625,7 +625,7 @@ export function graphCode(project, { solo = null, song = null } = {}) {
       }
     }
   }
-  commitInserts(inserts, { partial: !!solo })
+  commitInserts(inserts, { partial: !!solo || audition }) // an audition must not rewire the playing mix
   return { lines, lanes }
 }
 

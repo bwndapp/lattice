@@ -3,7 +3,7 @@ import {
   INSTRUMENTS, INSTRUMENT_MIME, PARAMS,
   instrumentChannel, midiToNote, newId, paramValue, paramsFor, stepCount,
 } from './project'
-import { previewChannel } from './audio'
+import { previewInPatch } from './audio'
 import Knob from './Knob.jsx'
 import SoundPicker from './SoundPicker.jsx'
 import PianoRoll from './PianoRoll.jsx'
@@ -121,11 +121,11 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
     const ch = instrumentChannel(key, pattern)
     update((pat) => { pat.channels.push({ ...ch, name: instrumentChannel(key, pat).name }) })
     if (ch.kind === 'synth') setOpenRoll((s) => new Set(s).add(ch.id))
-    if (!started) previewChannel(ch)
+    if (!started) previewInPatch(project, pattern.id, ch)
   }
   const setStep = (ch, i, value) => {
     updateChannel(ch.id, (c) => { c.steps[i] = value ? 1 : 0 })
-    if (value && !started) previewChannel(ch)
+    if (value && !started) previewInPatch(project, pattern.id, ch)
   }
 
   const cursorRef = useRef(() => -1)
@@ -204,7 +204,7 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
                     {ch.kind === 'drum' && ch.bank && <span className="sound-bank">{ch.bank}</span>}
                     <span aria-hidden className="sound-caret">▾</span>
                   </button>
-                  <button className="btn ghost ch-btn" onClick={() => previewChannel(ch)} title="Hear it" aria-label={`Hear ${ch.name}`}>hear</button>
+                  <button className="btn ghost ch-btn" onClick={() => previewInPatch(project, pattern.id, ch)} title="Hear it" aria-label={`Hear ${ch.name}`}>hear</button>
                 </>
               )}
             </div>
@@ -291,7 +291,7 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
                   pattern={pattern}
                   beats={project.beats}
                   cursorRef={cursorRef}
-                  onPreview={(midi) => { if (!started) previewChannel(ch, { note: midi }) }}
+                  onPreview={(midi) => { if (!started) previewInPatch(project, pattern.id, ch, { note: midi }) }}
                   onChangeNotes={(notes) => updateChannel(ch.id, (c) => { c.notes = notes; if (notes.length) c.note = midiToNote(notes[notes.length - 1].n) })}
                 />
               </div>

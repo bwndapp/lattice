@@ -1,7 +1,9 @@
 import { getAudioContext, getSampleBuffer, getSampleInfo, getSound, getSuperdoughAudioController, initAudio, resetGlobalEffects, soundMap, superdough } from '@strudel/webaudio'
 import { getFontBufferSource } from '@strudel/soundfonts'
 import { getSoundIndex } from '@strudel/core'
-import { paramValue, paramsFor } from './project'
+import { auditionCode, paramValue, paramsFor } from './project'
+import { evaluate } from '@strudel/core'
+import { transpiler } from '@strudel/transpiler'
 
 /**
  * Everything Strudel has loaded, grouped for browsing: drum kits (bank → sounds),
@@ -173,4 +175,32 @@ export function silenceNow() {
     }
     setTimeout(() => { try { resetGlobalEffects() } catch { /* nothing playing yet */ } }, 45)
   } catch { /* audio not started */ }
+}
+
+/**
+ * Play one hit of a channel through the patch it's wired into (its effects, buses and
+ * sidechains), so auditioning a note or a step sounds like the track. Falls back to the
+ * raw sound when the channel isn't in the patch yet, or the patch code can't run.
+ */
+let auditionRun = 0
+export async function previewInPatch(project, patternId, ch, { note, n } = {}) {
+  const code = project && patternId && auditionCode(project, patternId, ch?.id, { midi: note ?? 48 })
+  if (!code) return previewChannel(ch, { note, n })
+  const run = ++auditionRun
+  try {
+    ensureAudio()
+    const { pattern } = await evaluate(code, transpiler)
+    if (run !== auditionRun || !pattern?.queryArc) return // a newer audition took over
+    const cps = (Number(project.bpm) || 120) / (Number(project.beats) || 4) / 60
+    const ac = getAudioContext()
+    const t0 = ac.currentTime + 0.03
+    for (const hap of pattern.queryArc(0, 1)) {
+      if (!hap.hasOnset()) continue
+      const begin = hap.whole.begin.valueOf()
+      const length = hap.whole.end.valueOf() - begin
+      Promise.resolve(superdough(hap.value, t0 + begin / cps, length / cps, cps, begin)).catch(() => {})
+    }
+  } catch {
+    previewChannel(ch, { note, n })
+  }
 }
