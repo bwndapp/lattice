@@ -15,6 +15,7 @@ import Graph from './Graph.jsx'
 import Timeline from './Timeline.jsx'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import Popover from './Popover.jsx'
+import { Glass } from './Glass.jsx'
 import { capturePatterns, parseLanes, tempoChange } from './lanes'
 import { PROJECT_MARK, blankProject, demoProject, generateCode, normalizeProject, parseProject, projectFromCode } from './project'
 import { createTransport, formatBarBeat, parseBarBeat } from './transport'
@@ -707,7 +708,7 @@ export default function App() {
         </div>
         {/* what the canvas shows: the patch or the song */}
         <span className={`canvas-switch ${(switching ?? view) === 'song' ? 'at-first' : (switching ?? view) === 'graph' ? 'at-second' : 'at-neither'}`} role="group" aria-label="Canvas">
-          <span className="cs-thumb" aria-hidden />
+          <Glass className="cs-thumb" aria-hidden />
           <button className={`cs-opt ${(switching ?? view) === 'song' ? 'on' : ''}`} aria-pressed={view === 'song'} onClick={() => switchCanvas('song')} title="The timeline: when each part plays" disabled={!project}>timeline</button>
           <button className={`cs-opt ${(switching ?? view) === 'graph' ? 'on' : ''}`} aria-pressed={view === 'graph'} onClick={() => switchCanvas('graph')} title="The patch: what each part goes through">patch</button>
         </span>

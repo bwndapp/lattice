@@ -178,27 +178,45 @@ body {
   margin-inline: 0.75rem;
   padding: 4px;
   border-radius: 999px;
-  background: linear-gradient(145deg, #080807, #111110);
+  /* a faint lattice etched into the track, so the glass has something to bend */
+  background:
+    repeating-linear-gradient(45deg, rgba(242, 240, 230, 0.05) 0 1px, transparent 1px 6px),
+    repeating-linear-gradient(-45deg, rgba(242, 240, 230, 0.05) 0 1px, transparent 1px 6px),
+    linear-gradient(145deg, #080807, #111110);
   /* pressed into the bar: dark below-right, faint light above-left */
   box-shadow:
     inset 4px 4px 9px rgba(0, 0, 0, 0.85),
     inset -3px -3px 8px rgba(255, 255, 255, 0.045),
     0 0 0 1px rgba(255, 255, 255, 0.035);
 }
+/* the thumb is a glass lens sliding over the labels (see Glass.jsx) */
 .cs-thumb {
   position: absolute;
+  z-index: 2;
   top: 4px;
   bottom: 4px;
   left: 4px;
   width: var(--cs-w);
   border-radius: 999px;
-  background: linear-gradient(145deg, #262622, #1a1a17);
-  /* raised out of the track */
+  pointer-events: none;
+  /* fallback (Safari, Firefox): a light frost and a rim */
+  background: rgba(242, 240, 230, 0.06);
+  -webkit-backdrop-filter: blur(1.5px) brightness(1.25);
+  backdrop-filter: blur(1.5px) brightness(1.25);
   box-shadow:
-    3px 3px 8px rgba(0, 0, 0, 0.7),
-    -2px -2px 6px rgba(255, 255, 255, 0.04),
-    inset 1px 1px 0 rgba(255, 255, 255, 0.06);
+    0 3px 8px rgba(0, 0, 0, 0.55),
+    inset 1px 1px 0 rgba(255, 255, 255, 0.22),
+    inset -1px -1px 0 rgba(255, 255, 255, 0.05);
   transition: transform 0.38s cubic-bezier(0.34, 1.42, 0.5, 1), opacity 0.2s ease;
+}
+/* Chromium: real refraction, and the rim light comes from the filter */
+.cs-thumb.refracting {
+  background: rgba(242, 240, 230, 0.035);
+  backdrop-filter: var(--glass) brightness(1.18);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.55);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .cs-thumb, .cs-thumb.refracting { backdrop-filter: none; background: #24241f; box-shadow: 0 3px 8px rgba(0, 0, 0, 0.55), inset 1px 1px 0 rgba(255, 255, 255, 0.1); }
 }
 .canvas-switch.at-second .cs-thumb { transform: translateX(100%); }
 .canvas-switch.at-neither .cs-thumb { opacity: 0; transform: translateX(50%) scale(0.85); }
