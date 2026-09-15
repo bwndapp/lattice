@@ -62,17 +62,35 @@ export default function App() {
   const freshTemplate = location.state?.template === 'demo' ? 'demo' : 'blank'
   const freshHandledRef = useRef(null)
   const navigate = useNavigate()
-  // Opening the site at / (typed or bookmarked, not a click inside the app) goes back to the
-  // track that was open last time; the scratch pad only if that's what was open.
+  const { user, loading: userLoading, login, logout } = useUser()
+  // Opening the site at / (typed, bookmarked or refreshed, not a click inside the app) goes
+  // back to the track that was open last time, or the scratch pad if that's what was open
+  // and it still holds your work. When this browser has nothing of yours to go back to (its
+  // storage was cleared, another device, a first visit), a signed-in person gets their most
+  // recently saved track rather than an empty template.
   const reopened = useRef(false)
+  // what the scratch pad held before this page load wrote anything into it
+  const hadScratch = useRef(null)
+  if (hadScratch.current === null) hadScratch.current = !!parseProject(readDraft(null) ?? '')
+  const trackIdRef = useRef(trackId)
+  trackIdRef.current = trackId
   useEffect(() => {
     if (reopened.current) return
-    reopened.current = true
-    if (trackId || location.state?.fresh || location.key !== 'default') return
+    if (trackId || location.state?.fresh || location.key !== 'default') { reopened.current = true; return }
     const last = lastOpen()
-    if (last && last !== 'scratch') navigate(`/t/${last}`, { replace: true })
-  }, [trackId, location, navigate])
-  const { user, loading: userLoading, login, logout } = useUser()
+    if (last && last !== 'scratch') { reopened.current = true; navigate(`/t/${last}`, { replace: true }); return }
+    if (hadScratch.current) { reopened.current = true; return } // the scratch pad has your work
+    if (userLoading) return // wait to know who's here
+    reopened.current = true
+    if (!user) return
+    api('/tracks?view=mine&sort=new&limit=1')
+      .then((d) => {
+        const latest = d?.tracks?.[0]
+        // only if they're still on the scratch pad and haven't started changing it
+        if (latest && !trackIdRef.current && historyRef.current.past.length === 0) navigate(`/t/${latest.id}`, { replace: true })
+      })
+      .catch(() => { /* offline or signed out: the scratch pad it is */ })
+  }, [trackId, location, navigate, user, userLoading])
 
   const rootRef = useRef(null)
   const editorRef = useRef(null)
