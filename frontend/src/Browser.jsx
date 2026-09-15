@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, timeAgo } from './api'
+import { Glass } from './Glass.jsx'
 import './Browser.css'
 
 const VIEWS = [['explore', 'explore'], ['mine', 'mine'], ['liked', 'liked']]
@@ -11,7 +12,7 @@ function Switch({ options, value, onChange, label, small = false }) {
   const at = Math.max(0, options.findIndex(([key]) => key === value))
   return (
     <div className={`b-switch ${small ? 'small' : ''}`} role="group" aria-label={label} style={{ '--n': options.length, '--at': at }}>
-      <span className="b-switch-thumb" aria-hidden />
+      <Glass className="b-switch-thumb" aria-hidden />
       {options.map(([key, text]) => (
         <button key={key} type="button" className={`b-switch-opt ${value === key ? 'on' : ''}`} aria-pressed={value === key} onClick={() => onChange(key)}>{text}</button>
       ))}
