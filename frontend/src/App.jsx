@@ -872,7 +872,6 @@ export default function App() {
       label: 'file',
       items: [
         { label: 'new track', onSelect: () => newTrack('blank'), hint: 'The open track stays as it is' },
-        { label: 'new from the demo patch', onSelect: () => newTrack('demo') },
         { label: 'open…', onSelect: () => setView('browse'), hint: 'Your tracks and shared ones' },
         'line',
         canEdit && { label: isNew ? 'save as a track' : 'save', shortcut: 'ctrl/cmd S', onSelect: () => save(), disabled: busy || (!!user && !dirty) },
