@@ -396,11 +396,20 @@ export default function App() {
       setTrack(null)
       setTitle('')
       setVisibility('public')
-      const startOver = fresh && freshHandledRef.current !== fresh // once per click, not again on sign-in
+      // once per click (not again on sign-in), and only just after it: a reload of that page later is not a click
+      const startOver = fresh && freshHandledRef.current !== fresh && Date.now() - fresh < 10000
       freshHandledRef.current = fresh
       if (startOver) rememberOpen(null)
       const previous = readDraft(null)
       putCode(null, startOver ? generateCode(freshTemplate === 'demo' ? demoProject() : blankProject()) : scratchCode())
+      // The "start over" note rides along in the history entry, and a reload keeps it: drop it
+      // from the entry (quietly, without a navigation) so refreshing keeps your work.
+      if (startOver) {
+        try {
+          const entry = window.history.state
+          if (entry?.usr?.fresh) window.history.replaceState({ ...entry, usr: null }, '')
+        } catch { /* history unavailable */ }
+      }
       // starting over is one undo away from the patch that was there
       const before = startOver && previous && parseProject(previous)
       if (before) { historyRef.current.past.push(JSON.stringify(before)); setHistoryTick((n) => n + 1) }
