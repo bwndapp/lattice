@@ -264,19 +264,20 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
       ctx.fillRect(0, r * rowH, gridW, rowH)
       if (midi % 12 === 0) { ctx.fillStyle = line; ctx.fillRect(0, (r + 1) * rowH - 1, gridW, 1) }
     }
-    for (let i = 0; i <= total; i++) {
-      const bar = i % pattern.stepsPerBar === 0
-      const beat = i % stepsPerBeat === 0
-      if (!bar && !beat && colW < 8) continue // too dense to be useful
-      ctx.fillStyle = bar ? paper : line
-      ctx.globalAlpha = bar ? 0.55 : beat ? 0.9 : 0.35
-      ctx.fillRect(i * colW, 0, bar ? 2 : 1, gridH)
+    // The grid is whatever notes snap to, so choosing triplets redraws the lines as
+    // triplets rather than marking them over the steps. Bars and beats are always there
+    // underneath, since a division like a dotted eighth doesn't land on either.
+    const div = snapBeats == null || snapBeats < 0 ? 1 : snapSteps
+    if (colW * div >= 5) {
+      ctx.fillStyle = line
+      ctx.globalAlpha = 0.35
+      for (let k = 0; k * div <= total + 1e-6; k++) ctx.fillRect(Math.round(k * div * colW), 0, 1, gridH)
     }
-    // the division being snapped to, when it isn't the step grid already drawn
-    if (snapBeats != null && snapBeats >= 0 && colW * snapSteps >= 5) {
-      ctx.fillStyle = acid
-      ctx.globalAlpha = 0.18
-      for (let at = 0; at <= total + 1e-6; at += snapSteps) ctx.fillRect(Math.round(at * colW), 0, 1, gridH)
+    for (let i = 0; i <= total; i += stepsPerBeat) {
+      const bar = i % pattern.stepsPerBar === 0
+      ctx.fillStyle = bar ? paper : line
+      ctx.globalAlpha = bar ? 0.55 : 0.9
+      ctx.fillRect(Math.round(i * colW), 0, bar ? 2 : 1, gridH)
     }
     ctx.globalAlpha = 1
     for (const note of notes) {
