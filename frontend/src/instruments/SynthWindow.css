@@ -37,6 +37,24 @@
   background: none; border: 1px solid var(--line); cursor: var(--ring);
 }
 .sw-close:hover { color: var(--ink); background: var(--danger); border-color: var(--danger); }
+/* the computer keyboard plays the instrument while the window has focus */
+.sw-keys {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+  padding: 0.15rem 0.35rem 0.15rem 0.5rem; border: 1px solid var(--line); border-radius: 999px;
+  cursor: default;
+}
+.synth-window:focus-within .sw-keys { color: var(--paper); border-color: #4a4a40; }
+.sw-keys-led { width: 6px; height: 6px; border-radius: 50%; background: #3a3a33; }
+.synth-window:focus-within .sw-keys-led { background: #6f7a18; }
+.sw-keys.lit .sw-keys-led { background: var(--acid); box-shadow: 0 0 6px var(--acid); }
+.sw-oct {
+  width: 18px; height: 18px; padding: 0; border-radius: 50%;
+  font: inherit; font-size: 12px; line-height: 1; color: inherit;
+  background: none; border: 1px solid var(--line); cursor: var(--ring);
+}
+.sw-oct:disabled { opacity: 0.35; cursor: default; }
+.sw-oct-at { min-width: 1.8em; text-align: center; font-variant-numeric: tabular-nums; text-transform: none; }
 .sw-body { display: grid; gap: 0.8rem; padding: 0.8rem 1.1rem 1.1rem; }
 
 .sw-groups { display: flex; flex-wrap: wrap; gap: 0.6rem; }

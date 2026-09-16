@@ -4,6 +4,7 @@ import { engineTarget } from '../automation.js'
 import { previewInPatch } from '../audio'
 import { ENGINES, engineData } from './index.js'
 import { closeSynth, raiseSynth } from './windows.js'
+import { keyNote, readOctave, writeOctave } from '../keyboard.js'
 import KickPanel from './KickPanel.jsx'
 import './SynthWindow.css'
 
@@ -50,6 +51,13 @@ export default function SynthWindow({ project, patternId, channelId, order, fron
   useEffect(() => { places.set(channelId, pos) }, [channelId, pos])
 
   useEffect(() => { ref.current?.focus({ preventScroll: true }) }, [])
+
+  // while the window has focus, the computer keyboard plays the instrument (as in the piano roll)
+  // (an engine with a home octave, like the kick's, keeps its own)
+  const octaveKey = spec?.keyOctave != null ? `lattice:synth-octave:${spec.type}` : undefined
+  const [octave, setOctave] = useState(() => readOctave(octaveKey, spec?.keyOctave ?? 4))
+  const shiftOctave = (by) => setOctave((o) => { const next = clamp(o + by, 0, 8); writeOctave(next, octaveKey); return next })
+  const [lit, setLit] = useState(false) // a key is playing, for the header's light
   // the instrument went away (deleted, undone, another sound picked)
   useEffect(() => { if (!spec) closeSynth(channelId) }, [spec, channelId])
   if (!spec) return null
@@ -61,6 +69,7 @@ export default function SynthWindow({ project, patternId, channelId, order, fron
   })
   const set = (key, value) => edit((c) => { c.engine = { ...c.engine, data: { ...c.engine.data, [key]: value } } })
   const reset = () => edit((c) => { c.engine = { ...c.engine, data: {} } })
+  const play = (note) => previewInPatch(project, patternId, ch, note == null ? {} : { note, pitched: true })
   const knob = (def) => (
     <Knob key={def.key} def={def} value={data[def.key]} onChange={(v) => set(def.key, v)} target={engineTarget(patternId, channelId, def.key)} />
   )
@@ -102,7 +111,17 @@ export default function SynthWindow({ project, patternId, channelId, order, fron
         if (e.key === 'Escape') { e.stopPropagation(); close(); return }
         // keys stay in here: Delete on a knob must not delete nodes behind the window
         e.stopPropagation()
+        if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return
+        const hit = keyNote(e.key, octave)
+        if (!hit) return
+        e.preventDefault()
+        if (hit.octave) return shiftOctave(hit.octave)
+        if (e.repeat) return
+        play(hit.note)
+        setLit(true)
       }}
+      onKeyUp={() => setLit(false)}
+      onBlur={() => setLit(false)}
     >
       <header
         className="sw-head"
@@ -116,7 +135,14 @@ export default function SynthWindow({ project, patternId, channelId, order, fron
         <h2 id={`sw-title-${channelId}`} className="sw-title">{spec.label}</h2>
         <span className="sw-where">{ch.name} · {pattern.name}</span>
         <span className="sw-spacer" />
-        <button type="button" className="btn" onClick={() => previewInPatch(project, patternId, ch)} title="Play one hit">hear</button>
+        <span className={`sw-keys ${lit ? 'lit' : ''}`} title={'Type to play it while this window has focus: z s x d c v g b h n j m , is one octave, q 2 w 3 e r 5 t 6 y 7 u the next · − and = change octave'}>
+          <span className="sw-keys-led" aria-hidden />
+          keys
+          <button type="button" className="sw-oct" disabled={octave <= 0} onClick={() => shiftOctave(-1)} aria-label="An octave down">−</button>
+          <span className="sw-oct-at">C{octave}</span>
+          <button type="button" className="sw-oct" disabled={octave >= 8} onClick={() => shiftOctave(1)} aria-label="An octave up">+</button>
+        </span>
+        <button type="button" className="btn" onClick={() => play(null)} title="Play one hit">hear</button>
         <button type="button" className="btn ghost" onClick={reset} title="Every knob back to where it started">reset</button>
         <button type="button" className="sw-close" onClick={close} title="Close (Esc)" aria-label={`Close ${spec.label}`}>×</button>
       </header>

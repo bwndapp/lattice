@@ -4,25 +4,14 @@ import { PatternChannels, exactStepAt } from './Rack.jsx'
 import { NameInput } from './NameInput.jsx'
 import { previewInPatch } from './audio'
 import { midiToNote, reshapePattern } from './project'
+import { KEYBOARD, KEY_HIGH as HIGH, KEY_LOW as LOW, OCTAVE_KEY } from './keyboard.js'
 import './DetailDock.css'
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 const HEIGHT_KEY = 'strudel:roll:dock-height'
 const mod = (a, n) => ((a % n) + n) % n
 
-/**
- * The computer keyboard as two octaves of piano, as trackers and DAWs lay them out:
- * z s x d c v g b h n j m , is one octave from C, q 2 w 3 e r 5 t 6 y 7 u is the next.
- */
-const KEYBOARD = {
-  z: 0, s: 1, x: 2, d: 3, c: 4, v: 5, g: 6, b: 7, h: 8, n: 9, j: 10, m: 11, ',': 12, l: 13, '.': 14,
-  q: 12, 2: 13, w: 14, 3: 15, e: 16, r: 17, 5: 18, t: 19, 6: 20, y: 21, 7: 22, u: 23, i: 24,
-}
-const LOW = 24
-const HIGH = 96
-
 const KEYS_KEY = 'strudel:roll:keys'
-const OCTAVE_KEY = 'strudel:roll:octave'
 const readPref = (key, fallback) => { try { const v = JSON.parse(localStorage.getItem(key)); return v ?? fallback } catch { return fallback } }
 const writePref = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* storage unavailable */ } }
 
@@ -62,7 +51,7 @@ export default function DetailDock({ project, at, transport, started, height, on
     if (tab !== 'notes' || !keysOn || !channel) return
     const onKey = (e) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return
-      if (e.target.closest?.('input:not([type=range]), textarea, select, [contenteditable="true"]')) return
+      if (e.target.closest?.('input:not([type=range]), textarea, select, [contenteditable="true"], .synth-window')) return
       const k = e.key.toLowerCase()
       const at = playing.current
       if (k === '-' || k === '_' || k === '[') { e.preventDefault(); return shiftOctave(at.octave - 1) }

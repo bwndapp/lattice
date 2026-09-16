@@ -5,8 +5,8 @@ import { knobsSource } from './dsp.js'
  * drive, the way Kick 2 builds one. One voice: a new hit takes over from the last one, with
  * a few milliseconds' fade so the tail it cuts doesn't click.
  *
- * Played from steps it sits at its tune knob; from the piano roll a note sets where the
- * sweep lands (and the start moves with it).
+ * Played from steps it sits at its tune knob. A note moves the whole kick from there: C2 is
+ * the kick as tuned, C#2 a semitone up, and so on (the start moves with it).
  */
 const PARAMS = [
   // pitch
@@ -43,7 +43,7 @@ class KickProcessor extends LatticeInstrument {
     voice.phase = 0
     voice.noise = 0
     voice.vel = vel
-    voice.ratio = note >= 0 ? (440 * 2 ** ((note - 69) / 12)) / this.k.tune : 1
+    voice.ratio = note >= 0 ? 2 ** ((note - 36) / 12) : 1 // C2 plays it as tuned
   }
   // the kick at time t of a hit (no click), or null once it's over
   body(state, t) {
@@ -114,6 +114,7 @@ export default {
   kinds: ['drum', 'synth'],
   processor: 'lattice-kick',
   voices: 1,
+  keyOctave: 2, // the typing keyboard starts where C2, the kick as tuned, is on z
   oneShot: true, // it plays its whole shape whatever the note's length
   params: PARAMS,
   groups: [['pitch', 'pitch'], ['body', 'body'], ['click', 'click'], ['out', 'output']],

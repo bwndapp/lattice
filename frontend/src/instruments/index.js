@@ -16,6 +16,7 @@ import kick from './kick.js'
  *   processor   the name its audio-thread processor registers under
  *   voices      how many notes it can sound at once (one output each)
  *   oneShot     whether a hit plays its whole shape whatever the note's length
+ *   keyOctave   (optional) where the typing keyboard starts in its window
  *   params      its knobs: { key, group, label, min, max, def, log?, unit?, origin? }
  *   groups      [group key, title] in the order the window shows them
  *   tail(data)  seconds a note rings past its end (or, one-shot, past its start)

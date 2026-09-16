@@ -66,6 +66,7 @@ export function previewChannel(ch, { note, n } = {}) {
   const value = { s: ch.sound, _c: ch.id } // _c: an engine instrument plays with its own settings
   if (ch.kind === 'drum' && ch.bank) value.bank = ch.bank
   if (ch.kind === 'synth') value.note = note ?? 48
+  else if (ch.engine && note !== undefined) value.note = note // an engine drum takes a pitch from the keyboard
   const [sound, variation] = String(ch.sound).split(':')
   value.s = sound
   if (n !== undefined || variation !== undefined) value.n = Number(n ?? variation)
@@ -197,8 +198,8 @@ export function silenceNow() {
  * raw sound when the channel isn't in the patch yet, or the patch code can't run.
  */
 let auditionRun = 0
-export async function previewInPatch(project, patternId, ch, { note, n } = {}) {
-  const code = project && patternId && auditionCode(project, patternId, ch?.id, { midi: note ?? 48 })
+export async function previewInPatch(project, patternId, ch, { note, n, pitched = false } = {}) {
+  const code = project && patternId && auditionCode(project, patternId, ch?.id, { midi: note ?? 48, pitched })
   if (!code) return previewChannel(ch, { note, n })
   const run = ++auditionRun
   try {

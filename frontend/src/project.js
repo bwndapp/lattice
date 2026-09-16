@@ -322,7 +322,7 @@ export function makeVariation(p, patternId) {
  * the expression to play. When no pattern node plays the pattern into an output, it's just
  * the hit, raw. Null for a channel that isn't there (or code, which has no single hit).
  */
-export function auditionCode(project, patternId, channelId, { midi = 48, steps = 2 } = {}) {
+export function auditionCode(project, patternId, channelId, { midi = 48, steps = 2, pitched = false } = {}) {
   const pattern = project.patterns.find((p) => p.id === patternId)
   const ch = pattern?.channels.find((c) => c.id === channelId)
   if (!ch || ch.kind === 'code') return null
@@ -330,7 +330,8 @@ export function auditionCode(project, patternId, channelId, { midi = 48, steps =
   const one = ch.kind === 'synth'
     ? { ...ch, mute: false, notes: [{ s: 0, l: Math.min(steps, bar.stepsPerBar), n: midi }] }
     : { ...ch, mute: false, steps: Array.from({ length: bar.stepsPerBar }, (_, i) => (i === 0 ? 1 : 0)) }
-  const hit = channelCode(one, bar)
+  // a drum played from the keyboard (an engine that takes a pitch) gets the note too
+  const hit = channelCode(one, bar) + (pitched && ch.kind === 'drum' ? `.note(${Math.round(midi)})` : '')
   const rootId = pattern.parent ?? patternId // a variation sounds through its original's node
   // does a pattern node for it reach an output?
   const outputs = new Set(project.nodes.filter((n) => n.type === 'output').map((n) => n.id))
