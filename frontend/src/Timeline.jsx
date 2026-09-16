@@ -117,7 +117,6 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const [ppb, setPpb] = useState(readZoom) // pixels per bar
   const ppbRef = useRef(ppb)
   ppbRef.current = ppb
-  const canvasRef = useRef(null)
   const [laneH, setLaneH] = useState(readRows) // row height
   const LANE_H = laneH
   const [selected, setSelected] = useState(() => new Set())
@@ -211,17 +210,10 @@ export default function Timeline({ project, onUpdateProject, transport, started 
 
   // ── zoom: ctrl/cmd + wheel around the pointer; buttons; fit ──
   // A wheel can fire several times a frame, and each zoom moves every clip, tick and
-  // sketch. So they're gathered into one change a frame, and while the wheel is still
-  // turning the clip sketches step aside rather than being redrawn at a new size each time.
+  // sketch, so they're gathered into one change a frame.
   const zoomRaf = useRef(0)
   const zoomWant = useRef(null)
-  const zoomRest = useRef(0)
-  const settling = () => {
-    canvasRef.current?.classList.add('zooming')
-    clearTimeout(zoomRest.current)
-    zoomRest.current = setTimeout(() => canvasRef.current?.classList.remove('zooming'), 140)
-  }
-  useEffect(() => () => { cancelAnimationFrame(zoomRaf.current); clearTimeout(zoomRest.current) }, [])
+  useEffect(() => () => cancelAnimationFrame(zoomRaf.current), [])
   const zoomTo = useCallback((next, anchorClientX) => {
     const box = scrollRef.current
     if (!box) return setPpb(next)
@@ -231,7 +223,6 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     const clamped = clamp(next, MIN_PPB, MAX_PPB)
     ppbRef.current = clamped // so another wheel tick this frame carries on from here
     zoomWant.current = { clamped, barUnder, at: anchor - rect.left }
-    settling()
     if (zoomRaf.current) return
     zoomRaf.current = requestAnimationFrame(() => {
       zoomRaf.current = 0
@@ -588,7 +579,11 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       return
     }
     if (!mod && k === 'v') { done(); setTool('pointer'); setSliceLine(null); return }
-    if (k === 'escape') { if (tool === 'pointer' && !selected.size) return setActivePart(null); done(); if (tool !== 'pointer') { setTool('pointer'); setSliceLine(null); return } setSelected(new Set()); setActivePart(null); return }
+    if (k === 'escape') {
+      if (tool !== 'pointer') { done(); setTool('pointer'); setSliceLine(null); return }
+      // letting go of the selection doesn't use up the key: the same Esc closes the dock
+      setSelected(new Set()); setActivePart(null); return
+    }
     if (!chosen.length) return
     if (k === 'delete' || k === 'backspace') {
       done()
@@ -953,7 +948,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
           onAuxClick={(e) => { if (e.button === 1) e.preventDefault() }}
           onMouseDown={(e) => { if (e.button === 1) e.preventDefault() }}
         >
-          <div className="song-canvas" ref={canvasRef} style={{ width: bars * ppb + HEAD_W, '--ppb': `${ppb}px`, '--ppbeat': `${ppb / beats}px`, '--lane': `${LANE_H}px`, '--headw': `${HEAD_W}px` }}>
+          <div className="song-canvas" style={{ width: bars * ppb + HEAD_W, '--ppb': `${ppb}px`, '--ppbeat': `${ppb / beats}px`, '--lane': `${LANE_H}px`, '--headw': `${HEAD_W}px` }}>
             <div className="song-corner" style={{ height: RULER_H }} aria-hidden />
             <div
               className="song-ruler"

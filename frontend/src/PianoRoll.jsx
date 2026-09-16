@@ -555,7 +555,7 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
     const done = () => { e.preventDefault(); e.stopPropagation() } // keep keys away from the patch canvas behind
     if (k === 'f' && !mod) { done(); return setFull((v) => !v) }
     if (mod && k === 'a') { done(); return selectKeys(channel.notes) }
-    if (k === 'escape' && selection.size) { done(); return setSelection(new Set()) }
+    if (k === 'escape' && selection.size) return setSelection(new Set()) // and the same Esc closes the dock
 
     const group = selectedNotes()
     if (mod && (k === 'c' || k === 'x')) {
