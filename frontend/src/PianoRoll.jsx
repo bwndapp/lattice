@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { isBlackKey, midiToNote, noteToMidi, stepCount } from './project'
+import { TICK, isBlackKey, midiToNote, noteToMidi, stepCount } from './project'
 
 const KEY_W = 46
 const RULER_H = 20
@@ -43,7 +43,9 @@ function fitCanvas(canvas, w, h, { keepCss = false } = {}) {
 }
 
 /**
- * Piano roll for a synth channel. Click to add a note (drag right to set its length),
+ * Piano roll for a synth channel. Notes land on the step grid; hold alt and they go
+ * wherever the pointer is instead, down to a sixty-fourth of a step.
+ * Click to add a note (drag right to set its length),
  * drag a note to move it, drag its right edge to resize, right-click to delete. Notes
  * can overlap for chords. ctrl/cmd + A selects all, shift + click adds a note to the
  * selection, ctrl/cmd + drag draws a selection box, and dragging any selected note moves
@@ -52,7 +54,7 @@ function fitCanvas(canvas, w, h, { keepCss = false } = {}) {
  *
  * Getting around long patterns: ctrl/cmd + scroll zooms around the pointer (or −, +,
  * fit), the bar ruler stays on top and jumps to a bar when clicked, the overview strip
- * shows every bar with a draggable view box, middle-drag or alt + drag pans, follow keeps the playhead
+ * shows every bar with a draggable view box, middle-drag pans, follow keeps the playhead
  * in view, and the roll can be dragged taller or opened full screen.
  */
 export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPreview, cursorRef, onSeek, fill = false }) {
@@ -343,11 +345,12 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
     const rect = gridRef.current.getBoundingClientRect()
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top
-    const step = clamp(Math.floor(x / colW), 0, total - 1)
+    const at = clamp(x / colW, 0, total) // where the pointer really is, between steps
+    const step = clamp(Math.floor(at), 0, total - 1)
     const midi = clamp(HIGH - Math.floor(y / rowH), LOW, HIGH)
-    const note = notes.find((nt) => nt.n === midi && step >= nt.s && step < nt.s + nt.l)
+    const note = notes.find((nt) => nt.n === midi && at >= nt.s && at < nt.s + nt.l)
     const edge = note && x >= (note.s + note.l) * colW - Math.min(7, colW / 2)
-    return { x, step, midi, note, edge }
+    return { x, at, step, midi, note, edge }
   }
 
   const commit = (next) => {
@@ -355,11 +358,12 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
     onChangeNotes(next)
   }
 
-  // Panning: middle-drag, or alt/option + drag, anywhere in the roll (grid, ruler or keys).
+  // Panning: middle-drag anywhere in the roll (grid, ruler or keys). Alt is the grid
+  // release while editing notes, so it can't pan as well.
   // It's handled on the scroll box in the capture phase so it wins over note editing, and
   // the middle button's mousedown is cancelled so the browser doesn't start its own
   // auto-scroll instead.
-  const isPan = (e) => e.button === 1 || (e.button === 0 && e.altKey)
+  const isPan = (e) => e.button === 1
   const startPan = (e) => {
     const el = scrollRef.current
     e.preventDefault()
@@ -403,6 +407,12 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
 
   const selectedNotes = (list = channel.notes) => list.filter((nt) => selection.has(keyOf(nt)))
   const selectKeys = (list) => setSelection(new Set(list.map(keyOf)))
+
+  // Hold alt and notes go wherever the pointer is instead of onto the step grid.
+  const tick = (v) => Math.round(v / TICK) * TICK
+  const leastLen = (free) => (free ? TICK : 1)
+  /** Where a note being drawn or stretched should end: on the next step, or exactly here. */
+  const endAt = (h, free) => (free ? tick(h.at) : Math.floor(h.at) + 1)
 
   /** Move a group of notes by (ds steps, dn semitones), clamped so none leaves the grid. */
   const shifted = (group, ds, dn) => {
@@ -457,12 +467,13 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
         dragRef.current = { mode: 'resize', group, anchor: h.note }
       } else {
         // shift or ctrl/cmd + drag moves copies and leaves the originals where they were
-        dragRef.current = { mode: 'move', group, copy: mod || e.shiftKey, toggle: e.shiftKey ? key : null, grabStep: h.step, grabMidi: h.midi, moved: false }
+        dragRef.current = { mode: 'move', group, copy: mod || e.shiftKey, toggle: e.shiftKey ? key : null, grabAt: h.at, grabMidi: h.midi, moved: false }
       }
       return
     }
 
-    const created = { s: h.step, l: clamp(lastLen.current, 1, total - h.step), n: h.midi }
+    const start = e.altKey ? tick(h.at) : h.step
+    const created = { s: start, l: clamp(lastLen.current, leastLen(e.altKey), total - start), n: h.midi }
     onPreview(h.midi)
     setSelection(new Set([keyOf(created)]))
     dragRef.current = { mode: 'create', orig: created, base: notes }
@@ -473,6 +484,7 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
     const d = dragRef.current
     if (!d) return
     const h = hit(e)
+    const free = e.altKey // alt: off the grid, down to a sixty-fourth of a step
     if (d.mode === 'erase') {
       if (h.note) { d.notes = d.notes.filter((nt) => nt !== h.note); setDraft(d.notes) }
     } else if (d.mode === 'marquee') {
@@ -486,15 +498,16 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
       const inside = channel.notes.filter((nt) => nt.s < right && nt.s + nt.l > left && nt.n + 1 > bottom && nt.n < top)
       setSelection(new Set([...d.base, ...inside.map(keyOf)]))
     } else if (d.mode === 'create') {
-      const l = clamp(h.step - d.orig.s + 1, 1, total - d.orig.s)
+      const l = clamp(endAt(h, free) - d.orig.s, leastLen(free), total - d.orig.s)
       d.current = { ...d.orig, l }
       setDraft([...d.base, d.current])
     } else if (d.mode === 'resize') {
-      const dl = h.step - (d.anchor.s + d.anchor.l - 1)
-      d.current = d.group.map((x) => ({ ...x, l: clamp(x.l + dl, 1, total - x.s) }))
+      const dl = endAt(h, free) - (d.anchor.s + d.anchor.l)
+      d.current = d.group.map((x) => ({ ...x, l: clamp(x.l + dl, leastLen(free), total - x.s) }))
       setDraft(merge(channel.notes, d.group, d.current))
     } else if (d.mode === 'move') {
-      const { notes: moved, ds, dn } = shifted(d.group, h.step - d.grabStep, h.midi - d.grabMidi)
+      const moveBy = h.at - d.grabAt
+      const { notes: moved, ds, dn } = shifted(d.group, free ? tick(moveBy) : Math.round(moveBy), h.midi - d.grabMidi)
       if (!ds && !dn && !d.moved) return
       if (dn !== d.dn && moved[0]) onPreview(moved[0].n)
       d.moved = true
@@ -628,7 +641,7 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
           <button type="button" className={`node-btn ${follow ? 'on' : ''}`} aria-pressed={follow} onClick={() => setFollow((v) => !v)} title="Keep the playhead in view while playing">follow</button>
           <span className="pr-spacer" />
           {selection.size > 0 && <span className="pr-selected">{selection.size} selected</span>}
-          <span className="pr-hint" title="ctrl/cmd + A selects all · shift + click adds, shift + drag copies · drag the ruler moves the playhead · ctrl/cmd + drag draws a box · drag moves the selection · ctrl/cmd + drag a note copies · ctrl/cmd + C / X / V / D · arrows move · delete removes · ctrl/cmd + scroll zooms · alt + scroll sizes rows · ctrl/cmd + middle-drag zooms steps and rows · middle-drag or alt + drag pans">{barCount} bar{barCount === 1 ? '' : 's'} · shift+drag copies · drag the ruler to move the playhead · ctrl/cmd+A all · middle-drag pans</span>
+          <span className="pr-hint" title="hold alt to leave the grid · ctrl/cmd + A selects all · shift + click adds, shift + drag copies · drag the ruler moves the playhead · ctrl/cmd + drag draws a box · drag moves the selection · ctrl/cmd + drag a note copies · ctrl/cmd + C / X / V / D · arrows move · delete removes · ctrl/cmd + scroll zooms · alt + scroll sizes rows · ctrl/cmd + middle-drag zooms steps and rows · middle-drag pans">{barCount} bar{barCount === 1 ? '' : 's'} · alt leaves the grid · shift+drag copies · ctrl/cmd+A all · middle-drag pans</span>
           <button type="button" className={`node-btn ${full ? 'on' : ''}`} onClick={() => setFull((v) => !v)} title="Full screen (F, Esc to close)">{full ? 'close' : 'full screen'}</button>
         </div>
         <canvas

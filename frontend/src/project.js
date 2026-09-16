@@ -70,6 +70,10 @@ const commentText = (s) => String(s ?? '').replace(/\*\/|[\r\n]/g, ' ').slice(0,
 const num = (v, fallback, lo, hi) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : fallback)
 const tidy = (v) => String(Math.round(v * 1000) / 1000)
 
+/** The finest a note can be placed or sized: a sixty-fourth of a step. */
+export const TICK = 1 / 64
+const tick = (v) => Math.round(v / TICK) * TICK
+
 export function stepCount(pattern) {
   return pattern.bars * pattern.stepsPerBar
 }
@@ -147,8 +151,11 @@ export function normalizeProject(raw) {
           ch.notes = source
             .filter((x) => x && Number.isFinite(Number(x.s)) && Number.isFinite(Number(x.n)) && Number(x.s) < n)
             .map((x) => {
-              const s = Math.round(num(x.s, 0, 0, n - 1))
-              return { s, l: Math.round(num(x.l, 1, 1, n - s)), n: Math.round(num(x.n, 48, 0, 127)) }
+              // notes sit anywhere, down to a sixty-fourth of a step: fine enough to be
+              // off the grid by any amount you'd want, and an exact binary fraction, so a
+              // bar's worth of them still adds up to exactly a bar
+              const s = tick(num(x.s, 0, 0, n - TICK))
+              return { s, l: tick(num(x.l, 1, TICK, n - s)), n: Math.round(num(x.n, 48, 0, 127)) }
             })
             .filter((x) => { const k = `${x.s}:${x.n}`; if (seen.has(k)) return false; seen.add(k); return true })
             .sort((a, b) => a.s - b.s || a.n - b.n)
@@ -203,15 +210,21 @@ export function noteVoices(notes) {
 
 const rest = (len) => (len === 1 ? '~' : `~@${len}`)
 
+/**
+ * One voice as mini-notation: a token per note, rests between them, each weighted by how
+ * long it lasts. The weights are what carry notes that aren't on the grid — they're
+ * fractions of a step, and since they all add up to the pattern's length the timing is
+ * exact rather than rounded to the nearest step.
+ */
 function sequenceOf(notes, total) {
   const tokens = []
   let cursor = 0
   for (const note of notes) {
-    if (note.s > cursor) tokens.push(rest(note.s - cursor))
-    tokens.push(note.l > 1 ? `${midiToNote(note.n)}@${note.l}` : midiToNote(note.n))
+    if (note.s - cursor > TICK / 2) tokens.push(rest(note.s - cursor))
+    tokens.push(note.l === 1 ? midiToNote(note.n) : `${midiToNote(note.n)}@${note.l}`)
     cursor = note.s + note.l
   }
-  if (cursor < total) tokens.push(rest(total - cursor))
+  if (total - cursor > TICK / 2) tokens.push(rest(total - cursor))
   return tokens.join(' ')
 }
 
