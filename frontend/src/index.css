@@ -352,6 +352,7 @@ button.lcd-unit:hover { color: var(--acid); }
 .transport { display: inline-flex; gap: 0.3rem; align-items: center; }
 .btn.tport { font-family: var(--display); font-weight: 700; font-stretch: 112%; text-transform: uppercase; padding-inline: 0.55rem; }
 .position .lcd-value { width: 5.2ch; cursor: text; }
+.position.clock .lcd-value { width: 6.6ch; } /* 0:12.4 is wider than 001.1 */
 .position .lcd-value:focus { outline: none; }
 .position:focus-within { border-color: var(--acid); }
 .position .lcd-value.invalid { color: var(--danger); }
