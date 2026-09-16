@@ -413,6 +413,14 @@ export default function App() {
   const [autoEditing, setAutoEditing] = useState(null) // { id, x, y }
   const [showVersions, setShowVersions] = useState(false)
   // the piano roll, docked along the bottom: { patternId, channelId }
+  const [browseView, setBrowseView] = useState('explore') // which list the browse page shows
+  const userRef = useRef(null)
+  userRef.current = user
+  /** Open the track list, on your own tracks when that's what was asked for. */
+  const openBrowse = useCallback((which) => {
+    if (which) setBrowseView(which === 'mine' && !userRef.current ? 'explore' : which)
+    setView('browse')
+  }, [])
   const [roll, setRoll] = useState(null) // { patternId, channelId, tab }
   const [rollHeight, setRollHeight] = useState(readDockHeight)
   const rollDock = useMemo(() => ({
@@ -927,7 +935,7 @@ export default function App() {
       label: 'file',
       items: [
         { label: 'new track', onSelect: () => newTrack('blank'), hint: 'The open track stays as it is' },
-        { label: 'open…', onSelect: () => setView('browse'), hint: 'Your tracks and shared ones' },
+        { label: 'open…', onSelect: () => openBrowse('mine'), hint: 'Your tracks, and what people have shared' },
         'line',
         canEdit && { label: isNew ? 'save as a track' : 'save', shortcut: 'ctrl/cmd S', onSelect: () => save(), disabled: busy || (!!user && !dirty) },
         isOwner && { label: 'save as a new track', shortcut: 'ctrl/cmd shift S', onSelect: () => saveAsNew(), disabled: busy, hint: 'This track stays as it was saved' },
@@ -970,7 +978,7 @@ export default function App() {
     {
       label: 'account',
       items: user ? [
-        { label: 'your tracks', onSelect: () => setView('browse') },
+        { label: 'your tracks', onSelect: () => openBrowse('mine') },
         { label: 'sign out', onSelect: () => logout(window.location.pathname) },
       ] : [
         { label: userLoading ? 'checking…' : 'sign in', disabled: userLoading, onSelect: () => login(), hint: 'Save, like and remix with your blue wind account' },
@@ -1128,6 +1136,8 @@ export default function App() {
               login={login}
               activeId={trackId}
               refreshKey={refreshKey}
+              view={browseView}
+              onView={setBrowseView}
               onPlay={playFromList}
               onPick={() => setView('graph')}
               onNew={(template) => newTrack(template)}

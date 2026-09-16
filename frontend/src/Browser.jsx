@@ -20,8 +20,8 @@ function Switch({ options, value, onChange, label, small = false }) {
   )
 }
 
-export default function Browser({ user, login, activeId, refreshKey, onPlay, onPick, onNew }) {
-  const [view, setView] = useState('explore')
+export default function Browser({ user, login, activeId, refreshKey, onPlay, onPick, onNew, view = 'explore', onView }) {
+  const setView = onView
   const [sort, setSort] = useState('new')
   const [q, setQ] = useState('')
   const [tracks, setTracks] = useState(null)
