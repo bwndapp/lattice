@@ -45,7 +45,7 @@ function fitCanvas(canvas, w, h, { keepCss = false } = {}) {
 /**
  * Piano roll for a synth channel. Notes land on the step grid; hold alt and they go
  * wherever the pointer is instead, down to a sixty-fourth of a step.
- * Click to add a note (drag right to set its length),
+ * Click to add a note and drag to place it (it keeps the last length you used),
  * drag a note to move it, drag its right edge to resize, right-click to delete. Notes
  * can overlap for chords. ctrl/cmd + A selects all, shift + click adds a note to the
  * selection, ctrl/cmd + drag draws a selection box, and dragging any selected note moves
@@ -498,10 +498,11 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
       const inside = channel.notes.filter((nt) => nt.s < right && nt.s + nt.l > left && nt.n + 1 > bottom && nt.n < top)
       setSelection(new Set([...d.base, ...inside.map(keyOf)]))
     } else if (d.mode === 'create') {
-      // still holding it: sideways sets how long it is, up and down what note it is
-      const l = clamp(endAt(h, free) - d.orig.s, leastLen(free), total - d.orig.s)
+      // still holding it: the note goes wherever the pointer does, both ways
+      const l = d.orig.l
+      const s = clamp(free ? tick(h.at) : Math.floor(h.at), 0, total - l)
       if (h.midi !== (d.current ?? d.orig).n) onPreview(h.midi)
-      d.current = { ...d.orig, l, n: h.midi }
+      d.current = { ...d.orig, s, l, n: h.midi }
       setDraft([...d.base, d.current])
     } else if (d.mode === 'resize') {
       const dl = endAt(h, free) - (d.anchor.s + d.anchor.l)
