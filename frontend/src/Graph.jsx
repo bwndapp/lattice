@@ -15,6 +15,7 @@ import { ADD_INTO_WIRE, EDGE_TYPES } from './WireEdge.jsx'
 import { copyNodes, pasteNodes, readClipboard, writeClipboard } from './nodeClipboard'
 import { onSoundsChange, previewSound, soundCatalog } from './audio'
 import { flowPaths, setFlowPaths, startFlow, stopFlow } from './flow.js'
+import { colorFor, inkFor, nodeSrc } from './clipColors.js'
 
 const NODE_MIME = 'application/x-strudel-node'
 const Ctx = createContext(null)
@@ -357,8 +358,14 @@ function StudioNode({ id, selected }) {
   const soloing = ctx.solo === id
   const pattern = patternOf
 
+  // a part wears the same colour here as its clips do on the timeline
+  const tint = spec.group === 'source' ? colorFor(nodeSrc(node, ctx.project), ctx.project.song?.colors) : null
+
   return (
-    <div className={`gnode g-${spec.group} t-${node.type} ${selected ? 'selected' : ''} ${soloing ? 'soloing' : ''} ${node.type !== 'output' && !ctx.heard.has(id) ? 'unheard' : ''}`}>
+    <div
+      className={`gnode g-${spec.group} t-${node.type} ${selected ? 'selected' : ''} ${soloing ? 'soloing' : ''} ${node.type !== 'output' && !ctx.heard.has(id) ? 'unheard' : ''}`}
+      style={tint ? { '--tint': tint, '--tint-ink': inkFor(tint) } : undefined}
+    >
       {spec.inputs === 1 && <Handle type="target" position={Position.Left} id="in" className="port in" />}
       <div className="node-head">
         <span className="node-kind">{spec.label}</span>

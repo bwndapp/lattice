@@ -793,12 +793,12 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
   filter: drop-shadow(0 0 calc(var(--lit) * 5px) rgb(228 255 26 / calc(var(--lit) * 0.7)));
 }
 .react-flow__node[style*="--lit"] .gnode {
-  border-color: color-mix(in srgb, var(--acid) calc(var(--lit) * 90%), var(--line));
+  border-color: color-mix(in srgb, var(--tint, var(--acid)) calc(var(--lit) * 90%), var(--line));
   box-shadow: 0 0 calc(var(--lit) * 18px) rgb(228 255 26 / calc(var(--lit) * 0.3));
 }
-.react-flow__node[style*="--lit"] .node-head { background: color-mix(in srgb, var(--acid) calc(var(--lit) * 55%), #2f2f2a); }
-.node-chans .chan[style*="--lit"] { background: rgb(228 255 26 / calc(var(--lit) * 0.16)); }
-.node-chans .chan[style*="--lit"] .chan-name { color: color-mix(in srgb, var(--acid) calc(var(--lit) * 100%), var(--paper)); }
+.react-flow__node[style*="--lit"] .node-head { background: color-mix(in srgb, var(--head-lit) calc(var(--lit) * 50%), var(--head-bg)); }
+.node-chans .chan[style*="--lit"] { background: color-mix(in srgb, var(--tint, var(--acid)) calc(var(--lit) * 20%), transparent); }
+.node-chans .chan[style*="--lit"] .chan-name { color: color-mix(in srgb, var(--tint, var(--acid)) calc(var(--lit) * 100%), var(--paper)); }
 .graph-canvas .react-flow__controls { box-shadow: none; border: 1px solid var(--line); }
 .graph-canvas .react-flow__minimap { border: 1px solid var(--line); }
 .gnode { width: 250px; background: var(--panel); border: 1px solid var(--line); font-size: 12px; color: var(--paper); cursor: var(--ring); }
@@ -808,15 +808,20 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
 .gnode .knob svg { cursor: ns-resize; }
 .gnode.selected { border-color: var(--acid); box-shadow: 0 0 0 1px var(--acid); }
 .gnode.soloing { outline: 2px dashed var(--acid); outline-offset: 4px; }
+.gnode { --head-bg: #2f2f2a; --head-ink: var(--paper); --head-lit: var(--acid); }
 .node-head {
   display: flex; align-items: center; gap: 0.35rem; padding: 0.32rem 0.4rem 0.32rem 0.6rem;
-  cursor: var(--ring); background: #2f2f2a; color: var(--paper); border-bottom: 1px solid var(--line);
+  cursor: var(--ring); background: var(--head-bg); color: var(--head-ink); border-bottom: 1px solid var(--line);
 }
-.g-source .node-head { background: var(--acid); color: var(--ink); }
-.g-transform .node-head { background: var(--paper); color: var(--ink); }
-.g-combine .node-head { background: var(--ink); box-shadow: inset 0 -2px 0 var(--acid); }
-.g-output { border: 2px solid var(--acid); }
-.g-output .node-head { background: var(--ink); color: var(--acid); }
+/* a source wears the colour its clips have on the timeline (see clipColors.js) */
+.g-source {
+  --head-bg: var(--tint, var(--acid)); --head-ink: var(--tint-ink, var(--ink)); --head-lit: #ffffff;
+  border-color: color-mix(in srgb, var(--tint, var(--acid)) 26%, var(--line));
+}
+.g-transform { --head-bg: var(--paper); --head-ink: var(--ink); --head-lit: #ffffff; }
+.g-combine { --head-bg: var(--ink); }
+.g-combine .node-head { box-shadow: inset 0 -2px 0 var(--acid); }
+.g-output { border: 2px solid var(--acid); --head-bg: var(--ink); --head-ink: var(--acid); }
 .node-kind { font-family: var(--display); font-weight: 900; font-stretch: 112%; font-size: 13px; }
 .node-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; opacity: 0.85; }
 .node-btn { font: inherit; font-size: 10px; line-height: 1.5; color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 0; padding: 0 0.3rem; cursor: var(--ring); opacity: 0.75; }

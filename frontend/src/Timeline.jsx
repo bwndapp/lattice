@@ -11,6 +11,7 @@ import ConfirmDialog from './ConfirmDialog.jsx'
 import { KitSelect } from './Graph.jsx'
 import { NODE_TYPES } from './graph'
 import './Timeline.css'
+import { PICKS, colorFor, inkFor } from './clipColors.js'
 
 /**
  * The song view: parts on the left, a timeline on the right. Drag a part onto a row to
@@ -30,25 +31,8 @@ const HEAD_W = 136 // the row headers down the left of the timeline
 const EDGE = 7 // px at each end of a clip that stretch it
 const MIN_PPB = 10
 const MAX_PPB = 260
-const COLORS = ['#e4ff1a', '#f2f0e6', '#b9c96a', '#ffb347', '#86d8cc', '#c8a2ff', '#ff8fa3', '#9fb4ff']
-const PICKS = [...COLORS, '#ff6b3d', '#ffd23f', '#7dff9a', '#5ad1ff', '#4d7cff', '#b06bff', '#ff4fd8', '#8a8a80']
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 const wrap = (a, n) => (n > 0 ? ((a % n) + n) % n : a)
-
-/** A part's colour: the one picked for it, or one from its id. */
-function colorFor(src, colors) {
-  if (colors?.[src]) return colors[src]
-  let h = 0
-  for (const ch of src) h = (h * 31 + ch.charCodeAt(0)) >>> 0
-  return COLORS[h % COLORS.length]
-}
-
-/** Dark text on light clip colours, light text on dark ones. */
-function inkFor(hex) {
-  const n = parseInt(hex.slice(1), 16)
-  const lum = (0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255
-  return lum > 0.55 ? '#0a0a09' : '#f2f0e6'
-}
 
 /**
  * What's in a pattern, drawn as FL draws it on a clip: drum hits in a row per instrument,
