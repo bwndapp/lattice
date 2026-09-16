@@ -411,7 +411,6 @@ export default function App() {
 
   // ── automation: right-click a knob → a curve on the timeline (see automation.js) ──
   const [autoEditing, setAutoEditing] = useState(null) // { id, x, y }
-  const [draftNotice, setDraftNotice] = useState(null) // { id, savedAt }: this track opened with unsaved changes
   const [showVersions, setShowVersions] = useState(false)
   // the piano roll, docked along the bottom: { patternId, channelId }
   const [roll, setRoll] = useState(null) // { patternId, channelId, tab }
@@ -636,11 +635,6 @@ export default function App() {
         rememberTrack(trackId)
         const draft = readDraft(trackId, t.updated_at)
         putCode(trackId, draft ?? t.code)
-        // say so when what opens isn't the saved version, and offer the saved one
-        const mine = draft && parseProject(draft)
-        const saved = parseProject(t.code)
-        const differs = draft && (mine && saved ? JSON.stringify(mine) !== JSON.stringify(saved) : draft !== t.code)
-        setDraftNotice(differs && t.is_owner ? { id: trackId, savedAt: t.updated_at } : null)
         if (pendingPlayRef.current === trackId) {
           pendingPlayRef.current = null
           play()
@@ -695,7 +689,6 @@ export default function App() {
         setTrack(t)
         setTitle(t.title)
         clearDraft(trackId)
-        setDraftNotice(null)
       }
       setRefreshKey((k) => k + 1)
       flash('Saved')
@@ -730,7 +723,6 @@ export default function App() {
    */
   const newTrack = (template = 'blank', { force = false } = {}) => {
     if (!force && ((isNew && store.get(SCRATCH_WORK) === 'yes') || (!isNew && codeChanged))) return setAskNew(template)
-    setDraftNotice(null)
     if (view === 'browse' || view === 'code') setView('graph')
     navigate('/', { state: { fresh: Date.now(), template } })
     flash(template === 'demo' ? 'New track from the demo patch' : 'New track · nothing else changed')
@@ -745,7 +737,6 @@ export default function App() {
       const name = (title.trim() || from?.title || 'untitled').slice(0, 80)
       const t = await api('/tracks', { method: 'POST', body: { title: name, code: songCodeOf(editorRef.current.code), visibility } })
       if (from) clearDraft(from.id) // its unsaved changes live on in the new track
-      setDraftNotice(null)
       navigate(`/t/${t.id}`)
       setRefreshKey((k) => k + 1)
       flash(from ? `Saved as a new track · “${from.title}” is unchanged` : 'Saved')
@@ -811,7 +802,6 @@ export default function App() {
   const revert = () => {
     openVersion(track.code)
     clearDraft(track.id)
-    setDraftNotice(null)
     flash('Back to your saved version', { label: 'undo', run: () => undoRef.current?.() })
   }
 
@@ -1115,15 +1105,6 @@ export default function App() {
         </span>
       </header>
 
-      {draftNotice && draftNotice.id === trackId && codeChanged && track && (
-        <div className="draft-notice" role="status">
-          <span>You're looking at <b>unsaved changes</b> kept in this browser. Your saved version is from {timeAgo(draftNotice.savedAt)} and hasn't changed.</span>
-          <span className="spacer" />
-          <button type="button" className="btn" onClick={revert}>open the saved version</button>
-          <button type="button" className="btn" onClick={() => setShowVersions(true)}>saved versions</button>
-          <button type="button" className="btn ghost" onClick={() => setDraftNotice(null)}>keep editing</button>
-        </div>
-      )}
       {showVersions && track?.is_owner && (
         <Versions
           trackId={track.id}
@@ -1131,7 +1112,6 @@ export default function App() {
           onClose={() => setShowVersions(false)}
           onOpen={(v) => {
             setShowVersions(false)
-            setDraftNotice(null)
             openVersion(v.code)
             if (v.title) setTitle(v.title)
             flash(`Opened the version from ${timeAgo(v.saved_at)} · save to keep it`, { label: 'undo', run: () => undoRef.current?.() })

@@ -40,22 +40,6 @@
   .vs-when { grid-column: 1 / -1; }
 }
 
-/* the notice when a track opens with unsaved changes from this browser */
-.draft-notice {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.4rem 0.9rem;
-  padding: 0.5rem 1rem;
-  font-size: 12px;
-  color: var(--paper);
-  background: #1c1a0b;
-  border-bottom: 1px solid rgba(228, 255, 26, 0.4);
-}
-.draft-notice b { color: var(--acid); font-weight: 700; }
-.draft-notice .spacer { flex: 1; }
-.draft-notice .btn { border-radius: 999px; padding: 0.22rem 0.75rem; font-size: 11.5px; }
-
 /* a toast with something to do (undo) */
 .toast.with-action { display: flex; align-items: center; gap: 0.8rem; }
 .toast-action { font: inherit; font-weight: 800; color: var(--ink); background: none; border: 2px solid var(--ink); padding: 0.1rem 0.6rem; cursor: var(--ring); text-transform: uppercase; letter-spacing: 0.04em; }
