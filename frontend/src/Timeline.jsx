@@ -166,8 +166,11 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   // ── geometry ──
   const barAt = (clientX) => (clientX - lanesRef.current.getBoundingClientRect().left) / ppb
   const laneAt = (clientY) => clamp(Math.floor((clientY - lanesRef.current.getBoundingClientRect().top) / LANE_H), 0, 63)
-  const snap = (v, fine) => { const s = fine ? 1 / beats : step; return Math.round(v / s) * s }
-  const snapDown = (v, fine) => { const s = fine ? 1 / beats : step; return Math.floor(v / s) * s }
+  // hold alt and the grid lets go entirely, as it does in FL: put it exactly where you want
+  const FREE = 1 / (beats * 16) // still rounded, but far finer than anyone can see
+  const snap = (v, free) => { const s = free ? FREE : step; return Math.round(v / s) * s }
+  const snapDown = (v, free) => { const s = free ? FREE : step; return Math.floor(v / s) * s }
+  const leastLen = (free) => (free ? FREE : Math.min(step, 1 / beats))
 
   // ── playhead ──
   // While the song plays it runs along the song and wraps at its end. With the song off the
@@ -377,7 +380,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     if (!e.shiftKey) setSelected(new Set())
     if (activePart && partBySrc.has(activePart) && !e.shiftKey) {
       // draw a clip of the active part
-      const start = snapDown(bar)
+      const start = snapDown(bar, e.altKey)
       dragRef.current = { mode: 'draw', start, lane, src: activePart }
       setDrag({ changes: {}, added: [{ id: '__draw', src: activePart, lane, start, len: step }] })
       return
@@ -420,7 +423,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       }
       return
     }
-    const fine = e.altKey // alt: snap to beats (finer than the setting)
+    const free = e.altKey // alt: off the grid
     const bar = barAt(e.clientX)
     const lane = laneAt(e.clientY)
     if (d.mode === 'slice') {
@@ -436,7 +439,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     if (d.mode === 'move') {
       const minStart = Math.min(...d.group.map((c) => c.start))
       const minLane = Math.min(...d.group.map((c) => c.lane))
-      const db = Math.max(-minStart, snap(bar - d.bar, fine))
+      const db = Math.max(-minStart, snap(bar - d.bar, free))
       const dl = Math.max(-minLane, lane - d.lane)
       if (!db && !dl && !d.moved) return
       d.moved = true
@@ -446,13 +449,13 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     } else if (d.mode === 'start' || d.mode === 'end') {
       // every selected clip stretches by as much as the one under the pointer
       const c = d.anchor
-      const min = 1 / beats
+      const min = leastLen(free)
       const changes = {}
       if (d.mode === 'end') {
-        const delta = clamp(snap(bar, fine) - c.start, min, MAX_BARS - c.start) - c.len
+        const delta = clamp(snap(bar, free) - c.start, min, MAX_BARS - c.start) - c.len
         for (const x of d.group) changes[x.id] = { len: clamp(x.len + delta, min, MAX_BARS - x.start) }
       } else {
-        const delta = clamp(snap(bar, fine), 0, c.start + c.len - min) - c.start
+        const delta = clamp(snap(bar, free), 0, c.start + c.len - min) - c.start
         for (const x of d.group) {
           const start = clamp(x.start + delta, 0, x.start + x.len - min)
           changes[x.id] = { start, len: x.start + x.len - start, offset: (x.offset ?? 0) + (start - x.start) }
@@ -461,7 +464,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       d.moved = true
       setDrag({ changes })
     } else if (d.mode === 'draw') {
-      const end = Math.max(d.start + (fine ? 1 / beats : step), snap(bar, fine))
+      const end = Math.max(d.start + leastLen(free), snap(bar, free))
       setDrag({ changes: {}, added: [{ id: '__draw', src: d.src, lane: d.lane, start: d.start, len: end - d.start }] })
     } else if (d.mode === 'marquee') {
       const box = { b0: d.bar, l0: d.lane, b1: bar, l1: lane }
@@ -587,7 +590,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     }
   }
 
-  // ── ruler: click or drag to move the playhead (snapped to beats, alt: free);
+  // ── ruler: click or drag to move the playhead (snapped, alt: free);
   //    shift-drag to set a loop ──
   const rulerRef = useRef(null)
   const scrubTo = (clientX, free) => {
@@ -909,7 +912,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
             <button className={`song-tool ${tool === 'slice' ? 'on' : ''}`} aria-pressed={tool === 'slice'} onClick={() => setTool('slice')} title="Cut clips in two: click a clip, or drag up or down to cut every clip on those rows (C)">slice</button>
           </span>
           <span className="spacer" />
-          <span className="song-hint">{!song.on && song.clips.length ? 'song off · the patch is looping, so the playhead waits at the cue · turn the song on to play the timeline' : tool === 'slice' ? 'click a clip to cut it · drag up or down to cut several · alt snaps finer · V or Esc to go back' : 'dup a pattern for a variation · U makes selected clips unique · shift-drag copies · right-click deletes · C slices · drag the ruler to move the playhead'}</span>
+          <span className="song-hint">{!song.on && song.clips.length ? 'song off · the patch is looping, so the playhead waits at the cue · turn the song on to play the timeline' : tool === 'slice' ? 'click a clip to cut it · drag up or down to cut several · hold alt to cut off the grid · V or Esc to go back' : 'hold alt to leave the grid · shift-drag copies · U makes selected clips unique · C slices · right-click deletes · drag the ruler to move the playhead'}</span>
           <span className="song-zoom" role="group" aria-label="Zoom">
             <button className="btn" onClick={() => zoomTo(ppb / 1.5)} aria-label="Zoom out">−</button>
             <button className="btn" onClick={fit} title="Fit the song">fit</button>
