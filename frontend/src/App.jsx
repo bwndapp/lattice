@@ -940,8 +940,8 @@ export default function App() {
         canEdit && { label: isNew ? 'save as a track' : 'save', shortcut: 'ctrl/cmd S', onSelect: () => save(), disabled: busy || (!!user && !dirty) },
         isOwner && { label: 'save as a new track', shortcut: 'ctrl/cmd shift S', onSelect: () => saveAsNew(), disabled: busy, hint: 'This track stays as it was saved' },
         !canEdit && track && { label: 'remix into your tracks', onSelect: () => remix(), disabled: busy },
-        isOwner && { label: 'saved versions…', onSelect: () => setShowVersions(true), hint: 'Every save is kept' },
-        codeChanged && track && { label: isOwner ? 'go back to the saved version' : 'undo my changes', onSelect: () => revert() },
+        isOwner && { label: 'earlier saves…', onSelect: () => setShowVersions(true), hint: 'Each time you save, the one before is kept here' },
+        codeChanged && track && !isOwner && { label: 'undo my changes', onSelect: () => revert() },
         track && 'line',
         track && { label: 'copy link', onSelect: () => share() },
       ],
@@ -1172,7 +1172,7 @@ export default function App() {
               {askSave.kind === 'renamed'
                 ? <p>You renamed it to <strong>“{title.trim() || 'untitled'}”</strong> and changed the patch, so this looks like a new track.</p>
                 : <p>This would replace “{track.title}” with a much smaller patch: <strong>{countText(askSave.after)}</strong> instead of <strong>{countText(askSave.before)}</strong>.</p>}
-              <p><strong>Save as a new track</strong> keeps “{track.title}” exactly as it was saved. <strong>Replace</strong> saves over it (earlier saves stay in <em>saved versions</em>).</p>
+              <p><strong>Save as a new track</strong> keeps “{track.title}” exactly as it was saved. <strong>Replace</strong> saves over it (what's there now stays in <em>earlier saves</em>).</p>
             </ConfirmDialog>
           )}
           {askNew && (

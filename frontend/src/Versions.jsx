@@ -20,8 +20,8 @@ function summary(v) {
 }
 
 /**
- * Every saved version of a track (the server keeps the last 60). Opening one puts it in the
- * editor as unsaved changes: listen, then save to keep it, or undo to go back.
+ * The track as it was at each earlier save (the last 60 are kept). Opening one puts it in
+ * the editor: listen, then save to keep it, or undo to go back.
  */
 export default function Versions({ trackId, savedCode, onOpen, onClose }) {
   const ref = useRef(null)
@@ -60,10 +60,10 @@ export default function Versions({ trackId, savedCode, onOpen, onClose }) {
     >
       <div className="vs-body">
         <div className="vs-head">
-          <h2 id="versions-title" className="vs-title">Saved versions</h2>
+          <h2 id="versions-title" className="vs-title">Earlier saves</h2>
           <button type="button" className="btn ghost" onClick={onClose}>close</button>
         </div>
-        <p className="vs-note">Every save is kept here. Opening one loads it as unsaved changes: nothing is overwritten until you save, and ctrl/cmd + Z goes back.</p>
+        <p className="vs-note">Each time you save, the version before it is kept here. Open one to hear it — nothing is overwritten until you save again, and ctrl/cmd + Z puts things back.</p>
         {error && <p className="vs-error">Couldn’t load the versions: {error}</p>}
         {!versions && !error && <p className="vs-note">Loading…</p>}
         {versions && (
