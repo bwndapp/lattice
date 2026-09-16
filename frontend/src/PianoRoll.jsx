@@ -498,8 +498,10 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
       const inside = channel.notes.filter((nt) => nt.s < right && nt.s + nt.l > left && nt.n + 1 > bottom && nt.n < top)
       setSelection(new Set([...d.base, ...inside.map(keyOf)]))
     } else if (d.mode === 'create') {
+      // still holding it: sideways sets how long it is, up and down what note it is
       const l = clamp(endAt(h, free) - d.orig.s, leastLen(free), total - d.orig.s)
-      d.current = { ...d.orig, l }
+      if (h.midi !== (d.current ?? d.orig).n) onPreview(h.midi)
+      d.current = { ...d.orig, l, n: h.midi }
       setDraft([...d.base, d.current])
     } else if (d.mode === 'resize') {
       const dl = endAt(h, free) - (d.anchor.s + d.anchor.l)
