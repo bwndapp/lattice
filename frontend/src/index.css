@@ -784,7 +784,21 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
   font-family: var(--mono);
 }
 .graph-canvas .react-flow__attribution a { color: #5d5d56; }
-.graph-canvas .react-flow__edge.animated .react-flow__edge-path { stroke: var(--acid); }
+/* signal flow: a hit lights its source and every wire that carries it onward (flow.js) */
+@property --lit { syntax: '<number>'; inherits: true; initial-value: 0; }
+.graph-canvas .react-flow__edge.animated .react-flow__edge-path { stroke: #4a4a42; }
+.graph-canvas .react-flow__edge[style*="--lit"] .react-flow__edge-path {
+  stroke: color-mix(in srgb, var(--acid) calc(var(--lit) * 100%), #4a4a42);
+  stroke-width: calc(1.5px + var(--lit) * 1.5px);
+  filter: drop-shadow(0 0 calc(var(--lit) * 5px) rgb(228 255 26 / calc(var(--lit) * 0.7)));
+}
+.react-flow__node[style*="--lit"] .gnode {
+  border-color: color-mix(in srgb, var(--acid) calc(var(--lit) * 90%), var(--line));
+  box-shadow: 0 0 calc(var(--lit) * 18px) rgb(228 255 26 / calc(var(--lit) * 0.3));
+}
+.react-flow__node[style*="--lit"] .node-head { background: color-mix(in srgb, var(--acid) calc(var(--lit) * 55%), #2f2f2a); }
+.node-chans .chan[style*="--lit"] { background: rgb(228 255 26 / calc(var(--lit) * 0.16)); }
+.node-chans .chan[style*="--lit"] .chan-name { color: color-mix(in srgb, var(--acid) calc(var(--lit) * 100%), var(--paper)); }
 .graph-canvas .react-flow__controls { box-shadow: none; border: 1px solid var(--line); }
 .graph-canvas .react-flow__minimap { border: 1px solid var(--line); }
 .gnode { width: 250px; background: var(--panel); border: 1px solid var(--line); font-size: 12px; color: var(--paper); cursor: var(--ring); }

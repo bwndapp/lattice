@@ -54,6 +54,8 @@ function sendCode(x, ctx, d, sends) {
   return fmapWith(x, ctx, d, sends.map(([, k]) => k), (val) => `{ ...v, fxsends: [...(v.fxsends ?? []), ${sends.map(([key, k]) => `['${key}', ${isAuto(ctx, k) ? val(k) : 1}]`).join(', ')}] }`)
 }
 const beatSeconds = (ctx) => 1 / ((ctx?.cps || 0.5) * (ctx?.beats || 4))
+/** Mark what a source makes with the node it came from, so the patch can light up (flow.js). */
+const fromNode = (x, id) => `${x}.fmap((v) => ({ ...v, _n: '${id}' }))`
 
 function fmapWith(x, ctx, d, keys, body, fmts = {}) {
   const autos = keys.filter((k) => isAuto(ctx, k))
@@ -706,7 +708,7 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     if (!chan) return name
     const src = byId.get(w.source)
     if (src?.type !== 'pattern' || !channelsOf(src.data.patternId).some((c) => c.id === chan)) return name
-    return patternChanVar(src.data.patternId, chan)
+    return fromNode(patternChanVar(src.data.patternId, chan), src.id)
   }
 
   const visit = (id, trail = new Set()) => {
@@ -737,6 +739,7 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     if (!expr) { exprs.set(id, null); return null }
     // a source making sound on its own plays when the song says (patterns are handled where they're defined)
     if (song && spec.group === 'source' && node.type !== 'pattern' && !wires.length) expr = song(`node:${id}`, expr)
+    if (spec.group === 'source') expr = fromNode(expr, id)
     if (route.orbit != null) orbitOf.set(id, route.orbit)
     const name = nodeVar(id)
     lines.push(`// ${node.data.name ?? spec.label}`, `const ${name} = ${expr}`)

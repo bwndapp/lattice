@@ -14,11 +14,13 @@ import AddMenu from './AddMenu.jsx'
 import { ADD_INTO_WIRE, EDGE_TYPES } from './WireEdge.jsx'
 import { copyNodes, pasteNodes, readClipboard, writeClipboard } from './nodeClipboard'
 import { onSoundsChange, previewSound, soundCatalog } from './audio'
+import { flowPaths, setFlowPaths, startFlow, stopFlow } from './flow.js'
 
 const NODE_MIME = 'application/x-strudel-node'
 const Ctx = createContext(null)
 
 const slotNum = (h) => Number(/^in-(\d+)$/.exec(h ?? '')?.[1] ?? -1)
+const SOURCE_TYPES = new Set(Object.entries(NODE_TYPES).filter(([, s]) => s.group === 'source').map(([k]) => k))
 
 /** Can this kind of node be dropped into the middle of a wire? It needs an input and an output. */
 const splicable = (type) => !!NODE_TYPES[type]?.inputs && type !== 'output'
@@ -402,7 +404,7 @@ function StudioNode({ id, selected }) {
                   {pattern.channels.map((c) => {
                     const wired = ctx.project.edges.some((e) => e.source === id && e.sourceHandle === `out-${c.id}`)
                     return (
-                      <li key={c.id} className={`chan ${c.mute ? 'muted' : ''} ${wired ? 'wired' : ''}`}>
+                      <li key={c.id} className={`chan ${c.mute ? 'muted' : ''} ${wired ? 'wired' : ''}`} data-flow={`${id}|${c.id}`}>
                         <span className="chan-name">{c.name}</span>
                         <Handle
                           type="source"
@@ -750,6 +752,20 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
   const dock = useRollDock() // the pattern's rack and notes live along the bottom
   // frame the whole patch once the nodes have been measured (fitting earlier zooms to max)
   const initialized = useNodesInitialized()
+  // what feeds what, so a hit anywhere lights its way to the output (flow.js)
+  const litPaths = useMemo(() => flowPaths(project, {
+    sourceTypes: SOURCE_TYPES,
+    splitOf: (nodeId) => new Set(project.edges
+      .filter((e) => e.source === nodeId && String(e.sourceHandle ?? '').startsWith('out-'))
+      .map((e) => e.sourceHandle.slice(4))),
+  }), [project])
+  useEffect(() => setFlowPaths(litPaths), [litPaths])
+  useEffect(() => {
+    if (!started) return undefined
+    const sch = () => transport?.scheduler
+    startFlow({ pattern: () => sch()?.pattern, now: () => sch()?.now?.(), cps: () => sch()?.cps })
+    return stopFlow
+  }, [started, transport])
   const fitted = useRef(false)
   useEffect(() => {
     if (!initialized || fitted.current) return

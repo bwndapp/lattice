@@ -253,6 +253,8 @@ function channelCode(ch, pattern, auto = null) {
   }
   expr += paramCode(ch, auto && ((key) => auto(channelTarget(pattern.id, ch.id, key))))
   if (ch.fx?.trim()) expr += ch.fx.trim().startsWith('.') ? ch.fx.trim() : `.${ch.fx.trim()}`
+  // which instrument a note came from, so the patch can light it up (flow.js)
+  expr += `.fmap((v) => ({ ...v, _c: '${ch.id}' }))`
   return `/* ${commentText(ch.name)} */ ${expr}`
 }
 
