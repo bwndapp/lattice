@@ -56,6 +56,7 @@ const APP_PARAMS = {
   drive: { prefix: '', where: 'insert', keys: { shape: 'shape', crush: 'crush' } },
   phaser: { prefix: '', where: 'insert', keys: { rate: 'rate', depth: 'depth' } },
   tremolo: { prefix: '', where: 'insert', keys: { rate: 'rate', depth: 'depth' } },
+  lofi: { prefix: '', where: 'insert', keys: { coarse: 'coarse' } },
 }
 
 export function appParam(project, target) {

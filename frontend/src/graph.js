@@ -302,7 +302,7 @@ export const NODE_TYPES = {
     group: 'effect', label: 'lo-fi', blurb: 'Lower sample rate, grittier',
     inputs: 1,
     params: [{ key: 'coarse', type: 'int', label: 'grit', min: 1, max: 32, def: 6 }],
-    code: (d, [x]) => `${x}.fmap((v) => ({ ...v, coarse: Math.max(v.coarse ?? 1, ${d.coarse}) }))`,
+    code: stereoCode('lofi', (d) => ({ coarse: d.coarse })),
   },
   sidechain: {
     group: 'effect', label: 'sidechain', blurb: 'Duck the sound every time the trigger hits (kick pumps the bass)',
@@ -501,7 +501,7 @@ function stereoCode(kind, params) {
   }
 }
 const STEREO_TYPES = new Set(['haas', 'widener', 'bus', 'eq3', 'saturator', 'clipper', 'softclip', 'compressor',
-  'filter', 'djfilter', 'level', 'drive', 'phaser', 'tremolo', 'vowel'])
+  'filter', 'djfilter', 'level', 'drive', 'phaser', 'tremolo', 'vowel', 'lofi'])
 
 /**
  * Nodes that are real audio on a bus rather than settings on each note: they work on

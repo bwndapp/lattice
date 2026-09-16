@@ -9,6 +9,56 @@
  */
 import { getAudioContext, getSuperdoughAudioController } from '@strudel/webaudio'
 
+/**
+ * Sample-and-hold, for the lo-fi insert: hold every nth sample and throw the rest away, so
+ * the bus sounds like it's running at a lower rate. It needs to see the sound sample by
+ * sample, which only a worklet can do, so it's built here as a module the audio thread loads.
+ */
+const COARSE_WORKLET = `
+class CoarseProcessor extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [{ name: 'coarse', defaultValue: 1, minValue: 1, maxValue: 64, automationRate: 'k-rate' }]
+  }
+  constructor() { super(); this.phase = 0; this.held = [] }
+  process(inputs, outputs, params) {
+    const input = inputs[0]
+    const output = outputs[0]
+    if (!output || !output.length) return true
+    if (!input || !input.length) { for (const ch of output) ch.fill(0); return true }
+    const every = Math.max(1, Math.round(params.coarse[0]))
+    for (let i = 0; i < output[0].length; i++) {
+      if (this.phase <= 0) {
+        // every channel is held together, or the stereo image tears
+        for (let c = 0; c < output.length; c++) this.held[c] = (input[Math.min(c, input.length - 1)] || [])[i] || 0
+        this.phase = every
+      }
+      this.phase--
+      for (let c = 0; c < output.length; c++) output[c][i] = this.held[c] || 0
+    }
+    return true
+  }
+}
+registerProcessor('lattice-coarse', CoarseProcessor)
+`
+let workletUrl = null
+const loaded = new WeakMap() // audio context → the promise that adds the module to it
+
+/**
+ * Make sure the audio thread has what the inserts need. Playback loads it as it goes;
+ * an offline render has to wait for it, or it renders before the module arrives.
+ */
+export function prepareInserts() {
+  const ac = getAudioContext()
+  if (!ac?.audioWorklet) return Promise.resolve()
+  if (!loaded.has(ac)) {
+    if (!workletUrl) workletUrl = URL.createObjectURL(new Blob([COARSE_WORKLET], { type: 'text/javascript' }))
+    loaded.set(ac, ac.audioWorklet.addModule(workletUrl).catch((err) => {
+      console.warn('[stereo] could not load the lo-fi worklet', err)
+    }))
+  }
+  return loaded.get(ac)
+}
+
 /** First orbit handed to stereo inserts (sidechains use 2 and up; Strudel's default is 1). */
 export const STEREO_ORBIT_BASE = 40
 
@@ -283,6 +333,41 @@ const UNITS = {
         smooth(panner.pan, pan * 2 - 1)
       },
       dispose() { input.disconnect(); panner.disconnect() },
+    }
+  },
+
+  /**
+   * Lo-fi: the whole bus sampled at a lower rate. Crushing each note on its own and adding
+   * them up isn't the same sound — done together, the parts grind against each other.
+   */
+  lofi(ac) {
+    const input = new GainNode(ac, { channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' })
+    const output = new GainNode(ac, { gain: 1 })
+    input.connect(output) // straight through until the worklet is on the audio thread
+    let node = null
+    let coarse = 1
+    let gone = false
+    prepareInserts().then(() => {
+      if (gone) return // taken out of the rack while we waited
+      try {
+        node = new AudioWorkletNode(ac, 'lattice-coarse', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 2, channelCountMode: 'explicit' })
+        node.parameters.get('coarse').value = coarse
+        input.disconnect()
+        input.connect(node).connect(output)
+      } catch (err) { console.warn('[stereo] could not start the lo-fi insert', err) }
+    })
+    return {
+      input,
+      output,
+      set(params) {
+        coarse = Math.min(64, Math.max(1, Math.round(Number(params.coarse) || 1)))
+        if (node) node.parameters.get('coarse').value = coarse
+      },
+      dispose() {
+        gone = true
+        for (const audio of [input, output, node]) audio?.disconnect()
+        node = null
+      },
     }
   },
 

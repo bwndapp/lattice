@@ -19,7 +19,7 @@ import { registerMp3Encoder } from '@mediabunny/mp3-encoder'
 import { generateCode } from './project'
 import { activeAutos, appParam, autoValueFn } from './automation.js'
 import { routeVoice, setFxParams, silenceFx } from './fxbus.js'
-import { setInsertParams } from './stereo.js'
+import { prepareInserts, setInsertParams } from './stereo.js'
 import { ensureAudio, forgetAudio } from './audio'
 
 let mp3Ready = false
@@ -97,6 +97,7 @@ export async function renderProject(project, { from = 0, to = 4, tail = 2, sampl
   getSuperdoughAudioController() // built for the offline context
   silenceFx() // effects belong to the context they were built in
   await initAudio({})
+  await prepareInserts() // the offline render can't wait for the worklet by itself
 
   onStage?.(`${haps.length} notes`)
   let failed = 0
