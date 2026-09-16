@@ -23,6 +23,9 @@ const Ctx = createContext(null)
 const slotNum = (h) => Number(/^in-(\d+)$/.exec(h ?? '')?.[1] ?? -1)
 const SOURCE_TYPES = new Set(Object.entries(NODE_TYPES).filter(([, s]) => s.group === 'source').map(([k]) => k))
 
+const FLOW_KEY = 'strudel.flow'
+const flowWanted = () => { try { return localStorage.getItem(FLOW_KEY) !== 'off' } catch { return true } }
+
 /** Can this kind of node be dropped into the middle of a wire? It needs an input and an output. */
 const splicable = (type) => !!NODE_TYPES[type]?.inputs && type !== 'output'
 const firstInput = (type) => (NODE_TYPES[type]?.inputs === 1 ? 'in' : 'in-0')
@@ -777,12 +780,13 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
     return map
   }, [project, litPaths])
   useEffect(() => setFlowPaths(litPaths, litColors), [litPaths, litColors])
+  const [lighting, setLighting] = useState(flowWanted)
   useEffect(() => {
-    if (!started) return undefined
+    if (!started || !lighting) return undefined
     const sch = () => transport?.scheduler
     startFlow({ pattern: () => sch()?.pattern, now: () => sch()?.now?.(), cps: () => sch()?.cps })
     return stopFlow
-  }, [started, transport])
+  }, [started, lighting, transport])
   const fitted = useRef(false)
   useEffect(() => {
     if (!initialized || fitted.current) return
@@ -1063,7 +1067,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
       <div className="graph" ref={wrapRef}>
         <Palette onAdd={(type, pos, instrument) => addNode(type, pos, instrument)} />
         <div
-          className="graph-canvas"
+          className={`graph-canvas ${lighting ? '' : 'flow-off'}`}
           onDragOver={(e) => {
             if (!e.dataTransfer.types.includes(NODE_MIME) && !e.dataTransfer.types.includes(INSTRUMENT_MIME)) return
             e.preventDefault()
@@ -1088,6 +1092,19 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
             addNode(type || 'pattern', at, instrument || null, wire)
           }}
         >
+          <button
+            type="button"
+            className={`flow-toggle nodrag ${lighting ? 'on' : ''}`}
+            aria-pressed={lighting}
+            title={lighting ? 'Stop lighting the patch as it plays' : 'Light the patch as it plays'}
+            onClick={() => setLighting((was) => {
+              try { localStorage.setItem(FLOW_KEY, was ? 'off' : 'on') } catch { /* storage unavailable */ }
+              return !was
+            })}
+          >
+            <span className="flow-dot" aria-hidden />
+            flow
+          </button>
           <ReactFlow
             nodes={nodes}
             edges={edges}

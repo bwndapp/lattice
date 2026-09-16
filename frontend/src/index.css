@@ -784,9 +784,23 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
   font-family: var(--mono);
 }
 .graph-canvas .react-flow__attribution a { color: #5d5d56; }
+.flow-toggle {
+  position: absolute; top: 8px; left: 8px; z-index: 5;
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  font: inherit; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--muted); background: rgb(24 24 21 / 0.82); border: 1px solid var(--line);
+  padding: 0.18rem 0.45rem 0.18rem 0.35rem; cursor: var(--ring); backdrop-filter: blur(6px);
+}
+.flow-toggle:hover { color: var(--paper); border-color: var(--muted); }
+.flow-toggle.on { color: var(--paper); border-color: color-mix(in srgb, var(--acid) 45%, var(--line)); }
+.flow-dot { width: 6px; height: 6px; border-radius: 50%; background: #3f3f38; }
+.flow-toggle.on .flow-dot { background: var(--acid); box-shadow: 0 0 6px rgb(228 255 26 / 0.8); }
+
 /* signal flow: a hit lights its source and every wire that carries it onward (flow.js) */
 @property --lit { syntax: '<number>'; inherits: true; initial-value: 0; }
 .graph-canvas .react-flow__edge.animated .react-flow__edge-path { stroke: #4a4a42; }
+/* with the lighting off, a playing patch looks as it used to: every wire live */
+.graph-canvas.flow-off .react-flow__edge.animated .react-flow__edge-path { stroke: var(--acid); }
 .graph-canvas .react-flow__edge[style*="--lit"] .react-flow__edge-path {
   stroke: color-mix(in srgb, var(--glow, var(--acid)) calc(var(--lit) * 100%), #4a4a42);
   stroke-width: calc(1.5px + var(--lit) * 1.8px);
