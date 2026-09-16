@@ -93,6 +93,10 @@ function play(value, duration) {
 }
 
 let audioReady = null
+/** After an export: the context it used is gone, so the engine starts again on the next play. */
+export function forgetAudio() {
+  audioReady = null
+}
 /** Start the audio engine (context + effect worklets) once; safe to call from any gesture. */
 export function ensureAudio() {
   if (!audioReady) audioReady = initAudio().catch(() => {})

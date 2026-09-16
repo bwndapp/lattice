@@ -19,6 +19,7 @@ import { Glass } from './Glass.jsx'
 import { AutomationEditor } from './Automation.jsx'
 import { routeVoice } from './fxbus.js'
 import Versions from './Versions.jsx'
+import ExportDialog from './ExportDialog.jsx'
 import ProgramMenu from './ProgramMenu.jsx'
 import DetailDock, { readDockHeight } from './DetailDock.jsx'
 import { RollContext } from './rollDock.js'
@@ -412,6 +413,7 @@ export default function App() {
   // ── automation: right-click a knob → a curve on the timeline (see automation.js) ──
   const [autoEditing, setAutoEditing] = useState(null) // { id, x, y }
   const [showVersions, setShowVersions] = useState(false)
+  const [showExport, setShowExport] = useState(false)
   // the piano roll, docked along the bottom: { patternId, channelId }
   const [browseView, setBrowseView] = useState('explore') // which list the browse page shows
   const userRef = useRef(null)
@@ -941,6 +943,7 @@ export default function App() {
         isOwner && { label: 'save as a new track', shortcut: 'ctrl/cmd shift S', onSelect: () => saveAsNew(), disabled: busy, hint: 'This track stays as it was saved' },
         !canEdit && track && { label: 'remix into your tracks', onSelect: () => remix(), disabled: busy },
         isOwner && { label: 'earlier saves…', onSelect: () => setShowVersions(true), hint: 'Each time you save, the one before is kept here' },
+        project && { label: 'export…', onSelect: () => { stop(); setShowExport(true) }, hint: 'Bounce it to a WAV or MP3' },
         codeChanged && track && !isOwner && { label: 'undo my changes', onSelect: () => revert() },
         track && 'line',
         track && { label: 'copy link', onSelect: () => share() },
@@ -1113,6 +1116,15 @@ export default function App() {
         </span>
       </header>
 
+      {showExport && project && (
+        <ExportDialog
+          project={project}
+          title={title || track?.title || 'track'}
+          transport={transport}
+          onFlash={flash}
+          onClose={() => setShowExport(false)}
+        />
+      )}
       {showVersions && track?.is_owner && (
         <Versions
           trackId={track.id}
