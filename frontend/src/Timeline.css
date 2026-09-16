@@ -189,6 +189,10 @@
 .song-head { position: absolute; left: 0; bottom: 0; z-index: 2; width: 0; height: 100%; pointer-events: none; will-change: transform; }
 .song-head::before { content: ''; position: absolute; left: -5px; bottom: 4px; width: 10px; height: 10px; background: var(--acid); border-radius: 3px 3px 3px 0; transform: rotate(-45deg); }
 .song-head::after { content: ''; position: absolute; left: -1px; top: 0; bottom: 0; width: 2px; background: var(--acid); }
+/* the spot the playhead was put on, left behind once the song has run past it */
+.song-cue { position: absolute; bottom: 0; z-index: 1; width: 0; height: 100%; pointer-events: none; }
+.song-cue::before { content: ''; position: absolute; left: -4px; bottom: 4px; width: 8px; height: 8px; border: 1px solid var(--muted); border-radius: 2px 2px 2px 0; transform: rotate(-45deg); }
+.song-cue::after { content: ''; position: absolute; left: -1px; top: 0; bottom: 0; width: 1px; background: var(--muted); opacity: 0.5; }
 .song-end { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed rgba(242, 240, 230, 0.45); pointer-events: none; }
 
 .song-lanes {

@@ -598,7 +598,8 @@ export default function App() {
   const stop = useCallback(() => {
     editorRef.current?.stop()
     silenceNow()
-  }, [])
+    transport.toCue() // back to wherever the playhead was put
+  }, [transport])
   /** Pause: stop, and resume from here next time. */
   const pause = useCallback(() => {
     const at = transport.position()

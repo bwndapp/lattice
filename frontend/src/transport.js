@@ -18,7 +18,8 @@ export function createTransport() {
     scheduler: null,
     raw: null, // the pattern as evaluated, in song time
     k: 0,
-    start: 0, // where playback begins (the cue), in cycles
+    start: 0, // where playback begins next, in cycles
+    cue: 0, // the spot you put the playhead on: stop comes back here
     loop: { on: false, from: 0, to: 4 },
     beats: 4, // beats per bar, for display, snapping and BPM
 
@@ -74,7 +75,10 @@ export function createTransport() {
         t.aim(p, t.scheduler.now())
         t.apply()
       } else {
+        // putting the playhead somewhere while stopped marks the spot: play starts there,
+        // and stop comes back to it however far the song has run since
         t.start = p
+        t.cue = p
       }
       t.emit()
     },
@@ -98,9 +102,15 @@ export function createTransport() {
       t.emit()
     },
 
-    /** Stop and remember where we were, so play resumes there. */
+    /** Stop and remember where we were, so play resumes there. The cue stays put. */
     pausedAt(position) {
       t.start = position
+      t.emit()
+    },
+
+    /** Stop: back to the spot the playhead was put on. */
+    toCue() {
+      t.start = t.cue
       t.emit()
     },
 
