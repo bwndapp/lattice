@@ -20,6 +20,8 @@ import { AutomationEditor } from './Automation.jsx'
 import { routeVoice } from './fxbus.js'
 import Versions from './Versions.jsx'
 import ProgramMenu from './ProgramMenu.jsx'
+import RollDock from './RollDock.jsx'
+import { RollContext } from './rollDock.js'
 import { AutomationContext, autoLive } from './autoLive.js'
 import { AUTO_PREFIX, activeAutos, appParam, autoValueFn, resolveTarget, toPos } from './automation.js'
 import { setFxParams } from './fxbus.js'
@@ -410,9 +412,17 @@ export default function App() {
   const [autoEditing, setAutoEditing] = useState(null) // { id, x, y }
   const [draftNotice, setDraftNotice] = useState(null) // { id, savedAt }: this track opened with unsaved changes
   const [showVersions, setShowVersions] = useState(false)
+  // the piano roll, docked along the bottom: { patternId, channelId }
+  const [roll, setRoll] = useState(null)
+  const rollDock = useMemo(() => ({
+    at: roll,
+    open: (patternId, channelId) => setRoll({ patternId, channelId }),
+    close: () => setRoll(null),
+  }), [roll])
   const [askSave, setAskSave] = useState(null) // why a save should ask first
   const [askNew, setAskNew] = useState(null) // the template a new track would start from
   const closeAutoEditor = useCallback(() => setAutoEditing(null), [])
+  const closeRoll = useCallback(() => setRoll(null), [])
   const automation = useMemo(() => {
     const autos = project?.song?.autos ?? []
     const byTarget = new Map(autos.map((a) => [a.target, a]))
@@ -1117,6 +1127,7 @@ export default function App() {
         />
       )}
       <AutomationContext.Provider value={project ? automation : null}>
+      <RollContext.Provider value={rollDock}>
       <div className="body">
         <main className="main">
           {view === 'browse' && (
@@ -1228,6 +1239,16 @@ export default function App() {
           </section>
         </main>
       </div>
+      {roll && project && (
+        <RollDock
+          project={project}
+          at={roll}
+          transport={transport}
+          onUpdateProject={updateProject}
+          onPick={(channelId) => setRoll((r) => ({ ...r, channelId }))}
+          onClose={closeRoll}
+        />
+      )}
 
       {autoEditing && project && (
         <AutomationEditor
@@ -1242,6 +1263,7 @@ export default function App() {
           onClose={closeAutoEditor}
         />
       )}
+      </RollContext.Provider>
       </AutomationContext.Provider>
 
       {toast && (

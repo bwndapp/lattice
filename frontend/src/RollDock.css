@@ -1,0 +1,40 @@
+/* the piano roll docked along the bottom of the app (see RollDock.jsx) */
+.roll-dock {
+  position: relative;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 160px;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -12px 28px rgba(0, 0, 0, 0.5);
+}
+/* the top edge drags the dock taller or shorter */
+.rd-grip { position: absolute; top: -4px; left: 0; right: 0; height: 9px; cursor: ns-resize; touch-action: none; z-index: 2; }
+.rd-grip:hover { background: linear-gradient(to bottom, transparent 3px, rgba(228, 255, 26, 0.5) 3px 6px, transparent 6px); }
+
+.rd-head { display: flex; align-items: center; gap: 0.6rem; padding: 0.35rem 0.7rem; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.rd-what { display: flex; align-items: baseline; gap: 0.45rem; min-width: 0; }
+.rd-pattern { font-family: var(--display); font-weight: 800; font-stretch: 112%; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rd-note { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.rd-tabs { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid #2e2e2a; border-radius: 999px; background: #121210; max-width: min(50vw, 40rem); overflow-x: auto; }
+.rd-tab {
+  font: inherit; font-size: 11px; white-space: nowrap;
+  padding: 0.18rem 0.7rem; border: 0; border-radius: 999px;
+  color: var(--muted); background: none; cursor: var(--ring);
+}
+.rd-tab:hover { color: var(--paper); }
+.rd-tab.on { color: var(--ink); background: var(--paper); }
+.rd-spacer { flex: 1; }
+.roll-dock .node-btn { color: var(--paper); border-color: var(--line); opacity: 1; }
+.roll-dock .node-btn:hover { border-color: var(--acid); color: var(--acid); }
+
+/* the roll itself fills what's left of the dock */
+.roll-dock .pr { flex: 1; min-height: 0; display: flex; }
+.roll-dock .pr-panel { flex: 1; min-height: 0; border: 0; }
+.roll-dock .piano-roll { flex: 1; height: auto; min-height: 0; resize: none; }
+
+@media (max-width: 860px) {
+  .rd-tabs { max-width: 100%; }
+  .rd-note { display: none; }
+}

@@ -7,7 +7,7 @@ import { previewInPatch } from './audio'
 import Knob from './Knob.jsx'
 import { channelTarget } from './automation.js'
 import SoundPicker from './SoundPicker.jsx'
-import PianoRoll from './PianoRoll.jsx'
+import { useRollDock } from './rollDock.js'
 
 const mod = (a, n) => ((a % n) + n) % n
 const GAIN = PARAMS.find((p) => p.key === 'gain')
@@ -111,7 +111,7 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
   const [dropping, setDropping] = useState(false)
   const [picker, setPicker] = useState(null) // { channelId, x, y }
   const [openFx, setOpenFx] = useState(() => new Set())
-  const [openRoll, setOpenRoll] = useState(() => new Set())
+  const dock = useRollDock() // the piano roll lives along the bottom of the app
 
   const toggle = (setter, id) => setter((s) => { const next = new Set(s); next.has(id) ? next.delete(id) : next.add(id); return next })
   const update = (fn) => onUpdateProject((p) => {
@@ -126,7 +126,7 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
   const addInstrument = (key) => {
     const ch = instrumentChannel(key, pattern)
     update((pat) => { pat.channels.push({ ...ch, name: instrumentChannel(key, pat).name }) })
-    if (ch.kind === 'synth') setOpenRoll((s) => new Set(s).add(ch.id))
+    if (ch.kind === 'synth') dock?.open(pattern.id, ch.id)
     if (!started) previewInPatch(project, pattern.id, ch)
   }
   const setStep = (ch, i, value) => {
@@ -188,7 +188,7 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
       )}
       {pattern.channels.map((ch) => {
         const fxOpen = openFx.has(ch.id)
-        const rollOpen = ch.kind === 'synth' && openRoll.has(ch.id)
+        const rollOpen = ch.kind === 'synth' && dock?.at?.patternId === pattern.id && dock?.at?.channelId === ch.id
         const tweaked = paramsFor(ch.kind).filter((d) => d.key !== 'gain' && paramValue(ch, d.key) !== d.def).length + (ch.fx?.trim() ? 1 : 0)
         return (
           <div key={ch.id} className={`ch ${ch.mute ? 'muted' : ''} ch-${ch.kind}`}>
@@ -229,7 +229,7 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
                 onCommit={(v) => updateChannel(ch.id, (c) => { c.code = v })}
               />
             ) : ch.kind === 'synth' ? (
-              <MiniRoll channel={ch} total={n} open={rollOpen} onToggle={() => toggle(setOpenRoll, ch.id)} />
+              <MiniRoll channel={ch} total={n} open={rollOpen} onToggle={() => (rollOpen ? dock?.close() : dock?.open(pattern.id, ch.id))} />
             ) : (
               <div className="steps" role="group" aria-label={`${ch.name} steps`}>
                 {Array.from({ length: n }, (_, i) => {
@@ -263,7 +263,7 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
                 fx{tweaked ? ` ${tweaked}` : ''}
               </button>
               {ch.kind === 'synth' && (
-                <button className={`btn ch-btn ${rollOpen ? 'on' : ''}`} aria-expanded={rollOpen} onClick={() => toggle(setOpenRoll, ch.id)} title="Piano roll">notes</button>
+                <button className={`btn ch-btn ${rollOpen ? 'on' : ''}`} aria-expanded={rollOpen} onClick={() => (rollOpen ? dock?.close() : dock?.open(pattern.id, ch.id))} title="Piano roll, along the bottom of the app">notes</button>
               )}
               {!compact && (
                 <button className="btn ghost ch-btn" title="Duplicate" aria-label={`Duplicate ${ch.name}`} onClick={() => update((pat) => {
@@ -294,24 +294,6 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
               </div>
             )}
 
-            {rollOpen && (
-              <div className="ch-roll">
-                <PianoRoll
-                  channel={ch}
-                  pattern={pattern}
-                  beats={project.beats}
-                  cursorRef={exactRef}
-                  onSeek={(bars, { fine } = {}) => {
-                    // the pattern repeats, so land in the repetition that's playing now
-                    const local = mod(fine ? bars : Math.round(bars * pattern.stepsPerBar) / pattern.stepsPerBar, pattern.bars)
-                    const at = transport.position()
-                    transport.seek(Math.max(0, Math.floor(at / pattern.bars) * pattern.bars + local))
-                  }}
-                  onPreview={(midi) => previewInPatch(project, pattern.id, ch, { note: midi })}
-                  onChangeNotes={(notes) => updateChannel(ch.id, (c) => { c.notes = notes; if (notes.length) c.note = midiToNote(notes[notes.length - 1].n) })}
-                />
-              </div>
-            )}
           </div>
         )
       })}

@@ -64,7 +64,7 @@ const KEYBOARD = {
   q: 12, 2: 13, w: 14, 3: 15, e: 16, r: 17, 5: 18, t: 19, 6: 20, y: 21, 7: 22, u: 23, i: 24,
 }
 
-export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPreview, cursorRef, onSeek }) {
+export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPreview, cursorRef, onSeek, fill = false }) {
   const scrollRef = useRef(null)
   const gridRef = useRef(null)
   const keysRef = useRef(null)
@@ -633,7 +633,7 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
   const zoomLabel = zoom === null ? 'fit' : `${Math.round((colW / fitCol) * 100)}%`
 
   return (
-    <div className={`pr ${full ? 'full' : ''}`}>
+    <div className={`pr ${full ? 'full' : ''} ${fill ? 'fill' : ''}`}>
       {full && <div className="pr-backdrop" onClick={() => setFull(false)} aria-hidden />}
       <div className="pr-panel">
         <div className="pr-toolbar">
