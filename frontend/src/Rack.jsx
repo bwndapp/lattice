@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   INSTRUMENTS, INSTRUMENT_MIME, PARAMS,
   instrumentChannel, midiToNote, newId, paramValue, paramsFor, stepCount,
@@ -7,7 +7,7 @@ import { previewInPatch } from './audio'
 import Knob from './Knob.jsx'
 import { channelTarget } from './automation.js'
 import SoundPicker from './SoundPicker.jsx'
-import SynthWindow from './instruments/SynthWindow.jsx'
+import { openSynth } from './instruments/windows.js'
 import { ENGINES, engineSound } from './instruments/index.js'
 import { useRollDock } from './rollDock.js'
 
@@ -113,8 +113,6 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
   const [dropping, setDropping] = useState(false)
   const [picker, setPicker] = useState(null) // { channelId, x, y }
   const [openFx, setOpenFx] = useState(() => new Set())
-  const [synth, setSynth] = useState(null) // the instrument whose engine window is open
-  const closeSynth = useCallback(() => setSynth(null), [])
   const dock = useRollDock() // the piano roll lives along the bottom of the app
 
   const toggle = (setter, id) => setter((s) => { const next = new Set(s); next.has(id) ? next.delete(id) : next.add(id); return next })
@@ -228,7 +226,7 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
                   {ch.engine && ENGINES[ch.engine.type] ? (
                     // an engine instrument opens its own window; the caret still picks another sound
                     <span className="sound-btn engine">
-                      <button type="button" className="sound-name" onClick={() => setSynth(ch.id)} title={`Open ${ENGINES[ch.engine.type].label}`}>{ENGINES[ch.engine.type].label}</button>
+                      <button type="button" className="sound-name" onClick={() => openSynth(pattern.id, ch.id)} title={`Open ${ENGINES[ch.engine.type].label}`}>{ENGINES[ch.engine.type].label}</button>
                       <button
                         type="button"
                         className="sound-caret"
@@ -351,16 +349,13 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
                 if (c.kind === 'drum') c.bank = ''
               })
               setPicker(null)
-              setSynth(pickerChannel.id)
+              openSynth(pattern.id, pickerChannel.id)
               return
             }
             updateChannel(pickerChannel.id, (c) => { delete c.engine; c.sound = sound; if (c.kind === 'drum') c.bank = bank })
           }}
           onClose={() => setPicker(null)}
         />
-      )}
-      {synth && (
-        <SynthWindow project={project} patternId={pattern.id} channelId={synth} onUpdateProject={onUpdateProject} onClose={closeSynth} />
       )}
     </div>
   )

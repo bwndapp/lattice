@@ -22,6 +22,7 @@ import Versions from './Versions.jsx'
 import ExportDialog from './ExportDialog.jsx'
 import ProgramMenu from './ProgramMenu.jsx'
 import DetailDock, { readDockHeight } from './DetailDock.jsx'
+import SynthWindows from './instruments/SynthWindows.jsx'
 import { RollContext } from './rollDock.js'
 import { AutomationContext, autoLive } from './autoLive.js'
 import { AUTO_PREFIX, activeAutos, appParam, autoValueFn, resolveTarget, toPos } from './automation.js'
@@ -1291,6 +1292,8 @@ export default function App() {
           onClose={closeRoll}
         />
       )}
+      {/* plugin windows for the app's own instruments, floating over everything */}
+      <SynthWindows project={project} onUpdateProject={updateProject} />
 
       {autoEditing && project && (
         <AutomationEditor

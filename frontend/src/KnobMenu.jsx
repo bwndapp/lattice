@@ -46,8 +46,8 @@ export function KnobMenu({ x, y, title, items, onClose }) {
         >{item[0]}</button>
       ) : <hr key={`line${i}`} className="knob-menu-line" />))}
     </div>,
-    // a modal window (a synth's) makes everything outside it inert: the menu goes inside
-    document.querySelector('dialog[open]') ?? document.body,
+    // a modal window makes everything outside it inert: the menu goes inside
+    document.querySelector('dialog:modal') ?? document.body,
   )
 }
 

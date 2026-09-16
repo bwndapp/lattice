@@ -82,8 +82,8 @@ export default function DetailDock({ project, at, transport, started, height, on
   useEffect(() => {
     const onKey = (e) => {
       if (e.key !== 'Escape' || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return
-      if (e.target.closest?.('input:not([type=range]), textarea, select, [contenteditable="true"], dialog, .popover, .knob-menu')) return
-      if (document.querySelector('dialog[open]')) return
+      if (e.target.closest?.('input:not([type=range]), textarea, select, [contenteditable="true"], dialog, .popover, .knob-menu, .synth-window')) return
+      if (document.querySelector('dialog:modal')) return
       onClose()
     }
     window.addEventListener('keydown', onKey)
