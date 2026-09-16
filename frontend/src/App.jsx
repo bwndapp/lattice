@@ -414,11 +414,13 @@ export default function App() {
   const [showVersions, setShowVersions] = useState(false)
   // the piano roll, docked along the bottom: { patternId, channelId }
   const [roll, setRoll] = useState(null)
+  const [rollHeight, setRollHeight] = useState(360)
   const rollDock = useMemo(() => ({
     at: roll,
+    height: roll ? rollHeight : 0, // floating windows keep clear of the dock
     open: (patternId, channelId) => setRoll({ patternId, channelId }),
     close: () => setRoll(null),
-  }), [roll])
+  }), [roll, rollHeight])
   const [askSave, setAskSave] = useState(null) // why a save should ask first
   const [askNew, setAskNew] = useState(null) // the template a new track would start from
   const closeAutoEditor = useCallback(() => setAutoEditing(null), [])
@@ -1245,6 +1247,8 @@ export default function App() {
           at={roll}
           transport={transport}
           onUpdateProject={updateProject}
+          height={rollHeight}
+          onHeight={setRollHeight}
           onPick={(channelId) => setRoll((r) => ({ ...r, channelId }))}
           onClose={closeRoll}
         />

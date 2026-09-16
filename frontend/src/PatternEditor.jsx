@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { reshapePattern } from './project'
 import { PatternChannels } from './Rack.jsx'
+import { useRollDock } from './rollDock.js'
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 const SIZE_KEY = 'strudel:pattern-editor:size'
@@ -51,10 +52,16 @@ export default function PatternEditor({ project, patternId, anchor, transport, s
     const s = readSize()
     return { w: clamp(s.w, 520, window.innerWidth - 24), h: clamp(s.h, 260, window.innerHeight - 24) }
   })
+  const dockHeight = useRollDock()?.height ?? 0 // the piano roll along the bottom
+  const room = () => window.innerHeight - dockHeight // what's left above it
   const [pos, setPos] = useState(() => ({
     left: clamp(anchor.x - 40, 12, Math.max(12, window.innerWidth - size.w - 12)),
     top: clamp(anchor.y + 16, 12, Math.max(12, window.innerHeight - size.h - 12)),
   }))
+  // opening or resizing the dock lifts the window clear of it
+  useEffect(() => {
+    setPos((p) => ({ ...p, top: clamp(p.top, 12, Math.max(12, room() - Math.min(size.h, room() - 24) - 12)) }))
+  }, [dockHeight, size.h]) // eslint-disable-line react-hooks/exhaustive-deps
   const [expanded, setExpanded] = useState(false)
   const moveRef = useRef(null)
 
@@ -86,7 +93,7 @@ export default function PatternEditor({ project, patternId, anchor, transport, s
     const el = ref.current
     setPos({
       left: clamp(m.left + e.clientX - m.x, 12 - el.offsetWidth + 120, window.innerWidth - 120),
-      top: clamp(m.top + e.clientY - m.y, 0, window.innerHeight - 60),
+      top: clamp(m.top + e.clientY - m.y, 0, room() - 60),
     })
   }
 
@@ -100,7 +107,9 @@ export default function PatternEditor({ project, patternId, anchor, transport, s
       ref={ref}
       role="dialog"
       aria-label={`Edit ${pattern.name}`}
-      style={expanded ? undefined : { left: pos.left, top: pos.top, width: size.w, height: size.h }}
+      style={expanded
+        ? { bottom: `calc(3vh + ${dockHeight}px)` }
+        : { left: pos.left, top: pos.top, width: size.w, height: Math.min(size.h, room() - 24), maxHeight: room() - 24 }}
     >
       <div
         className="pop-head"

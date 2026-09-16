@@ -17,8 +17,9 @@ function readHeight() {
  * The piano roll along the bottom of the app: which instrument it shows is a tab in its
  * header, the canvas above shrinks to make room, and its top edge drags to resize.
  */
-export default function RollDock({ project, at, transport, onUpdateProject, onPick, onClose }) {
-  const [height, setHeight] = useState(readHeight)
+export default function RollDock({ project, at, transport, onUpdateProject, height, onHeight, onPick, onClose }) {
+  const setHeight = onHeight
+  useEffect(() => { onHeight(readHeight()) }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const dragRef = useRef(null)
   const pattern = project.patterns.find((p) => p.id === at.patternId)
   const synths = pattern?.channels.filter((c) => c.kind === 'synth') ?? []
