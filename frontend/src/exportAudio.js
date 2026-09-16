@@ -49,6 +49,19 @@ export async function availableFormats() {
   return out
 }
 
+/**
+ * The generated code ends in one labelled line per lane (`out_in0: …`), which the player
+ * stacks together; a plain evaluate would keep only the last one. This stacks them here,
+ * leaving out the muted lanes (their labels start with an underscore).
+ */
+export function stackLanes(code) {
+  const lanes = [...code.matchAll(/^([A-Za-z_$][\w$]*): (.+)$/gm)]
+  if (!lanes.length) return code
+  const heard = lanes.filter(([, name]) => !name.startsWith('_')).map(([, , expr]) => expr.trim())
+  const body = code.replace(/^[A-Za-z_$][\w$]*: .+$/gm, '')
+  return `${body}\nstack(${heard.length ? heard.join(', ') : 'silence'})`
+}
+
 /** What a note's value looks like to the engine (the same as playback sends). */
 const hapValue = (hap) => { hap.ensureObjectValue(); return hap.value }
 
@@ -64,7 +77,7 @@ export async function renderProject(project, { from = 0, to = 4, tail = 2, sampl
   if (!(seconds > 0)) throw new Error('nothing to render')
 
   onStage?.('working out the notes')
-  const { pattern } = await evaluate(generateCode(project), transpiler)
+  const { pattern } = await evaluate(stackLanes(generateCode(project)), transpiler)
   if (!pattern?.queryArc) throw new Error("the track's code didn't make a pattern")
   const haps = pattern.queryArc(from, to, { _cps: cps })
     .filter((h) => h.hasOnset())
