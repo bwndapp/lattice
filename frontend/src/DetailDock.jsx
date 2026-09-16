@@ -10,6 +10,17 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 const HEIGHT_KEY = 'strudel:roll:dock-height'
 const mod = (a, n) => ((a % n) + n) % n
 
+/**
+ * The computer keyboard as two octaves of piano, as trackers and DAWs lay them out:
+ * z s x d c v g b h n j m , is one octave from C, q 2 w 3 e r 5 t 6 y 7 u is the next.
+ */
+const KEYBOARD = {
+  z: 0, s: 1, x: 2, d: 3, c: 4, v: 5, g: 6, b: 7, h: 8, n: 9, j: 10, m: 11, ',': 12, l: 13, '.': 14,
+  q: 12, 2: 13, w: 14, 3: 15, e: 16, r: 17, 5: 18, t: 19, 6: 20, y: 21, 7: 22, u: 23, i: 24,
+}
+const LOW = 24
+const HIGH = 96
+
 const KEYS_KEY = 'strudel:roll:keys'
 const OCTAVE_KEY = 'strudel:roll:octave'
 const readPref = (key, fallback) => { try { const v = JSON.parse(localStorage.getItem(key)); return v ?? fallback } catch { return fallback } }
@@ -42,6 +53,29 @@ export default function DetailDock({ project, at, transport, started, height, on
 
   const cursorRef = useRef(() => -1)
   cursorRef.current = () => (pattern ? exactStepAt(project, pattern, transport.position()) : -1)
+
+  // While the notes tab is open with keys on, typing plays the instrument wherever you are
+  // in the app — no need to click into the roll first. Text fields keep their letters.
+  const playing = useRef(null)
+  playing.current = { project, pattern, channel, octave }
+  useEffect(() => {
+    if (tab !== 'notes' || !keysOn || !channel) return
+    const onKey = (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      if (e.target.closest?.('input:not([type=range]), textarea, select, [contenteditable="true"]')) return
+      const k = e.key.toLowerCase()
+      const at = playing.current
+      if (k === '-' || k === '_' || k === '[') { e.preventDefault(); return shiftOctave(at.octave - 1) }
+      if (k === '=' || k === '+' || k === ']') { e.preventDefault(); return shiftOctave(at.octave + 1) }
+      const semitone = KEYBOARD[k]
+      if (semitone === undefined) return
+      e.preventDefault()
+      e.stopPropagation() // the letters belong to the keyboard while it's on
+      if (!e.repeat) previewInPatch(at.project, at.pattern.id, at.channel, { note: clamp((at.octave + 1) * 12 + semitone, LOW, HIGH) })
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [tab, keysOn, channel]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!pattern) return null
 
@@ -91,7 +125,7 @@ export default function DetailDock({ project, at, transport, started, height, on
               className={`dd-keys-on ${keysOn ? 'on' : ''}`}
               aria-pressed={keysOn}
               onClick={() => setKeysOn((v) => !v)}
-              title={'Play this instrument from your computer keyboard: z s x d c v g b h n j m , is one octave, q 2 w 3 e r 5 t 6 y 7 u the next'}
+              title={'Play this instrument by typing, wherever you are in the app: z s x d c v g b h n j m , is one octave, q 2 w 3 e r 5 t 6 y 7 u the next. While it\'s on, those letters play notes instead of being shortcuts.'}
             >keys</button>
             <button type="button" className="dd-oct" disabled={!keysOn || octave <= 0} onClick={() => shiftOctave(octave - 1)} title="An octave down (− or [)" aria-label="An octave down">−</button>
             <span className={`dd-oct-at ${keysOn ? '' : 'off'}`} title="The octave z and q play">C{octave}–C{Math.min(8, octave + 2)}</span>
@@ -131,9 +165,6 @@ export default function DetailDock({ project, at, transport, started, height, on
           beats={project.beats}
           cursorRef={cursorRef}
           fill
-          keysOn={keysOn}
-          octave={octave}
-          onOctave={shiftOctave}
           onSeek={(bars, { fine } = {}) => {
             // the pattern repeats, so land in the repetition that's playing now
             const local = mod(fine ? bars : Math.round(bars * pattern.stepsPerBar) / pattern.stepsPerBar, pattern.bars)

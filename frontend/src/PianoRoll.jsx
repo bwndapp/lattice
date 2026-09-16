@@ -55,16 +55,7 @@ function fitCanvas(canvas, w, h, { keepCss = false } = {}) {
  * shows every bar with a draggable view box, middle-drag or alt + drag pans, follow keeps the playhead
  * in view, and the roll can be dragged taller or opened full screen.
  */
-/**
- * The computer keyboard as two octaves of piano, as trackers and DAWs lay them out:
- * z s x d c v g b h n j m , is one octave from C, q 2 w 3 e r 5 t 6 y 7 u is the next.
- */
-const KEYBOARD = {
-  z: 0, s: 1, x: 2, d: 3, c: 4, v: 5, g: 6, b: 7, h: 8, n: 9, j: 10, m: 11, ',': 12, l: 13, '.': 14,
-  q: 12, 2: 13, w: 14, 3: 15, e: 16, r: 17, 5: 18, t: 19, 6: 20, y: 21, 7: 22, u: 23, i: 24,
-}
-
-export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPreview, cursorRef, onSeek, fill = false, keysOn = false, octave = 4, onOctave }) {
+export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPreview, cursorRef, onSeek, fill = false }) {
   const scrollRef = useRef(null)
   const gridRef = useRef(null)
   const keysRef = useRef(null)
@@ -547,17 +538,6 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
     const k = e.key.toLowerCase()
     const done = () => { e.preventDefault(); e.stopPropagation() } // keep keys away from the patch canvas behind
     if (k === 'f' && !mod) { done(); return setFull((v) => !v) }
-    // the keyboard plays the instrument: two octaves from the one shown, - and = move it
-    if (keysOn && !mod && !e.altKey) {
-      if (k === '-' || k === '_' || k === '[') { done(); return onOctave?.(octave - 1) }
-      if (k === '=' || k === '+' || k === ']') { done(); return onOctave?.(octave + 1) }
-      const semitone = KEYBOARD[k]
-      if (semitone !== undefined) {
-        done()
-        if (!e.repeat) onPreview(clamp((octave + 1) * 12 + semitone, LOW, HIGH))
-        return
-      }
-    }
     if (mod && k === 'a') { done(); return selectKeys(channel.notes) }
     if (k === 'escape' && selection.size) { done(); return setSelection(new Set()) }
 
