@@ -374,6 +374,67 @@ function curveTable(shape, k, bits = 0) {
   return table
 }
 
+/**
+ * The chorus and the flanger: on each side, delayed copies whose delay times follow one
+ * slow oscillator, mixed in with the dry sound. `voices` are the delays they swing around,
+ * by up to `sweep` seconds either way (less than the shortest, so none reaches zero); `spread` swings the right side against the left; `feedback` sends the copy back in.
+ */
+function modDelay(ac, { voices, sweep, spread, feedback }) {
+  const input = new GainNode(ac, { channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' })
+  const split = new ChannelSplitterNode(ac, { numberOfOutputs: 2 })
+  const merge = new ChannelMergerNode(ac, { numberOfInputs: 2 })
+  const output = new GainNode(ac, { gain: 1 })
+  const dry = new GainNode(ac, { gain: 1 })
+  const lfo = new OscillatorNode(ac, { type: 'sine', frequency: 0.5 })
+  const all = [input, split, merge, output, dry, lfo]
+  input.connect(dry).connect(output)
+  input.connect(split)
+  merge.connect(output)
+  const swings = []
+  const fbs = []
+  const wets = []
+  for (const side of [0, 1]) {
+    const wet = new GainNode(ac, { gain: 0.5 / voices.length })
+    wet.connect(merge, 0, side)
+    wets.push(wet)
+    voices.forEach((base, v) => {
+      const delay = new DelayNode(ac, { maxDelayTime: 0.05, delayTime: base })
+      // each voice, and the right side, swings the other way to the one before
+      const swing = new GainNode(ac, { gain: 0 })
+      swing.sign = (spread && side ? -1 : 1) * (v % 2 ? -1 : 1)
+      split.connect(delay, side)
+      lfo.connect(swing).connect(delay.delayTime)
+      delay.connect(wet)
+      swings.push(swing)
+      all.push(delay, swing)
+      if (feedback) {
+        const fb = new GainNode(ac, { gain: 0 })
+        delay.connect(fb).connect(delay)
+        fbs.push(fb)
+        all.push(fb)
+      }
+    })
+    all.push(wet)
+  }
+  lfo.start()
+  return {
+    input,
+    output,
+    set({ rate, depth, mix, feedback: amount }) {
+      const d = Math.min(1, Math.max(0, Number(depth) || 0))
+      const m = Math.min(1, Math.max(0, Number.isFinite(Number(mix)) ? Number(mix) : 0.5))
+      smooth(lfo.frequency, Math.min(20, Math.max(0.02, Number(rate) || 0.5)))
+      for (const s of swings) smooth(s.gain, s.sign * d * sweep)
+      const f = Math.min(0.95, Math.max(-0.95, Number(amount) || 0))
+      for (const fb of fbs) smooth(fb.gain, f)
+      // feedback piles up level, so the copy comes down to match
+      for (const wet of wets) smooth(wet.gain, (m * (1 - Math.abs(f) * 0.5)) / voices.length)
+      smooth(dry.gain, 1 - m * 0.5)
+    },
+    dispose() { try { lfo.stop() } catch { /* already stopped */ } for (const node of all) node.disconnect() },
+  }
+}
+
 const UNITS = {
   /**
    * Three-band EQ on the summed sound: a shelf at each end and a bell in the middle, the
@@ -541,6 +602,23 @@ const UNITS = {
       },
       dispose() { try { lfo.stop() } catch { /* already stopped */ } for (const node of [input, output, wet, lfo, sweep, ...stages]) node.disconnect() },
     }
+  },
+
+  /**
+   * Copies of the sound a few milliseconds late, their delay wobbling slowly: slightly out
+   * of tune with the dry sound, like several players at once. The two sides wobble in
+   * opposite directions, so it spreads wide.
+   */
+  chorus(ac) {
+    return modDelay(ac, { voices: [0.012, 0.019], sweep: 0.004, spread: true, feedback: false })
+  },
+
+  /**
+   * One very short delay swept up and down and fed back into itself: the comb it makes
+   * glides through the sound, the jet-plane whoosh.
+   */
+  flanger(ac) {
+    return modDelay(ac, { voices: [0.0035], sweep: 0.003, spread: false, feedback: true })
   },
 
   /** Three formant peaks, so the bus sounds like it says a vowel. */

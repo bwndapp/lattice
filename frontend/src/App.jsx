@@ -1069,6 +1069,12 @@ export default function App() {
           <button className={`cs-opt ${(switching ?? view) === 'song' ? 'on' : ''}`} aria-pressed={view === 'song'} onClick={() => switchCanvas('song')} title="The timeline: when each part plays" disabled={!project}>timeline</button>
           <button className={`cs-opt ${(switching ?? view) === 'graph' ? 'on' : ''}`} aria-pressed={view === 'graph'} onClick={() => switchCanvas('graph')} title="The patch: what each part goes through">patch</button>
         </span>
+        <button
+          className="btn bar-export"
+          onClick={() => setShowExport(true)}
+          disabled={!project}
+          title="Bounce the track to a file: wav, mp3 or m4a"
+        >export</button>
         <div className="bar-side right">
         <span className="track" role="group" aria-label="Track">
           {loadError ? (

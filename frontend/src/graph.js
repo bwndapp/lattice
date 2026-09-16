@@ -283,6 +283,27 @@ export const NODE_TYPES = {
     ],
     code: stereoCode('phaser', (d) => ({ rate: d.rate, depth: d.depth })),
   },
+  chorus: {
+    group: 'effect', label: 'chorus', blurb: 'Thicker and wider, like several players at once',
+    inputs: 1,
+    params: [
+      { key: 'rate', type: 'knob', label: 'rate', min: 0.05, max: 5, def: 0.8, log: true },
+      { key: 'depth', type: 'knob', label: 'depth', min: 0, max: 1, def: 0.5 },
+      { key: 'mix', type: 'knob', label: 'amount', min: 0, max: 1, def: 0.5 },
+    ],
+    code: stereoCode('chorus', (d) => ({ rate: d.rate, depth: d.depth, mix: d.mix })),
+  },
+  flanger: {
+    group: 'effect', label: 'flanger', blurb: 'A metallic whoosh that sweeps up and down, like a jet',
+    inputs: 1,
+    params: [
+      { key: 'rate', type: 'knob', label: 'rate', min: 0.02, max: 10, def: 0.25, log: true },
+      { key: 'depth', type: 'knob', label: 'depth', min: 0, max: 1, def: 0.8 },
+      { key: 'feedback', type: 'knob', label: 'feedback', min: -0.95, max: 0.95, def: 0.6, unit: 'bi', origin: 0 },
+      { key: 'mix', type: 'knob', label: 'amount', min: 0, max: 1, def: 0.5 },
+    ],
+    code: stereoCode('flanger', (d) => ({ rate: d.rate, depth: d.depth, feedback: d.feedback, mix: d.mix })),
+  },
   tremolo: {
     group: 'effect', label: 'tremolo', blurb: 'Volume that pulses',
     inputs: 1,
@@ -512,7 +533,7 @@ function stereoCode(kind, params) {
   }
 }
 const STEREO_TYPES = new Set(['haas', 'widener', 'bus', 'eq3', 'saturator', 'clipper', 'softclip', 'compressor', 'limiter',
-  'filter', 'djfilter', 'level', 'drive', 'phaser', 'tremolo', 'vowel', 'lofi'])
+  'filter', 'djfilter', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi'])
 
 /**
  * Nodes that are real audio on a bus rather than settings on each note: they work on
@@ -522,7 +543,7 @@ const STEREO_TYPES = new Set(['haas', 'widener', 'bus', 'eq3', 'saturator', 'cli
 export const BUS_NODES = new Set([...STEREO_TYPES, 'reverb', 'delay'])
 
 /** Effects that can sit inside an fx rack: every plain effect node. */
-export const FX_UNITS = ['eq3', 'compressor', 'limiter', 'saturator', 'clipper', 'softclip', 'punch', 'haas', 'widener', 'filter', 'djfilter', 'reverb', 'delay', 'space', 'level', 'drive', 'phaser', 'tremolo', 'vowel', 'lofi']
+export const FX_UNITS = ['eq3', 'compressor', 'limiter', 'saturator', 'clipper', 'softclip', 'punch', 'haas', 'widener', 'filter', 'djfilter', 'reverb', 'delay', 'space', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi']
 
 /** Saturator characters → Strudel's waveshaping curves. */
 const SATURATION = { warm: 'scurve', tape: 'soft', tube: 'diode', asym: 'asym', harmonics: 'chebyshev', fold: 'fold' }

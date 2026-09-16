@@ -56,6 +56,8 @@ const APP_PARAMS = {
   level: { prefix: '', where: 'insert', keys: { gain: 'gain', pan: 'pan' } },
   drive: { prefix: '', where: 'insert', keys: { shape: 'shape', crush: 'crush' } },
   phaser: { prefix: '', where: 'insert', keys: { rate: 'rate', depth: 'depth' } },
+  chorus: { prefix: '', where: 'insert', keys: { rate: 'rate', depth: 'depth', mix: 'mix' } },
+  flanger: { prefix: '', where: 'insert', keys: { rate: 'rate', depth: 'depth', feedback: 'feedback', mix: 'mix' } },
   tremolo: { prefix: '', where: 'insert', keys: { rate: 'rate', depth: 'depth' } },
   lofi: { prefix: '', where: 'insert', keys: { coarse: 'coarse' } },
 }

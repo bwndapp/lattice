@@ -593,6 +593,8 @@ const SEARCH_WORDS = {
   level: 'volume gain pan loudness mix quiet loud',
   drive: 'distortion saturation crush bitcrush overdrive dirt',
   phaser: 'modulation swirl sweep jet',
+  chorus: 'modulation chorus ensemble thick thicken wide width doubler detune lush pad lfo',
+  flanger: 'modulation flange flanging jet whoosh sweep comb metallic feedback lfo',
   tremolo: 'modulation volume pulse lfo wobble',
   vowel: 'formant voice talk mouth',
   lofi: 'coarse bitcrush downsample grit crush retro',
