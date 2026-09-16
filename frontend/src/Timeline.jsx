@@ -196,7 +196,8 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       if (started) {
         const box = scrollRef.current
         const x = pos * ppb
-        if (box && !dragRef.current && !scrubbing.current && (x < box.scrollLeft || x > box.scrollLeft + box.clientWidth - 40)) box.scrollLeft = Math.max(0, x - 80)
+        // the row headers sit over the left of the view, so the bars start past them
+        if (box && !dragRef.current && !scrubbing.current && (x < box.scrollLeft || x + HEAD_W > box.scrollLeft + box.clientWidth - 40)) box.scrollLeft = Math.max(0, x - 80)
       }
     }
     show()
@@ -213,10 +214,10 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     if (!box) return setPpb(next)
     const rect = box.getBoundingClientRect()
     const anchor = anchorClientX ?? rect.left + box.clientWidth / 2
-    const barUnder = (box.scrollLeft + anchor - rect.left) / ppb
+    const barUnder = (box.scrollLeft + anchor - rect.left - HEAD_W) / ppb
     const clamped = clamp(next, MIN_PPB, MAX_PPB)
     setPpb(clamped)
-    requestAnimationFrame(() => { box.scrollLeft = Math.max(0, barUnder * clamped - (anchor - rect.left)) })
+    requestAnimationFrame(() => { box.scrollLeft = Math.max(0, barUnder * clamped - (anchor - rect.left) + HEAD_W) })
   }, [ppb])
   useEffect(() => {
     const box = scrollRef.current
@@ -309,7 +310,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       const y = e.clientY - rect.top
       panRef.current = {
         zoom: true, x: e.clientX, y: e.clientY, ppb, laneH, ax: x, ay: y,
-        bar: (box.scrollLeft + x) / ppb, lane: (box.scrollTop + y - RULER_H) / laneH,
+        bar: (box.scrollLeft + x - HEAD_W) / ppb, lane: (box.scrollTop + y - RULER_H) / laneH,
       }
       e.currentTarget.setPointerCapture(e.pointerId)
       e.currentTarget.classList.add('zooming')
@@ -401,7 +402,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       setPpb(nextPpb)
       setLaneH(nextLane)
       requestAnimationFrame(() => {
-        box.scrollLeft = Math.max(0, pan.bar * nextPpb - pan.ax)
+        box.scrollLeft = Math.max(0, pan.bar * nextPpb - pan.ax + HEAD_W)
         box.scrollTop = Math.max(0, pan.lane * nextLane + RULER_H - pan.ay)
       })
       return

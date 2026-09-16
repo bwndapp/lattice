@@ -254,7 +254,7 @@
 .song-slice::before { content: ''; position: absolute; top: -4px; left: -6px; border: 5px solid transparent; border-top-color: var(--danger); }
 
 .song-marquee { position: absolute; z-index: 4; background: rgba(228, 255, 26, 0.06); border: 1px solid rgba(228, 255, 26, 0.55); border-radius: 4px; pointer-events: none; }
-.song-playhead { position: absolute; top: 0; bottom: 0; left: 0; z-index: 6; width: 0; border-left: 2px solid var(--acid); pointer-events: none; will-change: transform; }
+.song-playhead { position: absolute; top: 0; bottom: 0; left: var(--headw, 0px); z-index: 6; width: 0; border-left: 2px solid var(--acid); pointer-events: none; will-change: transform; }
 .song-empty {
   position: absolute;
   left: 32px;
