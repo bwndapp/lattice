@@ -64,6 +64,16 @@ function fmapWith(x, ctx, d, keys, body, fmts = {}) {
   return `${x}.fmap((v) => ${args}(${body(val)}))${autos.map((k) => `.appLeft(${ctx.autoOf(k)})`).join('')}`
 }
 
+/** How a soft clip rounds off: a curve that flattens gently, a tanh, or a cubic. */
+const KNEES = { round: 'scurve', smooth: 'soft', cubic: 'cubic' }
+
+/**
+ * A clipper: push the level into the curve, then trim what comes out. There's one
+ * distortion stage per voice, so a clipper after a saturator (or another clipper) adds to
+ * what's already there rather than replacing its curve.
+ */
+const clipCode = (x, ctx, d, shape) => fmapWith(x, ctx, d, ['push', 'ceiling'], (val) => `v.distort === undefined ? { ...v, distort: ${val('push')}, distortvol: ${val('ceiling')}, distorttype: '${shape}' } : { ...v, distort: v.distort + ${val('push')}, distortvol: (v.distortvol ?? 1) * ${val('ceiling')} }`)
+
 /** Functions a transform like "every" or "sometimes" can apply. */
 export const APPLY = {
   rev: { label: 'reverse', code: 'x => x.rev()' },
@@ -381,15 +391,25 @@ export const NODE_TYPES = {
       : `${x}.distort("${tidy(d.drive)}:${tidy(d.out)}:${SATURATION[d.character] ?? 'soft'}")`),
   },
   clipper: {
-    group: 'mixing', label: 'clipper', blurb: 'Pushes the level into a hard ceiling for loud, punchy peaks',
+    group: 'mixing', label: 'hard clip', blurb: 'Cuts peaks off flat: loud, aggressive, and it bites',
     inputs: 1,
     params: [
       { key: 'push', type: 'knob', label: 'push', min: 0, max: 3, def: 0.6 },
-      { key: 'ceiling', type: 'knob', label: 'ceiling', min: 0.1, max: 1, def: 0.9 },
+      { key: 'ceiling', type: 'knob', label: 'output', min: 0.1, max: 1, def: 0.9 },
     ],
-    // Clipper and saturator share Strudel's one distortion stage: after a saturator, the
-    // clipper adds its push to it and its ceiling caps the (already bounded) output.
-    code: (d, [x], ctx) => fmapWith(x, ctx, d, ['push', 'ceiling'], (val) => `v.distort === undefined ? { ...v, distort: ${val('push')}, distortvol: ${val('ceiling')}, distorttype: 'hard' } : { ...v, distort: v.distort + ${val('push')}, distortvol: (v.distortvol ?? 1) * ${val('ceiling')} }`),
+    // The clippers and the saturator share Strudel's one distortion stage: whichever comes
+    // first sets the curve, and the ones after it add their push and trim the output.
+    code: (d, [x], ctx) => clipCode(x, ctx, d, 'hard'),
+  },
+  softclip: {
+    group: 'mixing', label: 'soft clip', blurb: 'Rounds peaks into the ceiling instead of cutting them flat',
+    inputs: 1,
+    params: [
+      { key: 'push', type: 'knob', label: 'push', min: 0, max: 3, def: 0.5 },
+      { key: 'knee', type: 'select', label: 'knee', options: ['round', 'smooth', 'cubic'], def: 'round' },
+      { key: 'ceiling', type: 'knob', label: 'output', min: 0.1, max: 1, def: 0.95 },
+    ],
+    code: (d, [x], ctx) => clipCode(x, ctx, d, KNEES[d.knee] ?? 'scurve'),
   },
   compressor: {
     group: 'mixing', label: 'compressor', blurb: 'Evens out the level: loud parts get turned down',
@@ -530,7 +550,7 @@ function stereoCode(kind, params) {
 const STEREO_TYPES = new Set(['haas', 'widener', 'bus', 'eq3'])
 
 /** Effects that can sit inside an fx rack: every plain effect node. */
-export const FX_UNITS = ['eq3', 'compressor', 'saturator', 'clipper', 'punch', 'haas', 'widener', 'filter', 'djfilter', 'reverb', 'delay', 'space', 'level', 'drive', 'phaser', 'tremolo', 'vowel', 'lofi']
+export const FX_UNITS = ['eq3', 'compressor', 'saturator', 'clipper', 'softclip', 'punch', 'haas', 'widener', 'filter', 'djfilter', 'reverb', 'delay', 'space', 'level', 'drive', 'phaser', 'tremolo', 'vowel', 'lofi']
 
 /** Saturator characters → Strudel's waveshaping curves. */
 const SATURATION = { warm: 'scurve', tape: 'soft', tube: 'diode', asym: 'asym', harmonics: 'chebyshev', fold: 'fold' }
