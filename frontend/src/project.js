@@ -70,8 +70,12 @@ const commentText = (s) => String(s ?? '').replace(/\*\/|[\r\n]/g, ' ').slice(0,
 const num = (v, fallback, lo, hi) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : fallback)
 const tidy = (v) => String(Math.round(v * 1000) / 1000)
 
-/** The finest a note can be placed or sized: a sixty-fourth of a step. */
-export const TICK = 1 / 64
+/**
+ * The finest a note can be placed or sized: a hundred-and-ninety-second of a step. It
+ * divides by three as well as by two, so a triplet lands exactly rather than a fraction of
+ * a millisecond out, and at sixteen steps to the bar it's over three thousand places a bar.
+ */
+export const TICK = 1 / 192
 const tick = (v) => Math.round(v / TICK) * TICK
 
 export function stepCount(pattern) {

@@ -706,6 +706,9 @@ button.lcd-unit:hover { color: var(--acid); }
 .pr-toolbar { flex-shrink: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 0.35rem 0.6rem; padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--line); font-size: 11px; color: var(--muted); }
 .pr-title { font-family: var(--display); font-weight: 800; font-stretch: 112%; font-size: 12px; color: var(--paper); }
 .pr-group { display: inline-flex; align-items: center; gap: 0.15rem; }
+.pr-snap { gap: 0.3rem; }
+.pr-snap-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.pr-snap .select { font-size: 11px; padding: 0.1rem 0.3rem; }
 .pr-zoom { min-width: 3.2rem; text-align: center; color: var(--acid); font-variant-numeric: tabular-nums; }
 .pr-spacer { flex: 1; }
 .pr-hint { font-size: 10px; }

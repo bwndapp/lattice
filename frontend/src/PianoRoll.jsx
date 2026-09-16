@@ -7,6 +7,34 @@ const LOW = 24 // c1
 const HIGH = 96 // c7
 const ROWS = HIGH - LOW + 1
 const ROW_SIZES = { s: 8, m: 12, l: 18 }
+
+/**
+ * What notes snap to, as a fraction of a beat — so a quarter note is 1, an eighth is a
+ * half, and a triplet eighth is a third. `step` follows whatever the pattern is divided
+ * into; `free` is the finest the notes themselves go. Alt frees the grid whichever is set.
+ */
+const SNAPS = {
+  step: { label: 'step', beats: null },
+  bar: { label: 'bar', beats: 0 }, // a whole bar, worked out from the time signature
+  '1/2': { label: '1/2', beats: 2 },
+  '1/4': { label: '1/4', beats: 1 },
+  '1/8': { label: '1/8', beats: 0.5 },
+  '1/16': { label: '1/16', beats: 0.25 },
+  '1/32': { label: '1/32', beats: 0.125 },
+  '1/4t': { label: '1/4 triplet', beats: 2 / 3 },
+  '1/8t': { label: '1/8 triplet', beats: 1 / 3 },
+  '1/16t': { label: '1/16 triplet', beats: 1 / 6 },
+  '1/4d': { label: '1/4 dotted', beats: 1.5 },
+  '1/8d': { label: '1/8 dotted', beats: 0.75 },
+  '1/16d': { label: '1/16 dotted', beats: 0.375 },
+  free: { label: 'free', beats: -1 },
+}
+const SNAP_GROUPS = [
+  ['', ['step', 'bar', '1/2', '1/4', '1/8', '1/16', '1/32']],
+  ['triplets', ['1/4t', '1/8t', '1/16t']],
+  ['dotted', ['1/4d', '1/8d', '1/16d']],
+  ['', ['free']],
+]
 const MIN_ROW = 6
 const MAX_ROW = 36
 const MAX_CANVAS = 12000 // px; beyond this browsers start dropping canvas pixels
@@ -69,6 +97,7 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
   const [zoom, setZoom] = useState(null) // px per step; null = fit the whole pattern
   const [rowSize, setRowSize] = useState(() => readPref('strudel:roll:rows', 'm'))
   const [follow, setFollow] = useState(() => readPref('strudel:roll:follow', true))
+  const [snap, setSnap] = useState(() => (SNAPS[readPref('strudel:roll:snap', 'step')] ? readPref('strudel:roll:snap', 'step') : 'step'))
   const [full, setFull] = useState(false)
   const [draft, setDraft] = useState(null) // notes while dragging
   const [selection, setSelection] = useState(() => new Set()) // keys of selected notes
@@ -82,6 +111,12 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
 
   const total = stepCount(pattern)
   const stepsPerBeat = Math.max(1, Math.round(pattern.stepsPerBar / beats))
+  // how far apart the grid is, in steps: the pattern's own, a musical division, or nothing
+  const snapBeats = SNAPS[snap]?.beats
+  const snapSteps = snapBeats == null ? 1
+    : snapBeats < 0 ? TICK
+      : snapBeats === 0 ? pattern.stepsPerBar
+        : snapBeats * stepsPerBeat
   // a named size (s / m / l) or any height in px, from zooming the rows
   const rowH = typeof rowSize === 'number' ? clamp(Math.round(rowSize), MIN_ROW, MAX_ROW) : ROW_SIZES[rowSize] ?? 12
   const maxCol = Math.max(8, Math.floor(MAX_CANVAS / total))
@@ -91,6 +126,7 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
 
   useEffect(() => writePref('strudel:roll:rows', rowSize), [rowSize])
   useEffect(() => writePref('strudel:roll:follow', follow), [follow])
+  useEffect(() => writePref('strudel:roll:snap', snap), [snap])
 
   useEffect(() => {
     const el = scrollRef.current
@@ -236,6 +272,12 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
       ctx.globalAlpha = bar ? 0.55 : beat ? 0.9 : 0.35
       ctx.fillRect(i * colW, 0, bar ? 2 : 1, gridH)
     }
+    // the division being snapped to, when it isn't the step grid already drawn
+    if (snapBeats != null && snapBeats >= 0 && colW * snapSteps >= 5) {
+      ctx.fillStyle = acid
+      ctx.globalAlpha = 0.18
+      for (let at = 0; at <= total + 1e-6; at += snapSteps) ctx.fillRect(Math.round(at * colW), 0, 1, gridH)
+    }
     ctx.globalAlpha = 1
     for (const note of notes) {
       const x = note.s * colW + 1
@@ -270,7 +312,7 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
       ctx.setLineDash([])
     }
     drawOverview()
-  }, [notes, selection, marquee, total, colW, rowH, pattern.stepsPerBar, stepsPerBeat, drawOverview])
+  }, [notes, selection, marquee, total, colW, rowH, pattern.stepsPerBar, stepsPerBeat, snapBeats, snapSteps, drawOverview])
 
   useEffect(() => { draw() }, [draw])
 
@@ -408,11 +450,14 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
   const selectedNotes = (list = channel.notes) => list.filter((nt) => selection.has(keyOf(nt)))
   const selectKeys = (list) => setSelection(new Set(list.map(keyOf)))
 
-  // Hold alt and notes go wherever the pointer is instead of onto the step grid.
+  // Notes land on whatever the snap is set to; hold alt and they go exactly where the
+  // pointer is instead.
   const tick = (v) => Math.round(v / TICK) * TICK
-  const leastLen = (free) => (free ? TICK : 1)
-  /** Where a note being drawn or stretched should end: on the next step, or exactly here. */
-  const endAt = (h, free) => (free ? tick(h.at) : Math.floor(h.at) + 1)
+  const onGrid = (v) => Math.round(v / snapSteps) * snapSteps
+  const downTo = (v) => Math.floor(v / snapSteps + 1e-6) * snapSteps
+  const leastLen = (free) => (free ? TICK : snapSteps)
+  /** Where a note being drawn or stretched should end: the next division, or exactly here. */
+  const endAt = (h, free) => (free ? tick(h.at) : downTo(h.at) + snapSteps)
 
   /** Move a group of notes by (ds steps, dn semitones), clamped so none leaves the grid. */
   const shifted = (group, ds, dn) => {
@@ -472,7 +517,7 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
       return
     }
 
-    const start = e.altKey ? tick(h.at) : h.step
+    const start = e.altKey ? tick(h.at) : downTo(h.at)
     const created = { s: start, l: clamp(lastLen.current, leastLen(e.altKey), total - start), n: h.midi }
     onPreview(h.midi)
     setSelection(new Set([keyOf(created)]))
@@ -500,7 +545,7 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
     } else if (d.mode === 'create') {
       // still holding it: the note goes wherever the pointer does, both ways
       const l = d.orig.l
-      const s = clamp(free ? tick(h.at) : Math.floor(h.at), 0, total - l)
+      const s = clamp(free ? tick(h.at) : downTo(h.at), 0, total - l)
       if (h.midi !== (d.current ?? d.orig).n) onPreview(h.midi)
       d.current = { ...d.orig, s, l, n: h.midi }
       setDraft([...d.base, d.current])
@@ -510,7 +555,7 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
       setDraft(merge(channel.notes, d.group, d.current))
     } else if (d.mode === 'move') {
       const moveBy = h.at - d.grabAt
-      const { notes: moved, ds, dn } = shifted(d.group, free ? tick(moveBy) : Math.round(moveBy), h.midi - d.grabMidi)
+      const { notes: moved, ds, dn } = shifted(d.group, free ? tick(moveBy) : onGrid(moveBy), h.midi - d.grabMidi)
       if (!ds && !dn && !d.moved) return
       if (dn !== d.dn && moved[0]) onPreview(moved[0].n)
       d.moved = true
@@ -641,6 +686,14 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
               <button key={k} type="button" className={`node-btn ${rowSize === k ? 'on' : ''}`} aria-pressed={rowSize === k} onClick={() => setRowSize(k)} title="Row height">{k}</button>
             ))}
           </span>
+          <label className="pr-group pr-snap">
+            <span className="pr-snap-label">snap</span>
+            <select className="select" value={snap} onChange={(e) => setSnap(e.target.value)} aria-label="Snap notes to" title="What notes land on (hold alt to leave the grid)">
+              {SNAP_GROUPS.map(([group, keys]) => (group
+                ? <optgroup key={group} label={group}>{keys.map((k) => <option key={k} value={k}>{SNAPS[k].label}</option>)}</optgroup>
+                : keys.map((k) => <option key={k} value={k}>{SNAPS[k].label}</option>)))}
+            </select>
+          </label>
           <button type="button" className={`node-btn ${follow ? 'on' : ''}`} aria-pressed={follow} onClick={() => setFollow((v) => !v)} title="Keep the playhead in view while playing">follow</button>
           <span className="pr-spacer" />
           {selection.size > 0 && <span className="pr-selected">{selection.size} selected</span>}
