@@ -824,7 +824,11 @@ export default function App() {
   // Page-wide shortcuts (Strudel's own only fire while the editor has focus). Capture
   // phase + stopPropagation so a focused editor doesn't run them a second time.
   const keysRef = useRef({})
-  keysRef.current = { play, save, stop, pause, toStart, undo, redo, isProject: !!project, saveAsNew: () => (isNew || !isOwner ? save() : saveAsNew()) }
+  keysRef.current = {
+    play, save, stop, pause, toStart, undo, redo, isProject: !!project,
+    saveAsNew: () => (isNew || !isOwner ? save() : saveAsNew()),
+    swapCanvas: () => switchCanvas(view === 'song' ? 'graph' : 'song'),
+  }
   useEffect(() => {
     // only places you type text keep space and Home for themselves. A focused button, slider,
     // checkbox or dropdown doesn't: clicking one leaves focus on it, and space must still play.
@@ -846,6 +850,11 @@ export default function App() {
           // held down, the key repeats: one press is one toggle
           if (!e.repeat && !spaceDown) editorRef.current?.repl.scheduler.started ? keysRef.current.pause() : keysRef.current.play()
           spaceDown = true
+        } else if (e.key === 'Tab') {
+          // tab does one thing here: swap the canvas between the timeline and the patch
+          // (inside a dialog or menu it still steps through what's in there)
+          if (e.target.closest?.('dialog, .popover, .knob-menu, .auto-pop')) return
+          if (keysRef.current.isProject) keysRef.current.swapCanvas()
         } else if (e.key === 'Home') keysRef.current.toStart()
         else return
         e.preventDefault() // no page scroll, and no click on the focused button
