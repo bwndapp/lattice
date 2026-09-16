@@ -5,7 +5,7 @@
  * `offset` is how far into the part the clip begins (after a cut or a trimmed left edge).
  *
  *   src   "pattern:<id>", "node:<id>" or "auto:<id>" (an automation, see automation.js)
- *   lane  the row it sits on (rows are free, like a calendar)
+ *   lane  the row it sits on (rows are free, like a calendar; `song.lanes` names and mutes them)
  *
  * While the song is on and has clips, only what's on the timeline plays: each part plays
  * from its own start inside its clips and is silent elsewhere, and the whole song loops
@@ -91,11 +91,25 @@ export function normalizeSong(raw, project) {
     clips.push(clip)
     if (clips.length >= MAX_CLIPS) break
   }
+  // rows: a name and a mute each, kept only as far as the last one that has either
+  const lanes = []
+  for (const l of Array.isArray(raw?.lanes) ? raw.lanes.slice(0, 64) : []) {
+    const name = typeof l?.name === 'string' ? l.name.trim().slice(0, 24) : ''
+    lanes.push({ ...(name ? { name } : {}), ...(l?.mute ? { mute: true } : {}) })
+  }
+  while (lanes.length && !lanes.at(-1).name && !lanes.at(-1).mute) lanes.pop()
   // colours people picked for parts (the rest get one from the part's id)
   const colors = {}
   for (const [src, color] of Object.entries(raw?.colors ?? {})) if (valid.has(src) && /^#[0-9a-f]{6}$/i.test(color)) colors[src] = color.toLowerCase()
-  return { on: raw?.on !== false, snap: raw?.snap === 'beat' ? 'beat' : 'bar', clips, ...(autos.length ? { autos } : {}), ...(Object.keys(colors).length ? { colors } : {}) }
+  return { on: raw?.on !== false, snap: raw?.snap === 'beat' ? 'beat' : 'bar', clips, ...(lanes.length ? { lanes } : {}), ...(autos.length ? { autos } : {}), ...(Object.keys(colors).length ? { colors } : {}) }
 }
+
+/** A row's name and whether it's muted. */
+export function laneInfo(song, lane) {
+  const l = song?.lanes?.[lane]
+  return { name: l?.name || `row ${lane + 1}`, named: !!l?.name, mute: !!l?.mute }
+}
+export const laneMuted = (song, lane) => !!song?.lanes?.[lane]?.mute
 
 /** Bars the song lasts: to the end of its last clip. */
 export function songLength(song) {
@@ -134,7 +148,7 @@ const tidy = (v) => String(Math.round(v * 10000) / 10000)
 export function songExpr(project, src, expr) {
   const song = project.song
   if (src.startsWith('node:') && triggerOnly(project, src.slice(5))) return expr
-  const clips = song.clips.filter((c) => c.src === src)
+  const clips = song.clips.filter((c) => c.src === src && !laneMuted(song, c.lane)) // a muted row plays nothing
   if (!clips.length) return 'silence'
   const total = Math.max(1, Math.ceil(songLength(song) - 1e-9))
   const beats = Math.max(1, Math.round(project.beats || 4))

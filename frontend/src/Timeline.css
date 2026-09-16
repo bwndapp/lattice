@@ -119,7 +119,42 @@
 .song-scroll { position: relative; flex: 1; min-height: 0; overflow: auto; outline: none; overscroll-behavior: contain; }
 .song-scroll:focus-visible { outline: none; }
 .song-scroll:focus-visible .song-ruler { box-shadow: inset 0 -1px 0 rgba(228, 255, 26, 0.5); }
-.song-canvas { position: relative; min-height: 100%; }
+.song-canvas {
+  position: relative;
+  min-height: 100%;
+  display: grid;
+  grid-template-columns: var(--headw) max-content;
+  grid-template-rows: auto max-content;
+}
+/* row headers down the left: a name, a mute, and a right-click menu */
+.song-corner { position: sticky; left: 0; top: 0; z-index: 7; background: #0b0b0a; border-right: 1px solid var(--line); border-bottom: 1px solid rgba(255, 255, 255, 0.07); }
+.song-heads { position: sticky; left: 0; z-index: 4; background: var(--panel); border-right: 1px solid var(--line); }
+.song-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 0.45rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.045);
+  font-size: 11px;
+  color: var(--paper);
+  cursor: var(--ring);
+  user-select: none;
+  overflow: hidden;
+}
+.song-row:hover { background: rgba(255, 255, 255, 0.035); }
+.song-row.empty .song-row-name { color: #6f6f67; }
+.song-row.muted { background: rgba(255, 90, 60, 0.06); }
+.song-row.muted .song-row-name { color: #8a8079; text-decoration: line-through; }
+.song-row-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.song-row-input { flex: 1; min-width: 0; font: inherit; font-size: 11px; color: var(--paper); background: var(--ink); border: 1px solid var(--acid); border-radius: 4px; padding: 0.1rem 0.25rem; }
+.song-row-count { flex: none; font-size: 9.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.song-row-mute {
+  flex: none; width: 1.6rem; padding: 0.05rem 0;
+  font: inherit; font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--muted); background: #151513; border: 1px solid #2a2a25; border-radius: 999px; cursor: var(--ring);
+}
+.song-row-mute:hover { color: var(--paper); }
+.song-row-mute.on { color: var(--ink); background: var(--danger); border-color: var(--danger); }
 .song-ruler {
   position: sticky;
   top: 0;

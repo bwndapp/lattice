@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { makePattern, makeVariation, newId } from './project'
-import { MAX_BARS, songLength, songParts } from './song'
+import { MAX_BARS, laneInfo, songLength, songParts } from './song'
 import Popover from './Popover.jsx'
 import { Glass } from './Glass.jsx'
 import { useAutomation } from './autoLive.js'
 import { useRollDock } from './rollDock.js'
+import { KnobMenu } from './KnobMenu.jsx'
 import { AUTO_PREFIX, curveAt, resolveTarget } from './automation.js'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import { KitSelect } from './Graph.jsx'
@@ -25,6 +26,7 @@ const LANE_DEFAULT = 40
 const MIN_LANE = 22
 const MAX_LANE = 120
 const RULER_H = 26
+const HEAD_W = 136 // the row headers down the left of the timeline
 const EDGE = 7 // px at each end of a clip that stretch it
 const MIN_PPB = 10
 const MAX_PPB = 260
@@ -817,6 +819,40 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     )
   }
 
+  // ── rows: each has a header, and its own menu ──
+  const [rowMenu, setRowMenu] = useState(null) // { lane, x, y }
+  const [renaming, setRenaming] = useState(null) // the row being named
+  const laneAtRow = (i) => laneInfo(song, i)
+  const rowsOf = (s) => (s.lanes = s.lanes ?? [])
+  const insertRow = (at) => updateSong((s) => {
+    for (const c of s.clips) if (c.lane >= at) c.lane = Math.min(63, c.lane + 1)
+    rowsOf(s).splice(at, 0, {})
+  })
+  const deleteRow = (at) => updateSong((s) => {
+    s.clips = s.clips.filter((c) => c.lane !== at)
+    for (const c of s.clips) if (c.lane > at) c.lane -= 1
+    rowsOf(s).splice(at, 1)
+  })
+  const clearRow = (at) => updateSong((s) => { s.clips = s.clips.filter((c) => c.lane !== at) })
+  const duplicateRow = (at) => updateSong((s) => {
+    const copies = s.clips.filter((c) => c.lane === at).map((c) => ({ ...c, id: `c${newId()}`, lane: at + 1 }))
+    for (const c of s.clips) if (c.lane > at) c.lane = Math.min(63, c.lane + 1)
+    rowsOf(s).splice(at + 1, 0, { ...(s.lanes[at] ?? {}) })
+    s.clips.push(...copies)
+  })
+  const swapRows = (a, b) => updateSong((s) => {
+    if (b < 0 || b > 63) return
+    for (const c of s.clips) c.lane = c.lane === a ? b : c.lane === b ? a : c.lane
+    const rows = rowsOf(s)
+    while (rows.length <= Math.max(a, b)) rows.push({})
+    ;[rows[a], rows[b]] = [rows[b], rows[a]]
+  })
+  const setRow = (at, patch) => updateSong((s) => {
+    const rows = rowsOf(s)
+    while (rows.length <= at) rows.push({})
+    Object.assign(rows[at], patch)
+  })
+
   const loop = transport.loop
   const songBars = Math.max(1, Math.ceil(length - 1e-9))
   const panelNode = panel && project.nodes.find((n) => n.id === panel.nodeId)
@@ -895,10 +931,11 @@ export default function Timeline({ project, onUpdateProject, transport, started 
           onAuxClick={(e) => { if (e.button === 1) e.preventDefault() }}
           onMouseDown={(e) => { if (e.button === 1) e.preventDefault() }}
         >
-          <div className="song-canvas" style={{ width: bars * ppb, '--ppb': `${ppb}px`, '--ppbeat': `${ppb / beats}px`, '--lane': `${LANE_H}px` }}>
+          <div className="song-canvas" style={{ width: bars * ppb + HEAD_W, '--ppb': `${ppb}px`, '--ppbeat': `${ppb / beats}px`, '--lane': `${LANE_H}px`, '--headw': `${HEAD_W}px` }}>
+            <div className="song-corner" style={{ height: RULER_H }} aria-hidden />
             <div
               className="song-ruler"
-              style={{ height: RULER_H }}
+              style={{ height: RULER_H, width: bars * ppb }}
               onPointerDown={onRulerDown}
               onPointerMove={onRulerMove}
               onPointerUp={onRulerUp}
@@ -918,10 +955,51 @@ export default function Timeline({ project, onUpdateProject, transport, started 
               <span ref={headRef} className="song-head" aria-hidden />
             </div>
 
+            <div className="song-heads" style={{ height: lanes * LANE_H }}>
+              {Array.from({ length: lanes }, (_, i) => {
+                const row = laneAtRow(i)
+                const count = clips.filter((c) => c.lane === i).length
+                return (
+                  <div
+                    key={i}
+                    className={`song-row ${row.mute ? 'muted' : ''} ${count ? '' : 'empty'}`}
+                    style={{ height: LANE_H }}
+                    onContextMenu={(e) => { e.preventDefault(); setRowMenu({ lane: i, x: e.clientX, y: e.clientY }) }}
+                    onDoubleClick={() => setRenaming(i)}
+                    title="Right-click for row actions · double-click to rename"
+                  >
+                    <button
+                      type="button"
+                      className={`song-row-mute ${row.mute ? 'on' : ''}`}
+                      aria-pressed={row.mute}
+                      onClick={() => setRow(i, { mute: !row.mute })}
+                      title={row.mute ? 'This row is silent: click to hear it' : 'Silence this row'}
+                    >{row.mute ? 'off' : 'on'}</button>
+                    {renaming === i ? (
+                      <input
+                        className="song-row-input"
+                        autoFocus
+                        defaultValue={row.named ? row.name : ''}
+                        placeholder={`row ${i + 1}`}
+                        maxLength={24}
+                        onBlur={(e) => { setRow(i, { name: e.target.value.trim() }); setRenaming(null) }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') e.currentTarget.blur()
+                          if (e.key === 'Escape') { setRenaming(null); e.stopPropagation() }
+                        }}
+                      />
+                    ) : (
+                      <span className="song-row-name">{row.name}</span>
+                    )}
+                    {count > 0 && <span className="song-row-count">{count}</span>}
+                  </div>
+                )
+              })}
+            </div>
             <div
               className={`song-lanes ${drag ? 'dragging' : ''} ${tool === 'slice' ? 'slicing' : ''}`}
               ref={lanesRef}
-              style={{ height: lanes * LANE_H }}
+              style={{ height: lanes * LANE_H, width: bars * ppb }}
               onPointerDown={onLanesDown}
               onPointerMove={onLanesMove}
               onPointerUp={onLanesUp}
@@ -1016,6 +1094,27 @@ export default function Timeline({ project, onUpdateProject, transport, started 
         </ConfirmDialog>
       )}
       {panelNode && <PartPanel node={panelNode} anchor={panel} onUpdateProject={onUpdateProject} onClose={() => setPanel(null)} />}
+      {rowMenu && (
+        <KnobMenu
+          x={rowMenu.x}
+          y={rowMenu.y}
+          title={laneAtRow(rowMenu.lane).name}
+          onClose={() => setRowMenu(null)}
+          items={[
+            ['Insert row above', () => insertRow(rowMenu.lane)],
+            ['Insert row below', () => insertRow(rowMenu.lane + 1)],
+            ['Duplicate row', () => duplicateRow(rowMenu.lane)],
+            null,
+            ['Move row up', () => swapRows(rowMenu.lane, rowMenu.lane - 1)],
+            ['Move row down', () => swapRows(rowMenu.lane, rowMenu.lane + 1)],
+            [laneAtRow(rowMenu.lane).mute ? 'Hear this row' : 'Silence this row', () => setRow(rowMenu.lane, { mute: !laneAtRow(rowMenu.lane).mute })],
+            ['Rename row', () => setRenaming(rowMenu.lane)],
+            null,
+            ['Clear the clips on it', () => clearRow(rowMenu.lane), { danger: true }],
+            ['Delete row', () => deleteRow(rowMenu.lane), { danger: true }],
+          ]}
+        />
+      )}
     </section>
   )
 }
