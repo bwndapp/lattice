@@ -19,7 +19,7 @@ export function createTransport() {
     raw: null, // the pattern as evaluated, in song time
     k: 0,
     start: 0, // where playback begins next, in cycles
-    cue: 0, // the spot you put the playhead on: stop comes back here
+    mark: 0, // the spot you put the playhead on: stop comes back here
     loop: { on: false, from: 0, to: 4 },
     beats: 4, // beats per bar, for display, snapping and BPM
 
@@ -78,7 +78,7 @@ export function createTransport() {
         // putting the playhead somewhere while stopped marks the spot: play starts there,
         // and stop comes back to it however far the song has run since
         t.start = p
-        t.cue = p
+        t.mark = p
       }
       t.emit()
     },
@@ -109,8 +109,8 @@ export function createTransport() {
     },
 
     /** Stop: back to the spot the playhead was put on. */
-    toCue() {
-      t.start = t.cue
+    toMark() {
+      t.start = t.mark
       t.emit()
     },
 

@@ -977,8 +977,8 @@ export default function Timeline({ project, onUpdateProject, transport, started 
                 </span>
               )}
               {length > 0 && <span className="song-end" style={{ left: songBars * ppb }} title="The song loops here" />}
-              {transport.cue > 0 && Math.abs(transport.cue - transport.position()) > 1e-6 && (
-                <span className="song-cue" style={{ left: transport.cue * ppb }} title="Stop comes back here" aria-hidden />
+              {transport.mark > 0 && Math.abs(transport.mark - transport.position()) > 1e-6 && (
+                <span className="song-cue" style={{ left: transport.mark * ppb }} title="Stop comes back here" aria-hidden />
               )}
               <span ref={headRef} className="song-head" aria-hidden />
             </div>
