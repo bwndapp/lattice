@@ -80,23 +80,20 @@ export default function DetailDock({ project, at, transport, started, height, on
             ))}
           </span>
         )}
-        {tab === 'rack' && (
-          <>
-            <label className="dd-field">
-              <span>bars</span>
-              <select className="select" value={pattern.bars} onChange={(e) => editPattern((pat) => reshapePattern(pat, { bars: Number(e.target.value) }))} aria-label="Bars in this pattern">
-                {[1, 2, 3, 4, 6, 8, 12, 16].map((b) => <option key={b} value={b}>{b}</option>)}
-              </select>
-            </label>
-            <label className="dd-field">
-              <span>steps / bar</span>
-              <select className="select" value={pattern.stepsPerBar} onChange={(e) => editPattern((pat) => reshapePattern(pat, { stepsPerBar: Number(e.target.value) }))} aria-label="Steps per bar">
-                {[8, 12, 16, 24, 32].map((n) => <option key={n} value={n}>{n}</option>)}
-              </select>
-            </label>
-            {uses > 1 && <span className="dd-uses" title="Every node playing this pattern changes with it">in {uses} nodes</span>}
-          </>
-        )}
+        {/* how long the pattern is belongs to both tabs */}
+        <label className="dd-field">
+          <span>bars</span>
+          <select className="select" value={pattern.bars} onChange={(e) => editPattern((pat) => reshapePattern(pat, { bars: Number(e.target.value) }))} aria-label="Bars in this pattern">
+            {[1, 2, 3, 4, 6, 8, 12, 16].map((b) => <option key={b} value={b}>{b}</option>)}
+          </select>
+        </label>
+        <label className="dd-field">
+          <span>steps / bar</span>
+          <select className="select" value={pattern.stepsPerBar} onChange={(e) => editPattern((pat) => reshapePattern(pat, { stepsPerBar: Number(e.target.value) }))} aria-label="Steps per bar">
+            {[8, 12, 16, 24, 32].map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
+        {uses > 1 && tab === 'rack' && <span className="dd-uses" title="Every node playing this pattern changes with it">in {uses} nodes</span>}
         <span className="dd-spacer" />
         <button type="button" className="node-btn" onClick={onClose} title="Close (Esc)">close</button>
       </div>
