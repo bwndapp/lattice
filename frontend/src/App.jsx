@@ -27,6 +27,7 @@ import { AutomationContext, autoLive } from './autoLive.js'
 import { AUTO_PREFIX, activeAutos, appParam, autoValueFn, resolveTarget, toPos } from './automation.js'
 import { setFxParams } from './fxbus.js'
 import { setInsertParams } from './stereo.js'
+import { setEngineParams } from './instruments/host.js'
 import { capturePatterns, parseLanes, tempoChange } from './lanes'
 import { PROJECT_MARK, blankProject, demoProject, generateCode, newId, normalizeProject, parseProject, projectFromCode } from './project'
 import { createTransport, formatBarBeat, parseBarBeat } from './transport'
@@ -504,6 +505,7 @@ export default function App() {
       a.last = stepped
       const patch = { [a.app.param]: stepped }
       if (a.app.where === 'fx') setFxParams(a.app.key, patch)
+      else if (a.app.where === 'engine') setEngineParams(a.app.key, patch)
       else setInsertParams(a.app.key, patch)
     }
     let raf = 0
@@ -531,6 +533,7 @@ export default function App() {
         a.last = undefined
         const patch = { [a.app.param]: a.base * (a.app.scale ?? 1) }
         if (a.app.where === 'fx') setFxParams(a.app.key, patch)
+        else if (a.app.where === 'engine') setEngineParams(a.app.key, patch)
         else setInsertParams(a.app.key, patch)
       }
     }

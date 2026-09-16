@@ -20,6 +20,7 @@ import { generateCode } from './project'
 import { activeAutos, appParam, autoValueFn } from './automation.js'
 import { routeVoice, setFxParams, silenceFx } from './fxbus.js'
 import { prepareInserts, setInsertParams } from './stereo.js'
+import { prepareInstruments, setEngineParams } from './instruments/host.js'
 import { ensureAudio, forgetAudio } from './audio'
 
 let mp3Ready = false
@@ -98,6 +99,7 @@ export async function renderProject(project, { from = 0, to = 4, tail = 2, sampl
   silenceFx() // effects belong to the context they were built in
   await initAudio({})
   await prepareInserts() // the offline render can't wait for the worklet by itself
+  await prepareInstruments(offline) // nor for the instrument engines
 
   onStage?.(`${haps.length} notes`)
   let failed = 0
@@ -132,6 +134,7 @@ export async function renderProject(project, { from = 0, to = 4, tail = 2, sampl
         for (const a of moving) {
           const patch = { [a.app.param]: a.value(bar) * (a.app.scale ?? 1) }
           if (a.app.where === 'fx') setFxParams(a.app.key, patch)
+          else if (a.app.where === 'engine') setEngineParams(a.app.key, patch)
           else setInsertParams(a.app.key, patch)
         }
         offline.resume()

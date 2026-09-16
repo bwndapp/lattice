@@ -1,20 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { onSoundsChange, previewSound, soundCatalog } from './audio'
+import { enginesFor } from './instruments/index.js'
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 
 /**
  * Browse every loaded sound and pick one. Clicking a sound plays it and puts it on the
  * channel straight away; Enter or a click outside closes. Drum channels browse kits and
- * samples; synth channels browse synths, instruments and (pitched) samples.
+ * samples; synth channels browse synths, instruments and (pitched) samples. Both can pick
+ * an engine: an instrument the app builds itself, with a window of its own.
  */
-export default function SoundPicker({ kind, sound, bank, anchor, onPick, onClose }) {
+export default function SoundPicker({ kind, sound, bank, engine = null, anchor, onPick, onClose }) {
   const ref = useRef(null)
   const [catalog, setCatalog] = useState(() => soundCatalog())
   useEffect(() => onSoundsChange(() => setCatalog(soundCatalog())), [])
 
-  const tabs = kind === 'drum' ? ['kits', 'samples'] : ['synths', 'instruments', 'samples']
-  const [tab, setTab] = useState(kind === 'drum' ? (bank ? 'kits' : 'samples') : 'synths')
+  const engines = enginesFor(kind)
+  const tabs = [...(kind === 'drum' ? ['kits', 'samples'] : ['synths', 'instruments', 'samples']), ...(engines.length ? ['engines'] : [])]
+  const [tab, setTab] = useState(engine ? 'engines' : kind === 'drum' ? (bank ? 'kits' : 'samples') : 'synths')
   const [query, setQuery] = useState('')
   const [kit, setKit] = useState(() => (bank ? String(bank).toLowerCase() : null))
   const baseSound = String(sound ?? '').split(':')[0].toLowerCase()
@@ -32,9 +35,11 @@ export default function SoundPicker({ kind, sound, bank, anchor, onPick, onClose
   const kits = useMemo(() => catalog.kits.filter((k) => match(k.bank) || k.sounds.some((s) => match(s.key))), [catalog, q])
   const currentKit = kits.find((k) => k.bank === kit) ?? kits.find((k) => k.bank === 'rolandtr909') ?? kits[0]
   const list = tab === 'kits' ? (currentKit?.sounds ?? []).filter((s) => !q || match(s.key) || match(currentKit.bank))
+    : tab === 'engines' ? engines.map((e) => ({ key: e.type, label: e.label, blurb: e.blurb })).filter((e) => match(e.key) || match(e.label))
     : (catalog[tab] ?? []).filter((s) => match(s.key))
 
   const choose = (item) => {
+    if (tab === 'engines') return onPick({ engine: item.key })
     const pick = tab === 'kits' ? { sound: item.key, bank: currentKit.bank } : { sound: item.key, bank: '' }
     previewSound({ s: pick.sound, bank: pick.bank || undefined, note: kind === 'synth' ? 48 : undefined })
     onPick(pick)
@@ -85,11 +90,11 @@ export default function SoundPicker({ kind, sound, bank, anchor, onPick, onClose
           <ul className="sp-list" aria-label="Sounds">
             {list.length === 0 && <li className="sp-empty">Nothing matches{q ? ` “${q}”` : ''}.</li>}
             {list.slice(0, 400).map((item) => {
-              const selected = item.key === baseSound && (tab !== 'kits' || String(bank).toLowerCase() === currentKit?.bank)
+              const selected = tab === 'engines' ? item.key === engine : !engine && item.key === baseSound && (tab !== 'kits' || String(bank).toLowerCase() === currentKit?.bank)
               return (
                 <li key={item.key}>
-                  <button className={`sp-item ${selected ? 'on' : ''}`} onClick={() => choose(item)} title="Click to hear it and use it">
-                    {item.key}{item.count > 1 && <span className="sp-count">{item.count}</span>}
+                  <button className={`sp-item ${selected ? 'on' : ''}`} onClick={() => choose(item)} title={item.blurb ?? 'Click to hear it and use it'}>
+                    {item.label ?? item.key}{item.count > 1 && <span className="sp-count">{item.count}</span>}
                   </button>
                 </li>
               )

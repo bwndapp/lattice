@@ -5,6 +5,10 @@ import { auditionCode, paramValue, paramsFor } from './project'
 import { GLOBAL_DELAY, GLOBAL_REVERB, routeVoice, silenceFx } from './fxbus.js'
 import { evaluate } from '@strudel/core'
 import { transpiler } from '@strudel/transpiler'
+import { prepareInstruments, registerEngineSounds } from './instruments/host.js'
+
+// the app's own instruments are sounds like any other (instruments/)
+registerEngineSounds()
 
 /**
  * Everything Strudel has loaded, grouped for browsing: drum kits (bank → sounds),
@@ -59,7 +63,7 @@ const PREVIEW_KEYS = { lpf: 'cutoff', lpq: 'resonance', hpf: 'hcutoff' }
 /** Play one hit of a channel's sound right now, with its knob settings. */
 export function previewChannel(ch, { note, n } = {}) {
   if (!ch || ch.kind === 'code') return
-  const value = { s: ch.sound }
+  const value = { s: ch.sound, _c: ch.id } // _c: an engine instrument plays with its own settings
   if (ch.kind === 'drum' && ch.bank) value.bank = ch.bank
   if (ch.kind === 'synth') value.note = note ?? 48
   const [sound, variation] = String(ch.sound).split(':')
@@ -99,7 +103,7 @@ export function forgetAudio() {
 }
 /** Start the audio engine (context + effect worklets) once; safe to call from any gesture. */
 export function ensureAudio() {
-  if (!audioReady) audioReady = initAudio().catch(() => {})
+  if (!audioReady) audioReady = initAudio().then(() => prepareInstruments()).catch(() => {})
   const ac = getAudioContext()
   if (ac.state !== 'running') ac.resume().catch(() => {})
   return audioReady
@@ -114,6 +118,7 @@ function warm(v, seen) {
   const key = v.bank ? `${v.bank}_${v.s}` : v.s
   const data = getSound(key)?.data
   if (!data) return null
+  if (data.type === 'engine') return seen.has('engine') ? null : (seen.add('engine'), prepareInstruments())
   try {
     let id
     let load

@@ -10,6 +10,7 @@
  *   target  which knob: "n:<node>:<param>"            a node's knob
  *                       "u:<node>:<unit>:<param>"     a knob on an effect inside an fx rack
  *                       "c:<pattern>:<channel>:<param>" an instrument's sound knob
+ *                       "e:<pattern>:<channel>:<param>" a knob on an instrument's engine
  *   x       bars from the start of the automation (0 … bars)
  *   y       where the knob points, 0 … 1 of its travel (so a log knob moves like the knob)
  *   c       the curve from this point to the next: 0 straight, up to ±1 bent
@@ -20,6 +21,7 @@
  */
 import { NODE_TYPES } from './graph.js'
 import { PARAMS, paramValue } from './project.js'
+import { ENGINES, engineData } from './instruments/index.js'
 
 const num = (v, fallback, lo, hi) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : fallback)
 const snapTo = (v, step) => Math.round(v / step) * step
@@ -36,7 +38,8 @@ export function canAutomate() {
  * Knobs whose sound is made by the app rather than by each note: reverb and delay settings
  * (fxbus.js) and the stereo inserts (stereo.js). They don't go in the code; while the song
  * plays the app moves them, which is what `appParam` describes:
- *   { where: 'fx' | 'insert', key, param, scale }   value → param, times `scale` if given
+ *   { where: 'fx' | 'insert' | 'engine', key, param, scale }   value → param, times `scale` if given
+ * (an engine's key is its instrument's id, see instruments/host.js)
  */
 const APP_PARAMS = {
   reverb: { prefix: 'rv_', where: 'fx', keys: { size: 'size', predelay: 'predelay', tone: 'tone', lowcut: 'lowcut', width: 'width' } },
@@ -64,6 +67,7 @@ const APP_PARAMS = {
 
 export function appParam(project, target) {
   const parts = String(target ?? '').split(':')
+  if (parts[0] === 'e') return resolveTarget(project, target) ? { where: 'engine', key: parts[2], param: parts[3] } : null
   const node = project.nodes.find((n) => n.id === parts[1])
   const type = parts[0] === 'u' ? node?.data.chain?.find((u) => u.id === parts[2])?.type : node?.type
   const key = parts[0] === 'u' ? parts[3] : parts[2]
@@ -80,6 +84,7 @@ export function appParam(project, target) {
 export const nodeTarget = (nodeId, key) => `n:${nodeId}:${key}`
 export const unitTarget = (nodeId, unitId, key) => `u:${nodeId}:${unitId}:${key}`
 export const channelTarget = (patternId, channelId, key) => `c:${patternId}:${channelId}:${key}`
+export const engineTarget = (patternId, channelId, key) => `e:${patternId}:${channelId}:${key}`
 
 /**
  * What a target points at in this project: the knob's definition, its value now and a
@@ -108,6 +113,13 @@ export function resolveTarget(project, target) {
     const def = PARAMS.find((p) => p.key === parts[3])
     if (!ch || !def || ch.kind === 'code' || (def.kinds && !def.kinds.includes(ch.kind))) return null
     return { def, value: paramValue(ch, def.key), owner: `${pattern.name} ${ch.name}`, label: def.label }
+  }
+  if (parts[0] === 'e' && parts.length === 4) {
+    const pattern = project.patterns.find((p) => p.id === parts[1])
+    const ch = pattern?.channels.find((c) => c.id === parts[2])
+    const def = ch?.engine && ENGINES[ch.engine.type]?.params.find((p) => p.key === parts[3])
+    if (!def) return null
+    return { def, value: engineData(ch.engine)[def.key], owner: `${pattern.name} ${ch.name}`, label: def.label }
   }
   return null
 }

@@ -1,0 +1,217 @@
+/**
+ * The audio side of instrument engines (see index.js).
+ *
+ * Each instrument that uses an engine gets one processor on the audio thread that stays
+ * alive, with an output per voice. Each engine is also a Strudel sound
+ * (`lattice_<type>`): when Strudel plays a note of it, the host picks a voice, tells the
+ * processor about the note through its AudioParams (timed to the sample), and hands
+ * Strudel a tap on that voice's output. Strudel then runs the tap through the note's usual
+ * chain — level, pan, filter, sends, its bus and whatever inserts sit there — so an engine
+ * plays through the patch exactly like a sample would.
+ *
+ * Settings come from the project: generating the code declares every instrument's engine
+ * settings here, and live instances follow them at once (no re-evaluating), which is also
+ * how automation moves them.
+ */
+import { getAudioContext, registerSound } from '@strudel/webaudio'
+import { noteToMidi } from '@strudel/core'
+import { DSP_BASE } from './dsp.js'
+import { ENGINES, engineData, engineSound } from './index.js'
+
+// ── the module the audio thread loads ─────────────────────────────────────────
+let moduleUrl = null
+const loaded = new WeakMap() // audio context → the promise that adds the module to it
+
+/**
+ * Make sure the audio thread has the engines. Playback loads them as it goes; an offline
+ * render has to wait, or its first notes arrive before the processors exist.
+ */
+export function prepareInstruments(ac = getAudioContext()) {
+  if (!ac?.audioWorklet) return Promise.resolve(false)
+  if (!loaded.has(ac)) {
+    if (!moduleUrl) {
+      const source = [DSP_BASE, ...Object.values(ENGINES).map((e) => e.dsp)].join('\n')
+      moduleUrl = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }))
+    }
+    loaded.set(ac, ac.audioWorklet.addModule(moduleUrl).then(() => true, (err) => {
+      console.warn('[instruments] could not load the engines', err)
+      return false
+    }))
+  }
+  return loaded.get(ac)
+}
+
+// ── settings, from the project ────────────────────────────────────────────────
+const declared = new Map() // instrument (channel) id → { type, data }
+
+/** Every instrument's engine settings, from a project (called as its code is generated). */
+export function declareEngines(project) {
+  for (const pattern of project?.patterns ?? []) {
+    for (const ch of pattern.channels) {
+      if (!ch.engine) continue
+      const data = engineData(ch.engine)
+      declared.set(ch.id, { type: ch.engine.type, data })
+      for (const inst of live(ch.id, ch.engine.type)) inst.apply(data)
+    }
+  }
+}
+
+/** Move some of one instrument's knobs while it plays (automation). */
+export function setEngineParams(channelId, patch) {
+  const found = declared.get(channelId)
+  if (!found) return
+  found.data = { ...found.data, ...patch }
+  for (const inst of live(channelId, found.type)) inst.apply(found.data)
+}
+
+// ── instances ─────────────────────────────────────────────────────────────────
+const instances = new WeakMap() // audio context → Map(`${channel}:${type}` → instance)
+const everywhere = new Set() // every instance, to find them by instrument
+
+function* live(channelId, type) {
+  for (const inst of everywhere) {
+    if (inst.ac.state === 'closed') { everywhere.delete(inst); continue }
+    if (inst.channelId === channelId && inst.type === type) yield inst
+  }
+}
+
+function instanceFor(ac, channelId, type) {
+  if (!instances.has(ac)) instances.set(ac, new Map())
+  const map = instances.get(ac)
+  const key = `${channelId}:${type}`
+  if (!map.has(key)) {
+    const inst = createInstance(ac, channelId, type)
+    map.set(key, inst)
+    everywhere.add(inst)
+  }
+  return map.get(key)
+}
+
+function createInstance(ac, channelId, type) {
+  const spec = ENGINES[type]
+  const data = declared.get(channelId)?.type === type ? declared.get(channelId).data : engineData({ type })
+  const node = new AudioWorkletNode(ac, spec.processor, {
+    numberOfInputs: 0,
+    numberOfOutputs: spec.voices,
+    outputChannelCount: Array.from({ length: spec.voices }, () => 2),
+    parameterData: Object.fromEntries(spec.params.map((p) => [`p_${p.key}`, data[p.key]])),
+  })
+  const param = (name) => node.parameters.get(name)
+  const voices = Array.from({ length: spec.voices }, () => ({ until: 0, started: 0, note: null }))
+  let trig = 0
+  let current = data
+  return {
+    ac,
+    channelId,
+    type,
+    get data() { return current },
+    apply(next) {
+      current = next
+      for (const p of spec.params) {
+        const v = next[p.key]
+        if (Number.isFinite(v)) param(`p_${p.key}`).setTargetAtTime(v, ac.currentTime, 0.005)
+      }
+    },
+    /** Start a note: which voice, and the note's handle. */
+    play(t, { midi, vel, duration }) {
+      // a free voice, else the one that started longest ago
+      let slot = voices.findIndex((v) => v.until <= t)
+      if (slot < 0) slot = voices.reduce((best, v, i) => (v.started < voices[best].started ? i : best), 0)
+      const voice = voices[slot]
+      voice.note?.cut(t)
+      trig = (trig % 1e6) + 1
+      param(`v${slot}_note`).setValueAtTime(midi ?? -1, t)
+      param(`v${slot}_vel`).setValueAtTime(vel, t)
+      param(`v${slot}_gate`).setValueAtTime(1, t)
+      param(`v${slot}_trig`).setValueAtTime(trig, t)
+      const gateOff = t + Math.max(0.001, duration)
+      param(`v${slot}_gate`).setValueAtTime(0, gateOff)
+      const tail = Math.max(0.01, spec.tail(current))
+      const end = spec.oneShot ? t + tail : gateOff + tail
+      const note = tapNote(ac, node, slot, t, end, () => { if (voice.note === note) { voice.note = null; voice.until = 0 } })
+      voice.note = note
+      voice.started = t
+      voice.until = end
+      note.gateOff = (at) => { param(`v${slot}_gate`).cancelScheduledValues(at); param(`v${slot}_gate`).setValueAtTime(0, at) }
+      return note
+    },
+  }
+}
+
+/**
+ * A tap on one voice's output for one note: open from `t`, closed at `end` or when cut
+ * (the voice went to a newer note), and `onended` once it's closed.
+ */
+function tapNote(ac, node, slot, t, end, release) {
+  const tap = new GainNode(ac, { gain: 0 })
+  node.connect(tap, slot)
+  tap.gain.setValueAtTime(1, t)
+  tap.gain.setValueAtTime(0, end)
+  let timer = null
+  let done = false
+  let listener = null
+  const finish = () => {
+    if (done) return
+    done = true
+    try { node.disconnect(tap, slot) } catch { /* already gone */ }
+    release()
+    listener?.()
+  }
+  const at = (when) => {
+    if (timer) { timer.onended = null; try { timer.stop() } catch { /* not started */ } }
+    timer = new ConstantSourceNode(ac, { offset: 0 })
+    timer.connect(ac.destination) // some browsers only end sources that are connected; it's silent
+    timer.onended = () => { timer.disconnect(); finish() }
+    timer.start(Math.max(t, ac.currentTime))
+    timer.stop(Math.max(when, ac.currentTime) + 0.01)
+  }
+  at(end)
+  return {
+    tap,
+    onEnded(fn) { listener = fn },
+    /** Stop sounding at `when`: a newer note took the voice, or Strudel stopped this one. */
+    cut(when) {
+      if (done) return
+      const from = Math.max(when, t)
+      tap.gain.cancelScheduledValues(from)
+      tap.gain.setValueAtTime(0, from)
+      at(from)
+    },
+  }
+}
+
+// ── Strudel sounds ────────────────────────────────────────────────────────────
+const toMidi = (v) => {
+  if (typeof v === 'number' && Number.isFinite(v)) return v
+  if (typeof v === 'string') { try { return noteToMidi(v) } catch { return null } }
+  return null
+}
+
+let registered = false
+/** Make every engine playable as a Strudel sound. Safe to call more than once. */
+export function registerEngineSounds() {
+  if (registered) return
+  registered = true
+  for (const spec of Object.values(ENGINES)) {
+    registerSound(engineSound(spec.type), async (t, value, onended) => {
+      const ac = getAudioContext()
+      if (!(await prepareInstruments(ac))) return null
+      // the instrument this note came from (project.js marks every note with it); code
+      // written by hand gets one shared instance per engine, at the engine's defaults
+      const channelId = typeof value._c === 'string' ? value._c : '_'
+      const inst = instanceFor(ac, channelId, spec.type)
+      let midi = toMidi(value.note)
+      if (midi == null && value.freq > 0) midi = 69 + 12 * Math.log2(value.freq / 440)
+      const note = inst.play(t, {
+        midi: midi == null ? null : Math.min(127, Math.max(0, midi)),
+        vel: Math.min(1, Math.max(0, Number(value.velocity ?? 1))),
+        duration: Number(value.duration) || 0.1,
+      })
+      note.onEnded(onended)
+      return {
+        node: note.tap,
+        stop: (when) => { note.gateOff(when); if (spec.oneShot) note.cut(when) },
+      }
+    }, { type: 'engine', prebake: true })
+  }
+}

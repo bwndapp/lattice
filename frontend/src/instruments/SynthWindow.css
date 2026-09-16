@@ -1,0 +1,51 @@
+/* an instrument engine's window (see SynthWindow.jsx) */
+.synth-window {
+  width: min(760px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 0;
+  color: var(--paper);
+  background:
+    repeating-linear-gradient(45deg, rgba(242, 240, 230, 0.03) 0 1px, transparent 1px 7px),
+    linear-gradient(150deg, #14140f, #0a0a09 60%);
+  border: 1px solid #3a3a33;
+  border-radius: 14px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.synth-window::backdrop { background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(2px); }
+.sw-body { display: grid; gap: 0.8rem; padding: 1rem 1.1rem 1.1rem; }
+.sw-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.4rem 0.6rem; }
+.sw-title { margin: 0; font-family: var(--display); font-weight: 900; font-stretch: 125%; font-size: 28px; line-height: 1; letter-spacing: -0.03em; }
+.sw-where { font-size: 11px; color: var(--acid); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.sw-spacer { flex: 1; }
+.sw-head .btn { border-radius: 999px; padding: 0.25rem 0.8rem; align-self: center; }
+
+.sw-groups { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.sw-group {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.5rem 0.6rem 0.55rem;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.sw-group-title { margin: 0 0 0.35rem; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.sw-knobs { display: flex; flex-wrap: wrap; gap: 0.25rem 0.35rem; }
+.sw-knobs .knob { width: 50px; }
+
+.kick-panel { display: grid; gap: 0.6rem; }
+.kick-shape {
+  display: block;
+  width: 100%;
+  height: 150px;
+  background: #050504;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+/* an engine instrument's row in a rack: its name opens the window, the caret picks a sound */
+.sound-btn.engine { padding: 0; align-items: stretch; }
+.sound-btn.engine button { font: inherit; background: none; border: 0; cursor: var(--ring); }
+.sound-btn.engine .sound-name { flex: 1; text-align: left; padding: 0.3rem 0.45rem; font-weight: 600; }
+.sound-btn.engine .sound-name::after { content: ' ↗'; color: var(--muted); font-weight: 400; }
+.sound-btn.engine .sound-caret { padding: 0 0.5rem; border-left: 1px solid var(--line); }
+.sound-btn.engine button:hover { color: var(--paper); background: #151513; }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   INSTRUMENTS, INSTRUMENT_MIME, PARAMS,
   instrumentChannel, midiToNote, newId, paramValue, paramsFor, stepCount,
@@ -7,6 +7,8 @@ import { previewInPatch } from './audio'
 import Knob from './Knob.jsx'
 import { channelTarget } from './automation.js'
 import SoundPicker from './SoundPicker.jsx'
+import SynthWindow from './instruments/SynthWindow.jsx'
+import { ENGINES, engineSound } from './instruments/index.js'
 import { useRollDock } from './rollDock.js'
 
 const mod = (a, n) => ((a % n) + n) % n
@@ -111,6 +113,8 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
   const [dropping, setDropping] = useState(false)
   const [picker, setPicker] = useState(null) // { channelId, x, y }
   const [openFx, setOpenFx] = useState(() => new Set())
+  const [synth, setSynth] = useState(null) // the instrument whose engine window is open
+  const closeSynth = useCallback(() => setSynth(null), [])
   const dock = useRollDock() // the piano roll lives along the bottom of the app
 
   const toggle = (setter, id) => setter((s) => { const next = new Set(s); next.has(id) ? next.delete(id) : next.add(id); return next })
@@ -221,15 +225,29 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
                 <span className="ch-kind">code</span>
               ) : (
                 <>
-                  <button
-                    className="sound-btn"
-                    onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setPicker({ channelId: ch.id, x: r.left, y: r.bottom }) }}
-                    title="Choose a sound"
-                  >
-                    <span className="sound-name">{ch.sound}</span>
-                    {ch.kind === 'drum' && ch.bank && <span className="sound-bank">{ch.bank}</span>}
-                    <span aria-hidden className="sound-caret">▾</span>
-                  </button>
+                  {ch.engine && ENGINES[ch.engine.type] ? (
+                    // an engine instrument opens its own window; the caret still picks another sound
+                    <span className="sound-btn engine">
+                      <button type="button" className="sound-name" onClick={() => setSynth(ch.id)} title={`Open ${ENGINES[ch.engine.type].label}`}>{ENGINES[ch.engine.type].label}</button>
+                      <button
+                        type="button"
+                        className="sound-caret"
+                        aria-label="Choose another sound"
+                        title="Choose another sound"
+                        onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setPicker({ channelId: ch.id, x: r.left, y: r.bottom }) }}
+                      >▾</button>
+                    </span>
+                  ) : (
+                    <button
+                      className="sound-btn"
+                      onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setPicker({ channelId: ch.id, x: r.left, y: r.bottom }) }}
+                      title="Choose a sound"
+                    >
+                      <span className="sound-name">{ch.sound}</span>
+                      {ch.kind === 'drum' && ch.bank && <span className="sound-bank">{ch.bank}</span>}
+                      <span aria-hidden className="sound-caret">▾</span>
+                    </button>
+                  )}
                   <button className="btn ghost ch-btn" onClick={() => previewInPatch(project, pattern.id, ch)} title="Hear it" aria-label={`Hear ${ch.name}`}>hear</button>
                 </>
               )}
@@ -322,10 +340,27 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
           kind={pickerChannel.kind}
           sound={pickerChannel.sound}
           bank={pickerChannel.bank}
+          engine={pickerChannel.engine?.type ?? null}
           anchor={picker}
-          onPick={({ sound, bank }) => updateChannel(pickerChannel.id, (c) => { c.sound = sound; if (c.kind === 'drum') c.bank = bank })}
+          onPick={({ sound, bank, engine }) => {
+            if (engine) {
+              // switching to an engine keeps its settings if it was that engine before
+              updateChannel(pickerChannel.id, (c) => {
+                if (c.engine?.type !== engine) c.engine = { type: engine, data: {} }
+                c.sound = engineSound(engine)
+                if (c.kind === 'drum') c.bank = ''
+              })
+              setPicker(null)
+              setSynth(pickerChannel.id)
+              return
+            }
+            updateChannel(pickerChannel.id, (c) => { delete c.engine; c.sound = sound; if (c.kind === 'drum') c.bank = bank })
+          }}
           onClose={() => setPicker(null)}
         />
+      )}
+      {synth && (
+        <SynthWindow project={project} patternId={pattern.id} channelId={synth} onUpdateProject={onUpdateProject} onClose={closeSynth} />
       )}
     </div>
   )
