@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { FORMATS, availableFormats, download, encodeBuffer, normalize, renderProject } from './exportAudio.js'
+import { FORMATS, availableFormats, download, encodeBuffer, measure, renderProject, trimTo } from './exportAudio.js'
 import { songLength } from './song'
 import GlassSwitch from './GlassSwitch.jsx'
 import './ExportDialog.css'
@@ -33,10 +33,10 @@ export default function ExportDialog({ project, title, transport, onClose, onFla
   const [bitrate, setBitrate] = useState(320)
   const [rate, setRate] = useState(48000)
   const [tail, setTail] = useState(2)
-  const [loud, setLoud] = useState(false)
+
   const [bars, setBars] = useState(8)
   const [stage, setStage] = useState(null) // what the render is doing
-  const [take, setTake] = useState(null) // { buffer, peaks, blob, ext, name }
+  const [take, setTake] = useState(null) // { buffer, peaks, blob, ext, name, level }
   const [playing, setPlaying] = useState(false)
   const [error, setError] = useState('')
 
@@ -65,10 +65,11 @@ export default function ExportDialog({ project, title, transport, onClose, onFla
     setStage('getting ready')
     try {
       const buffer = await renderProject(project, { ...range, tail: Number(tail), sampleRate: rate, onStage: setStage })
-      if (loud) normalize(buffer)
+      setStage('listening to what came out')
+      const level = measure(buffer)
       setStage('writing the file')
       const { blob, ext } = await encodeBuffer(buffer, { format: spec.key, bitrate })
-      setTake({ buffer, peaks: peaksOf(buffer), blob, ext, name: `${clean(title)}.${ext}` })
+      setTake({ buffer, peaks: peaksOf(buffer), blob, ext, level, name: `${clean(title)}.${ext}` })
       setStage(null)
     } catch (e) {
       setError(e.message || String(e))
@@ -89,6 +90,15 @@ export default function ExportDialog({ project, title, transport, onClose, onFla
     source.start()
     audioRef.current = { ctx, source }
     setPlaying(true)
+  }
+
+  /** Only when it clipped: one gain change so the loudest moment sits at −1 dB. */
+  const pullDown = async () => {
+    setStage('pulling it down')
+    trimTo(take.buffer, -1)
+    const { blob, ext } = await encodeBuffer(take.buffer, { format: spec.key, bitrate })
+    setTake((t) => ({ ...t, blob, ext, peaks: peaksOf(t.buffer), level: measure(t.buffer) }))
+    setStage(null)
   }
 
   const save = () => {
@@ -124,6 +134,17 @@ export default function ExportDialog({ project, title, transport, onClose, onFla
               {take.peaks.map((p, i) => <span key={i} style={{ height: `${Math.max(2, p * 100)}%` }} />)}
             </div>
             <p className="ex-summary">{clock(take.buffer.duration)} · {size(take.blob.size)} · {spec?.label}{spec?.bitrates ? ` · ${bitrate} kbps` : ''} · {rate / 1000} kHz</p>
+            <p className="ex-level">
+              peak <b>{take.level.peakDb === -Infinity ? '−∞' : take.level.peakDb.toFixed(1)} dB</b>
+              {take.level.lufs !== null && <> · loudness <b>{take.level.lufs.toFixed(1)} LUFS</b></>}
+              {take.level.lufs !== null && <span className="ex-note"> (streaming sits around −14)</span>}
+            </p>
+            {take.level.clipped > 0 && (
+              <p className="ex-warn">
+                It clips: {take.level.clipped.toLocaleString()} samples hit the ceiling. Turn something down in the patch, or
+                {' '}<button type="button" className="linkish" onClick={pullDown}>pull the whole bounce to −1 dB</button>.
+              </p>
+            )}
             <div className="ex-actions">
               <button type="button" className="btn" onClick={() => { try { audioRef.current?.source.stop() } catch { /* stopped */ } setTake(null) }}>back</button>
               <button type="button" className="btn" onClick={hear}>{playing ? 'stop' : 'hear it'}</button>
@@ -167,12 +188,6 @@ export default function ExportDialog({ project, title, transport, onClose, onFla
               <GlassSwitch size="sm" label="How long tails ring out" options={[[0, 'none'], [1, '1s'], [2, '2s'], [4, '4s'], [8, '8s']]} value={Number(tail)} onChange={setTail} />
               <span className="ex-note">room at the end for reverbs and echoes</span>
             </div>
-            <div className="ex-row">
-              <span className="ex-label">loudness</span>
-              <GlassSwitch size="sm" label="Loudness" options={[['as-is', 'as it plays'], ['lift', 'lift to peak']]} value={loud ? 'lift' : 'as-is'} onChange={(v) => setLoud(v === 'lift')} />
-              <span className="ex-note">{loud ? 'turns the whole bounce up until its loudest moment almost touches 0 dB' : 'exactly the levels you hear'}</span>
-            </div>
-
             <p className="ex-summary">{clock(seconds)} · about {size(bytes)}{spec ? ` · ${spec.label}` : ''}{spec?.bitrates ? ` · ${bitrate} kbps` : ''}</p>
             {error && <p className="ex-error">Couldn’t export: {error}</p>}
             <div className="ex-actions">

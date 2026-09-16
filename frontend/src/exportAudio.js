@@ -121,20 +121,107 @@ export async function renderProject(project, { from = 0, to = 4, tail = 2, sampl
   return buffer
 }
 
-/** Peak-normalise to just under full scale, in place. */
-export function normalize(buffer, ceiling = 0.89) {
+/** One biquad, run over a copy of a channel (for the loudness weighting). */
+function biquad(data, { b0, b1, b2, a1, a2 }) {
+  let x1 = 0; let x2 = 0; let y1 = 0; let y2 = 0
+  for (let i = 0; i < data.length; i++) {
+    const x = data[i]
+    const y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2
+    x2 = x1; x1 = x; y2 = y1; y1 = y
+    data[i] = y
+  }
+}
+
+/** The two filters ITU-R BS.1770 hears loudness through, for this sample rate. */
+function kWeighting(rate) {
+  // a high shelf for the head's response, then a high-pass
+  const shelfF = 1681.974450955533
+  const shelfG = 3.999843853973347
+  const shelfQ = 0.7071752369554196
+  const A = 10 ** (shelfG / 40)
+  const w = (2 * Math.PI * shelfF) / rate
+  const alpha = Math.sin(w) / (2 * shelfQ)
+  const cos = Math.cos(w)
+  const sq = 2 * Math.sqrt(A) * alpha
+  const a0s = (A + 1) - (A - 1) * cos + sq
+  const shelf = {
+    b0: (A * ((A + 1) + (A - 1) * cos + sq)) / a0s,
+    b1: (-2 * A * ((A - 1) + (A + 1) * cos)) / a0s,
+    b2: (A * ((A + 1) + (A - 1) * cos - sq)) / a0s,
+    a1: (2 * ((A - 1) - (A + 1) * cos)) / a0s,
+    a2: ((A + 1) - (A - 1) * cos - sq) / a0s,
+  }
+  const hpF = 38.13547087602444
+  const hpQ = 0.5003270373238773
+  const wh = (2 * Math.PI * hpF) / rate
+  const ah = Math.sin(wh) / (2 * hpQ)
+  const ch = Math.cos(wh)
+  const a0h = 1 + ah
+  const highpass = {
+    b0: ((1 + ch) / 2) / a0h,
+    b1: (-(1 + ch)) / a0h,
+    b2: ((1 + ch) / 2) / a0h,
+    a1: (-2 * ch) / a0h,
+    a2: (1 - ah) / a0h,
+  }
+  return [shelf, highpass]
+}
+
+/**
+ * What came out: the loudest peak, how loud it is overall (LUFS, the scale streaming
+ * services level to), and whether anything clipped. Nothing is changed.
+ */
+export function measure(buffer) {
+  const rate = buffer.sampleRate
   let peak = 0
+  let clipped = 0
+  const channels = []
   for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
     const data = buffer.getChannelData(ch)
-    for (let i = 0; i < data.length; i++) peak = Math.max(peak, Math.abs(data[i]))
+    for (let i = 0; i < data.length; i++) {
+      const v = Math.abs(data[i])
+      if (v > peak) peak = v
+      if (v >= 0.9995) clipped++
+    }
+    const copy = Float32Array.from(data)
+    for (const stage of kWeighting(rate)) biquad(copy, stage)
+    channels.push(copy)
   }
-  if (peak < 1e-6 || peak <= ceiling) return peak
-  const gain = ceiling / peak
+  // mean square over 400 ms blocks, every 100 ms, gated as BS.1770 says
+  const block = Math.round(rate * 0.4)
+  const hop = Math.round(rate * 0.1)
+  const blocks = []
+  for (let start = 0; start + block <= (channels[0]?.length ?? 0); start += hop) {
+    let sum = 0
+    for (const data of channels) {
+      let s = 0
+      for (let i = start; i < start + block; i++) s += data[i] * data[i]
+      sum += s / block
+    }
+    blocks.push(-0.691 + 10 * Math.log10(Math.max(1e-12, sum)))
+  }
+  const loud = blocks.filter((b) => b > -70)
+  let lufs = null
+  if (loud.length) {
+    const mean = 10 * Math.log10(loud.reduce((a, b) => a + 10 ** (b / 10), 0) / loud.length)
+    const kept = loud.filter((b) => b > mean - 10)
+    const list = kept.length ? kept : loud
+    lufs = 10 * Math.log10(list.reduce((a, b) => a + 10 ** (b / 10), 0) / list.length)
+  }
+  return { peak, peakDb: peak > 0 ? 20 * Math.log10(peak) : -Infinity, clipped, lufs }
+}
+
+/** Pull the whole bounce down so its loudest moment sits at `db` (only used when it clips). */
+export function trimTo(buffer, db = -1) {
+  const { peak } = measure(buffer)
+  const target = 10 ** (db / 20)
+  if (peak <= target || peak <= 0) return 1
+  const gain = target / peak
   for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
     const data = buffer.getChannelData(ch)
     for (let i = 0; i < data.length; i++) data[i] *= gain
   }
-  return peak
+  return gain
 }
 
 /** Write an AudioBuffer as a file, and hand back a blob to download. */
