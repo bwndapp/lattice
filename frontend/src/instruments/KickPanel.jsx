@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { drawCurve, drawWave, fitCanvas } from './scope.js'
 
 /**
  * The kick's face: its waveform and pitch drawn from the knobs as they are, then the
@@ -53,60 +54,57 @@ function simulate(d, rate) {
 
 function KickShape({ data }) {
   const ref = useRef(null)
+  const [size, setSize] = useState(0)
+  // redraw when the window changes size (the canvas follows it)
   useEffect(() => {
     const canvas = ref.current
     if (!canvas) return
-    const dpr = window.devicePixelRatio || 1
-    const w = canvas.clientWidth
-    const h = canvas.clientHeight
-    canvas.width = Math.round(w * dpr)
-    canvas.height = Math.round(h * dpr)
-    const ctx = canvas.getContext('2d')
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    ctx.clearRect(0, 0, w, h)
+    const observer = new ResizeObserver(() => setSize(canvas.clientWidth))
+    observer.observe(canvas)
+    return () => observer.disconnect()
+  }, [])
+  // the hit at the audio rate, so the drawing is the sound (capped for very long kicks)
+  const key = JSON.stringify(data) // a fresh object each render: only a change of settings redraws
+  const shape = useMemo(() => {
+    const length = data.attack + data.hold + data.decay
+    return simulate(data, Math.min(48000, 240000 / Math.max(0.05, length)))
+  }, [key]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const canvas = ref.current
+    if (!canvas || !size) return
+    const [ctx, w, h, dpr] = fitCanvas(canvas)
     const css = getComputedStyle(document.documentElement)
     const acid = css.getPropertyValue('--acid').trim() || '#e4ff1a'
     const line = css.getPropertyValue('--line').trim() || '#2e2e2a'
     const muted = css.getPropertyValue('--muted').trim() || '#a3a39a'
+    const { wave, pitch, length } = shape
 
-    // enough samples to see each cycle of the start of the sweep
-    const { wave, pitch, length } = simulate(data, 12000)
-    const mid = h / 2
+    // time marks: every 10, 50 or 100 ms, whichever gives a handful
+    const step = [0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1].find((s) => length / s <= 10) ?? 1
     ctx.strokeStyle = line
     ctx.lineWidth = 1
-    ctx.beginPath(); ctx.moveTo(0, mid + 0.5); ctx.lineTo(w, mid + 0.5); ctx.stroke()
-
-    // the wave: min and max of every column, so fast early cycles read as a filled shape
-    const per = wave.length / w
-    ctx.fillStyle = acid
-    for (let x = 0; x < w; x++) {
-      const from = Math.floor(x * per)
-      const to = Math.max(from + 1, Math.floor((x + 1) * per))
-      let lo = 1
-      let hi = -1
-      for (let i = from; i < to && i < wave.length; i++) { if (wave[i] < lo) lo = wave[i]; if (wave[i] > hi) hi = wave[i] }
-      if (hi < lo) continue
-      const y0 = mid - Math.min(1.2, hi) * (mid - 6)
-      const y1 = mid - Math.max(-1.2, lo) * (mid - 6)
-      ctx.fillRect(x, y0, 1, Math.max(1, y1 - y0))
+    ctx.fillStyle = muted
+    ctx.font = `${10 * dpr}px "Martian Mono", ui-monospace, monospace`
+    ctx.textBaseline = 'bottom'
+    for (let t = step; t < length; t += step) {
+      const x = Math.round((t / length) * w) + 0.5
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke()
+      ctx.fillText(`${Math.round(t * 1000)}`, x + 3 * dpr, h - 3 * dpr)
     }
+    ctx.beginPath(); ctx.moveTo(0, Math.round(h / 2) + 0.5); ctx.lineTo(w, Math.round(h / 2) + 0.5); ctx.stroke()
 
-    // the pitch, on a log scale from 20 Hz to 4 kHz
-    const ly = (f) => h - 4 - (Math.log(f / 20) / Math.log(200)) * (h - 8)
-    ctx.strokeStyle = muted
-    ctx.lineWidth = 1.5
-    ctx.beginPath()
-    for (let x = 0; x < w; x++) {
-      const f = pitch[Math.min(pitch.length - 1, Math.floor(x * per))]
-      if (x === 0) ctx.moveTo(x, ly(f)); else ctx.lineTo(x, ly(f))
-    }
-    ctx.stroke()
+    // how the pitch falls, on a log scale from 20 Hz to 4 kHz, behind the wave
+    const ly = (f) => h - 4 * dpr - (Math.log(Math.max(20, f) / 20) / Math.log(200)) * (h - 8 * dpr)
+    drawCurve(ctx, pitch, { width: w, map: ly, color: muted, lineWidth: 1.25 * dpr, dash: [4 * dpr, 3 * dpr] })
+
+    drawWave(ctx, wave, { width: w, height: h, color: acid, pad: 8 * dpr, lineWidth: 1.4 * dpr })
 
     ctx.fillStyle = muted
-    ctx.font = '10px "Martian Mono", ui-monospace, monospace'
     ctx.textBaseline = 'top'
-    ctx.fillText(`${Math.round(length * 1000)} ms`, w - 60, 6)
-    ctx.fillText('pitch', 6, 6)
-  }, [data])
+    ctx.fillText('pitch', 6 * dpr, 6 * dpr)
+    const total = `${Math.round(length * 1000)} ms`
+    ctx.fillText(total, w - ctx.measureText(total).width - 6 * dpr, 6 * dpr)
+  }, [shape, size])
   return <canvas ref={ref} className="kick-shape" role="img" aria-label="The kick's waveform and pitch" />
 }
