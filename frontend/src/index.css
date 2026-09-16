@@ -838,6 +838,7 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
 .g-combine .node-head { box-shadow: inset 0 -2px 0 var(--acid); }
 .g-output { border: 2px solid var(--acid); --head-bg: var(--ink); --head-ink: var(--acid); }
 .node-kind { font-family: var(--display); font-weight: 900; font-stretch: 112%; font-size: 13px; }
+.node-bus { font-size: 8px; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.5; border: 1px solid currentColor; padding: 0 2px; line-height: 1.4; }
 .node-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; opacity: 0.85; }
 .node-btn { font: inherit; font-size: 10px; line-height: 1.5; color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 0; padding: 0 0.3rem; cursor: var(--ring); opacity: 0.75; }
 .node-btn:hover { opacity: 1; }

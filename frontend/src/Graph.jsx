@@ -4,7 +4,7 @@ import {
   applyNodeChanges, applyEdgeChanges, useNodesInitialized, useReactFlow, useUpdateNodeInternals,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { APPLY, FX_UNITS, GROUPS, NODE_TYPES, defaultData, inputsOf, makeFxUnit, makesCycle } from './graph'
+import { APPLY, BUS_NODES, FX_UNITS, GROUPS, NODE_TYPES, defaultData, inputsOf, makeFxUnit, makesCycle } from './graph'
 import { INSTRUMENTS, INSTRUMENT_MIME, instrumentChannel, makePattern, newId } from './project'
 import Knob from './Knob.jsx'
 import { canAutomate, nodeTarget, unitTarget } from './automation.js'
@@ -372,6 +372,9 @@ function StudioNode({ id, selected }) {
       {spec.inputs === 1 && <Handle type="target" position={Position.Left} id="in" className="port in" />}
       <div className="node-head">
         <span className="node-kind">{spec.label}</span>
+        {BUS_NODES.has(node.type) && (
+          <span className="node-bus" title="Runs on the bus: it works on everything mixed into it, after every per-note effect in the patch">bus</span>
+        )}
         <span className="node-title">{node.type === 'pattern' ? pattern?.name ?? 'no pattern' : node.data.name ?? ''}</span>
         {node.type !== 'output' && (
           <button

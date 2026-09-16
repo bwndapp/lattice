@@ -46,6 +46,10 @@ const APP_PARAMS = {
   eq3: { prefix: '', where: 'insert', keys: { low: 'low', mid: 'mid', high: 'high', lowf: 'lowf', highf: 'highf' } },
   haas: { prefix: '', where: 'insert', keys: { time: 'time', mix: 'mix' } },
   widener: { prefix: '', where: 'insert', keys: { width: 'width', spread: 'spread', mono: 'mono' } },
+  saturator: { prefix: '', where: 'insert', keys: { drive: 'drive', out: 'out' } },
+  clipper: { prefix: '', where: 'insert', keys: { push: 'drive', ceiling: 'out' } },
+  softclip: { prefix: '', where: 'insert', keys: { push: 'drive', ceiling: 'out' } },
+  compressor: { prefix: '', where: 'insert', keys: { threshold: 'threshold', ratio: 'ratio', knee: 'knee', attack: 'attack', release: 'release', makeup: 'makeup' } },
 }
 
 export function appParam(project, target) {

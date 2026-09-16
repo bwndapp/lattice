@@ -67,13 +67,6 @@ function fmapWith(x, ctx, d, keys, body, fmts = {}) {
 /** How a soft clip rounds off: a curve that flattens gently, a tanh, or a cubic. */
 const KNEES = { round: 'scurve', smooth: 'soft', cubic: 'cubic' }
 
-/**
- * A clipper: push the level into the curve, then trim what comes out. There's one
- * distortion stage per voice, so a clipper after a saturator (or another clipper) adds to
- * what's already there rather than replacing its curve.
- */
-const clipCode = (x, ctx, d, shape) => fmapWith(x, ctx, d, ['push', 'ceiling'], (val) => `v.distort === undefined ? { ...v, distort: ${val('push')}, distortvol: ${val('ceiling')}, distorttype: '${shape}' } : { ...v, distort: v.distort + ${val('push')}, distortvol: (v.distortvol ?? 1) * ${val('ceiling')} }`)
-
 /** Functions a transform like "every" or "sometimes" can apply. */
 export const APPLY = {
   rev: { label: 'reverse', code: 'x => x.rev()' },
@@ -386,9 +379,8 @@ export const NODE_TYPES = {
       { key: 'character', type: 'select', label: 'character', options: ['warm', 'tape', 'tube', 'asym', 'harmonics', 'fold'], def: 'tape' },
       { key: 'out', type: 'knob', label: 'output', min: 0.05, max: 1, def: 0.8 },
     ],
-    code: (d, [x], ctx) => (isAuto(ctx, 'drive') || isAuto(ctx, 'out')
-      ? fmapWith(x, ctx, d, ['drive', 'out'], (val) => `{ ...v, distort: ${val('drive')}, distortvol: ${val('out')}, distorttype: '${SATURATION[d.character] ?? 'soft'}' }`)
-      : `${x}.distort("${tidy(d.drive)}:${tidy(d.out)}:${SATURATION[d.character] ?? 'soft'}")`),
+    // on the summed bus, like a mixer insert (see stereo.js)
+    code: stereoCode('shaper', (d) => ({ drive: d.drive, out: d.out, curve: SATURATION[d.character] ?? 'soft' })),
   },
   clipper: {
     group: 'mixing', label: 'hard clip', blurb: 'Cuts peaks off flat: loud, aggressive, and it bites',
@@ -397,9 +389,7 @@ export const NODE_TYPES = {
       { key: 'push', type: 'knob', label: 'push', min: 0, max: 3, def: 0.6 },
       { key: 'ceiling', type: 'knob', label: 'output', min: 0.1, max: 1, def: 0.9 },
     ],
-    // The clippers and the saturator share Strudel's one distortion stage: whichever comes
-    // first sets the curve, and the ones after it add their push and trim the output.
-    code: (d, [x], ctx) => clipCode(x, ctx, d, 'hard'),
+    code: stereoCode('shaper', (d) => ({ drive: d.push, out: d.ceiling, curve: 'hard' })),
   },
   softclip: {
     group: 'mixing', label: 'soft clip', blurb: 'Rounds peaks into the ceiling instead of cutting them flat',
@@ -409,7 +399,7 @@ export const NODE_TYPES = {
       { key: 'knee', type: 'select', label: 'knee', options: ['round', 'smooth', 'cubic'], def: 'round' },
       { key: 'ceiling', type: 'knob', label: 'output', min: 0.1, max: 1, def: 0.95 },
     ],
-    code: (d, [x], ctx) => clipCode(x, ctx, d, KNEES[d.knee] ?? 'scurve'),
+    code: stereoCode('shaper', (d) => ({ drive: d.push, out: d.ceiling, curve: KNEES[d.knee] ?? 'scurve' })),
   },
   compressor: {
     group: 'mixing', label: 'compressor', blurb: 'Evens out the level: loud parts get turned down',
@@ -422,14 +412,8 @@ export const NODE_TYPES = {
       { key: 'knee', type: 'knob', label: 'knee', min: 0, max: 30, def: 6, unit: 'db' },
       { key: 'makeup', type: 'knob', label: 'makeup', min: 0, max: 18, def: 3, unit: 'db', origin: 0 },
     ],
-    code: (d, [x], ctx) => {
-      const keys = ['threshold', 'ratio', 'knee', 'attack', 'release']
-      const comp = keys.some((k) => isAuto(ctx, k))
-        ? fmapWith(x, ctx, d, keys, (val) => `{ ...v, compressor: ${val('threshold')}, compressorRatio: ${val('ratio')}, compressorKnee: ${val('knee')}, compressorAttack: ${val('attack')}, compressorRelease: ${val('release')} }`)
-        : `${x}.compressor("${Math.round(d.threshold * 10) / 10}:${tidy(d.ratio)}:${tidy(d.knee)}:${tidy(d.attack)}:${tidy(d.release)}")`
-      if (isAuto(ctx, 'makeup')) return fmapWith(comp, ctx, d, ['makeup'], (val) => `{ ...v, postgain: (v.postgain ?? 1) * 10 ** (${val('makeup')} / 20) }`)
-      return `${comp}${d.makeup > 0.05 ? `.mul(postgain(${tidy(10 ** (d.makeup / 20))}))` : ''}`
-    },
+    // across the whole bus, so it hears the parts together (see stereo.js)
+    code: stereoCode('comp', (d) => ({ threshold: d.threshold, ratio: d.ratio, knee: d.knee, attack: d.attack, release: d.release, makeup: d.makeup })),
   },
   punch: {
     group: 'mixing', label: 'transient', blurb: 'More or less snap at the start of each hit, and more or less tail',
@@ -547,7 +531,14 @@ function stereoCode(kind, params) {
     return `${x}${tail}`
   }
 }
-const STEREO_TYPES = new Set(['haas', 'widener', 'bus', 'eq3'])
+const STEREO_TYPES = new Set(['haas', 'widener', 'bus', 'eq3', 'saturator', 'clipper', 'softclip', 'compressor'])
+
+/**
+ * Nodes that are real audio on a bus rather than settings on each note: they work on
+ * everything mixed into them, like a mixer insert or a send, and they run after every
+ * per-note effect in the patch whatever order the wires are in.
+ */
+export const BUS_NODES = new Set([...STEREO_TYPES, 'reverb', 'delay'])
 
 /** Effects that can sit inside an fx rack: every plain effect node. */
 export const FX_UNITS = ['eq3', 'compressor', 'saturator', 'clipper', 'softclip', 'punch', 'haas', 'widener', 'filter', 'djfilter', 'reverb', 'delay', 'space', 'level', 'drive', 'phaser', 'tremolo', 'vowel', 'lofi']

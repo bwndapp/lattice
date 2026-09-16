@@ -177,6 +177,63 @@ const smooth = (param, value) => {
 
 const dbGain = (db) => (Number.isFinite(db) ? db : 0)
 
+/**
+ * The waveshaping curves, the same ones Strudel uses per note, so a saturator or a clipper
+ * on a bus sounds like the one on a single sound — only now it's shaping everything that
+ * landed on the bus together, and doing it at four times the sample rate.
+ */
+const CURVES = {
+  scurve: (x, k) => ((1 + k) * x) / (1 + k * Math.abs(x)),
+  soft: (x, k) => Math.tanh(x * (1 + k)),
+  hard: (x, k) => Math.min(1, Math.max(-1, (1 + k) * x)),
+  cubic(x, k) {
+    const t = Math.log1p(k) / (1 + Math.log1p(k))
+    return CURVES.soft((x - (t / 3) * x * x * x) / (1 - t / 3), k)
+  },
+  diode(x, k, asym = false) {
+    const g = 1 + 2 * k
+    const t = Math.log1p(k) / (1 + Math.log1p(k))
+    const bias = 0.07 * t
+    const y = CURVES.soft(x + bias, 2 * k) - CURVES.soft(asym ? bias : -x + bias, 2 * k)
+    const sech = 1 / Math.cosh(g * bias)
+    // divided by the slope at zero, so quiet signal comes through undistorted
+    return CURVES.soft(y / Math.max(1e-8, (asym ? 1 : 2) * g * sech * sech), k)
+  },
+  asym: (x, k) => CURVES.diode(x, k, true),
+  fold(x, k) {
+    const y = (1 + 0.5 * k) * x
+    const window = ((y + 1) % 4 + 4) % 4
+    return 1 - Math.abs(window - 2)
+  },
+  chebyshev(x, k) {
+    const kl = 10 * Math.log1p(k)
+    let tnm1 = 1
+    let tnm2 = x
+    let y = x
+    for (let i = 2; i < 64; i++) {
+      const tn = 2 * x * tnm1 - tnm2
+      tnm2 = tnm1
+      tnm1 = tn
+      if (i % 2 === 0) y += Math.min((1.3 * kl) / i, 2) * tn
+    }
+    return CURVES.soft(y, kl / 20)
+  },
+}
+
+const HEADROOM = 4 // a bus can run hotter than one note, so the curve covers +12 dB
+const CURVE_POINTS = 8192
+
+/** A lookup table for one curve at one drive, over the range the bus can reach. */
+function curveTable(shape, k) {
+  const table = new Float32Array(CURVE_POINTS)
+  for (let i = 0; i < CURVE_POINTS; i++) {
+    const x = (-1 + (2 * i) / (CURVE_POINTS - 1)) * HEADROOM
+    const y = shape(x, k)
+    table[i] = Number.isFinite(y) ? Math.min(1, Math.max(-1, y)) : 0
+  }
+  return table
+}
+
 const UNITS = {
   /**
    * Three-band EQ on the summed sound: a shelf at each end and a bell in the middle, the
@@ -222,6 +279,60 @@ const UNITS = {
         smooth(panner.pan, pan * 2 - 1)
       },
       dispose() { input.disconnect(); panner.disconnect() },
+    }
+  },
+
+  /**
+   * Saturation and clipping on the summed sound, the way a mixer insert works: everything
+   * on the bus hits one curve together, so parts glue and peaks that only happen when they
+   * land at once are the ones that get caught.
+   */
+  shaper(ac) {
+    const input = new GainNode(ac, { gain: 1 / HEADROOM, channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' })
+    const shape = new WaveShaperNode(ac, { oversample: '4x' })
+    const output = new GainNode(ac, { gain: 1 })
+    input.connect(shape).connect(output)
+    let made = ''
+    return {
+      input,
+      output,
+      set(params) {
+        const curve = CURVES[params.curve] ? params.curve : 'soft'
+        const drive = Math.min(8, Math.max(0, Number(params.drive) || 0))
+        // the table only changes when the shape or the drive does, not on every frame
+        const want = `${curve}:${Math.round(drive * 200)}`
+        if (want !== made) {
+          made = want
+          shape.curve = curveTable(CURVES[curve], drive)
+        }
+        smooth(output.gain, Number.isFinite(params.out) ? params.out : 1)
+      },
+      dispose() { for (const node of [input, shape, output]) node.disconnect() },
+    }
+  },
+
+  /**
+   * A compressor across the whole bus: it hears the parts together, so it ducks on what the
+   * mix does rather than on one note at a time. That's what makes a drum bus breathe.
+   */
+  comp(ac) {
+    const input = new GainNode(ac, { channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' })
+    const comp = new DynamicsCompressorNode(ac)
+    const makeup = new GainNode(ac, { gain: 1 })
+    input.connect(comp).connect(makeup)
+    return {
+      input,
+      output: makeup,
+      set(params) {
+        const at = (name, value, lo, hi) => smooth(comp[name], Math.min(hi, Math.max(lo, Number(value))))
+        at('threshold', params.threshold, -100, 0)
+        at('ratio', params.ratio, 1, 20)
+        at('knee', params.knee, 0, 40)
+        at('attack', params.attack, 0, 1)
+        at('release', params.release, 0, 1)
+        smooth(makeup.gain, 10 ** (dbGain(params.makeup) / 20))
+      },
+      dispose() { for (const node of [input, comp, makeup]) node.disconnect() },
     }
   },
 
