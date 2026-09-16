@@ -29,6 +29,7 @@ import { setInsertParams } from './stereo.js'
 import { capturePatterns, parseLanes, tempoChange } from './lanes'
 import { PROJECT_MARK, blankProject, demoProject, generateCode, newId, normalizeProject, parseProject, projectFromCode } from './project'
 import { createTransport, formatBarBeat, parseBarBeat } from './transport'
+import { songLength } from './song'
 
 function readPref(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback } catch { return fallback }
@@ -1008,7 +1009,7 @@ export default function App() {
             else flash('Fix the code error first, then set the tempo')
           }}
         />
-        <Position transport={transport} started={started} />
+        <Position transport={transport} started={started} bpm={project ? project.bpm : (evaluated.cps ?? 0.5) * 60 * transport.beats} songBars={project?.song ? songLength(project.song) : 0} />
         <label className="lcd meter" title="Beats per bar">
           <select
             className="lcd-value"
@@ -1397,14 +1398,40 @@ function Tempo({ bpm, onChange }) {
  * Song position as bar.beat. Type a position ("5.3") and press Enter to jump there;
  * arrow keys nudge a beat, shift + arrows (or page up/down) a bar.
  */
-function Position({ transport, started }) {
+/** Seconds as 1:04.2 (or 1:04 when it's a length, not a position). */
+function clockText(seconds, tenths = true) {
+  const s = Math.max(0, seconds)
+  const mins = Math.floor(s / 60)
+  const rest = s - mins * 60
+  return `${mins}:${String(Math.floor(rest)).padStart(2, '0')}${tenths ? `.${Math.floor((rest % 1) * 10)}` : ''}`
+}
+
+const POSITION_MODES = ['bars', 'time', 'length']
+
+function Position({ transport, started, bpm, songBars }) {
   const inputRef = useRef(null)
   const barRef = useRef(null)
+  const [mode, setMode] = useState(() => (POSITION_MODES.includes(readPref('strudel:position-mode', 'bars')) ? readPref('strudel:position-mode', 'bars') : 'bars'))
+  useEffect(() => writePref('strudel:position-mode', mode), [mode])
+  // a bar takes this many seconds, so bars turn into minutes and seconds
+  const barSeconds = (60 / Math.max(1, Number(bpm) || 120)) * Math.max(1, transport.beats)
+  const cycle = () => setMode((m) => POSITION_MODES[(POSITION_MODES.indexOf(m) + 1) % POSITION_MODES.length])
+  const modeRef = useRef(mode)
+  modeRef.current = mode
+  const secondsRef = useRef(barSeconds)
+  secondsRef.current = barSeconds
+  const barsRef = useRef(songBars)
+  barsRef.current = songBars
   useEffect(() => {
     const show = () => {
       const pos = transport.position()
       const input = inputRef.current
-      if (input && document.activeElement !== input) input.value = formatBarBeat(pos, transport.beats)
+      const text = modeRef.current === 'bars'
+        ? formatBarBeat(pos, transport.beats)
+        : modeRef.current === 'time'
+          ? clockText(pos * secondsRef.current)
+          : clockText(barsRef.current * secondsRef.current, false)
+      if (input && document.activeElement !== input) input.value = text
       barRef.current?.style.setProperty('--phase', pos - Math.floor(pos))
     }
     show()
@@ -1413,12 +1440,13 @@ function Position({ transport, started }) {
     const tick = () => { show(); frame = requestAnimationFrame(tick) }
     tick()
     return () => cancelAnimationFrame(frame)
-  }, [started, transport])
+  }, [started, transport, mode, songBars, barSeconds])
 
   const onKeyDown = (e) => {
     const step = e.shiftKey || e.key.startsWith('Page') ? 1 : 1 / transport.beats
     const pos = transport.position()
     const snapped = Math.round(pos * transport.beats) / transport.beats
+    if (mode !== 'bars') { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); cycle() }; return }
     if (e.key === 'Enter') {
       const target = parseBarBeat(e.currentTarget.value, transport.beats)
       if (target === null) e.currentTarget.classList.add('invalid')
@@ -1432,18 +1460,25 @@ function Position({ transport, started }) {
   }
 
   return (
-    <label className={`lcd position ${started ? 'running' : ''}`} title="Type bar.beat and press Enter to jump · arrows nudge">
+    <label
+      className={`lcd position ${started ? 'running' : ''} ${mode === 'bars' ? '' : 'clock'}`}
+      title={mode === 'bars' ? 'Type bar.beat and press Enter to jump · arrows nudge · click the label for the clock' : mode === 'time' ? 'How far in, in minutes and seconds · click for the song\'s length' : `How long the song is${songBars ? ` (${Math.ceil(songBars)} bars)` : ''} · click for bar.beat`}
+    >
       <input
         ref={inputRef}
         className="lcd-value"
         defaultValue="001.1"
-        aria-label="Song position, bar.beat"
+        readOnly={mode !== 'bars'}
+        aria-label={mode === 'bars' ? 'Song position, bar.beat' : mode === 'time' ? 'How far into the song, in minutes and seconds' : 'How long the song is'}
         spellCheck={false}
         onKeyDown={onKeyDown}
-        onFocus={(e) => e.currentTarget.select()}
-        onBlur={(e) => { e.currentTarget.classList.remove('invalid'); e.currentTarget.value = formatBarBeat(transport.position(), transport.beats) }}
+        onFocus={(e) => { if (mode === 'bars') e.currentTarget.select() }}
+        onClick={() => { if (mode !== 'bars') cycle() }}
+        onBlur={(e) => { e.currentTarget.classList.remove('invalid'); if (mode === 'bars') e.currentTarget.value = formatBarBeat(transport.position(), transport.beats) }}
       />
-      <span className="lcd-unit" aria-hidden>bar.beat</span>
+      <button type="button" className="lcd-unit" onClick={cycle} title="Show bar.beat, the time so far, or how long the song is">
+        {mode === 'bars' ? 'bar.beat' : mode === 'time' ? 'time' : 'length'}
+      </button>
       <span className="cycle-bar" ref={barRef} />
     </label>
   )

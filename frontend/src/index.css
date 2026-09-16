@@ -343,7 +343,10 @@ body {
 .tempo.editing, .tempo.editing .lcd-value { cursor: text; user-select: text; }
 .tempo.dragging { border-color: var(--acid); }
 .tempo:not(.editing) .lcd-value::selection { background: transparent; }
-.lcd-unit { font-size: 10px; color: var(--muted); }
+.lcd-unit { font-size: 10px; color: var(--muted); font-family: inherit; background: none; border: 0; padding: 0; cursor: var(--ring); }
+button.lcd-unit:hover { color: var(--acid); }
+.position.clock .lcd-value { cursor: var(--ring); color: var(--paper); }
+.position.clock.running .lcd-value { color: var(--acid); }
 .position .cycle-bar { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: transparent; }
 .position:not(.running) .lcd-value { color: var(--paper); }
 .transport { display: inline-flex; gap: 0.3rem; align-items: center; }
