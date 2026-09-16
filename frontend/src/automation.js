@@ -50,6 +50,12 @@ const APP_PARAMS = {
   clipper: { prefix: '', where: 'insert', keys: { push: 'drive', ceiling: 'out' } },
   softclip: { prefix: '', where: 'insert', keys: { push: 'drive', ceiling: 'out' } },
   compressor: { prefix: '', where: 'insert', keys: { threshold: 'threshold', ratio: 'ratio', knee: 'knee', attack: 'attack', release: 'release', makeup: 'makeup' } },
+  filter: { prefix: '', where: 'insert', keys: { lpf: 'lpf', lpq: 'lpq', hpf: 'hpf' } },
+  djfilter: { prefix: '', where: 'insert', keys: { djf: 'djf' } },
+  level: { prefix: '', where: 'insert', keys: { gain: 'gain', pan: 'pan' } },
+  drive: { prefix: '', where: 'insert', keys: { shape: 'shape', crush: 'crush' } },
+  phaser: { prefix: '', where: 'insert', keys: { rate: 'rate', depth: 'depth' } },
+  tremolo: { prefix: '', where: 'insert', keys: { rate: 'rate', depth: 'depth' } },
 }
 
 export function appParam(project, target) {

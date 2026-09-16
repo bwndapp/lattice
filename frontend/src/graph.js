@@ -12,7 +12,6 @@
  * grow a new input slot as you connect them; slot order is the order in the code.
  */
 
-import { liveBus } from './live'
 import { STEREO_ORBIT_BASE, beginInserts, commitInserts, declareInsert, declareRoute } from './stereo'
 import { DELAY_DEFAULTS, DELAY_DIVISIONS, GLOBAL_DELAY, GLOBAL_REVERB, REVERB_DEFAULTS, beginFx, commitFx, declareFx } from './fxbus.js'
 
@@ -20,14 +19,6 @@ const clampNum = (v, fallback, lo, hi) => (Number.isFinite(Number(v)) ? Math.min
 const tidy = (v) => String(Math.round(Number(v) * 1000) / 1000)
 // text that lands inside a double-quoted mini-notation string
 const miniText = (s) => String(s ?? '').replace(/["\\\n\r`]/g, ' ').slice(0, 400).trim() || '~'
-/**
- * A knob that moves notes already ringing (see live.js): the voice listens to a bus
- * the app sets to (knob now − the value it started with). Only for controls a value sets
- * outright, so that starting value is known.
- */
-const tap = (ctx, param, control, value, scale = 1) => (ctx?.nodeId
-  ? `.bmod({ b: ${liveBus(ctx.nodeId, param, Number(value), scale)}, c: '${control}', da: 0.3 })`
-  : '')
 const soundName = (s) => String(s ?? '').replace(/[^\w:.#-]/g, '') || 'bd'
 const round = (v) => String(Math.round(Number(v)))
 
@@ -38,7 +29,6 @@ const round = (v) => String(Math.round(Number(v)))
  */
 const isAuto = (ctx, key) => !!ctx?.autoOf?.(key)
 const K = (ctx, d, key, fmt = tidy) => ctx?.autoOf?.(key) ?? fmt(d[key])
-const tapUnlessAuto = (ctx, key, ...rest) => (isAuto(ctx, key) ? '' : tap(ctx, key, ...rest))
 /**
  * `x.fmap(v => body)` where some values in the body may follow automation: each automated
  * key becomes a function argument fed by `.appLeft(itsPattern)`. `body(val)` gets val(key),
@@ -194,16 +184,9 @@ export const NODE_TYPES = {
       { key: 'lpq', type: 'knob', label: 'reso', min: 0, max: 25, def: 4 },
       { key: 'hpf', type: 'knob', label: 'low cut', min: 20, max: 8000, def: 20, log: true, unit: 'hz' },
     ],
-    code: (d, [x], ctx) => {
-      // a note carries one filter, so filters along a line keep the tightest setting
-      // instead of the last one replacing the rest (an instrument's own cutoff included)
-      const hpOn = d.hpf > 20 || isAuto(ctx, 'hpf')
-      const merged = fmapWith(x, ctx, d, ['lpf', 'lpq', 'hpf'], (val) => {
-        const hp = hpOn ? `, hcutoff: Math.max(v.hcutoff ?? 0, ${val('hpf')})` : ''
-        return `{ ...v, ...(v.cutoff !== undefined && v.cutoff <= ${val('lpf')} ? {} : { cutoff: ${val('lpf')}, resonance: ${val('lpq')} })${hp} }`
-      }, { lpf: round, hpf: round })
-      return `${merged}${tapUnlessAuto(ctx, 'lpf', 'cutoff', Math.round(d.lpf))}${tapUnlessAuto(ctx, 'lpq', 'resonance', tidy(d.lpq))}${hpOn ? tapUnlessAuto(ctx, 'hpf', 'hcutoff', Math.round(d.hpf)) : ''}`
-    },
+    // on the bus, so filters along a line really do cascade (see stereo.js). An
+    // instrument's own cutoff knob still belongs to its notes.
+    code: stereoCode('filter', (d) => ({ lpf: d.lpf, lpq: d.lpq, hpf: d.hpf })),
   },
   space: {
     group: 'effect', label: 'space', blurb: 'Reverb and delay',
@@ -272,15 +255,8 @@ export const NODE_TYPES = {
       { key: 'gain', type: 'knob', label: 'vol', min: 0, max: 1.5, def: 0.8 },
       { key: 'pan', type: 'knob', label: 'pan', min: 0, max: 1, def: 0.5 },
     ],
-    // one level after another turns the sound down twice (they multiply), and pans add up
-    code: (d, [x], ctx) => {
-      const pan = d.pan !== 0.5 || isAuto(ctx, 'pan')
-      const merged = fmapWith(x, ctx, d, pan ? ['gain', 'pan'] : ['gain'], (val) => {
-        const p = pan ? `, pan: Math.min(1, Math.max(0, (v.pan ?? 0.5) + ${val('pan')} - 0.5))` : ''
-        return `{ ...v, gain: (v.gain ?? 1) * ${val('gain')}${p} }`
-      })
-      return `${merged}${tapUnlessAuto(ctx, 'gain', 'gain', tidy(d.gain))}${pan ? tapUnlessAuto(ctx, 'pan', 'pan', tidy(d.pan), 2) : ''}`
-    },
+    // a fader on the bus, like the mixer bus node's own (see stereo.js)
+    code: stereoCode('fader', (d) => ({ gain: d.gain, pan: d.pan })),
   },
   drive: {
     group: 'effect', label: 'drive', blurb: 'Distortion and bitcrush',
@@ -289,21 +265,14 @@ export const NODE_TYPES = {
       { key: 'shape', type: 'knob', label: 'drive', min: 0, max: 0.9, def: 0.4 },
       { key: 'crush', type: 'knob', label: 'crush', min: 0, max: 1, def: 0 },
     ],
-    code: (d, [x], ctx) => {
-      const crush = d.crush > 0 || isAuto(ctx, 'crush')
-      const merged = fmapWith(x, ctx, d, crush ? ['shape', 'crush'] : ['shape'], (val) => {
-        const bits = crush ? `, crush: Math.min(v.crush ?? 16, Math.round(16 - ${val('crush')} * 14))` : ''
-        return `{ ...v, shape: Math.min(0.95, (v.shape ?? 0) + ${val('shape')})${bits} }`
-      })
-      return `${merged}${d.shape > 0 ? tapUnlessAuto(ctx, 'shape', 'shape', tidy(d.shape)) : ''}`
-    },
+    code: stereoCode('shaper', (d) => ({ shape: d.shape, crush: d.crush, out: 1, curve: 'scurve' })),
   },
 
   djfilter: {
     group: 'effect', label: 'dj filter', blurb: 'One knob: left darkens, right thins out',
     inputs: 1,
     params: [{ key: 'djf', type: 'knob', label: 'sweep', min: 0, max: 1, def: 0.5 }],
-    code: (d, [x], ctx) => `${x}.djf(${K(ctx, d, 'djf')})`,
+    code: stereoCode('djfilter', (d) => ({ djf: d.djf })),
   },
   phaser: {
     group: 'effect', label: 'phaser', blurb: 'A swirling, sweeping sound',
@@ -312,7 +281,7 @@ export const NODE_TYPES = {
       { key: 'rate', type: 'knob', label: 'rate', min: 0.1, max: 16, def: 2, log: true },
       { key: 'depth', type: 'knob', label: 'depth', min: 0, max: 1, def: 0.6 },
     ],
-    code: (d, [x], ctx) => `${x}.phaser(${K(ctx, d, 'rate')}).phaserdepth(${K(ctx, d, 'depth')})`,
+    code: stereoCode('phaser', (d) => ({ rate: d.rate, depth: d.depth })),
   },
   tremolo: {
     group: 'effect', label: 'tremolo', blurb: 'Volume that pulses',
@@ -321,13 +290,13 @@ export const NODE_TYPES = {
       { key: 'rate', type: 'knob', label: 'rate', min: 0.25, max: 32, def: 4, log: true },
       { key: 'depth', type: 'knob', label: 'depth', min: 0, max: 1, def: 0.7 },
     ],
-    code: (d, [x], ctx) => `${x}.tremolo(${K(ctx, d, 'rate')}).tremolodepth(${K(ctx, d, 'depth')})`,
+    code: stereoCode('tremolo', (d) => ({ rate: d.rate, depth: d.depth })),
   },
   vowel: {
     group: 'effect', label: 'vowel', blurb: 'Makes it sound like it says a vowel',
     inputs: 1,
     params: [{ key: 'vowel', type: 'select', label: 'vowel', options: ['a', 'e', 'i', 'o', 'u'], def: 'a' }],
-    code: (d, [x]) => `${x}.vowel("${['a', 'e', 'i', 'o', 'u'].includes(d.vowel) ? d.vowel : 'a'}")`,
+    code: stereoCode('vowel', (d) => ({ vowel: ['a', 'e', 'i', 'o', 'u'].includes(d.vowel) ? d.vowel : 'a' })),
   },
   lofi: {
     group: 'effect', label: 'lo-fi', blurb: 'Lower sample rate, grittier',
@@ -531,7 +500,8 @@ function stereoCode(kind, params) {
     return `${x}${tail}`
   }
 }
-const STEREO_TYPES = new Set(['haas', 'widener', 'bus', 'eq3', 'saturator', 'clipper', 'softclip', 'compressor'])
+const STEREO_TYPES = new Set(['haas', 'widener', 'bus', 'eq3', 'saturator', 'clipper', 'softclip', 'compressor',
+  'filter', 'djfilter', 'level', 'drive', 'phaser', 'tremolo', 'vowel'])
 
 /**
  * Nodes that are real audio on a bus rather than settings on each note: they work on

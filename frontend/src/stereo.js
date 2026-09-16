@@ -224,12 +224,16 @@ const HEADROOM = 4 // a bus can run hotter than one note, so the curve covers +1
 const CURVE_POINTS = 8192
 
 /** A lookup table for one curve at one drive, over the range the bus can reach. */
-function curveTable(shape, k) {
+function curveTable(shape, k, bits = 0) {
+  const steps = bits ? 2 ** (bits - 1) : 0
   const table = new Float32Array(CURVE_POINTS)
   for (let i = 0; i < CURVE_POINTS; i++) {
     const x = (-1 + (2 * i) / (CURVE_POINTS - 1)) * HEADROOM
-    const y = shape(x, k)
-    table[i] = Number.isFinite(y) ? Math.min(1, Math.max(-1, y)) : 0
+    let y = shape(x, k)
+    if (!Number.isFinite(y)) y = 0
+    // fewer bits to hold the level in: the curve climbs in steps instead of smoothly
+    if (steps) y = Math.round(y * steps) / steps
+    table[i] = Math.min(1, Math.max(-1, y))
   }
   return table
 }
@@ -282,6 +286,114 @@ const UNITS = {
     }
   },
 
+  /** Cut highs or lows across the bus, so a filter node works like a mixer's filter. */
+  filter(ac) {
+    const input = new GainNode(ac, { channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' })
+    const high = new BiquadFilterNode(ac, { type: 'highpass', frequency: 20, Q: 0.707 })
+    const low = new BiquadFilterNode(ac, { type: 'lowpass', frequency: 20000, Q: 0.707 })
+    input.connect(high).connect(low)
+    return {
+      input,
+      output: low,
+      set({ lpf, lpq, hpf }) {
+        smooth(low.frequency, Math.min(20000, Math.max(20, Number(lpf) || 20000)))
+        smooth(high.frequency, Math.min(18000, Math.max(20, Number(hpf) || 20)))
+        low.Q.value = Math.min(30, Math.max(0.0001, Number(lpq) || 0.0001))
+      },
+      dispose() { for (const node of [input, high, low]) node.disconnect() },
+    }
+  },
+
+  /** One knob across the bus: left closes a low pass, right opens a high pass. */
+  djfilter(ac) {
+    const input = new GainNode(ac, { channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' })
+    const high = new BiquadFilterNode(ac, { type: 'highpass', frequency: 20, Q: 0.9 })
+    const low = new BiquadFilterNode(ac, { type: 'lowpass', frequency: 20000, Q: 0.9 })
+    input.connect(high).connect(low)
+    const sweep = (from, to, t) => from * (to / from) ** t
+    return {
+      input,
+      output: low,
+      set({ djf }) {
+        const v = Math.min(1, Math.max(0, Number.isFinite(djf) ? djf : 0.5))
+        // the middle is wide open; either side sweeps one filter in
+        smooth(low.frequency, v < 0.48 ? sweep(20000, 120, (0.48 - v) / 0.48) : 20000)
+        smooth(high.frequency, v > 0.52 ? sweep(20, 9000, (v - 0.52) / 0.48) : 20)
+      },
+      dispose() { for (const node of [input, high, low]) node.disconnect() },
+    }
+  },
+
+  /** Volume that pulses: one oscillator moving the bus's gain. */
+  tremolo(ac) {
+    const input = new GainNode(ac, { channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' })
+    const output = new GainNode(ac, { gain: 1 })
+    const lfo = new OscillatorNode(ac, { type: 'sine', frequency: 4 })
+    const swing = new GainNode(ac, { gain: 0.35 })
+    input.connect(output)
+    lfo.connect(swing).connect(output.gain)
+    lfo.start()
+    return {
+      input,
+      output,
+      set({ rate, depth }) {
+        const d = Math.min(1, Math.max(0, Number(depth) || 0))
+        smooth(lfo.frequency, Math.min(64, Math.max(0.05, Number(rate) || 4)))
+        smooth(swing.gain, d / 2)
+        smooth(output.gain, 1 - d / 2) // so full depth swings between silence and full
+      },
+      dispose() { try { lfo.stop() } catch { /* already stopped */ } for (const node of [input, output, lfo, swing]) node.disconnect() },
+    }
+  },
+
+  /** Four all-pass stages swept by an oscillator, mixed back in: the swirl. */
+  phaser(ac) {
+    const input = new GainNode(ac, { channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' })
+    const output = new GainNode(ac, { gain: 1 })
+    const wet = new GainNode(ac, { gain: 0.5 })
+    const lfo = new OscillatorNode(ac, { type: 'sine', frequency: 2 })
+    const sweep = new GainNode(ac, { gain: 700 })
+    const stages = [400, 700, 1200, 2000].map((f) => new BiquadFilterNode(ac, { type: 'allpass', frequency: f, Q: 0.8 }))
+    input.connect(output) // dry
+    let from = input
+    for (const stage of stages) { from.connect(stage); from = stage; lfo.connect(sweep).connect(stage.frequency) }
+    from.connect(wet).connect(output)
+    lfo.start()
+    return {
+      input,
+      output,
+      set({ rate, depth }) {
+        const d = Math.min(1, Math.max(0, Number(depth) || 0))
+        smooth(lfo.frequency, Math.min(32, Math.max(0.05, Number(rate) || 2)))
+        smooth(sweep.gain, 200 + d * 900)
+        smooth(wet.gain, d * 0.9)
+      },
+      dispose() { try { lfo.stop() } catch { /* already stopped */ } for (const node of [input, output, wet, lfo, sweep, ...stages]) node.disconnect() },
+    }
+  },
+
+  /** Three formant peaks, so the bus sounds like it says a vowel. */
+  vowel(ac) {
+    const input = new GainNode(ac, { channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' })
+    const output = new GainNode(ac, { gain: 1 })
+    const bands = [[1, 8], [0.55, 10], [0.3, 12]].map(([gain, q]) => {
+      const band = new BiquadFilterNode(ac, { type: 'bandpass', frequency: 800, Q: q })
+      const level = new GainNode(ac, { gain })
+      input.connect(band).connect(level).connect(output)
+      return band
+    })
+    const FORMANTS = { a: [800, 1150, 2900], e: [400, 1600, 2700], i: [350, 1700, 2700], o: [450, 800, 2830], u: [325, 700, 2530] }
+    return {
+      input,
+      output,
+      set({ vowel }) {
+        const f = FORMANTS[vowel] ?? FORMANTS.a
+        bands.forEach((band, i) => smooth(band.frequency, f[i]))
+      },
+      dispose() { for (const node of [input, output, ...bands]) node.disconnect() },
+    }
+  },
+
   /**
    * Saturation and clipping on the summed sound, the way a mixer insert works: everything
    * on the bus hits one curve together, so parts glue and peaks that only happen when they
@@ -298,12 +410,17 @@ const UNITS = {
       output,
       set(params) {
         const curve = CURVES[params.curve] ? params.curve : 'soft'
-        const drive = Math.min(8, Math.max(0, Number(params.drive) || 0))
-        // the table only changes when the shape or the drive does, not on every frame
-        const want = `${curve}:${Math.round(drive * 200)}`
+        // the drive node gives its knob straight through; the classic shape curve wants
+        // it as a steepness, and it can also throw away bits on the way out
+        const s = Math.min(0.95, Math.max(0, Number(params.shape) || 0))
+        const drive = Number.isFinite(params.shape) ? (2 * s) / (1 - s) : Math.min(24, Math.max(0, Number(params.drive) || 0))
+        const crush = Math.min(1, Math.max(0, Number(params.crush) || 0))
+        const bits = crush > 0.001 ? Math.max(1, Math.round(16 - crush * 14)) : 0
+        // the table only changes when the shape, the drive or the bit depth does
+        const want = `${curve}:${Math.round(drive * 200)}:${bits}`
         if (want !== made) {
           made = want
-          shape.curve = curveTable(CURVES[curve], drive)
+          shape.curve = curveTable(CURVES[curve], drive, bits)
         }
         smooth(output.gain, Number.isFinite(params.out) ? params.out : 1)
       },
