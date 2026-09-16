@@ -173,8 +173,19 @@ body {
 .btn.browse-btn svg { display: block; color: var(--muted); }
 .btn.browse-btn:hover svg, .btn.browse-btn.on svg { color: inherit; }
 @media (max-width: 1180px) { .browse-word { display: none; } }
-.btn.bar-export { border-radius: 999px; padding: 0.22rem 0.7rem; font-size: 11.5px; }
-.btn.bar-export:disabled { opacity: 0.35; }
+/* the finishing move, so it carries the accent: a tint that fills in on hover */
+.btn.bar-export {
+  display: inline-flex; align-items: center; gap: 0.4rem; flex: none;
+  font-weight: 700; font-size: 11.5px; padding: 0.26rem 0.75rem; border-radius: 999px;
+  color: var(--acid);
+  border-color: color-mix(in srgb, var(--acid) 42%, var(--line));
+  background: color-mix(in srgb, var(--acid) 9%, transparent);
+  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+}
+.btn.bar-export svg { display: block; }
+.btn.bar-export:hover:not(:disabled) { color: var(--ink); background: var(--acid); border-color: var(--acid); }
+.btn.bar-export:disabled { color: var(--muted); border-color: var(--line); background: transparent; opacity: 0.55; }
+@media (max-width: 1180px) { .export-word { display: none; } }
 
 .canvas-switch {
   --cs-w: 7.4rem; /* each option */

@@ -1074,7 +1074,12 @@ export default function App() {
           onClick={() => setShowExport(true)}
           disabled={!project}
           title="Bounce the track to a file: wav, mp3 or m4a"
-        >export</button>
+        >
+          <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6 1.4v5.4M3.7 4.6 6 6.9l2.3-2.3M2.1 8.4v1.3a.9.9 0 0 0 .9.9h6a.9.9 0 0 0 .9-.9V8.4" />
+          </svg>
+          <span className="export-word">export</span>
+        </button>
         <div className="bar-side right">
         <span className="track" role="group" aria-label="Track">
           {loadError ? (
