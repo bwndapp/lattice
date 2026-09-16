@@ -15,7 +15,7 @@ import { ADD_INTO_WIRE, EDGE_TYPES } from './WireEdge.jsx'
 import { copyNodes, pasteNodes, readClipboard, writeClipboard } from './nodeClipboard'
 import { onSoundsChange, previewSound, soundCatalog } from './audio'
 import { flowPaths, setFlowPaths, startFlow, stopFlow } from './flow.js'
-import { colorFor, inkFor, nodeSrc } from './clipColors.js'
+import { colorFor, inkFor, nodeSrc, rgbOf } from './clipColors.js'
 
 const NODE_MIME = 'application/x-strudel-node'
 const Ctx = createContext(null)
@@ -766,7 +766,17 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
       .filter((e) => e.source === nodeId && String(e.sourceHandle ?? '').startsWith('out-'))
       .map((e) => e.sourceHandle.slice(4))),
   }), [project])
-  useEffect(() => setFlowPaths(litPaths), [litPaths])
+  // what colour each source glows: the one its clips wear on the timeline
+  const litColors = useMemo(() => {
+    const map = new Map()
+    for (const n of project.nodes) {
+      if (!SOURCE_TYPES.has(n.type)) continue
+      const rgb = rgbOf(colorFor(nodeSrc(n, project), project.song?.colors))
+      for (const k of litPaths.nodes.get(n.id) ?? []) map.set(k, rgb)
+    }
+    return map
+  }, [project, litPaths])
+  useEffect(() => setFlowPaths(litPaths, litColors), [litPaths, litColors])
   useEffect(() => {
     if (!started) return undefined
     const sch = () => transport?.scheduler

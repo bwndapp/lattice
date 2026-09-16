@@ -29,3 +29,9 @@ export function nodeSrc(node, project) {
   const pattern = project.patterns.find((p) => p.id === node.data.patternId)
   return `pattern:${pattern?.parent ?? node.data.patternId}`
 }
+
+/** A colour as [r, g, b], for blending several of them together. */
+export function rgbOf(hex) {
+  const n = parseInt(hex.slice(1), 16)
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+}

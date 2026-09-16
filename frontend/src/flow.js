@@ -19,7 +19,8 @@ let hits = [] // { at, end (cycles), key } — what's sounding, kept while it ri
 let cycle = null
 let frame = 0
 const els = new Map() // element id → the element, while it's on screen
-const lit = new Map() // element id → what we last wrote
+const lit = new Map() // element id → the light we last wrote there
+let colors = new Map() // source key → its colour as [r, g, b]
 
 const key = (nodeId, chanId) => (chanId ? `${nodeId}|${chanId}` : nodeId)
 
@@ -74,8 +75,9 @@ export function flowPaths(project, { sourceTypes, splitOf }) {
   return { nodes, edges, chans }
 }
 
-export function setFlowPaths(next) {
+export function setFlowPaths(next, byKey) {
   paths = next
+  colors = byKey ?? new Map()
   for (const [id, el] of els) {
     if (next.nodes.has(id) || next.edges.has(id) || next.chans.has(id)) continue
     write(el, id, 0)
@@ -111,11 +113,17 @@ const elementFor = (id, kind) => {
   return found
 }
 
-function write(el, id, value) {
-  if (lit.get(id) === value) return
-  lit.set(id, value)
-  if (value > 0) el.style.setProperty('--lit', String(value))
-  else el.style.removeProperty('--lit')
+function write(el, id, value, glow = '') {
+  const was = lit.get(id)
+  if (was && was.v === value && was.c === glow) return
+  lit.set(id, { v: value, c: glow })
+  if (value <= 0) {
+    el.style.removeProperty('--lit')
+    el.style.removeProperty('--glow')
+    return
+  }
+  el.style.setProperty('--lit', String(value))
+  if (glow) el.style.setProperty('--glow', glow)
 }
 
 function tick() {
@@ -165,25 +173,43 @@ function tick() {
     if (v > (level.get(hit.key) ?? 0)) level.set(hit.key, v)
   }
 
-  const shine = (keys) => {
+  /**
+   * How lit something is, and what colour: the brightest of the sources running through
+   * it sets how hard it glows, and they blend by how loud each one is, so two parts
+   * sharing a wire mix on their way to the output.
+   */
+  const paint = (el, id, keys) => {
     let best = 0
+    let r = 0
+    let g = 0
+    let b = 0
+    let weight = 0
     for (const k of keys) {
       const v = level.get(k) ?? 0
+      if (!v) continue
       if (v > best) best = v
+      const c = colors.get(k)
+      if (!c) continue
+      r += c[0] * v
+      g += c[1] * v
+      b += c[2] * v
+      weight += v
     }
     // a slow curve: bright on the hit, then a long tail rather than a linear ramp down
-    return Math.round(Math.sqrt(best) / STEP) * STEP
+    const value = Math.round(Math.sqrt(best) / STEP) * STEP
+    const tone = (x) => Math.round(x / weight / 8) * 8 // in steps, so small shifts don't churn
+    write(el, id, value, weight ? `rgb(${tone(r)} ${tone(g)} ${tone(b)})` : '')
   }
   for (const [id, keys] of paths.nodes) {
     const el = keys.length && elementFor(id, 'node')
-    if (el) write(el, id, shine(keys))
+    if (el) paint(el, id, keys)
   }
   for (const [id, keys] of paths.edges) {
     const el = keys.length && elementFor(id, 'edge')
-    if (el) write(el, id, shine(keys))
+    if (el) paint(el, id, keys)
   }
   for (const [id, keys] of paths.chans) {
     const el = elementFor(id, 'flow')
-    if (el) write(el, id, shine(keys))
+    if (el) paint(el, id, keys)
   }
 }

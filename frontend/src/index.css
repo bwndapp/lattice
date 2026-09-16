@@ -788,13 +788,13 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
 @property --lit { syntax: '<number>'; inherits: true; initial-value: 0; }
 .graph-canvas .react-flow__edge.animated .react-flow__edge-path { stroke: #4a4a42; }
 .graph-canvas .react-flow__edge[style*="--lit"] .react-flow__edge-path {
-  stroke: color-mix(in srgb, var(--acid) calc(var(--lit) * 100%), #4a4a42);
-  stroke-width: calc(1.5px + var(--lit) * 1.5px);
-  filter: drop-shadow(0 0 calc(var(--lit) * 5px) rgb(228 255 26 / calc(var(--lit) * 0.7)));
+  stroke: color-mix(in srgb, var(--glow, var(--acid)) calc(var(--lit) * 100%), #4a4a42);
+  stroke-width: calc(1.5px + var(--lit) * 1.8px);
+  filter: drop-shadow(0 0 calc(var(--lit) * 6px) color-mix(in srgb, var(--glow, var(--acid)) calc(var(--lit) * 65%), transparent));
 }
 .react-flow__node[style*="--lit"] .gnode {
-  border-color: color-mix(in srgb, var(--tint, var(--acid)) calc(var(--lit) * 90%), var(--line));
-  box-shadow: 0 0 calc(var(--lit) * 18px) rgb(228 255 26 / calc(var(--lit) * 0.3));
+  border-color: color-mix(in srgb, var(--glow, var(--tint, var(--acid))) calc(var(--lit) * 90%), var(--line));
+  box-shadow: 0 0 calc(var(--lit) * 18px) color-mix(in srgb, var(--glow, var(--acid)) calc(var(--lit) * 32%), transparent);
 }
 .react-flow__node[style*="--lit"] .node-head { background: color-mix(in srgb, var(--head-lit) calc(var(--lit) * 50%), var(--head-bg)); }
 .node-chans .chan[style*="--lit"] { background: color-mix(in srgb, var(--tint, var(--acid)) calc(var(--lit) * 20%), transparent); }
@@ -808,7 +808,8 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
 .gnode .knob svg { cursor: ns-resize; }
 .gnode.selected { border-color: var(--acid); box-shadow: 0 0 0 1px var(--acid); }
 .gnode.soloing { outline: 2px dashed var(--acid); outline-offset: 4px; }
-.gnode { --head-bg: #2f2f2a; --head-ink: var(--paper); --head-lit: var(--acid); }
+/* a node's header brightens toward whatever colour is running through it */
+.gnode { --head-bg: #2f2f2a; --head-ink: var(--paper); --head-lit: var(--glow, var(--acid)); }
 .node-head {
   display: flex; align-items: center; gap: 0.35rem; padding: 0.32rem 0.4rem 0.32rem 0.6rem;
   cursor: var(--ring); background: var(--head-bg); color: var(--head-ink); border-bottom: 1px solid var(--line);
