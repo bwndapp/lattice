@@ -13,14 +13,14 @@
  */
 import { evaluate } from '@strudel/core'
 import { transpiler } from '@strudel/transpiler'
-import { getAudioContext, getSuperdoughAudioController, initAudio, setAudioContext, setSuperdoughAudioController, superdough } from '@strudel/webaudio'
+import { getAudioContext, getSuperdoughAudioController, initAudio, resetGlobalEffects, setAudioContext, setSuperdoughAudioController, superdough } from '@strudel/webaudio'
 import { AudioBufferSource, BufferTarget, Mp3OutputFormat, Mp4OutputFormat, Output, WavOutputFormat, canEncodeAudio } from 'mediabunny'
 import { registerMp3Encoder } from '@mediabunny/mp3-encoder'
 import { generateCode } from './project'
 import { activeAutos, appParam, autoValueFn } from './automation.js'
 import { routeVoice, setFxParams, silenceFx } from './fxbus.js'
 import { setInsertParams } from './stereo.js'
-import { ensureAudio, forgetAudio, silenceNow } from './audio'
+import { ensureAudio, forgetAudio } from './audio'
 
 let mp3Ready = false
 /** MP3 isn't in WebCodecs, so mediabunny's encoder fills in. */
@@ -83,8 +83,10 @@ export async function renderProject(project, { from = 0, to = 4, tail = 2, sampl
     .filter((h) => h.hasOnset())
     .sort((a, b) => a.whole.begin.valueOf() - b.whole.begin.valueOf())
 
-  // the live engine has to let go of the speakers while the offline one renders
-  silenceNow()
+  // The live engine lets go of the speakers before the offline one starts. This resets it
+  // here and now: stopping normally resets a moment later, which would land in the middle of
+  // the render and pull the notes we just scheduled back out.
+  resetGlobalEffects()
   forgetAudio()
   const live = getAudioContext()
   try { await live?.close?.() } catch { /* already closed */ }
@@ -97,12 +99,26 @@ export async function renderProject(project, { from = 0, to = 4, tail = 2, sampl
   await initAudio({})
 
   onStage?.(`${haps.length} notes`)
+  let failed = 0
+  let firstError = null
   for (const hap of haps) {
     const at = (hap.whole.begin.valueOf() - from) / cps
+    const value = routeVoice(hapValue(hap))
     try {
-      await superdough(routeVoice(hapValue(hap)), at, hap.duration / cps, cps, hap.whole.begin.valueOf())
-    } catch { /* one note that won't play shouldn't lose the render */ }
+      await superdough(value, at, hap.duration / cps, cps, hap.whole.begin.valueOf())
+    } catch (err) {
+      // the engine keeps a pool of audio nodes; one left over from the live context throws
+      // when it's used here, and is dropped from the pool as it goes, so a second go works
+      try {
+        await superdough(value, at, hap.duration / cps, cps, hap.whole.begin.valueOf())
+      } catch (again) {
+        failed++
+        firstError = firstError ?? again
+      }
+    }
   }
+  if (failed) console.warn(`[export] ${failed} of ${haps.length} notes didn't render`, firstError)
+  if (failed === haps.length && haps.length) throw new Error(`nothing would play: ${firstError?.message ?? firstError}`)
 
   // knobs the app moves itself: step them along the render
   const moving = (project.song?.on ? activeAutos(project) : [])
@@ -124,6 +140,7 @@ export async function renderProject(project, { from = 0, to = 4, tail = 2, sampl
 
   onStage?.('rendering')
   const buffer = await offline.startRendering()
+  console.log(`[export] ${haps.length} notes, ${failed} failed, ${buffer.duration.toFixed(2)}s rendered`)
 
   // back to playing: the next play builds a fresh live context
   silenceFx()
