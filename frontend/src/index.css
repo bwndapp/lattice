@@ -909,8 +909,16 @@ ul.node-chans { display: block; border-top: 1px solid var(--line); }
 .fx-unit { position: relative; z-index: 1; background: var(--ink); border: 1px solid var(--line); border-left: 3px solid var(--acid); }
 .fx-unit.bypassed { border-left-color: var(--line); }
 .fx-unit.bypassed .node-params, .fx-unit.bypassed .fx-unit-name { opacity: 0.4; }
-.fx-unit-head { display: flex; align-items: center; gap: 0.3rem; padding: 0.25rem 0.35rem 0.25rem 0.45rem; border-bottom: 1px solid var(--line); }
-.fx-order { font-size: 9px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.fx-unit-head { display: flex; align-items: center; gap: 0.3rem; padding: 0.25rem 0.35rem 0.25rem 0.45rem; border-bottom: 1px solid var(--line); cursor: grab; touch-action: none; }
+.fx-unit-head:active { cursor: grabbing; }
+.fx-grip { font-size: 9px; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* dragging one along the chain: it dims, and a line shows where it would land */
+.fx-unit.held { opacity: 0.35; }
+.fx-unit.land-before::before, .fx-unit.land-after::after {
+  content: ""; position: absolute; left: -1px; right: -1px; height: 2px; background: var(--acid); z-index: 2;
+}
+.fx-unit.land-before::before { top: -3px; }
+.fx-unit.land-after::after { bottom: -3px; }
 .fx-unit-name { flex: 1; min-width: 0; font-family: var(--display); font-weight: 800; font-stretch: 112%; font-size: 12px; }
 .fx-unit .node-params { padding: 0.35rem 0.45rem 0.4rem; }
 .fx-unit .node-btn { color: var(--muted); }

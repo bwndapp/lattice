@@ -282,17 +282,65 @@ function FxRack({ node }) {
   const chain = node.data.chain ?? []
   const edit = (fn) => ctx.updateNode(node.id, (d) => { d.chain = d.chain ?? []; fn(d.chain) })
   const at = (list, unitId) => list.findIndex((u) => u.id === unitId)
+
+  // drag an effect up or down the chain. Where it would land is only drawn until you let
+  // go: moving it for real on every frame would rebuild the sound as you dragged.
+  const listRef = useRef(null)
+  const [drag, setDrag] = useState(null) // { id, from, to }
+  const dragRef = useRef(null)
+  dragRef.current = drag
+  const rowUnder = (y) => {
+    const rows = [...(listRef.current?.children ?? [])]
+    const found = rows.findIndex((el) => y < el.getBoundingClientRect().bottom)
+    return found === -1 ? Math.max(0, rows.length - 1) : found
+  }
+  const grab = (e, unit, i) => {
+    if (e.button !== 0 || e.target.closest('button, input, select')) return
+    e.preventDefault()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    setDrag({ id: unit.id, from: i, to: i })
+  }
+  const moveTo = (e) => {
+    const held = dragRef.current
+    if (!held) return
+    const to = rowUnder(e.clientY)
+    if (to !== held.to) setDrag({ ...held, to })
+  }
+  const drop = () => {
+    const held = dragRef.current
+    setDrag(null)
+    if (!held || held.to === held.from) return
+    edit((c) => {
+      const j = at(c, held.id)
+      if (j < 0) return
+      const [unit] = c.splice(j, 1)
+      c.splice(Math.min(c.length, held.to), 0, unit)
+    })
+  }
+
   return (
     <div className="fx-rack">
       <span className="fx-io">in</span>
       {chain.length === 0 && <p className="node-hint fx-empty">No effects yet. Add some below; the sound runs through them top to bottom.</p>}
-      <ol className="fx-units">
+      <ol className="fx-units" ref={listRef}>
         {chain.map((unit, i) => {
           const spec = NODE_TYPES[unit.type]
+          const held = drag?.id === unit.id
+          const landing = drag && drag.to === i && drag.to !== drag.from
           return (
-            <li key={unit.id} className={`fx-unit ${unit.on ? '' : 'bypassed'}`}>
-              <div className="fx-unit-head">
-                <span className="fx-order" aria-hidden>{i + 1}</span>
+            <li
+              key={unit.id}
+              className={`fx-unit ${unit.on ? '' : 'bypassed'} ${held ? 'held' : ''} ${landing ? (drag.to > drag.from ? 'land-after' : 'land-before') : ''}`}
+            >
+              <div
+                className="fx-unit-head nodrag"
+                title="Drag to move it along the chain"
+                onPointerDown={(e) => grab(e, unit, i)}
+                onPointerMove={moveTo}
+                onPointerUp={drop}
+                onPointerCancel={drop}
+              >
+                <span className="fx-grip" aria-hidden>{i + 1}</span>
                 <span className="fx-unit-name">{spec.label}</span>
                 <button
                   className={`fx-toggle nodrag ${unit.on ? 'on' : ''}`}
