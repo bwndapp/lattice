@@ -33,6 +33,7 @@ const MAX_PPB = 260
 const COLORS = ['#e4ff1a', '#f2f0e6', '#b9c96a', '#ffb347', '#86d8cc', '#c8a2ff', '#ff8fa3', '#9fb4ff']
 const PICKS = [...COLORS, '#ff6b3d', '#ffd23f', '#7dff9a', '#5ad1ff', '#4d7cff', '#b06bff', '#ff4fd8', '#8a8a80']
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
+const wrap = (a, n) => (n > 0 ? ((a % n) + n) % n : a)
 
 /** A part's colour: the one picked for it, or one from its id. */
 function colorFor(src, colors) {
@@ -185,15 +186,23 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const snapDown = (v, fine) => { const s = fine ? 1 / beats : step; return Math.floor(v / s) * s }
 
   // ── playhead ──
+  // While the song plays it runs along the song and wraps at its end. With the song off the
+  // patch just loops, and the count would run away into bar 900, so the playhead waits at
+  // the cue (or runs around the loop, when one is marked) instead of wandering off.
+  const driven = song.on && song.clips.some((c) => !c.src.startsWith(AUTO_PREFIX))
   useEffect(() => {
     const show = () => {
       const el = playheadRef.current
       if (!el) return
       let pos = transport.position()
-      if (length > 0 && song.on) pos %= Math.max(1, Math.ceil(length - 1e-9))
+      let live = true
+      if (driven && length > 0) pos = wrap(pos, Math.max(1, Math.ceil(length - 1e-9)))
+      else if (transport.looping()) pos = transport.loop.from + wrap(pos - transport.loop.from, transport.loopLength())
+      else if (started) { pos = transport.start; live = false }
+      el.classList.toggle('waiting', !live)
       el.style.transform = `translateX(${pos * ppb}px)`
       if (headRef.current) headRef.current.style.transform = `translateX(${pos * ppb}px)`
-      if (started) {
+      if (started && live) {
         const box = scrollRef.current
         const x = pos * ppb
         // the row headers sit over the left of the view, so the bars start past them
@@ -206,7 +215,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     const tick = () => { show(); frame = requestAnimationFrame(tick) }
     tick()
     return () => cancelAnimationFrame(frame)
-  }, [started, transport, ppb, length, song.on])
+  }, [started, transport, ppb, length, driven])
 
   // ── zoom: ctrl/cmd + wheel around the pointer; buttons; fit ──
   const zoomTo = useCallback((next, anchorClientX) => {
@@ -916,7 +925,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
             <button className={`song-tool ${tool === 'slice' ? 'on' : ''}`} aria-pressed={tool === 'slice'} onClick={() => setTool('slice')} title="Cut clips in two: click a clip, or drag up or down to cut every clip on those rows (C)">slice</button>
           </span>
           <span className="spacer" />
-          <span className="song-hint">{tool === 'slice' ? 'click a clip to cut it · drag up or down to cut several · alt snaps finer · V or Esc to go back' : 'dup a pattern for a variation · U makes selected clips unique · shift-drag copies · right-click deletes · C slices · drag the ruler to move the playhead'}</span>
+          <span className="song-hint">{!song.on && song.clips.length ? 'song off · the patch is looping, so the playhead waits at the cue · turn the song on to play the timeline' : tool === 'slice' ? 'click a clip to cut it · drag up or down to cut several · alt snaps finer · V or Esc to go back' : 'dup a pattern for a variation · U makes selected clips unique · shift-drag copies · right-click deletes · C slices · drag the ruler to move the playhead'}</span>
           <span className="song-zoom" role="group" aria-label="Zoom">
             <button className="btn" onClick={() => zoomTo(ppb / 1.5)} aria-label="Zoom out">−</button>
             <button className="btn" onClick={fit} title="Fit the song">fit</button>

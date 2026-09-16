@@ -255,6 +255,8 @@
 
 .song-marquee { position: absolute; z-index: 4; background: rgba(228, 255, 26, 0.06); border: 1px solid rgba(228, 255, 26, 0.55); border-radius: 4px; pointer-events: none; }
 .song-playhead { position: absolute; top: 0; bottom: 0; left: var(--headw, 0px); z-index: 6; width: 0; border-left: 2px solid var(--acid); pointer-events: none; will-change: transform; }
+/* the song isn't playing (the patch is looping): the playhead waits at the cue */
+.song-playhead.waiting { border-left-style: dashed; border-left-color: rgba(228, 255, 26, 0.45); }
 .song-empty {
   position: absolute;
   left: 32px;
