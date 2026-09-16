@@ -912,8 +912,18 @@ ul.node-chans { display: block; border-top: 1px solid var(--line); }
 .fx-unit-head { display: flex; align-items: center; gap: 0.3rem; padding: 0.25rem 0.35rem 0.25rem 0.45rem; border-bottom: 1px solid var(--line); cursor: grab; touch-action: none; }
 .fx-unit-head:active { cursor: grabbing; }
 .fx-grip { font-size: 9px; color: var(--muted); font-variant-numeric: tabular-nums; }
-/* dragging one along the chain: it dims, and a line shows where it would land */
-.fx-unit.held { opacity: 0.35; }
+.fx-dots {
+  width: 6px; height: 11px; flex: none; opacity: 0.4;
+  background-image: radial-gradient(circle at center, var(--muted) 0.8px, transparent 0.8px);
+  background-size: 3px 4px;
+}
+.fx-unit-head:hover .fx-dots { opacity: 0.9; }
+/* dragging one along the chain: it lifts and follows, and a line shows where it lands */
+.fx-unit.held {
+  z-index: 4; position: relative; opacity: 0.92;
+  border-color: var(--acid); box-shadow: 0 6px 18px rgb(0 0 0 / 0.55);
+}
+.fx-unit.held .fx-unit-head { background: rgb(228 255 26 / 0.08); }
 .fx-unit.land-before::before, .fx-unit.land-after::after {
   content: ""; position: absolute; left: -1px; right: -1px; height: 2px; background: var(--acid); z-index: 2;
 }

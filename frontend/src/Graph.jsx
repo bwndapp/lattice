@@ -279,6 +279,7 @@ function Param({ node, param, value: given, onChange, target: givenTarget }) {
 /** The inside of an fx rack: effect units that the sound passes through, top to bottom. */
 function FxRack({ node }) {
   const ctx = useContext(Ctx)
+  const flow = useReactFlow()
   const chain = node.data.chain ?? []
   const edit = (fn) => ctx.updateNode(node.id, (d) => { d.chain = d.chain ?? []; fn(d.chain) })
   const at = (list, unitId) => list.findIndex((u) => u.id === unitId)
@@ -286,25 +287,32 @@ function FxRack({ node }) {
   // drag an effect up or down the chain. Where it would land is only drawn until you let
   // go: moving it for real on every frame would rebuild the sound as you dragged.
   const listRef = useRef(null)
-  const [drag, setDrag] = useState(null) // { id, from, to }
+  const [drag, setDrag] = useState(null) // { id, from, to, dy, ... }
   const dragRef = useRef(null)
   dragRef.current = drag
-  const rowUnder = (y) => {
-    const rows = [...(listRef.current?.children ?? [])]
-    const found = rows.findIndex((el) => y < el.getBoundingClientRect().bottom)
-    return found === -1 ? Math.max(0, rows.length - 1) : found
-  }
   const grab = (e, unit, i) => {
     if (e.button !== 0 || e.target.closest('button, input, select')) return
     e.preventDefault()
     e.currentTarget.setPointerCapture(e.pointerId)
-    setDrag({ id: unit.id, from: i, to: i })
+    setDrag({
+      id: unit.id,
+      from: i,
+      to: i,
+      dy: 0,
+      startY: e.clientY,
+      // where the rows sit now: the one being dragged moves with the pointer, so
+      // measuring live would have it forever finding itself
+      rows: [...(listRef.current?.children ?? [])].map((el) => el.getBoundingClientRect()),
+      zoom: flow.getZoom() || 1,
+    })
   }
   const moveTo = (e) => {
     const held = dragRef.current
     if (!held) return
-    const to = rowUnder(e.clientY)
-    if (to !== held.to) setDrag({ ...held, to })
+    const found = held.rows.findIndex((r) => e.clientY < r.bottom)
+    const to = found === -1 ? Math.max(0, held.rows.length - 1) : found
+    // the canvas may be zoomed, so what the pointer moved isn't what the node moved
+    setDrag({ ...held, to, dy: (e.clientY - held.startY) / held.zoom })
   }
   const drop = () => {
     const held = dragRef.current
@@ -331,6 +339,7 @@ function FxRack({ node }) {
             <li
               key={unit.id}
               className={`fx-unit ${unit.on ? '' : 'bypassed'} ${held ? 'held' : ''} ${landing ? (drag.to > drag.from ? 'land-after' : 'land-before') : ''}`}
+              style={held ? { transform: `translateY(${drag.dy}px)` } : undefined}
             >
               <div
                 className="fx-unit-head nodrag"
@@ -340,6 +349,7 @@ function FxRack({ node }) {
                 onPointerUp={drop}
                 onPointerCancel={drop}
               >
+                <span className="fx-dots" aria-hidden />
                 <span className="fx-grip" aria-hidden>{i + 1}</span>
                 <span className="fx-unit-name">{spec.label}</span>
                 <button
