@@ -116,7 +116,11 @@
 @media (max-width: 1100px) { .song-hint { display: none; } }
 
 /* the timeline */
-.song-scroll { position: relative; flex: 1; min-height: 0; overflow: auto; outline: none; overscroll-behavior: contain; }
+.song-scroll { position: relative; flex: 1; min-height: 0; overflow: auto; outline: none; overscroll-behavior: contain; scrollbar-width: none; }
+.song-scroll::-webkit-scrollbar { width: 0; height: 0; }
+/* while the wheel is still turning, the sketches sit out rather than being redrawn at a
+   new size every frame; they come back as soon as it settles */
+.song-canvas.zooming .clip-sketch { background-image: none !important; }
 .song-scroll:focus-visible { outline: none; }
 .song-scroll:focus-visible .song-ruler { box-shadow: inset 0 -1px 0 rgba(228, 255, 26, 0.5); }
 .song-canvas {

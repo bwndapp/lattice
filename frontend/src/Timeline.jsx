@@ -115,6 +115,9 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const soundClips = song.clips.filter((c) => !c.src.startsWith(AUTO_PREFIX)).length
 
   const [ppb, setPpb] = useState(readZoom) // pixels per bar
+  const ppbRef = useRef(ppb)
+  ppbRef.current = ppb
+  const canvasRef = useRef(null)
   const [laneH, setLaneH] = useState(readRows) // row height
   const LANE_H = laneH
   const [selected, setSelected] = useState(() => new Set())
@@ -162,6 +165,8 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const bars = Math.max(16, Math.ceil(length) + 8, Math.ceil((scrollRef.current?.clientWidth ?? 0) / ppb) + 1)
   const lanes = Math.max(8, Math.ceil((viewH - RULER_H) / LANE_H) + 4, ...clips.map((c) => c.lane + 3)) // a few spare rows below the view, so zooming rows can keep its spot
   const step = song.snap === 'beat' ? 1 / beats : 1
+  // zoomed out, only every few bars is numbered: no sense building spans nobody can read
+  const tickEvery = ppb >= 22 ? 1 : Math.ceil(22 / ppb)
 
   // ── geometry ──
   const barAt = (clientX) => (clientX - lanesRef.current.getBoundingClientRect().left) / ppb
@@ -205,16 +210,36 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   }, [started, transport, ppb, length, driven])
 
   // ── zoom: ctrl/cmd + wheel around the pointer; buttons; fit ──
+  // A wheel can fire several times a frame, and each zoom moves every clip, tick and
+  // sketch. So they're gathered into one change a frame, and while the wheel is still
+  // turning the clip sketches step aside rather than being redrawn at a new size each time.
+  const zoomRaf = useRef(0)
+  const zoomWant = useRef(null)
+  const zoomRest = useRef(0)
+  const settling = () => {
+    canvasRef.current?.classList.add('zooming')
+    clearTimeout(zoomRest.current)
+    zoomRest.current = setTimeout(() => canvasRef.current?.classList.remove('zooming'), 140)
+  }
+  useEffect(() => () => { cancelAnimationFrame(zoomRaf.current); clearTimeout(zoomRest.current) }, [])
   const zoomTo = useCallback((next, anchorClientX) => {
     const box = scrollRef.current
     if (!box) return setPpb(next)
     const rect = box.getBoundingClientRect()
     const anchor = anchorClientX ?? rect.left + box.clientWidth / 2
-    const barUnder = (box.scrollLeft + anchor - rect.left - HEAD_W) / ppb
+    const barUnder = (box.scrollLeft + anchor - rect.left - HEAD_W) / ppbRef.current
     const clamped = clamp(next, MIN_PPB, MAX_PPB)
-    setPpb(clamped)
-    requestAnimationFrame(() => { box.scrollLeft = Math.max(0, barUnder * clamped - (anchor - rect.left) + HEAD_W) })
-  }, [ppb])
+    ppbRef.current = clamped // so another wheel tick this frame carries on from here
+    zoomWant.current = { clamped, barUnder, at: anchor - rect.left }
+    settling()
+    if (zoomRaf.current) return
+    zoomRaf.current = requestAnimationFrame(() => {
+      zoomRaf.current = 0
+      const want = zoomWant.current
+      setPpb(want.clamped)
+      requestAnimationFrame(() => { box.scrollLeft = Math.max(0, want.barUnder * want.clamped - want.at + HEAD_W) })
+    })
+  }, [])
   useEffect(() => {
     const box = scrollRef.current
     if (!box) return
@@ -232,11 +257,11 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       }
       if (!(e.ctrlKey || e.metaKey)) return
       e.preventDefault()
-      zoomTo(ppb * Math.exp(-e.deltaY * 0.0022), e.clientX)
+      zoomTo(ppbRef.current * Math.exp(-e.deltaY * 0.0022), e.clientX)
     }
     box.addEventListener('wheel', onWheel, { passive: false })
     return () => box.removeEventListener('wheel', onWheel)
-  }, [ppb, laneH, zoomTo])
+  }, [laneH, zoomTo])
   const fit = () => {
     const box = scrollRef.current
     if (!box) return
@@ -928,7 +953,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
           onAuxClick={(e) => { if (e.button === 1) e.preventDefault() }}
           onMouseDown={(e) => { if (e.button === 1) e.preventDefault() }}
         >
-          <div className="song-canvas" style={{ width: bars * ppb + HEAD_W, '--ppb': `${ppb}px`, '--ppbeat': `${ppb / beats}px`, '--lane': `${LANE_H}px`, '--headw': `${HEAD_W}px` }}>
+          <div className="song-canvas" ref={canvasRef} style={{ width: bars * ppb + HEAD_W, '--ppb': `${ppb}px`, '--ppbeat': `${ppb / beats}px`, '--lane': `${LANE_H}px`, '--headw': `${HEAD_W}px` }}>
             <div className="song-corner" style={{ height: RULER_H }} aria-hidden />
             <div
               className="song-ruler"
@@ -939,9 +964,10 @@ export default function Timeline({ project, onUpdateProject, transport, started 
               onPointerCancel={onRulerUp}
               title="Click or drag to move the playhead (alt: off the beat grid) · shift-drag to loop a section, shift-click to clear it · drag the loop's edges to resize it, its band to move it"
             >
-              {Array.from({ length: bars }, (_, i) => (
-                (ppb >= 22 || i % Math.ceil(22 / ppb) === 0) && <span key={i} className={`song-tick ${i % 4 === 0 ? 'major' : ''}`} style={{ left: i * ppb }}>{i + 1}</span>
-              ))}
+              {Array.from({ length: Math.ceil(bars / tickEvery) }, (_, k) => {
+                const i = k * tickEvery
+                return <span key={i} className={`song-tick ${i % 4 === 0 ? 'major' : ''}`} style={{ left: i * ppb }}>{i + 1}</span>
+              })}
               {loop.to > loop.from && (
                 <span className={`song-loop ${loop.on ? '' : 'off'}`} style={{ left: loop.from * ppb, width: (loop.to - loop.from) * ppb }} aria-label={`Loop bars ${loop.from + 1} to ${loop.to}${loop.on ? '' : ' (off)'}`}>
                   <span className="song-loop-edge from" aria-hidden />
