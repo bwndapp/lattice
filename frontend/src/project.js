@@ -427,7 +427,39 @@ export function demoProject() {
       params: { lpf: 1800, gain: 0.35, attack: 0.08, release: 0.4 },
     })],
   })
-  return normalizeProject({ v: 3, bpm: 124, beats: 4, patterns: [beat, bass, chords], ...demoGraph(beat.id, bass.id, chords.id) })
+  // a variation of the beat for the last bar of each eight: dup in the parts list makes these
+  const fill = {
+    ...JSON.parse(JSON.stringify(beat)),
+    id: newId(),
+    name: 'beat 2',
+    parent: beat.id,
+  }
+  fill.channels = fill.channels.map((c) => ({ ...c, id: newId() }))
+  fill.channels[1].steps = on(16, 2, 8) // claps every other step through the second half
+  const clip = (id, src, lane, start, len) => ({ id, src, lane, start, len })
+  const song = {
+    on: true,
+    snap: 'bar',
+    // a short arrangement, so the timeline has something to show: pads all the way, drums
+    // from bar 5, bass from bar 9, a fill in bar 16, and the pad filter opening over the intro
+    lanes: [{ name: 'drums' }, { name: 'hats' }, { name: 'bass' }, { name: 'pads' }, { name: 'filter' }],
+    clips: [
+      clip('cdrums', `pattern:${beat.id}`, 0, 4, 11),
+      clip('cfill', `pattern:${fill.id}`, 0, 15, 1),
+      clip('chats', `node:hats`, 1, 8, 8),
+      clip('cbass', `pattern:${bass.id}`, 2, 8, 8),
+      clip('cpads', `pattern:${chords.id}`, 3, 0, 16),
+      clip('csweep', 'auto:demofilter', 4, 0, 8),
+    ],
+    autos: [{
+      id: 'demofilter',
+      name: 'pads · cutoff',
+      target: 'n:chordfilter:lpf',
+      bars: 8,
+      points: [{ x: 0, y: 0.28 }, { x: 6, y: 0.72, c: 0.35 }, { x: 8, y: 0.62 }],
+    }],
+  }
+  return normalizeProject({ v: 3, bpm: 124, beats: 4, patterns: [beat, fill, bass, chords], song, ...demoGraph(beat.id, bass.id, chords.id) })
 }
 
 const TEMPO = { setcpm: 'cpm', setCpm: 'cpm', setcps: 'cps', setCps: 'cps' }

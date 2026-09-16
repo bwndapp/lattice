@@ -735,12 +735,15 @@ export function demoGraph(beatId, bassId, chordsId) {
       { id: 'bassduck', type: 'sidechain', x: 910, y: 250, data: data('sidechain', { depth: 0.7 }) },
       ...(chordsId ? [
         { id: 'chords', type: 'pattern', x: 40, y: 680, data: { patternId: chordsId } },
-        { id: 'chordspace', type: 'space', x: 330, y: 700, data: data('space', { room: 0.6, delay: 0.3 }) },
+        // the filter's cutoff is the knob the starter song automates
+        { id: 'chordfilter', type: 'filter', x: 330, y: 680, data: data('filter', { lpf: 700, lpq: 7, hpf: 20 }) },
+        { id: 'chorddelay', type: 'delay', x: 620, y: 680, data: data('delay', { mix: 0.22, time: '1/8 dotted', feedback: 0.35, tone: 0.55 }) },
+        { id: 'chordverb', type: 'reverb', x: 910, y: 680, data: data('reverb', { mix: 0.4, size: 3.4, tone: 0.5 }) },
       ] : []),
-      { id: 'hats', type: 'sound', x: 40, y: 920, data: { mini: 'hh*16', bank: 'RolandTR909' } },
-      { id: 'hatsthin', type: 'thin', x: 330, y: 920, data: { amount: 0.35 } },
-      { id: 'hatslevel', type: 'level', x: 620, y: 920, data: { gain: 0.45, pan: 0.65 } },
-      { id: 'out', type: 'output', x: 1220, y: 420, data: { muted: {}, solo: null } },
+      { id: 'hats', type: 'sound', x: 40, y: 940, data: { mini: 'hh*16', bank: 'RolandTR909' } },
+      { id: 'hatsthin', type: 'thin', x: 330, y: 940, data: { amount: 0.35 } },
+      { id: 'hatslevel', type: 'level', x: 620, y: 940, data: { gain: 0.45, pan: 0.65 } },
+      { id: 'out', type: 'output', x: 1220, y: 460, data: { muted: {}, solo: null } },
     ],
     edges: [
       { source: 'beat', target: 'out', targetHandle: 'in-0' },
@@ -750,8 +753,10 @@ export function demoGraph(beatId, bassId, chordsId) {
       { source: 'pump', target: 'bassduck', targetHandle: 'in-1' },
       { source: 'bassduck', target: 'out', targetHandle: 'in-1' },
       ...(chordsId ? [
-        { source: 'chords', target: 'chordspace', targetHandle: 'in' },
-        { source: 'chordspace', target: 'out', targetHandle: 'in-2' },
+        { source: 'chords', target: 'chordfilter', targetHandle: 'in' },
+        { source: 'chordfilter', target: 'chorddelay', targetHandle: 'in' },
+        { source: 'chorddelay', target: 'chordverb', targetHandle: 'in' },
+        { source: 'chordverb', target: 'out', targetHandle: 'in-2' },
       ] : []),
       { source: 'hats', target: 'hatsthin', targetHandle: 'in' },
       { source: 'hatsthin', target: 'hatslevel', targetHandle: 'in' },
