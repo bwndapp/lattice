@@ -1,17 +1,33 @@
 import { useEffect, useRef, useState } from 'react'
 import { FORMATS, availableFormats, download, encodeBuffer, normalize, renderProject } from './exportAudio.js'
 import { songLength } from './song'
+import GlassSwitch from './GlassSwitch.jsx'
 import './ExportDialog.css'
 
 const clean = (name) => (name || 'track').replace(/[^\w\- ]+/g, '').trim().slice(0, 60) || 'track'
 const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
+const size = (bytes) => (bytes > 1e6 ? `${(bytes / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1e3))} KB`)
+
+/** The peaks of a rendered take, for the picture of it. */
+function peaksOf(buffer, count = 320) {
+  const data = buffer.getChannelData(0)
+  const step = Math.max(1, Math.floor(data.length / count))
+  const peaks = []
+  for (let i = 0; i < count; i++) {
+    let peak = 0
+    for (let j = i * step; j < Math.min((i + 1) * step, data.length); j += 2) peak = Math.max(peak, Math.abs(data[j]))
+    peaks.push(peak)
+  }
+  return peaks
+}
 
 /**
- * Bounce the track to a file: what to render, in what format, at what quality. The render
- * runs offline, so it's quicker than playing the track through.
+ * Bouncing the track to a file: choose what and how, watch it render, hear it back, save it.
+ * The render is offline, so it's quicker than playing the track through.
  */
 export default function ExportDialog({ project, title, transport, onClose, onFlash }) {
   const ref = useRef(null)
+  const audioRef = useRef(null) // { ctx, source } while the take is playing back
   const [formats, setFormats] = useState(FORMATS.filter((f) => f.codec.startsWith('pcm')))
   const [format, setFormat] = useState('wav24')
   const [bitrate, setBitrate] = useState(320)
@@ -19,7 +35,9 @@ export default function ExportDialog({ project, title, transport, onClose, onFla
   const [tail, setTail] = useState(2)
   const [loud, setLoud] = useState(false)
   const [bars, setBars] = useState(8)
-  const [busy, setBusy] = useState(null)
+  const [stage, setStage] = useState(null) // what the render is doing
+  const [take, setTake] = useState(null) // { buffer, peaks, blob, ext, name }
+  const [playing, setPlaying] = useState(false)
   const [error, setError] = useState('')
 
   const song = Math.ceil(songLength(project.song ?? { clips: [] }) - 1e-9)
@@ -31,6 +49,8 @@ export default function ExportDialog({ project, title, transport, onClose, onFla
   const cps = (Number(project.bpm) || 120) / (Number(project.beats) || 4) / 60
   const seconds = (range.to - range.from) / cps + Number(tail)
   const spec = formats.find((f) => f.key === format) ?? formats[0]
+  const bytes = spec?.bitrates ? (seconds * bitrate * 1000) / 8 : seconds * rate * 2 * (spec?.codec === 'pcm-s24' ? 3 : 2)
+  const fileName = `${clean(title)}.${spec?.ext ?? 'wav'}`
 
   useEffect(() => {
     const dialog = ref.current
@@ -38,106 +58,129 @@ export default function ExportDialog({ project, title, transport, onClose, onFla
     return () => { if (dialog?.open) dialog.close() }
   }, [])
   useEffect(() => { availableFormats().then(setFormats).catch(() => {}) }, [])
+  useEffect(() => () => { try { audioRef.current?.source.stop() } catch { /* already stopped */ } }, [])
 
-  const run = async () => {
+  const render = async () => {
     setError('')
-    setBusy('getting ready')
+    setStage('getting ready')
     try {
-      const buffer = await renderProject(project, { ...range, tail: Number(tail), sampleRate: rate, onStage: setBusy })
+      const buffer = await renderProject(project, { ...range, tail: Number(tail), sampleRate: rate, onStage: setStage })
       if (loud) normalize(buffer)
-      setBusy('writing the file')
+      setStage('writing the file')
       const { blob, ext } = await encodeBuffer(buffer, { format: spec.key, bitrate })
-      download(blob, `${clean(title)}.${ext}`)
-      onFlash?.(`Exported ${clean(title)}.${ext} · ${clock(buffer.duration)}`)
-      onClose()
+      setTake({ buffer, peaks: peaksOf(buffer), blob, ext, name: `${clean(title)}.${ext}` })
+      setStage(null)
     } catch (e) {
       setError(e.message || String(e))
-      setBusy(null)
+      setStage(null)
     }
   }
+
+  const hear = () => {
+    if (playing) {
+      try { audioRef.current?.source.stop() } catch { /* already stopped */ }
+      return
+    }
+    const ctx = new AudioContext()
+    const source = ctx.createBufferSource()
+    source.buffer = take.buffer
+    source.connect(ctx.destination)
+    source.onended = () => { setPlaying(false); ctx.close().catch(() => {}); audioRef.current = null }
+    source.start()
+    audioRef.current = { ctx, source }
+    setPlaying(true)
+  }
+
+  const save = () => {
+    download(take.blob, take.name)
+    onFlash?.(`Exported ${take.name} · ${clock(take.buffer.duration)}`)
+    onClose()
+  }
+
+  const whatOptions = [
+    ...(song > 0 ? [['song', `song · ${song} bars`]] : []),
+    ...(looping ? [['loop', `loop · ${Math.round((transport.loop.to - transport.loop.from) * 10) / 10} bars`]] : []),
+    ['bars', song > 0 ? 'some bars' : 'the patch'],
+  ]
 
   return (
     <dialog
       ref={ref}
       className="export-dialog"
       aria-labelledby="export-title"
-      onCancel={(e) => { e.preventDefault(); if (!busy) onClose() }}
+      onCancel={(e) => { e.preventDefault(); if (!stage) onClose() }}
       onKeyDown={(e) => { if (e.key !== 'Escape') e.stopPropagation() }}
-      onClick={(e) => { if (e.target === ref.current && !busy) onClose() }}
+      onClick={(e) => { if (e.target === ref.current && !stage) onClose() }}
     >
       <div className="ex-body">
         <div className="ex-head">
           <h2 id="export-title" className="ex-title">Export</h2>
-          <span className="ex-name">{clean(title)}.{spec?.ext ?? 'wav'}</span>
+          <span className="ex-file">{take?.name ?? fileName}</span>
         </div>
 
-        <div className="ex-row">
-          <span className="ex-label">what</span>
-          <span className="ex-seg" role="group" aria-label="What to export">
-            {song > 0 && <button type="button" className={what === 'song' ? 'on' : ''} onClick={() => setWhat('song')}>the song · {song} bars</button>}
-            {looping && <button type="button" className={what === 'loop' ? 'on' : ''} onClick={() => setWhat('loop')}>the loop · {Math.round((transport.loop.to - transport.loop.from) * 10) / 10} bars</button>}
-            <button type="button" className={what === 'bars' ? 'on' : ''} onClick={() => setWhat('bars')}>{song > 0 ? 'a few bars' : 'the patch'}</button>
-          </span>
-        </div>
-        {what === 'bars' && (
-          <div className="ex-row">
-            <span className="ex-label">bars</span>
-            <span className="ex-seg" role="group" aria-label="How many bars">
-              {[2, 4, 8, 16, 32, 64].map((b) => (
-                <button key={b} type="button" className={bars === b ? 'on' : ''} onClick={() => setBars(b)}>{b}</button>
-              ))}
-            </span>
+        {take ? (
+          <div className="ex-done">
+            <div className="ex-wave" aria-hidden>
+              {take.peaks.map((p, i) => <span key={i} style={{ height: `${Math.max(2, p * 100)}%` }} />)}
+            </div>
+            <p className="ex-summary">{clock(take.buffer.duration)} · {size(take.blob.size)} · {spec?.label}{spec?.bitrates ? ` · ${bitrate} kbps` : ''} · {rate / 1000} kHz</p>
+            <div className="ex-actions">
+              <button type="button" className="btn" onClick={() => { try { audioRef.current?.source.stop() } catch { /* stopped */ } setTake(null) }}>back</button>
+              <button type="button" className="btn" onClick={hear}>{playing ? 'stop' : 'hear it'}</button>
+              <button type="button" className="btn primary" onClick={save}>save the file</button>
+            </div>
           </div>
-        )}
-
-        <div className="ex-row">
-          <span className="ex-label">format</span>
-          <span className="ex-seg" role="group" aria-label="Format">
-            {formats.map((f) => (
-              <button key={f.key} type="button" className={format === f.key ? 'on' : ''} onClick={() => setFormat(f.key)}>{f.label}</button>
-            ))}
-          </span>
-        </div>
-        {spec?.bitrates && (
-          <div className="ex-row">
-            <span className="ex-label">bitrate</span>
-            <span className="ex-seg" role="group" aria-label="Bitrate">
-              {spec.bitrates.map((b) => (
-                <button key={b} type="button" className={bitrate === b ? 'on' : ''} onClick={() => setBitrate(b)}>{b} kbps</button>
-              ))}
-            </span>
+        ) : stage ? (
+          <div className="ex-working" role="status">
+            <div className="ex-bars" aria-hidden>{Array.from({ length: 28 }, (_, i) => <span key={i} style={{ animationDelay: `${i * 45}ms` }} />)}</div>
+            <p className="ex-stage">{stage}…</p>
+            <p className="ex-note">rendering {clock(seconds)} of audio · playback is paused</p>
           </div>
+        ) : (
+          <>
+            <div className="ex-row">
+              <span className="ex-label">what</span>
+              <GlassSwitch label="What to export" options={whatOptions} value={what} onChange={setWhat} />
+            </div>
+            {what === 'bars' && (
+              <div className="ex-row">
+                <span className="ex-label">how many</span>
+                <GlassSwitch size="sm" label="How many bars" options={[2, 4, 8, 16, 32, 64].map((b) => [b, String(b)])} value={bars} onChange={setBars} />
+              </div>
+            )}
+            <div className="ex-row">
+              <span className="ex-label">format</span>
+              <GlassSwitch label="Format" options={formats.map((f) => [f.key, f.label.replace(' · ', ' ')])} value={format} onChange={setFormat} />
+            </div>
+            {spec?.bitrates && (
+              <div className="ex-row">
+                <span className="ex-label">bitrate</span>
+                <GlassSwitch size="sm" label="Bitrate" options={spec.bitrates.map((b) => [b, `${b}k`])} value={bitrate} onChange={setBitrate} />
+              </div>
+            )}
+            <div className="ex-row">
+              <span className="ex-label">sample rate</span>
+              <GlassSwitch size="sm" label="Sample rate" options={[[44100, '44.1 kHz'], [48000, '48 kHz']]} value={rate} onChange={setRate} />
+            </div>
+            <div className="ex-row">
+              <span className="ex-label">ring out</span>
+              <GlassSwitch size="sm" label="How long tails ring out" options={[[0, 'none'], [1, '1s'], [2, '2s'], [4, '4s'], [8, '8s']]} value={Number(tail)} onChange={setTail} />
+              <span className="ex-note">room at the end for reverbs and echoes</span>
+            </div>
+            <div className="ex-row">
+              <span className="ex-label">loudness</span>
+              <GlassSwitch size="sm" label="Loudness" options={[['as-is', 'as it plays'], ['lift', 'lift to peak']]} value={loud ? 'lift' : 'as-is'} onChange={(v) => setLoud(v === 'lift')} />
+              <span className="ex-note">{loud ? 'turns the whole bounce up until its loudest moment almost touches 0 dB' : 'exactly the levels you hear'}</span>
+            </div>
+
+            <p className="ex-summary">{clock(seconds)} · about {size(bytes)}{spec ? ` · ${spec.label}` : ''}{spec?.bitrates ? ` · ${bitrate} kbps` : ''}</p>
+            {error && <p className="ex-error">Couldn’t export: {error}</p>}
+            <div className="ex-actions">
+              <button type="button" className="btn" onClick={onClose}>cancel</button>
+              <button type="button" className="btn primary" onClick={render} disabled={!spec}>render</button>
+            </div>
+          </>
         )}
-        <div className="ex-row">
-          <span className="ex-label">sample rate</span>
-          <span className="ex-seg" role="group" aria-label="Sample rate">
-            {[44100, 48000].map((r) => (
-              <button key={r} type="button" className={rate === r ? 'on' : ''} onClick={() => setRate(r)}>{r / 1000} kHz</button>
-            ))}
-          </span>
-        </div>
-        <div className="ex-row">
-          <span className="ex-label">tail</span>
-          <span className="ex-seg" role="group" aria-label="Tail">
-            {[0, 1, 2, 4, 8].map((t) => (
-              <button key={t} type="button" className={Number(tail) === t ? 'on' : ''} onClick={() => setTail(t)}>{t === 0 ? 'none' : `${t}s`}</button>
-            ))}
-          </span>
-          <span className="ex-note">room for reverbs and echoes to ring out</span>
-        </div>
-        <label className="ex-check">
-          <input type="checkbox" checked={loud} onChange={(e) => setLoud(e.target.checked)} />
-          <span>turn it up to just under full scale</span>
-        </label>
-
-        <p className="ex-summary">{clock(seconds)} of audio{spec ? ` · ${spec.label}` : ''}{spec?.bitrates ? ` · ${bitrate} kbps` : ''} · {rate / 1000} kHz</p>
-        {error && <p className="ex-error">Couldn’t export: {error}</p>}
-        <p className="ex-note">Playback stops while it renders.</p>
-
-        <div className="ex-actions">
-          <button type="button" className="btn" onClick={onClose} disabled={!!busy}>cancel</button>
-          <button type="button" className="btn primary" onClick={run} disabled={!!busy || !spec}>{busy ? `${busy}…` : 'export'}</button>
-        </div>
       </div>
     </dialog>
   )
