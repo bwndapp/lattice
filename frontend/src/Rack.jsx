@@ -186,6 +186,22 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
       {pattern.channels.length === 0 && (
         <p className="rack-hint">Empty pattern. Add instruments below (or drag them in), then click steps or write notes.</p>
       )}
+      {pattern.channels.length > 0 && (
+        <div className="ch ch-ruler">
+          <span className="ruler-label">{pattern.bars} bar{pattern.bars === 1 ? '' : 's'} · {pattern.stepsPerBar} steps</span>
+          <div className="steps ruler-steps" aria-hidden>
+            {Array.from({ length: n }, (_, i) => {
+              const bar = i % pattern.stepsPerBar === 0
+              return (
+                <span key={i} className={`rstep ${bar ? 'bar-start' : i % stepsPerBeat === 0 ? 'beat' : ''}`}>
+                  {bar ? i / pattern.stepsPerBar + 1 : ''}
+                </span>
+              )
+            })}
+            <span className="step-cursor" />
+          </div>
+        </div>
+      )}
       {pattern.channels.map((ch) => {
         const fxOpen = openFx.has(ch.id)
         const rollOpen = ch.kind === 'synth' && dock?.at?.tab === 'notes' && dock?.at?.patternId === pattern.id && dock?.at?.channelId === ch.id

@@ -492,9 +492,9 @@ button.lcd-unit:hover { color: var(--acid); }
   border-bottom: 1px solid var(--line);
 }
 .ch.muted .steps, .ch.muted .ch-code { opacity: 0.35; }
-/* only step grids need to be as wide as their steps; synth and code rows (and the piano
-   roll inside them) stay the width of the screen and scroll inside themselves */
-.ch.ch-synth, .ch.ch-code { grid-template-columns: 1.6rem 7.5rem 15rem minmax(18rem, 1fr) 15.5rem; min-width: 0; }
+/* every row — drums, synths, code — resolves the same five columns, so a synth's notes sit
+   over the drum steps below them and nothing drifts when the rack scrolls sideways */
+.ch > .steps, .ch > .mini-roll { max-width: calc(var(--n) * 2.4rem); width: 100%; }
 .ch-name {
   font-family: var(--display); font-weight: 800; font-stretch: 112%; font-size: 1rem;
   color: var(--paper); background: transparent; border: 0; border-bottom: 1px solid transparent; padding: 0.1rem 0; min-width: 0;
@@ -527,9 +527,30 @@ button.lcd-unit:hover { color: var(--acid); }
   background: #1b1b18; border: 1px solid #262622; border-radius: 0;
 }
 .step.alt { background: #24241f; }
-.step.bar-start { box-shadow: -2px 0 0 var(--muted); }
+/* the bar line runs through the gap to the left of the cell, so the grid stays exact */
+.step.bar-start, .rstep.bar-start { box-shadow: -2px 0 0 #5d5d54; }
+.steps > :first-child { box-shadow: none; }
 .step:hover { border-color: var(--paper); }
-.step.on { background: var(--acid); border-color: var(--acid); }
+.step.on { background: var(--acid); border-color: var(--acid); box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.22); }
+.step.on.bar-start { box-shadow: -2px 0 0 #5d5d54, inset 0 -3px 0 rgba(0, 0, 0, 0.22); }
+
+/* the bar ruler at the top of the rack: counts the bars and carries the playhead */
+.ch.ch-ruler {
+  position: sticky; top: 0; z-index: 3;
+  padding-block: 0.3rem 0.15rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.ch-ruler .ruler-label { grid-column: 1 / 4; font-size: 10px; color: var(--muted); white-space: nowrap; }
+.ruler-steps { height: 1rem; }
+.rstep {
+  display: flex; align-items: flex-end; padding-left: 2px;
+  font-size: 9px; line-height: 1; color: var(--muted); min-width: 0; white-space: nowrap;
+  border-bottom: 1px solid var(--line);
+}
+.rstep.bar-start { color: var(--paper); border-bottom-color: #5d5d54; }
+.rstep.beat { border-bottom-color: #3a3a33; }
+.ruler-steps .step-cursor { top: 0; bottom: -2px; border-width: 1px; }
 .step-note {
   position: absolute; inset: auto 0 1px; font-size: 8px; line-height: 1; color: var(--ink);
   overflow: hidden; white-space: nowrap; text-align: center; pointer-events: none;
@@ -605,8 +626,7 @@ button.lcd-unit:hover { color: var(--acid); }
 }
 .pop-name:focus { outline: none; border-bottom-color: var(--acid); }
 .pattern-pop .rack-body { overflow: auto; padding-bottom: 0.4rem; }
-.rack-body.compact .ch { grid-template-columns: 1.6rem 6.5rem 12rem minmax(max(12rem, calc(var(--n) * 1.4rem)), 1fr) max-content; padding-inline: 0.75rem; }
-.rack-body.compact .ch.ch-synth, .rack-body.compact .ch.ch-code { grid-template-columns: 1.6rem 6.5rem 12rem minmax(12rem, 1fr) max-content; min-width: 0; }
+.rack-body.compact .ch { grid-template-columns: 1.6rem 6.5rem 12rem minmax(max(12rem, calc(var(--n) * 1.4rem)), 1fr) 12.5rem; padding-inline: 0.75rem; }
 .rack-body.compact .rack-add { padding: 0.6rem 0.75rem; }
 @media (max-width: 1100px) {
   .playlist.has-palette { --palette: 0px; }
