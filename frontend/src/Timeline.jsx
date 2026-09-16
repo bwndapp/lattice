@@ -588,7 +588,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       return
     }
     if (!mod && k === 'v') { done(); setTool('pointer'); setSliceLine(null); return }
-    if (k === 'escape') { done(); if (tool !== 'pointer') { setTool('pointer'); setSliceLine(null); return } setSelected(new Set()); setActivePart(null); return }
+    if (k === 'escape') { if (tool === 'pointer' && !selected.size) return setActivePart(null); done(); if (tool !== 'pointer') { setTool('pointer'); setSliceLine(null); return } setSelected(new Set()); setActivePart(null); return }
     if (!chosen.length) return
     if (k === 'delete' || k === 'backspace') {
       done()
@@ -1174,10 +1174,10 @@ function PartPanel({ node, anchor, onUpdateProject, onClose }) {
   const set = (key, v) => onUpdateProject((p) => { const n = p.nodes.find((x) => x.id === node.id); if (n) n.data[key] = v })
   useEffect(() => {
     const away = (e) => { if (!ref.current?.contains(e.target)) onClose() }
-    const onKey = (e) => { if (e.key === 'Escape' && !e.target.closest?.('input, textarea, select')) onClose() }
+    const onKey = (e) => { if (e.key === 'Escape' && !e.target.closest?.('input, textarea, select')) { e.preventDefault(); onClose() } } // the Esc is ours, not the dock's
     window.addEventListener('pointerdown', away, true)
-    window.addEventListener('keydown', onKey)
-    return () => { window.removeEventListener('pointerdown', away, true); window.removeEventListener('keydown', onKey) }
+    document.addEventListener('keydown', onKey)
+    return () => { window.removeEventListener('pointerdown', away, true); document.removeEventListener('keydown', onKey) }
   }, [onClose])
   const left = clamp(anchor.x - 40, 12, window.innerWidth - 372)
   const top = clamp(anchor.y + 14, 12, window.innerHeight - 320)

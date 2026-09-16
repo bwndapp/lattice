@@ -77,6 +77,19 @@ export default function DetailDock({ project, at, transport, started, height, on
     return () => window.removeEventListener('keydown', onKey, true)
   }, [tab, keysOn, channel]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Esc closes the dock wherever you are, as long as nothing in front of it used the key
+  // first: a menu, a dialog, a text field, or the roll clearing its selection.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return
+      if (e.target.closest?.('input:not([type=range]), textarea, select, [contenteditable="true"], dialog, .popover, .knob-menu')) return
+      if (document.querySelector('dialog[open]')) return
+      onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
   if (!pattern) return null
 
   const startResize = (e) => {
@@ -99,7 +112,6 @@ export default function DetailDock({ project, at, transport, started, height, on
       className="detail-dock"
       style={{ height }}
       aria-label={`${pattern.name}: ${tab === 'notes' ? 'piano roll' : 'instruments'}`}
-      onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose() } }} // the roll keeps Esc while notes are selected
     >
       <div
         className="dd-grip"

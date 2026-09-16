@@ -33,14 +33,14 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
   }))
 
   useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape' && !e.target.closest?.('input, select, textarea')) onClose() }
+    const onKey = (e) => { if (e.key === 'Escape' && !e.target.closest?.('input, select, textarea')) { e.preventDefault(); onClose() } } // the Esc is ours, not the dock's
     const onDown = (e) => {
       if (ref.current?.contains(e.target) || e.target.closest?.('.knob-menu')) return
       onClose()
     }
-    window.addEventListener('keydown', onKey)
+    document.addEventListener('keydown', onKey)
     window.addEventListener('pointerdown', onDown)
-    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('pointerdown', onDown) }
+    return () => { document.removeEventListener('keydown', onKey); window.removeEventListener('pointerdown', onDown) }
   }, [onClose])
 
   useLayoutEffect(() => {

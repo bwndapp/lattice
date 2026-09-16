@@ -21,10 +21,10 @@ export default function SoundPicker({ kind, sound, bank, anchor, onPick, onClose
 
   useEffect(() => {
     const onDown = (e) => { if (!ref.current?.contains(e.target)) onClose() }
-    const onKey = (e) => { if (e.key === 'Escape') onClose() }
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); onClose() } } // the Esc is ours, not the dock's
     window.addEventListener('pointerdown', onDown)
-    window.addEventListener('keydown', onKey)
-    return () => { window.removeEventListener('pointerdown', onDown); window.removeEventListener('keydown', onKey) }
+    document.addEventListener('keydown', onKey)
+    return () => { window.removeEventListener('pointerdown', onDown); document.removeEventListener('keydown', onKey) }
   }, [onClose])
 
   const q = query.trim().toLowerCase()
