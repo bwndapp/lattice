@@ -34,6 +34,20 @@
 .dd-tab.on { color: var(--ink); background: var(--paper); }
 .dd-tab:disabled { color: #4d4d47; cursor: var(--dot); }
 .dd-spacer { flex: 1; }
+/* the computer keyboard as a piano, and which octave it plays */
+.dd-keys { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid #2e2e2a; border-radius: 999px; background: #121210; }
+.dd-keys-on {
+  font: inherit; font-size: 10px; letter-spacing: 0.07em; text-transform: uppercase;
+  padding: 0.18rem 0.6rem; border: 0; border-radius: 999px;
+  color: var(--muted); background: none; cursor: var(--ring);
+}
+.dd-keys-on:hover { color: var(--paper); }
+.dd-keys-on.on { color: var(--ink); background: var(--acid); }
+.dd-oct { width: 1.3rem; font: inherit; font-size: 12px; line-height: 1; padding: 0.1rem 0; color: var(--paper); background: none; border: 0; border-radius: 999px; cursor: var(--ring); }
+.dd-oct:hover:not(:disabled) { color: var(--acid); }
+.dd-oct:disabled { color: #4d4d47; cursor: var(--dot); }
+.dd-oct-at { min-width: 4rem; text-align: center; font-size: 10.5px; color: var(--paper); font-variant-numeric: tabular-nums; }
+.dd-oct-at.off { color: #5a5a53; }
 .detail-dock .node-btn { color: var(--paper); border-color: var(--line); opacity: 1; }
 .detail-dock .node-btn:hover { border-color: var(--acid); color: var(--acid); }
 

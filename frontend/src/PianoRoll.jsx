@@ -64,7 +64,7 @@ const KEYBOARD = {
   q: 12, 2: 13, w: 14, 3: 15, e: 16, r: 17, 5: 18, t: 19, 6: 20, y: 21, 7: 22, u: 23, i: 24,
 }
 
-export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPreview, cursorRef, onSeek, fill = false }) {
+export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPreview, cursorRef, onSeek, fill = false, keysOn = false, octave = 4, onOctave }) {
   const scrollRef = useRef(null)
   const gridRef = useRef(null)
   const keysRef = useRef(null)
@@ -76,8 +76,6 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
   const [zoom, setZoom] = useState(null) // px per step; null = fit the whole pattern
   const [rowSize, setRowSize] = useState(() => readPref('strudel:roll:rows', 'm'))
   const [follow, setFollow] = useState(() => readPref('strudel:roll:follow', true))
-  const [keysOn, setKeysOn] = useState(() => readPref('strudel:roll:keys', true)) // play notes from the keyboard
-  const [octave, setOctave] = useState(() => readPref('strudel:roll:octave', 4))
   const [full, setFull] = useState(false)
   const [draft, setDraft] = useState(null) // notes while dragging
   const [selection, setSelection] = useState(() => new Set()) // keys of selected notes
@@ -100,8 +98,6 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
 
   useEffect(() => writePref('strudel:roll:rows', rowSize), [rowSize])
   useEffect(() => writePref('strudel:roll:follow', follow), [follow])
-  useEffect(() => writePref('strudel:roll:keys', keysOn), [keysOn])
-  useEffect(() => writePref('strudel:roll:octave', octave), [octave])
 
   useEffect(() => {
     const el = scrollRef.current
@@ -553,8 +549,8 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
     if (k === 'f' && !mod) { done(); return setFull((v) => !v) }
     // the keyboard plays the instrument: two octaves from the one shown, - and = move it
     if (keysOn && !mod && !e.altKey) {
-      if (k === '-' || k === '_') { done(); return setOctave((o) => clamp(o - 1, 0, 8)) }
-      if (k === '=' || k === '+') { done(); return setOctave((o) => clamp(o + 1, 0, 8)) }
+      if (k === '-' || k === '_' || k === '[') { done(); return onOctave?.(octave - 1) }
+      if (k === '=' || k === '+' || k === ']') { done(); return onOctave?.(octave + 1) }
       const semitone = KEYBOARD[k]
       if (semitone !== undefined) {
         done()
@@ -650,13 +646,6 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
             ))}
           </span>
           <button type="button" className={`node-btn ${follow ? 'on' : ''}`} aria-pressed={follow} onClick={() => setFollow((v) => !v)} title="Keep the playhead in view while playing">follow</button>
-          <button
-            type="button"
-            className={`node-btn ${keysOn ? 'on' : ''}`}
-            aria-pressed={keysOn}
-            onClick={() => setKeysOn((v) => !v)}
-            title={'Play this instrument from your keyboard: z s x d c v g b h n j m , for one octave, q 2 w 3 e r 5 t 6 y 7 u for the next · - and = change octave'}
-          >keys{keysOn ? ` C${octave}` : ''}</button>
           <span className="pr-spacer" />
           {selection.size > 0 && <span className="pr-selected">{selection.size} selected</span>}
           <span className="pr-hint" title="ctrl/cmd + A selects all · shift + click adds, shift + drag copies · drag the ruler moves the playhead · ctrl/cmd + drag draws a box · drag moves the selection · ctrl/cmd + drag a note copies · ctrl/cmd + C / X / V / D · arrows move · delete removes · ctrl/cmd + scroll zooms · alt + scroll sizes rows · ctrl/cmd + middle-drag zooms steps and rows · middle-drag or alt + drag pans">{barCount} bar{barCount === 1 ? '' : 's'} · shift+drag copies · drag the ruler to move the playhead · ctrl/cmd+A all · middle-drag pans</span>

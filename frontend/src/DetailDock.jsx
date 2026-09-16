@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import PianoRoll from './PianoRoll.jsx'
 import { PatternChannels, exactStepAt } from './Rack.jsx'
 import { NameInput } from './NameInput.jsx'
@@ -9,6 +9,11 @@ import './DetailDock.css'
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 const HEIGHT_KEY = 'strudel:roll:dock-height'
 const mod = (a, n) => ((a % n) + n) % n
+
+const KEYS_KEY = 'strudel:roll:keys'
+const OCTAVE_KEY = 'strudel:roll:octave'
+const readPref = (key, fallback) => { try { const v = JSON.parse(localStorage.getItem(key)); return v ?? fallback } catch { return fallback } }
+const writePref = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* storage unavailable */ } }
 
 export function readDockHeight() {
   try { return clamp(Number(localStorage.getItem(HEIGHT_KEY)) || 360, 160, 900) } catch { return 360 }
@@ -28,6 +33,12 @@ export default function DetailDock({ project, at, transport, started, height, on
 
   useEffect(() => { try { localStorage.setItem(HEIGHT_KEY, String(Math.round(height))) } catch { /* storage unavailable */ } }, [height])
   useEffect(() => { if (!pattern) onClose() }, [pattern, onClose])
+
+  // the computer keyboard as a piano: on or off, and which octave it starts from
+  const [keysOn, setKeysOn] = useState(() => readPref(KEYS_KEY, true))
+  const [octave, setOctave] = useState(() => readPref(OCTAVE_KEY, 4))
+  const shiftOctave = (to) => { const next = clamp(to, 0, 8); setOctave(next); writePref(OCTAVE_KEY, next) }
+  useEffect(() => writePref(KEYS_KEY, keysOn), [keysOn])
 
   const cursorRef = useRef(() => -1)
   cursorRef.current = () => (pattern ? exactStepAt(project, pattern, transport.position()) : -1)
@@ -73,6 +84,20 @@ export default function DetailDock({ project, at, transport, started, height, on
           <button type="button" role="tab" aria-selected={tab === 'notes'} className={`dd-tab ${tab === 'notes' ? 'on' : ''}`} disabled={!channel} onClick={() => onTab('notes')} title={channel ? 'The notes of one instrument' : 'Add a synth to write notes'}>notes</button>
         </span>
 
+        {tab === 'notes' && (
+          <span className="dd-keys" role="group" aria-label="Play from the keyboard">
+            <button
+              type="button"
+              className={`dd-keys-on ${keysOn ? 'on' : ''}`}
+              aria-pressed={keysOn}
+              onClick={() => setKeysOn((v) => !v)}
+              title={'Play this instrument from your computer keyboard: z s x d c v g b h n j m , is one octave, q 2 w 3 e r 5 t 6 y 7 u the next'}
+            >keys</button>
+            <button type="button" className="dd-oct" disabled={!keysOn || octave <= 0} onClick={() => shiftOctave(octave - 1)} title="An octave down (− or [)" aria-label="An octave down">−</button>
+            <span className={`dd-oct-at ${keysOn ? '' : 'off'}`} title="The octave z and q play">C{octave}–C{Math.min(8, octave + 2)}</span>
+            <button type="button" className="dd-oct" disabled={!keysOn || octave >= 8} onClick={() => shiftOctave(octave + 1)} title="An octave up (= or ])" aria-label="An octave up">+</button>
+          </span>
+        )}
         {tab === 'notes' && synths.length > 1 && (
           <span className="dd-tabs instruments" role="tablist" aria-label="Instrument">
             {synths.map((c) => (
@@ -106,6 +131,9 @@ export default function DetailDock({ project, at, transport, started, height, on
           beats={project.beats}
           cursorRef={cursorRef}
           fill
+          keysOn={keysOn}
+          octave={octave}
+          onOctave={shiftOctave}
           onSeek={(bars, { fine } = {}) => {
             // the pattern repeats, so land in the repetition that's playing now
             const local = mod(fine ? bars : Math.round(bars * pattern.stepsPerBar) / pattern.stepsPerBar, pattern.bars)
