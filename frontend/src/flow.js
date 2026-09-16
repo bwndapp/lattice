@@ -8,12 +8,14 @@
  * the DOM as a `--lit` number, so sixty frames a second never go through React.
  */
 
-const GLOW = 0.3 // seconds a hit stays lit for
+const GLOW = 0.3 // seconds a sound stays lit for after it stops
+const BLOOM = 0.07 // seconds of extra brightness as it starts
+const HOLD = 0.72 // how lit a note stays while it's still sounding
 const STEP = 0.04 // only write a style when the light has moved this much
 
 let paths = { nodes: new Map(), edges: new Map(), chans: new Map() } // element id → the sources feeding it
 let source = null // { pattern, now, cps } getters
-let hits = [] // { at: cycle, key } for the cycle we've looked at
+let hits = [] // { at, end (cycles), key } — what's sounding, kept while it rings
 let cycle = null
 let frame = 0
 const els = new Map() // element id → the element, while it's on screen
@@ -124,27 +126,42 @@ function tick() {
   if (!Number.isFinite(now)) return
 
   // a cycle of hits at a time: querying the pattern every frame would be wasteful
+  const fade = GLOW * cps // the glow and the bloom, in cycles
+  const bloom = BLOOM * cps
   const at = Math.floor(now)
   if (at !== cycle) {
     cycle = at
-    hits = []
+    // notes longer than a cycle are still sounding, so they carry over
+    const ringing = hits.filter((h) => h.end > now - fade)
     const pattern = source.pattern()
     try {
+      const fresh = []
       for (const hap of pattern?.queryArc(at, at + 1) ?? []) {
         if (!hap.hasOnset?.()) continue
         const n = hap.value?._n
         if (typeof n !== 'string') continue
-        hits.push({ at: Number(hap.whole.begin), key: key(n, hap.value._c) })
+        fresh.push({ at: Number(hap.whole.begin), end: Number(hap.whole.end), key: key(n, hap.value._c) })
       }
-    } catch { hits = [] } // a pattern mid-change: the next cycle picks it up
+      hits = [...ringing, ...fresh]
+    } catch { hits = ringing } // a pattern mid-change: the next cycle picks it up
   }
 
-  const fade = GLOW * cps // how long the glow lasts, in cycles
   const level = new Map()
   for (const hit of hits) {
-    const age = now - hit.at
-    if (age < 0 || age > fade) continue
-    const v = 1 - age / fade
+    if (now < hit.at) continue
+    let v
+    if (hit.end - hit.at <= fade) {
+      // a short one: flash and fade, the way a drum sounds
+      const age = now - hit.at
+      if (age > fade) continue
+      v = 1 - age / fade
+    } else {
+      // a long one: bright as it starts, held while it rings, fading once it stops
+      v = now < hit.end
+        ? HOLD + (1 - HOLD) * Math.max(0, 1 - (now - hit.at) / bloom)
+        : HOLD * (1 - (now - hit.end) / fade)
+    }
+    if (v <= 0) continue
     if (v > (level.get(hit.key) ?? 0)) level.set(hit.key, v)
   }
 
