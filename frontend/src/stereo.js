@@ -10,11 +10,13 @@
 import { getAudioContext, getSuperdoughAudioController } from '@strudel/webaudio'
 
 /**
+ * The inserts that need to see the sound sample by sample, which only a worklet can do, so
+ * they're built here as one module the audio thread loads.
+ *
  * Sample-and-hold, for the lo-fi insert: hold every nth sample and throw the rest away, so
- * the bus sounds like it's running at a lower rate. It needs to see the sound sample by
- * sample, which only a worklet can do, so it's built here as a module the audio thread loads.
+ * the bus sounds like it's running at a lower rate.
  */
-const COARSE_WORKLET = `
+const WORKLETS = `
 class CoarseProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [{ name: 'coarse', defaultValue: 1, minValue: 1, maxValue: 64, automationRate: 'k-rate' }]
@@ -39,6 +41,90 @@ class CoarseProcessor extends AudioWorkletProcessor {
   }
 }
 registerProcessor('lattice-coarse', CoarseProcessor)
+
+/*
+ * A brickwall limiter that looks ahead: the sound is heard a few milliseconds late, so the
+ * gain can already be down by the time a peak arrives, and nothing gets past the ceiling.
+ *
+ * For each sample, the gain that would keep it under the ceiling; the lowest of those over
+ * the lookahead window (held with a running minimum); a release that only ever lets the
+ * gain rise slowly; then an average over the window, so the gain comes down smoothly and
+ * is all the way down by the peak. Both sides share one gain, so the image stays put.
+ */
+const LOOKAHEAD = 0.003
+class LimiterProcessor extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [
+      { name: 'gain', defaultValue: 1, minValue: 0, maxValue: 64, automationRate: 'k-rate' },
+      { name: 'ceiling', defaultValue: 1, minValue: 0.01, maxValue: 1, automationRate: 'k-rate' },
+      { name: 'release', defaultValue: 0.1, minValue: 0.001, maxValue: 2, automationRate: 'k-rate' },
+    ]
+  }
+  constructor() {
+    super()
+    const n = this.n = Math.max(1, Math.round(LOOKAHEAD * sampleRate))
+    this.size = n + 1
+    this.delay = [new Float32Array(n), new Float32Array(n)]
+    this.at = 0
+    // running minimum over the last n + 1 wanted gains: a queue of (time, gain), rising
+    this.qTime = new Float64Array(this.size)
+    this.qGain = new Float32Array(this.size)
+    this.qHead = 0
+    this.qLen = 0
+    this.time = 0
+    // average over the last n held gains
+    this.box = new Float32Array(n).fill(1)
+    this.boxAt = 0
+    this.sum = n
+    this.env = 1
+  }
+  process(inputs, outputs, params) {
+    const input = inputs[0]
+    const output = outputs[0]
+    if (!output || !output.length) return true
+    const inL = input?.[0]
+    const inR = input?.[1] ?? inL
+    const gain = params.gain[0]
+    const ceiling = params.ceiling[0]
+    const rise = 1 - Math.exp(-1 / (Math.max(0.001, params.release[0]) * sampleRate))
+    const { n, size, delay, qTime, qGain, box } = this
+    const outL = output[0]
+    const outR = output[1] ?? output[0]
+    for (let i = 0; i < outL.length; i++) {
+      const l = inL ? inL[i] * gain : 0
+      const r = inR ? inR[i] * gain : 0
+      const peak = Math.max(Math.abs(l), Math.abs(r))
+      const want = peak > ceiling ? ceiling / peak : 1
+      // the running minimum: drop what's too old, and anything the new gain undercuts
+      const t = this.time++
+      while (this.qLen && qTime[this.qHead] <= t - size) { this.qHead = (this.qHead + 1) % size; this.qLen-- }
+      while (this.qLen && qGain[(this.qHead + this.qLen - 1) % size] >= want) this.qLen--
+      const tail = (this.qHead + this.qLen) % size
+      qTime[tail] = t
+      qGain[tail] = want
+      this.qLen++
+      const held = qGain[this.qHead]
+      // down at once, up at the release's pace
+      this.env = held < this.env ? held : this.env + (held - this.env) * rise
+      this.sum += this.env - box[this.boxAt]
+      box[this.boxAt] = this.env
+      this.boxAt = (this.boxAt + 1) % n
+      if (this.boxAt === 0) { let s = 0; for (let k = 0; k < n; k++) s += box[k]; this.sum = s } // no drift
+      const g = this.sum / n
+      // the sound from n samples ago, with the gain that was made ready for it
+      const yl = delay[0][this.at] * g
+      const yr = delay[1][this.at] * g
+      delay[0][this.at] = l
+      delay[1][this.at] = r
+      this.at = (this.at + 1) % n
+      // a last guard against rounding: never past the ceiling
+      outL[i] = yl > ceiling ? ceiling : yl < -ceiling ? -ceiling : yl
+      if (output[1]) outR[i] = yr > ceiling ? ceiling : yr < -ceiling ? -ceiling : yr
+    }
+    return true
+  }
+}
+registerProcessor('lattice-limiter', LimiterProcessor)
 `
 let workletUrl = null
 const loaded = new WeakMap() // audio context → the promise that adds the module to it
@@ -51,9 +137,9 @@ export function prepareInserts() {
   const ac = getAudioContext()
   if (!ac?.audioWorklet) return Promise.resolve()
   if (!loaded.has(ac)) {
-    if (!workletUrl) workletUrl = URL.createObjectURL(new Blob([COARSE_WORKLET], { type: 'text/javascript' }))
+    if (!workletUrl) workletUrl = URL.createObjectURL(new Blob([WORKLETS], { type: 'text/javascript' }))
     loaded.set(ac, ac.audioWorklet.addModule(workletUrl).catch((err) => {
-      console.warn('[stereo] could not load the lo-fi worklet', err)
+      console.warn('[stereo] could not load the lo-fi and limiter worklets', err)
     }))
   }
   return loaded.get(ac)
@@ -535,6 +621,54 @@ const UNITS = {
         smooth(makeup.gain, 10 ** (dbGain(params.makeup) / 20))
       },
       dispose() { for (const node of [input, comp, makeup]) node.disconnect() },
+    }
+  },
+
+  /**
+   * A limiter across the whole bus: push the level up into a ceiling nothing gets past.
+   * The last thing on a master, so a track comes out loud without clipping.
+   */
+  limiter(ac) {
+    const input = new GainNode(ac, { channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' })
+    const output = new GainNode(ac, { gain: 1 })
+    // until the worklet is on the audio thread, a compressor stands in (never unlimited)
+    const standIn = new DynamicsCompressorNode(ac, { threshold: -1, knee: 0, ratio: 20, attack: 0.001, release: 0.1 })
+    input.connect(standIn).connect(output)
+    let node = null
+    let gone = false
+    let now = { gain: 1, ceiling: 1, release: 0.1 }
+    const push = () => {
+      if (!node) return
+      for (const [name, value] of Object.entries(now)) node.parameters.get(name).setTargetAtTime(value, ac.currentTime, 0.02)
+    }
+    prepareInserts().then(() => {
+      if (gone) return // taken out of the rack while we waited
+      try {
+        node = new AudioWorkletNode(ac, 'lattice-limiter', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 2, channelCountMode: 'explicit' })
+        for (const [name, value] of Object.entries(now)) node.parameters.get(name).value = value
+        input.disconnect()
+        standIn.disconnect()
+        input.connect(node).connect(output)
+      } catch (err) { console.warn('[stereo] could not start the limiter', err) }
+    })
+    return {
+      input,
+      output,
+      set(params) {
+        const num = (v, fallback, lo, hi) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : fallback)
+        now = {
+          gain: 10 ** (num(params.gain, 0, -24, 36) / 20),
+          ceiling: 10 ** (num(params.ceiling, 0, -40, 0) / 20),
+          release: num(params.release, 0.1, 0.001, 2),
+        }
+        standIn.threshold.value = 20 * Math.log10(now.ceiling)
+        push()
+      },
+      dispose() {
+        gone = true
+        for (const audio of [input, output, standIn, node]) audio?.disconnect()
+        node = null
+      },
     }
   },
 

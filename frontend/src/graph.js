@@ -4,7 +4,7 @@
  *   sources      pattern, sound, notes, code          → a pattern out
  *   transforms   fast, slow, every, euclid, …         → one pattern in, one out
  *   effects      filter, space, level, drive          → one pattern in, one out
- *   eq & dynamics  eq, saturator, clipper, compressor  → one pattern in, one out
+ *   eq & dynamics  eq, saturator, clipper, compressor, limiter  → one pattern in, one out
  *   combine      stack, sequence, arrange             → many in, one out
  *   output       each wire into it is a lane you hear (with mute / solo)
  *
@@ -384,6 +384,17 @@ export const NODE_TYPES = {
     // across the whole bus, so it hears the parts together (see stereo.js)
     code: stereoCode('comp', (d) => ({ threshold: d.threshold, ratio: d.ratio, knee: d.knee, attack: d.attack, release: d.release, makeup: d.makeup })),
   },
+  limiter: {
+    group: 'mixing', label: 'limiter', blurb: 'Pushes the level up to a ceiling nothing gets past: loud, clean, last on the master',
+    inputs: 1,
+    params: [
+      { key: 'gain', type: 'knob', label: 'gain', min: -6, max: 24, def: 0, unit: 'db', origin: 0 },
+      { key: 'ceiling', type: 'knob', label: 'ceiling', min: -12, max: 0, def: -0.3, unit: 'db' },
+      { key: 'release', type: 'knob', label: 'release', min: 0.005, max: 1, def: 0.08, log: true, unit: 's' },
+    ],
+    // across the whole bus, looking a few milliseconds ahead (see stereo.js)
+    code: stereoCode('limiter', (d) => ({ gain: d.gain, ceiling: d.ceiling, release: d.release })),
+  },
   punch: {
     group: 'mixing', label: 'transient', blurb: 'More or less snap at the start of each hit, and more or less tail',
     inputs: 1,
@@ -500,7 +511,7 @@ function stereoCode(kind, params) {
     return `${x}${tail}`
   }
 }
-const STEREO_TYPES = new Set(['haas', 'widener', 'bus', 'eq3', 'saturator', 'clipper', 'softclip', 'compressor',
+const STEREO_TYPES = new Set(['haas', 'widener', 'bus', 'eq3', 'saturator', 'clipper', 'softclip', 'compressor', 'limiter',
   'filter', 'djfilter', 'level', 'drive', 'phaser', 'tremolo', 'vowel', 'lofi'])
 
 /**
@@ -511,7 +522,7 @@ const STEREO_TYPES = new Set(['haas', 'widener', 'bus', 'eq3', 'saturator', 'cli
 export const BUS_NODES = new Set([...STEREO_TYPES, 'reverb', 'delay'])
 
 /** Effects that can sit inside an fx rack: every plain effect node. */
-export const FX_UNITS = ['eq3', 'compressor', 'saturator', 'clipper', 'softclip', 'punch', 'haas', 'widener', 'filter', 'djfilter', 'reverb', 'delay', 'space', 'level', 'drive', 'phaser', 'tremolo', 'vowel', 'lofi']
+export const FX_UNITS = ['eq3', 'compressor', 'limiter', 'saturator', 'clipper', 'softclip', 'punch', 'haas', 'widener', 'filter', 'djfilter', 'reverb', 'delay', 'space', 'level', 'drive', 'phaser', 'tremolo', 'vowel', 'lofi']
 
 /** Saturator characters → Strudel's waveshaping curves. */
 const SATURATION = { warm: 'scurve', tape: 'soft', tube: 'diode', asym: 'asym', harmonics: 'chebyshev', fold: 'fold' }

@@ -603,6 +603,7 @@ export default function App() {
   const pause = useCallback(() => {
     const at = transport.position()
     editorRef.current?.stop()
+    silenceNow() // a note already ringing would otherwise play itself out after the pause
     transport.pausedAt(at)
   }, [transport])
   const toStart = useCallback(() => transport.seek(transport.looping() ? transport.loop.from : 0), [transport])
@@ -1010,8 +1011,12 @@ export default function App() {
         </Link>
         <span className="transport" role="group" aria-label="Transport">
           <button className="btn tport to-start" onClick={toStart} title="Back to the start (Home)" aria-label="Back to the start">|&lt;</button>
-          <button className={`btn play ${started ? 'on' : ''} ${preparing ? 'preparing' : ''}`} onClick={play} aria-busy={preparing} title="Play (space) · update while playing (ctrl/cmd + enter)">{started ? 'update' : preparing ? 'loading' : 'play'}</button>
-          <button className="btn tport" onClick={pause} disabled={!started} title="Pause (space)">pause</button>
+          <button
+            className={`btn play ${started ? 'on' : ''} ${preparing ? 'preparing' : ''}`}
+            onClick={started ? pause : play}
+            aria-busy={preparing}
+            title={started ? 'Pause (space) · re-evaluate with ctrl/cmd + enter' : 'Play (space)'}
+          >{started ? 'pause' : preparing ? 'loading' : 'play'}</button>
           <button className="btn stop" onClick={stop} title="Stop, cut every sound still ringing, and return to the cue (ctrl/cmd + .)">stop</button>
         </span>
         <Tempo

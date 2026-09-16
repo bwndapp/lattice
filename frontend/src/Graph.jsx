@@ -599,6 +599,7 @@ const SEARCH_WORDS = {
   eq3: 'eq equalizer equaliser three band 3 bass low mid high boost cut tone mixing',
   saturator: 'saturation distortion warm tape tube harmonics drive grit bass mixing',
   clipper: 'clip clipping limiter loud ceiling hard peaks mastering bass mixing',
+  limiter: 'limiter limit brickwall maximizer maximiser loud loudness ceiling peaks master mastering true peak lufs mixing',
   compressor: 'compression comp dynamics glue squash level even punch bass mixing',
   punch: 'transient shaper attack snap punch tail sustain drums',
   bus: 'mixer bus track insert group submix route send null merge combine channel fader sum',
