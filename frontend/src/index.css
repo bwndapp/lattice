@@ -824,9 +824,21 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
 .stepper button { width: 1.35rem; height: 1.5rem; font: inherit; font-size: 12px; color: var(--paper); background: var(--ink); border: 1px solid var(--line); border-radius: 0; cursor: var(--ring); padding: 0; }
 .stepper button:hover { color: var(--acid); border-color: var(--acid); }
 .stepper input { width: 2.4rem; height: 1.5rem; text-align: center; font-family: var(--mono); font-size: 12px; color: var(--acid); background: var(--ink); border: 1px solid var(--line); border-inline: 0; }
-.node-chans { display: flex; flex-wrap: wrap; gap: 0.25rem; }
-.node-chan { font-size: 10px; padding: 0 0.35rem; border: 1px solid var(--line); }
-.node-chan.muted { opacity: 0.4; text-decoration: line-through; }
+.node-chans { display: flex; flex-wrap: wrap; gap: 0.25rem; list-style: none; margin: 0 -0.6rem; padding: 0; }
+/* one port per instrument, so a kick can go somewhere the rest of the pattern doesn't */
+ul.node-chans { display: block; border-top: 1px solid var(--line); }
+.node-chans .chan {
+  position: relative; display: flex; align-items: center; min-height: 1.5rem;
+  padding: 0.15rem 0.9rem 0.15rem 0.6rem; font-size: 10px; border-bottom: 1px solid var(--line);
+}
+.node-chans .chan:last-child { border-bottom: 0; }
+.chan-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.node-chans .chan.muted { opacity: 0.4; text-decoration: line-through; }
+.node-chans .chan.wired .chan-name { color: var(--acid); }
+.graph-canvas .port.chan-port { width: 9px; height: 9px; border-width: 1px; }
+.graph-canvas .port.chan-port.free { opacity: 0.45; }
+.gnode:hover .graph-canvas .port.chan-port.free, .graph-canvas .gnode:hover .port.chan-port.free { opacity: 1; }
+.out-label { position: absolute; right: 12px; bottom: -2px; font-size: 9px; color: var(--muted); pointer-events: none; }
 .node-hint { color: var(--muted); font-size: 11px; }
 .node-actions { display: flex; gap: 0.3rem; flex-wrap: wrap; }
 .node-actions .btn { padding: 0.25rem 0.5rem; font-size: 11px; }

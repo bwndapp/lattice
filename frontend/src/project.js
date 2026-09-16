@@ -1,5 +1,5 @@
 import { parse } from 'acorn'
-import { defaultData, demoGraph, graphCode, normalizeGraph } from './graph.js'
+import { defaultData, demoGraph, graphCode, normalizeGraph, patternChanVar, patternVar, splitPatternIds } from './graph.js'
 import { normalizeSong, songActive, songExpr } from './song.js'
 import { automationCode, channelTarget } from './automation.js'
 import { GLOBAL_DELAY, GLOBAL_REVERB } from './fxbus.js'
@@ -171,7 +171,7 @@ export function normalizeProject(raw) {
   const patternIds = new Set(project.patterns.map((p) => p.id))
   let graph = raw
   if (!Array.isArray(raw.nodes) && Array.isArray(raw.tracks)) graph = graphFromTracks(raw.tracks, patternIds)
-  const { nodes, edges } = normalizeGraph(graph, patternIds)
+  const { nodes, edges } = normalizeGraph(graph, project.patterns)
   project.nodes = nodes
   project.edges = edges
   if (typeof raw.prelude === 'string' && raw.prelude.trim()) project.prelude = raw.prelude.slice(0, 20000)
@@ -256,7 +256,7 @@ function channelCode(ch, pattern, auto = null) {
   return `/* ${commentText(ch.name)} */ ${expr}`
 }
 
-export const patternVar = (id) => `p_${id}`
+export { patternVar, patternChanVar }
 
 /** The pattern whose node a pattern plays through: its original, or itself. */
 export function rootPatternId(project, patternId) {
@@ -319,8 +319,15 @@ export function auditionCode(project, patternId, channelId, { midi = 48, steps =
   const graph = graphCode(project, { song: () => 'silence', audition: true })
   const lanes = graph.lanes.filter((l) => !l.startsWith('_')).map((l) => l.slice(l.indexOf(':') + 1).trim())
   if (!lanes.length) return hit
+  // an instrument wired out on its own port is heard through that port's chain
+  const split = splitPatternIds(project)
+  const root = project.patterns.find((p) => p.id === rootId)
+  const hitChannel = pattern.parent ? root?.channels[pattern.channels.findIndex((c) => c.id === channelId)]?.id : channelId
   return [
-    ...project.patterns.map((p) => `const ${patternVar(p.id)} = ${p.id === rootId ? hit : 'silence'}`),
+    ...project.patterns.flatMap((p) => [
+      `const ${patternVar(p.id)} = ${p.id === rootId ? hit : 'silence'}`,
+      ...(split.has(p.id) ? p.channels.map((c) => `const ${patternChanVar(p.id, c.id)} = ${p.id === rootId && c.id === hitChannel ? hit : 'silence'}`) : []),
+    ]),
     ...graph.lines,
     `stack(${lanes.join(', ')})`,
   ].join('\n')
@@ -349,8 +356,29 @@ export function generateCode(project, { solo = null } = {}) {
     const live = pattern.channels.filter((c) => !c.mute)
     return live.length ? `stack(\n${live.map((c) => `  ${channelCode(c, pattern, auto)},`).join('\n')}\n)` : 'silence'
   }
+  // patterns whose instruments leave their node one by one get a variable each
+  const split = splitPatternIds(project)
   for (const pattern of project.patterns) {
     const variations = pattern.parent ? [] : project.patterns.filter((v) => v.parent === pattern.id)
+    if (split.has(pattern.id) && pattern.channels.length) {
+      lines.push(`// pattern: ${commentText(pattern.name)}, an instrument at a time`)
+      const names = []
+      for (const [i, ch] of pattern.channels.entries()) {
+        // a variation's instrument in the same place plays out of the same port
+        const own = [pattern, ...variations].map((p) => {
+          const c = p === pattern ? ch : p.channels[i]
+          if (!c || c.mute) return 'silence'
+          const expr = channelCode(c, p, auto)
+          return song ? song(`pattern:${p.id}`, expr) : expr
+        }).filter((x) => x !== 'silence')
+        const name = patternChanVar(pattern.id, ch.id)
+        names.push(own.length ? name : null)
+        lines.push(`const ${name} = ${own.length === 0 ? 'silence' : own.length === 1 ? own[0] : `stack(\n${own.join(',\n')}\n)`}`)
+      }
+      const live = names.filter(Boolean)
+      lines.push(`const ${patternVar(pattern.id)} = ${live.length ? `stack(${live.join(', ')})` : 'silence'}`, '')
+      continue
+    }
     lines.push(`// pattern: ${commentText(pattern.name)} (${pattern.bars} bar${pattern.bars === 1 ? '' : 's'})${pattern.parent ? `, a variation of ${commentText(project.patterns.find((x) => x.id === pattern.parent)?.name)}` : ''}${variations.length ? ` + ${variations.length} variation${variations.length === 1 ? '' : 's'} in the song` : ''}`)
     const expr = patternExpr(pattern)
     let value = song && expr !== 'silence' ? song(`pattern:${pattern.id}`, expr) : expr

@@ -82,7 +82,14 @@ export const NODE_TYPES = {
     group: 'source', label: 'pattern', blurb: 'Steps and notes you draw in its pop-up',
     inputs: 0,
     params: [],
-    code: (d, _in, ctx) => (ctx.patternIds.has(d.patternId) ? `p_${d.patternId}` : null),
+    // the main out carries whatever isn't wired out on its own instrument port
+    code: (d, _in, ctx) => {
+      if (!ctx.patternIds.has(d.patternId)) return null
+      const rest = ctx.mixChannels(d.patternId)
+      if (rest === null) return patternVar(d.patternId)
+      if (!rest.length) return 'silence' // every instrument left by its own port
+      return rest.length === 1 ? rest[0] : `stack(${rest.join(', ')})`
+    },
   },
   sound: {
     group: 'source', label: 'rhythm', blurb: 'A sound played in a mini-notation rhythm',
@@ -566,7 +573,9 @@ const slotIndex = (handle) => {
 }
 
 /** Clean nodes and wires from a (possibly hand-edited) project header. */
-export function normalizeGraph(raw, patternIds) {
+export function normalizeGraph(raw, patterns) {
+  const patternIds = new Set(patterns instanceof Set ? patterns : patterns.map((p) => p.id))
+  const channelsIn = (pid) => (patterns instanceof Set ? null : patterns.find((p) => p.id === pid)?.channels)
   const nodes = []
   const ids = new Set()
   for (const n of Array.isArray(raw?.nodes) ? raw.nodes : []) {
@@ -606,7 +615,13 @@ export function normalizeGraph(raw, patternIds) {
     const key = `${target.id}:${handle}`
     if (taken.has(key)) continue // one wire per input slot
     taken.add(key)
-    edges.push({ id: `e_${source.id}_${target.id}_${handle.replace('-', '')}`, source: source.id, target: target.id, targetHandle: handle })
+    // a wire can leave a pattern node by one instrument's port instead of its main out;
+    // when that instrument is gone the wire goes with it
+    const chan = source.type === 'pattern' && /^out-[\w-]{1,40}$/.test(String(e?.sourceHandle)) ? e.sourceHandle.slice(4) : null
+    const known = chan && channelsIn(source.data.patternId)
+    if (chan && known && !known.some((c) => c.id === chan)) continue
+    const from = chan ? `out-${chan}` : 'out'
+    edges.push({ id: `e_${source.id}_${from === 'out' ? '' : `${from.slice(4)}_`}${target.id}_${handle.replace('-', '')}`, source: source.id, sourceHandle: from, target: target.id, targetHandle: handle })
   }
   return { nodes, edges: dropCycles(nodes, edges) }
 }
@@ -638,6 +653,22 @@ export function inputsOf(edges, nodeId) {
 }
 
 export const nodeVar = (id) => `n_${id}`
+export const patternVar = (id) => `p_${id}`
+/** One instrument of a pattern, as its own variable (project.js writes these out). */
+export const patternChanVar = (patternId, channelId) => `p_${patternId}_${channelId}`
+/** The instrument a wire leaves a pattern node by, or null for its main out. */
+export const outChannel = (handle) => /^out-(.+)$/.exec(String(handle ?? ''))?.[1] ?? null
+
+/** Patterns with at least one instrument wired out on its own port. */
+export function splitPatternIds(project) {
+  const ids = new Set()
+  for (const e of project.edges ?? []) {
+    if (!outChannel(e.sourceHandle)) continue
+    const src = project.nodes?.find((n) => n.id === e.source)
+    if (src?.type === 'pattern' && src.data?.patternId) ids.add(src.data.patternId)
+  }
+  return ids
+}
 
 /**
  * Code for the graph: one `const` per node that makes a pattern, in dependency order,
@@ -668,6 +699,15 @@ export function graphCode(project, { solo = null, song = null, audition = false,
   const declare = (orbit, key, kind, params) => declareInsert(inserts, orbit, key, kind, params)
   const routeBus = (from, to) => declareRoute(inserts, from, to)
   const orbitOf = new Map() // node id → the bus its sound ends up on, when not the main one
+  const channelsOf = (pid) => project.patterns.find((p) => p.id === pid)?.channels ?? []
+  /** What a wire carries: one instrument of a pattern, or everything the source node makes. */
+  const carried = (w, name) => {
+    const chan = outChannel(w.sourceHandle)
+    if (!chan) return name
+    const src = byId.get(w.source)
+    if (src?.type !== 'pattern' || !channelsOf(src.data.patternId).some((c) => c.id === chan)) return name
+    return patternChanVar(src.data.patternId, chan)
+  }
 
   const visit = (id, trail = new Set()) => {
     if (exprs.has(id)) return exprs.get(id)
@@ -681,14 +721,19 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     const slots = []
     for (const w of wires) {
       const v = visit(w.source, trail)
-      if (v) { inputs.push(v); slots.push(w.targetHandle) }
+      if (v) { inputs.push(carried(w, v)); slots.push(w.targetHandle) }
     }
     if (spec.inputs === 1 && !inputs.length) { exprs.set(id, null); return null }
     const inputOrbits = wires.filter((w) => exprs.get(w.source)).map((w) => orbitOf.get(w.source) ?? null)
     // a single input passes its bus on; mixing several inputs lands back on the main bus
     const route = { orbit: inputs.length === 1 && spec.inputs !== 'many' ? inputOrbits[0] : null }
     const autoOf = auto ? (key) => auto(`n:${id}:${key}`) : null
-    let expr = spec.code(node.data, inputs, { patternIds, slots, nodeId: id, orbit: 2 + sidechains.indexOf(id), cps, beats, route, inputOrbits, stereoOrbit, declare, routeBus, auto, autoOf, declareFx: (key, kind, params) => declareFx(fx, key, kind, params) })
+    // instruments this node sends out on their own port don't also go out its main one
+    const split = new Set(edges.filter((e) => e.source === id).map((e) => outChannel(e.sourceHandle)).filter(Boolean))
+    const mixChannels = (pid) => (split.size
+      ? channelsOf(pid).filter((c) => !split.has(c.id)).map((c) => patternChanVar(pid, c.id))
+      : null)
+    let expr = spec.code(node.data, inputs, { patternIds, mixChannels, slots, nodeId: id, orbit: 2 + sidechains.indexOf(id), cps, beats, route, inputOrbits, stereoOrbit, declare, routeBus, auto, autoOf, declareFx: (key, kind, params) => declareFx(fx, key, kind, params) })
     if (!expr) { exprs.set(id, null); return null }
     // a source making sound on its own plays when the song says (patterns are handled where they're defined)
     if (song && spec.group === 'source' && node.type !== 'pattern' && !wires.length) expr = song(`node:${id}`, expr)
@@ -710,7 +755,7 @@ export function graphCode(project, { solo = null, song = null, audition = false,
         const v = visit(w.source)
         if (!v) continue
         const muted = out.data.muted?.[w.targetHandle] || (soloWire && soloWire !== w.targetHandle)
-        lanes.push(`${muted ? '_' : ''}${out.id}_${w.targetHandle.replace('-', '')}: ${v}`)
+        lanes.push(`${muted ? '_' : ''}${out.id}_${w.targetHandle.replace('-', '')}: ${carried(w, v)}`)
       }
     }
   }

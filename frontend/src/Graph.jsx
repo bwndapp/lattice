@@ -54,7 +54,7 @@ function spliceInto(p, edgeId, nodeId) {
   const node = p.nodes.find((n) => n.id === nodeId)
   if (!wire || !node || !splicable(node.type) || wire.source === nodeId || wire.target === nodeId) return false
   p.edges = p.edges.filter((e) => e !== wire && e.source !== nodeId && e.target !== nodeId)
-  p.edges.push({ source: wire.source, target: nodeId, targetHandle: firstInput(node.type) })
+  p.edges.push({ source: wire.source, sourceHandle: wire.sourceHandle, target: nodeId, targetHandle: firstInput(node.type) })
   p.edges.push({ source: nodeId, target: wire.target, targetHandle: wire.targetHandle })
   return true
 }
@@ -82,7 +82,7 @@ function spliceChain(p, edgeId, { head, tail }) {
   const first = p.nodes.find((n) => n.id === head)
   if (!wire || !first || [head, tail].includes(wire.source) || [head, tail].includes(wire.target)) return false
   p.edges = p.edges.filter((e) => e !== wire)
-  p.edges.push({ source: wire.source, target: head, targetHandle: firstInput(first.type) })
+  p.edges.push({ source: wire.source, sourceHandle: wire.sourceHandle, target: head, targetHandle: firstInput(first.type) })
   p.edges.push({ source: tail, target: wire.target, targetHandle: wire.targetHandle })
   return true
 }
@@ -125,14 +125,19 @@ function groupIntoRack(p, ids) {
   p.nodes = p.nodes.filter((n) => !group.has(n.id))
   p.nodes.push({ id, type: 'fxrack', x: order[0].x, y: order[0].y, data: { ...defaultData('fxrack'), chain } })
   p.edges = p.edges.filter((e) => !group.has(e.source) && !group.has(e.target))
-  for (const e of incoming) p.edges.push({ source: e.source, target: id, targetHandle: 'in' })
+  for (const e of incoming) p.edges.push({ source: e.source, sourceHandle: e.sourceHandle, target: id, targetHandle: 'in' })
   for (const e of outgoing) p.edges.push({ source: id, target: e.target, targetHandle: e.targetHandle })
   return id
 }
 
-/** What a node is called on wires and in lists. */
-function nodeTitle(node, project) {
+/** What a node is called on wires and in lists; `from` names the port the wire left by. */
+function nodeTitle(node, project, from = 'out') {
   if (!node) return '?'
+  if (node.type === 'pattern' && String(from ?? '').startsWith('out-')) {
+    const pat = project.patterns.find((p) => p.id === node.data.patternId)
+    const chan = pat?.channels.find((c) => `out-${c.id}` === from)
+    if (chan) return `${pat.name} · ${chan.name}`
+  }
   if (node.data?.name) return node.data.name
   if (node.type === 'pattern') return project.patterns.find((p) => p.id === node.data.patternId)?.name ?? 'pattern'
   if (node.type === 'sound') return `${NODE_TYPES.sound.label} ${node.data.mini}`
@@ -338,14 +343,17 @@ function StudioNode({ id, selected }) {
   const updateInternals = useUpdateNodeInternals()
   const spec = node && NODE_TYPES[node.type]
   const wires = node ? inputsOf(ctx.project.edges, id) : []
-  const slotKey = wires.map((w) => w.targetHandle).join(',')
+  const patternOf = node?.type === 'pattern' && ctx.project.patterns.find((p) => p.id === node.data.patternId)
+  // the ports move when inputs or instruments come and go, so react flow has to re-measure
+  const slotKey = `${wires.map((w) => w.targetHandle).join(',')}|${(patternOf ? patternOf.channels : []).map((c) => c.id).join(',')}`
   useEffect(() => { updateInternals(id) }, [id, slotKey, updateInternals])
   if (!node || !spec) return null
 
   const multi = spec.inputs === 'many'
+  const splitOff = ctx.project.edges.filter((e) => e.source === id && String(e.sourceHandle ?? '').startsWith('out-')).length
   const nextSlot = `in-${wires.reduce((m, w) => Math.max(m, slotNum(w.targetHandle)), -1) + 1}`
   const soloing = ctx.solo === id
-  const pattern = node.type === 'pattern' && ctx.project.patterns.find((p) => p.id === node.data.patternId)
+  const pattern = patternOf
 
   return (
     <div className={`gnode g-${spec.group} t-${node.type} ${selected ? 'selected' : ''} ${soloing ? 'soloing' : ''} ${node.type !== 'output' && !ctx.heard.has(id) ? 'unheard' : ''}`}>
@@ -389,11 +397,25 @@ function StudioNode({ id, selected }) {
               </select>
             </label>
             {pattern && (
-              <div className="node-chans">
-                {pattern.channels.length
-                  ? pattern.channels.map((c) => <span key={c.id} className={`node-chan ${c.mute ? 'muted' : ''}`}>{c.name}</span>)
-                  : <span className="node-hint">empty: add instruments</span>}
-              </div>
+              pattern.channels.length ? (
+                <ul className="node-chans">
+                  {pattern.channels.map((c) => {
+                    const wired = ctx.project.edges.some((e) => e.source === id && e.sourceHandle === `out-${c.id}`)
+                    return (
+                      <li key={c.id} className={`chan ${c.mute ? 'muted' : ''} ${wired ? 'wired' : ''}`}>
+                        <span className="chan-name">{c.name}</span>
+                        <Handle
+                          type="source"
+                          position={Position.Right}
+                          id={`out-${c.id}`}
+                          className={`port out chan-port ${wired ? '' : 'free'}`}
+                          title={`Wire ${c.name} somewhere of its own`}
+                        />
+                      </li>
+                    )
+                  })}
+                </ul>
+              ) : <div className="node-chans"><span className="node-hint">empty: add instruments</span></div>
             )}
             <div className="node-actions nodrag">
               <button className="btn primary" onClick={(e) => ctx.editPattern(node.data.patternId, e)} disabled={!pattern} title="Open the rack (or double-click the node)">edit steps &amp; notes</button>
@@ -413,7 +435,7 @@ function StudioNode({ id, selected }) {
                 <li key={handle} className={`slot ${wire ? '' : 'free'}`}>
                   <Handle type="target" position={Position.Left} id={handle} className={`port in ${wire ? '' : 'free'}`} />
                   <span className="slot-role">{role}</span>
-                  <span className="slot-name">{wire ? nodeTitle(src, ctx.project) : 'connect'}</span>
+                  <span className="slot-name">{wire ? nodeTitle(src, ctx.project, wire.sourceHandle) : 'connect'}</span>
                 </li>
               )
             })}
@@ -435,7 +457,7 @@ function StudioNode({ id, selected }) {
               return (
                 <li key={w.targetHandle} className={`slot ${node.type === 'output' && (muted || (node.data.solo && !solo)) ? 'off' : ''}`}>
                   <Handle type="target" position={Position.Left} id={w.targetHandle} className="port in" />
-                  <span className="slot-name">{nodeTitle(src, ctx.project)}</span>
+                  <span className="slot-name">{nodeTitle(src, ctx.project, w.sourceHandle)}</span>
                   {node.type === 'arrange' && (
                     <Stepper
                       param={{ ...spec.slotParam, label: 'bars' }}
@@ -460,7 +482,18 @@ function StudioNode({ id, selected }) {
         )}
       </div>
 
-      {node.type !== 'output' && <Handle type="source" position={Position.Right} id="out" className="port out" />}
+      {node.type !== 'output' && (
+        <>
+          {splitOff > 0 && <span className="out-label">rest</span>}
+          <Handle
+            type="source"
+            position={Position.Right}
+            id="out"
+            className="port out"
+            title={splitOff > 0 ? 'Everything else in the pattern' : undefined}
+          />
+        </>
+      )}
     </div>
   )
 }
@@ -790,7 +823,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
   const rfEdges = useMemo(() => project.edges.map((e) => ({
     ...e,
     type: 'wire', // with a + in the middle to add a node into it
-    sourceHandle: 'out',
+    sourceHandle: e.sourceHandle ?? 'out',
     animated: started,
     className: e.id === spliceTarget ? 'splice-target' : e.id === detaching ? 'detaching' : '',
     domAttributes: { 'data-touches': `${e.source} ${e.target}` },
@@ -821,7 +854,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
       }
       const bridges = p.edges
         .filter((e) => gone.has(e.source) && !gone.has(e.target))
-        .map((e) => ({ source: feed(e.source), target: e.target, targetHandle: e.targetHandle }))
+        .map((e) => { const from = feed(e.source); return { source: from, sourceHandle: p.edges.find((x) => x.source === from && gone.has(x.target))?.sourceHandle, target: e.target, targetHandle: e.targetHandle } })
         .filter((b) => b.source)
       p.nodes = p.nodes.filter((n) => !gone.has(n.id))
       p.edges = p.edges.filter((e) => !gone.has(e.source) && !gone.has(e.target))
@@ -985,7 +1018,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
       const target = p.nodes.find((n) => n.id === c.target)
       const handle = NODE_TYPES[target?.type]?.inputs === 1 ? 'in' : c.targetHandle
       p.edges = p.edges.filter((e) => !(e.target === c.target && e.targetHandle === handle)) // an input takes one wire; the new one wins
-      p.edges.push({ source: c.source, target: c.target, targetHandle: handle })
+      p.edges.push({ source: c.source, sourceHandle: c.sourceHandle ?? 'out', target: c.target, targetHandle: handle })
     })
   }, [onUpdateProject])
 
