@@ -869,6 +869,10 @@ export default function App() {
         return e.shiftKey ? keysRef.current.redo() : keysRef.current.undo()
       }
       if (mod && e.key.toLowerCase() === 'y' && !textEntry) { e.preventDefault(); return keysRef.current.redo() }
+      // ctrl/cmd + A never selects the page's text: it means "select everything here" to
+      // whatever you're working in (the piano roll, the timeline), and nothing elsewhere.
+      // The event carries on to them; only the browser's own select-all is called off.
+      if (mod && !e.altKey && e.key.toLowerCase() === 'a' && !textEntry) { e.preventDefault(); return }
       if (e.key === 'Enter') keysRef.current.play()
       else if (e.key === '.' || e.code === 'Period') keysRef.current.stop()
       else if (mod && e.shiftKey && e.key.toLowerCase() === 's') keysRef.current.saveAsNew()
