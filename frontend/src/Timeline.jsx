@@ -103,9 +103,16 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     const pattern = isAuto ? song.autos?.find((a) => a.id === src.slice(AUTO_PREFIX.length)) : project.patterns.find((p) => p.id === src.slice(8))
     const ink = inkFor(colorFor(src, song.colors))
     const hit = sketchCache.current.get(src)
-    if (hit && hit.pattern === pattern && hit.ink === ink) return hit.url
+    if (hit && hit.ink === ink) {
+      // The project is read back from the track's code, so anything that rewrites a line
+      // hands us new pattern objects holding the same music. Same notes, same sketch:
+      // asking what the pattern says beats redrawing every clip on the timeline for nothing.
+      if (hit.pattern === pattern) return hit.url
+      const said = JSON.stringify(pattern)
+      if (said === hit.said) { hit.pattern = pattern; return hit.url }
+    }
     const url = isAuto ? autoSketch(pattern, ink) : patternSketch(pattern, ink)
-    sketchCache.current.set(src, { pattern, ink, url })
+    sketchCache.current.set(src, { pattern, said: JSON.stringify(pattern), ink, url })
     return url
   }
   const length = songLength(song)
