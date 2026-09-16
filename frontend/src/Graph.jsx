@@ -9,7 +9,7 @@ import { INSTRUMENTS, INSTRUMENT_MIME, instrumentChannel, makePattern, newId } f
 import Knob from './Knob.jsx'
 import { canAutomate, nodeTarget, unitTarget } from './automation.js'
 import SoundPicker from './SoundPicker.jsx'
-import PatternEditor from './PatternEditor.jsx'
+import { useRollDock } from './rollDock.js'
 import AddMenu from './AddMenu.jsx'
 import { ADD_INTO_WIRE, EDGE_TYPES } from './WireEdge.jsx'
 import { copyNodes, pasteNodes, readClipboard, writeClipboard } from './nodeClipboard'
@@ -714,7 +714,7 @@ function Palette({ onAdd }) {
 function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) {
   const flow = useReactFlow()
   const wrapRef = useRef(null)
-  const [editing, setEditing] = useState(null) // { patternId, x, y }
+  const dock = useRollDock() // the pattern's rack and notes live along the bottom
   // frame the whole patch once the nodes have been measured (fitting earlier zooms to max)
   const initialized = useNodesInitialized()
   const fitted = useRef(false)
@@ -958,7 +958,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
     setSolo: onSolo,
     updateNode,
     removeNode: (id) => removeNodes([id]),
-    editPattern: (patternId, e) => setEditing({ patternId, x: e?.clientX ?? window.innerWidth / 2, y: e?.clientY ?? 200 }),
+    editPattern: (patternId) => dock?.open(patternId, null, 'rack'),
     pickSound: (nodeId, key, at) => setPicking({ nodeId, key, ...at }),
     newPatternFor: (nodeId) => {
       const patternId = newId()
@@ -967,7 +967,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
         const n = p.nodes.find((x) => x.id === nodeId)
         if (n) n.data.patternId = patternId
       })
-      setEditing({ patternId, x: window.innerWidth / 2, y: 160 })
+      dock?.open(patternId, null, 'rack')
     },
   }), [project, heard, solo, onSolo, updateNode, removeNodes, onUpdateProject])
 
@@ -1125,17 +1125,6 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
           </div>
         </div>
       </div>
-      {editing && (
-        <PatternEditor
-          project={project}
-          patternId={editing.patternId}
-          anchor={editing}
-          transport={transport}
-          started={started}
-          onUpdateProject={onUpdateProject}
-          onClose={() => setEditing(null)}
-        />
-      )}
       {menu && (
         <AddMenu
           x={menu.x}

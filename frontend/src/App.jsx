@@ -20,7 +20,7 @@ import { AutomationEditor } from './Automation.jsx'
 import { routeVoice } from './fxbus.js'
 import Versions from './Versions.jsx'
 import ProgramMenu from './ProgramMenu.jsx'
-import RollDock from './RollDock.jsx'
+import DetailDock, { readDockHeight } from './DetailDock.jsx'
 import { RollContext } from './rollDock.js'
 import { AutomationContext, autoLive } from './autoLive.js'
 import { AUTO_PREFIX, activeAutos, appParam, autoValueFn, resolveTarget, toPos } from './automation.js'
@@ -413,12 +413,12 @@ export default function App() {
   const [draftNotice, setDraftNotice] = useState(null) // { id, savedAt }: this track opened with unsaved changes
   const [showVersions, setShowVersions] = useState(false)
   // the piano roll, docked along the bottom: { patternId, channelId }
-  const [roll, setRoll] = useState(null)
-  const [rollHeight, setRollHeight] = useState(360)
+  const [roll, setRoll] = useState(null) // { patternId, channelId, tab }
+  const [rollHeight, setRollHeight] = useState(readDockHeight)
   const rollDock = useMemo(() => ({
     at: roll,
-    height: roll ? rollHeight : 0, // floating windows keep clear of the dock
-    open: (patternId, channelId) => setRoll({ patternId, channelId }),
+    height: roll ? rollHeight : 0,
+    open: (patternId, channelId = null, tab = 'rack') => setRoll({ patternId, channelId, tab }),
     close: () => setRoll(null),
   }), [roll, rollHeight])
   const [askSave, setAskSave] = useState(null) // why a save should ask first
@@ -1242,14 +1242,16 @@ export default function App() {
         </main>
       </div>
       {roll && project && (
-        <RollDock
+        <DetailDock
           project={project}
           at={roll}
           transport={transport}
-          onUpdateProject={updateProject}
+          started={started}
           height={rollHeight}
+          onUpdateProject={updateProject}
           onHeight={setRollHeight}
-          onPick={(channelId) => setRoll((r) => ({ ...r, channelId }))}
+          onTab={(tab) => setRoll((r) => ({ ...r, tab }))}
+          onPick={(channelId) => setRoll((r) => ({ ...r, channelId, tab: 'notes' }))}
           onClose={closeRoll}
         />
       )}

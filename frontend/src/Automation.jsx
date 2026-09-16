@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { AUTO_PREFIX, autoName, curveAt, fromPos, resolveTarget, toPos } from './automation.js'
 import { formatValue } from './Knob.jsx'
-import { NameInput } from './PatternEditor.jsx'
+import { NameInput } from './NameInput.jsx'
 import './Automation.css'
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))

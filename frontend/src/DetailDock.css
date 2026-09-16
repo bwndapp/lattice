@@ -1,0 +1,49 @@
+/* the detail view docked along the bottom of the app (see DetailDock.jsx) */
+.detail-dock {
+  position: relative;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 160px;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -12px 28px rgba(0, 0, 0, 0.5);
+}
+/* the top edge drags the dock taller or shorter */
+.dd-grip { position: absolute; top: -4px; left: 0; right: 0; height: 9px; cursor: ns-resize; touch-action: none; z-index: 2; }
+.dd-grip:hover { background: linear-gradient(to bottom, transparent 3px, rgba(228, 255, 26, 0.5) 3px 6px, transparent 6px); }
+
+.dd-head { display: flex; align-items: center; gap: 0.6rem; padding: 0.35rem 0.7rem; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.dd-name {
+  font-family: var(--display); font-weight: 800; font-stretch: 112%; font-size: 1rem;
+  width: 10rem; min-width: 0; padding: 0.1rem 0.2rem;
+  color: var(--paper); background: transparent; border: 0; border-bottom: 1px solid var(--line);
+}
+.dd-name:hover, .dd-name:focus { border-bottom-color: var(--acid); outline: none; }
+.dd-field { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 11px; color: var(--muted); }
+.dd-field .select { padding: 0.15rem 0.35rem; font-size: 11px; border-radius: 999px; background: #121210; border-color: #2e2e2a; }
+.dd-uses { font-size: 10px; color: var(--muted); }
+.dd-tabs { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid #2e2e2a; border-radius: 999px; background: #121210; max-width: min(40vw, 34rem); overflow-x: auto; }
+.dd-tabs.instruments { border-color: rgba(255, 255, 255, 0.07); }
+.dd-tab {
+  font: inherit; font-size: 11px; white-space: nowrap;
+  padding: 0.18rem 0.7rem; border: 0; border-radius: 999px;
+  color: var(--muted); background: none; cursor: var(--ring);
+}
+.dd-tab:hover { color: var(--paper); }
+.dd-tab.on { color: var(--ink); background: var(--paper); }
+.dd-tab:disabled { color: #4d4d47; cursor: var(--dot); }
+.dd-spacer { flex: 1; }
+.detail-dock .node-btn { color: var(--paper); border-color: var(--line); opacity: 1; }
+.detail-dock .node-btn:hover { border-color: var(--acid); color: var(--acid); }
+
+/* the roll, or the rack, fills what's left of the dock */
+.detail-dock .pr { flex: 1; min-height: 0; display: flex; }
+.detail-dock .pr-panel { flex: 1; min-height: 0; border: 0; }
+.detail-dock .piano-roll { flex: 1; height: auto; min-height: 0; resize: none; }
+.detail-dock .rack-body { flex: 1; min-height: 0; overflow: auto; }
+
+@media (max-width: 860px) {
+  .dd-tabs { max-width: 100%; }
+  .dd-note { display: none; }
+}

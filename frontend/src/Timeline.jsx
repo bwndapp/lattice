@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { makePattern, makeVariation, newId } from './project'
 import { MAX_BARS, songLength, songParts } from './song'
-import PatternEditor from './PatternEditor.jsx'
 import Popover from './Popover.jsx'
 import { Glass } from './Glass.jsx'
 import { useAutomation } from './autoLive.js'
+import { useRollDock } from './rollDock.js'
 import { AUTO_PREFIX, curveAt, resolveTarget } from './automation.js'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import { KitSelect } from './Graph.jsx'
@@ -135,7 +135,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const [drag, setDrag] = useState(null) // live preview while moving / stretching / drawing
   const [marquee, setMarquee] = useState(null)
   const [ghost, setGhost] = useState(null) // where a part dragged from the sidebar would land
-  const [editing, setEditing] = useState(null) // { patternId, x, y }
+  const dock = useRollDock() // a pattern's rack and notes live along the bottom
   const [tool, setTool] = useState('pointer') // or 'slice'
   const [panel, setPanel] = useState(null) // a rhythm / melody / code part's settings: { nodeId, x, y }
   const [deleting, setDeleting] = useState(null) // an original pattern waiting on 'are you sure'
@@ -279,7 +279,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       ensureInPatch(p, `pattern:${pattern.id}`)
     })
     setActivePart(`pattern:${pattern.id}`)
-    setEditing({ patternId: pattern.id, x: e.clientX + 40, y: e.clientY })
+    dock?.open(pattern.id, null, 'rack')
   }
 
   /** Double-click a part (a clip, or in the sidebar): edit it right here, without the patch. */
@@ -290,7 +290,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     // after this press is over: a window opened during it would take the press for a click outside
     setTimeout(() => {
       if (src.startsWith(AUTO_PREFIX)) automation?.open(src.slice(AUTO_PREFIX.length), { x, y })
-      else if (src.startsWith('pattern:')) setEditing({ patternId: src.slice(8), x, y })
+      else if (src.startsWith('pattern:')) dock?.open(src.slice(8), null, 'rack')
       else if (node) setPanel({ nodeId: node.id, x, y })
     }, 0)
   }
@@ -538,7 +538,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   // ── keys ──
   const onKeyDown = (e) => {
     if (e.target.closest('input, select, textarea')) return
-    if (editing || panel || deleting) return // an open window's keys (Esc closes it) come first
+    if (panel || deleting) return // an open window's keys (Esc closes it) come first
     const mod = e.ctrlKey || e.metaKey
     const k = e.key.toLowerCase()
     const chosen = song.clips.filter((c) => selected.has(c.id))
@@ -560,7 +560,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
           if (made.get(from)) { c.src = `pattern:${made.get(from)}`; last = made.get(from) }
         }
       })
-      if (last) { setActivePart(`pattern:${last}`); setTimeout(() => setEditing({ patternId: last, x: window.innerWidth / 2, y: 180 }), 0) }
+      if (last) { setActivePart(`pattern:${last}`); dock?.open(last, null, 'rack') }
       return
     }
     if (!mod && k === 'v') { done(); setTool('pointer'); setSliceLine(null); return }
@@ -704,7 +704,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     onUpdateProject((p) => { made = makeVariation(p, part.id) })
     if (!made) return
     setActivePart(`pattern:${made}`)
-    setEditing({ patternId: made, x: e.clientX + 60, y: e.clientY })
+    dock?.open(made, null, 'rack')
   }
 
   /**
@@ -726,7 +726,6 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       }
     })
     if (activePart && doomed.has(activePart.slice(8))) setActivePart(null)
-    if (editing && doomed.has(editing.patternId)) setEditing(null)
     setSelected((sel) => new Set([...sel].filter((id) => song.clips.some((c) => c.id === id && !doomed.has(c.src.slice(8))))))
   }
 
@@ -820,7 +819,6 @@ export default function Timeline({ project, onUpdateProject, transport, started 
 
   const loop = transport.loop
   const songBars = Math.max(1, Math.ceil(length - 1e-9))
-  const editingPattern = editing && project.patterns.find((p) => p.id === editing.patternId)
   const panelNode = panel && project.nodes.find((n) => n.id === panel.nodeId)
 
   return (
@@ -1018,17 +1016,6 @@ export default function Timeline({ project, onUpdateProject, transport, started 
         </ConfirmDialog>
       )}
       {panelNode && <PartPanel node={panelNode} anchor={panel} onUpdateProject={onUpdateProject} onClose={() => setPanel(null)} />}
-      {editingPattern && (
-        <PatternEditor
-          project={project}
-          patternId={editingPattern.id}
-          anchor={editing}
-          transport={transport}
-          started={started}
-          onUpdateProject={onUpdateProject}
-          onClose={() => setEditing(null)}
-        />
-      )}
     </section>
   )
 }

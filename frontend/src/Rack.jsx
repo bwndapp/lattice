@@ -126,7 +126,7 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
   const addInstrument = (key) => {
     const ch = instrumentChannel(key, pattern)
     update((pat) => { pat.channels.push({ ...ch, name: instrumentChannel(key, pat).name }) })
-    if (ch.kind === 'synth') dock?.open(pattern.id, ch.id)
+    if (ch.kind === 'synth') dock?.open(pattern.id, ch.id, 'notes')
     if (!started) previewInPatch(project, pattern.id, ch)
   }
   const setStep = (ch, i, value) => {
@@ -188,7 +188,7 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
       )}
       {pattern.channels.map((ch) => {
         const fxOpen = openFx.has(ch.id)
-        const rollOpen = ch.kind === 'synth' && dock?.at?.patternId === pattern.id && dock?.at?.channelId === ch.id
+        const rollOpen = ch.kind === 'synth' && dock?.at?.tab === 'notes' && dock?.at?.patternId === pattern.id && dock?.at?.channelId === ch.id
         const tweaked = paramsFor(ch.kind).filter((d) => d.key !== 'gain' && paramValue(ch, d.key) !== d.def).length + (ch.fx?.trim() ? 1 : 0)
         return (
           <div key={ch.id} className={`ch ${ch.mute ? 'muted' : ''} ch-${ch.kind}`}>
@@ -229,7 +229,7 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
                 onCommit={(v) => updateChannel(ch.id, (c) => { c.code = v })}
               />
             ) : ch.kind === 'synth' ? (
-              <MiniRoll channel={ch} total={n} open={rollOpen} onToggle={() => (rollOpen ? dock?.close() : dock?.open(pattern.id, ch.id))} />
+              <MiniRoll channel={ch} total={n} open={rollOpen} onToggle={() => (rollOpen ? dock?.close() : dock?.open(pattern.id, ch.id, 'notes'))} />
             ) : (
               <div className="steps" role="group" aria-label={`${ch.name} steps`}>
                 {Array.from({ length: n }, (_, i) => {
@@ -263,7 +263,7 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
                 fx{tweaked ? ` ${tweaked}` : ''}
               </button>
               {ch.kind === 'synth' && (
-                <button className={`btn ch-btn ${rollOpen ? 'on' : ''}`} aria-expanded={rollOpen} onClick={() => (rollOpen ? dock?.close() : dock?.open(pattern.id, ch.id))} title="Piano roll, along the bottom of the app">notes</button>
+                <button className={`btn ch-btn ${rollOpen ? 'on' : ''}`} aria-expanded={rollOpen} onClick={() => (rollOpen ? dock?.close() : dock?.open(pattern.id, ch.id, 'notes'))} title="Piano roll, along the bottom of the app">notes</button>
               )}
               {!compact && (
                 <button className="btn ghost ch-btn" title="Duplicate" aria-label={`Duplicate ${ch.name}`} onClick={() => update((pat) => {
