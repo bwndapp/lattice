@@ -11,6 +11,7 @@
 const GLOW = 0.3 // seconds a sound stays lit for after it stops
 const BLOOM = 0.07 // seconds of extra brightness as it starts
 const HOLD = 0.72 // how lit a note stays while it's still sounding
+const FLOOR = 0.34 // how much glow a sound turned all the way down still gets
 const STEP = 0.04 // only write a style when the light has moved this much
 
 let paths = { nodes: new Map(), edges: new Map(), chans: new Map() } // element id → the sources feeding it
@@ -148,7 +149,14 @@ function tick() {
         if (!hap.hasOnset?.()) continue
         const n = hap.value?._n
         if (typeof n !== 'string') continue
-        fresh.push({ at: Number(hap.whole.begin), end: Number(hap.whole.end), key: key(n, hap.value._c) })
+        // how loud it lands in the mix: its own volume, times anything turning it down on the way
+        const loud = Number(hap.value.gain ?? 1) * Number(hap.value.velocity ?? 1)
+        fresh.push({
+          at: Number(hap.whole.begin),
+          end: Number(hap.whole.end),
+          key: key(n, hap.value._c),
+          loud: Number.isFinite(loud) ? Math.min(1, Math.max(0, loud)) : 1,
+        })
       }
       hits = [...ringing, ...fresh]
     } catch { hits = ringing } // a pattern mid-change: the next cycle picks it up
@@ -170,7 +178,7 @@ function tick() {
         : HOLD * (1 - (now - hit.end) / fade)
     }
     if (v <= 0) continue
-    if (v > (level.get(hit.key) ?? 0)) level.set(hit.key, v)
+    if (v > (level.get(hit.key)?.v ?? 0)) level.set(hit.key, { v, loud: hit.loud })
   }
 
   /**
@@ -185,14 +193,18 @@ function tick() {
     let b = 0
     let weight = 0
     for (const k of keys) {
-      const v = level.get(k) ?? 0
-      if (!v) continue
+      const on = level.get(k)
+      if (!on) continue
+      // how loud it is sets how much of the glow it gets and how much colour is left in it
+      const v = on.v * (FLOOR + (1 - FLOOR) * on.loud)
       if (v > best) best = v
       const c = colors.get(k)
       if (!c) continue
-      r += c[0] * v
-      g += c[1] * v
-      b += c[2] * v
+      const sat = on.loud ** 0.55
+      const grey = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+      r += (grey + (c[0] - grey) * sat) * v
+      g += (grey + (c[1] - grey) * sat) * v
+      b += (grey + (c[2] - grey) * sat) * v
       weight += v
     }
     // a slow curve: bright on the hit, then a long tail rather than a linear ramp down
