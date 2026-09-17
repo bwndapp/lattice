@@ -1,5 +1,5 @@
 import { authFetch } from './bwnd'
-import { BASE } from './base'
+import { BASE, HOME } from './base'
 
 /** JSON call to this app's API. Throws Error(message) on a non-2xx answer. */
 export async function api(path, { method = 'GET', body } = {}) {
@@ -25,7 +25,7 @@ export async function api(path, { method = 'GET', body } = {}) {
  * which saved version it was edited from: once that track has been saved again since
  * (here or anywhere else), the saved version wins over the older draft.
  */
-const draftKey = (id) => `strudel:${BASE ? 'preview:' : ''}draft:${id || 'new'}`
+const draftKey = (id) => `strudel:${BASE ? `${BASE.slice(1)}:` : ''}draft:${id || 'new'}`
 export function readDraft(id, savedAt = null) {
   let raw = null
   try { raw = localStorage.getItem(draftKey(id)) } catch { return null }
@@ -56,5 +56,5 @@ export function timeAgo(seconds) {
 
 /** Public link for a track (live: /t/id, draft: /preview/#/t/id). */
 export function trackUrl(id) {
-  return BASE ? `${window.location.origin}${BASE}/#/t/${id}` : `${window.location.origin}/t/${id}`
+  return BASE ? `${window.location.origin}${HOME}#/t/${id}` : `${window.location.origin}/t/${id}`
 }

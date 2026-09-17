@@ -44,9 +44,9 @@ import asyncio
 import json
 import time
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 
-from incubator_lib import db, sso_user
+from incubator_lib import current_env, db, sso_user, use_env
 
 # The server imports a route file by path, not as part of a package, and the draft and live
 # copies must not share one module: load our own helper explicitly, named for this file.
@@ -119,9 +119,18 @@ class Room:
 _rooms: dict[str, Room] = {}
 
 
-def _track(track_id):
+def _env_of(ws):
+    """Draft or live, from the path. The server's middleware only does this for http, so a
+    websocket has to say for itself which database it belongs to — without this, the draft
+    page's room would look its track up in the live site's tracks and never find it."""
+    path = ws.scope.get("path", "") or ""
+    return "draft" if path.startswith("/preview/") else "live"
+
+
+def _track(track_id, env):
     try:
-        return db().execute("SELECT owner_sub, visibility FROM tracks WHERE id = ?", (track_id,)).fetchone()
+        with use_env(env):
+            return db().execute("SELECT owner_sub, visibility FROM tracks WHERE id = ?", (track_id,)).fetchone()
     except Exception:
         return None
 
@@ -158,14 +167,15 @@ async def collab(ws: WebSocket, track_id: str):
         # verifying a token calls the issuer, so keep it off the event loop
         token = str(hello.get("token") or "")[:4096]
         user = await asyncio.to_thread(sso_user, token) if token else None
-        row = await asyncio.to_thread(_track, track_id)
+        row = await asyncio.to_thread(_track, track_id, _env_of(ws))
         if not row:
             await ws.close(code=4004)
             return
         if not _may_open(row, user):
             await ws.close(code=4003)
             return
-        room = _rooms.setdefault(track_id, Room())
+        room_key = f"{_env_of(ws)}:{track_id}"
+        room = _rooms.setdefault(room_key, Room())
         if len(room.peers) >= MAX_PEERS:
             await ws.close(code=4008)
             return
@@ -253,7 +263,7 @@ async def collab(ws: WebSocket, track_id: str):
             room.peers.pop(peer.id, None)
             await room.tell_others(peer.id, {"t": "gone", "id": peer.id})
             if not room.peers:
-                _rooms.pop(track_id, None)  # nobody left: the room forgets, the saved track stands
+                _rooms.pop(room_key, None)  # nobody left: the room forgets, the saved track stands
         try:
             await ws.close()
         except Exception:
@@ -261,7 +271,7 @@ async def collab(ws: WebSocket, track_id: str):
 
 
 @router.get("/{track_id}/who")
-async def who(track_id: str):
+async def who(request: Request, track_id: str):
     """Who's on a track right now, for a page that isn't holding a socket open."""
-    room = _rooms.get(track_id)
+    room = _rooms.get(f"{current_env()}:{track_id}")
     return {"peers": [{"name": p.name, "color": p.color} for p in (room.peers.values() if room else [])]}

@@ -20,7 +20,8 @@
     <link rel="canonical" href="https://lattice.bwnd.app/" />
     <script>
       // Relative asset URLs resolve against the mount point (see src/base.js), not deep links like /t/abc.
-      document.write('<base href="' + (/^\/preview(\/|$)/.test(location.pathname) ? '/preview/' : '/') + '">')
+      var mount = /^\/(preview|multiplayer)(\/|$|\.html)/.exec(location.pathname)
+      document.write('<base href="' + (mount ? '/' + mount[1] + '/' : '/') + '">')
     </script>
     <!-- icons after <base>, so they resolve from the site root on deep links like /t/abc -->
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
