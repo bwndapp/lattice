@@ -52,7 +52,7 @@ import time
 
 from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 
-from incubator_lib import current_env, db, sso_user, use_env
+from incubator_lib import db, sso_user, use_env
 
 # The server imports a route file by path, not as part of a package, and the draft and live
 # copies must not share one module: load our own helper explicitly, named for this file.
@@ -126,18 +126,26 @@ class Room:
 _rooms: dict[str, Room] = {}
 
 
-def _env_of(ws):
+def _env_of(scope_or_ws):
     """Draft or live, from the path. The server's middleware only does this for http, so a
     websocket has to say for itself which database it belongs to — without this, the draft
-    page's room would look its track up in the live site's tracks and never find it."""
-    path = ws.scope.get("path", "") or ""
-    return "draft" if path.startswith("/preview/") else "live"
+    page's room would look its track up in the live site's tracks and never find it.
+    /multiplayer/ is a branch served beside the site; it works on the draft's tracks.
+
+    The http side reads it the same way, so a room and the page asking about it agree."""
+    path = getattr(scope_or_ws, "scope", {}).get("path", "") or ""
+    return "draft" if path.startswith(("/preview/", "/multiplayer/")) else "live"
 
 
 def _track(track_id, env):
     try:
         with use_env(env):
-            return db().execute("SELECT owner_sub, visibility, collab FROM tracks WHERE id = ?", (track_id,)).fetchone()
+            conn = db()
+            try:
+                return conn.execute("SELECT owner_sub, visibility, collab FROM tracks WHERE id = ?", (track_id,)).fetchone()
+            except Exception:
+                # a database that predates the column: the track is simply open to others
+                return conn.execute("SELECT owner_sub, visibility FROM tracks WHERE id = ?", (track_id,)).fetchone()
     except Exception:
         return None
 
@@ -325,5 +333,5 @@ async def collab(ws: WebSocket, track_id: str):
 @router.get("/{track_id}/who")
 async def who(request: Request, track_id: str):
     """Who's on a track right now, for a page that isn't holding a socket open."""
-    room = _rooms.get(f"{current_env()}:{track_id}")
+    room = _rooms.get(f"{_env_of(request)}:{track_id}")
     return {"peers": [{"name": p.name, "color": p.color} for p in (room.peers.values() if room else [])]}

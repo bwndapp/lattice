@@ -29,7 +29,7 @@
  * after applying someone's ops.
  */
 import { useSyncExternalStore } from 'react'
-import { API_ROOT } from './base'
+import { COLLAB_ROOT } from './base'
 import { currentUser, getToken } from './bwnd'
 
 const RETRY = [700, 1500, 3000, 6000, 12000] // how long to wait before trying again
@@ -175,8 +175,8 @@ export function usePresence() {
 
 function url(trackId) {
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  // the websocket path has to say draft or live itself: the server only rewrites http
-  return `${proto}//${window.location.host}${API_ROOT}/collab/${encodeURIComponent(trackId)}`
+  // the websocket path has to say which app it belongs to: the server only rewrites http
+  return `${proto}//${window.location.host}${COLLAB_ROOT}/${encodeURIComponent(trackId)}`
 }
 
 async function open(trackId) {

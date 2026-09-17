@@ -1,18 +1,26 @@
-"""Serve a branch of the app at /multiplayer/, alongside the live site and /preview/.
+"""Serve a branch of the app — front and back — at /multiplayer/, beside the live site.
 
-The platform serves exactly two directories: public/ at / and webapp/ at /preview/. This
-adds a third, from multiplayer/ at the workspace root, the same way the server itself does
-it — a static mount placed ahead of the SPA catch-all, plus the bare-path redirect so
-/multiplayer loads with the trailing slash its relative asset URLs need.
+The platform serves exactly two directories (public/ at /, webapp/ at /preview/) and loads
+api routes from exactly one folder. A branch needs both of its halves somewhere, and
+copying them into the shared folder is how one session quietly overwrites another's work.
+So this file is the only thing the branch puts there, and it reaches for everything else
+where the branch actually lives — its worktree:
 
-It is scaffolding for trying a branch out, not a third environment: the app served here
-uses /preview's api and database (see frontend/src/base.js). Delete this file and the
-directory and everything is exactly as it was.
+    /multiplayer/            → the branch's build      (BRANCH/multiplayer)
+    /multiplayer/api/collab  → the branch's api routes (BRANCH/src/api/*.py)
+
+Point BRANCH at another worktree (or set LATTICE_BRANCH) and you are serving that branch
+instead. Nothing here touches the live site, /preview/, or the routes either of them uses;
+delete this file and the box is exactly as it was.
+
+The app served here works on the DRAFT's tracks and database, like /preview/ does.
 
 Why it reaches for the app object: a route file only gets to mount things under
-/api/<its name>, and a whole app needs a path of its own. The lookup is by the
-platform's own /_routes endpoint, so it either finds the running server or does nothing.
+/api/<its name>, and a whole app needs a path of its own. The lookup is by the platform's
+own /_routes endpoint, so it either finds the running server or does nothing at all.
 """
+import importlib.util
+import os
 import time
 from pathlib import Path
 
@@ -23,14 +31,16 @@ from starlette.routing import Mount, Route
 
 router = APIRouter()
 
-DIR = Path("/incubators/incu-strudel/multiplayer")
+BRANCH = Path(os.environ.get("LATTICE_BRANCH", "/incubators/incu-strudel/.claude/worktrees/collab-presence"))
+BUILD = BRANCH / "multiplayer"          # what `npm run room` writes
+ROUTES = BRANCH / "src" / "api"         # the branch's own api routes
 MOUNT = "/multiplayer"
-NAME = "multiplayer"
+SERVE = ("collab",)                     # which of the branch's routes to put up
 
 
 class FreshStatic(StaticFiles):
-    """Never cached: this is a branch being worked on, and a frozen asset at the edge is
-    a bug report about something already fixed."""
+    """Never cached: this is a branch being worked on, and a frozen asset at the edge is a
+    bug report about something that was fixed an hour ago."""
 
     async def get_response(self, path, scope):
         response = await super().get_response(path, scope)
@@ -51,35 +61,78 @@ def _running_app():
     return None
 
 
+def _load(name):
+    """Import one of the branch's route files, under its own name so it can never be
+    confused with the copy the draft or live site is running."""
+    spec = importlib.util.spec_from_file_location(f"branch_{name}", ROUTES / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _ready_db():
+    """The branch's own migration, run where the branch's routes will look: whether a
+    track lets anyone but its owner change it. The shared routes know nothing about it."""
+    from incubator_lib import db, use_env
+
+    with use_env("draft"):
+        conn = db()
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(tracks)")}
+        if "tracks" in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")} and "collab" not in cols:
+            conn.execute("ALTER TABLE tracks ADD COLUMN collab INTEGER NOT NULL DEFAULT 1")
+            conn.commit()
+
+
 def _mount():
-    """Put the directory on the path, replacing an earlier mount of ours if there is one."""
+    """Put the branch on the path, replacing an earlier mount of ours if there is one."""
     app = _running_app()
-    if app is None or not DIR.is_dir():
-        return False
-    app.router.routes = [r for r in app.router.routes if getattr(r, "name", "") not in (NAME, f"{NAME}-slash")]
-    app.router.routes.insert(0, Mount(MOUNT, app=FreshStatic(directory=str(DIR), html=True), name=NAME))
-    app.router.routes.insert(0, Route(
-        MOUNT,
-        lambda request: RedirectResponse(url=f"{MOUNT}/", status_code=307),
-        name=f"{NAME}-slash",
-    ))
-    return True
+    if app is None or not BUILD.is_dir():
+        return []
+    ours = {MOUNT} | {f"{MOUNT}/api/{name}" for name in SERVE}
+    app.router.routes = [r for r in app.router.routes if getattr(r, "_branch_mount", None) not in ours]
+    try:
+        _ready_db()
+    except Exception:
+        pass  # the room still works; the owner's switch just won't outlive it
+    added, api = [], []
+    for name in SERVE:
+        try:
+            module = _load(name)
+        except Exception:
+            continue  # a branch mid-edit shouldn't take the rest of it down
+        before = len(app.router.routes)
+        app.include_router(module.router, prefix=f"{MOUNT}/api/{name}")
+        moved = app.router.routes[before:]
+        del app.router.routes[before:]
+        for r in moved:
+            r._branch_mount = f"{MOUNT}/api/{name}"
+        api += moved
+        added.append(name)
+    static = Mount(MOUNT, app=FreshStatic(directory=str(BUILD), html=True), name="branch")
+    slash = Route(MOUNT, lambda request: RedirectResponse(url=f"{MOUNT}/", status_code=307), name="branch-slash")
+    for r in (static, slash):
+        r._branch_mount = MOUNT
+    # order matters: the api first, or the directory answers /multiplayer/api/... itself,
+    # then the branch's own pages, and only then whatever the box was already serving
+    app.router.routes[0:0] = [*api, slash, static]
+    return added
 
 
-MOUNTED = False
+MOUNTED = []
 try:
     MOUNTED = _mount()
 except Exception:
-    MOUNTED = False  # the branch preview is never worth breaking the server for
+    MOUNTED = []  # trying a branch out is never worth breaking the box for
 
 
 @router.get("")
 async def status():
-    """Whether the branch is being served, and when it was last built."""
-    index = DIR / "index.html"
+    """What's being served from the branch, and when it was last built."""
+    index = BUILD / "index.html"
     return {
-        "mounted": MOUNTED,
+        "branch": str(BRANCH),
         "at": f"{MOUNT}/",
+        "serving": MOUNTED,
         "built": int(index.stat().st_mtime) if index.exists() else None,
         "now": int(time.time()),
     }

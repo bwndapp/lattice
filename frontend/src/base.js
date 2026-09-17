@@ -4,9 +4,12 @@
  *  bwnd-publish copies the draft build to the live site unchanged, so one build must work
  *  at both paths (index.html sets a matching <base href> for the asset URLs).
  *
- *  The multiplayer mount is a tryout, not an environment: it talks to the DRAFT's api and
- *  database, because that's where the routes it needs are and where the tracks being
- *  worked on live. API_ROOT is the only place the two differ. */
+ *  The multiplayer mount is a tryout, not an environment. It works on the DRAFT's tracks
+ *  and database (API_ROOT), because that's the work in progress — but its room comes from
+ *  the branch itself (COLLAB_ROOT), so trying a branch out never puts a file of its own in
+ *  the folder the draft and live sites share. */
 const mount = /^\/(preview|multiplayer)(\/|$)/.exec(window.location.pathname)
 export const BASE = mount ? `/${mount[1]}` : ''
 export const API_ROOT = BASE === '/multiplayer' ? '/preview/api' : `${BASE}/api`
+/** The room lives with the branch, not with the draft: a branch serves its own (src/api/multiplayer.py). */
+export const COLLAB_ROOT = BASE === '/multiplayer' ? '/multiplayer/api/collab' : `${API_ROOT}/collab`
