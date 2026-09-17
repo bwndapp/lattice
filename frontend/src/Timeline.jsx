@@ -165,7 +165,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     if (s.frame) return
     const step = () => {
       const now = lean.current
-      now.v *= 0.86 // it settles back level when the pointer stops
+      now.v *= 0.9 // it settles back level when the pointer stops
       lanesRef.current?.style.setProperty('--lean', `${now.v.toFixed(2)}deg`)
       if (!now.held && Math.abs(now.v) < 0.02) { now.v = 0; now.frame = 0; lanesRef.current?.style.setProperty('--lean', '0deg'); return }
       now.frame = requestAnimationFrame(step)
@@ -176,7 +176,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const leanTo = (e) => {
     const s = lean.current
     const now = performance.now()
-    const push = clamp(((e.clientX - s.x) / Math.max(8, now - s.t)) * 7, -3.2, 3.2)
+    const push = clamp(((e.clientX - s.x) / Math.max(8, now - s.t)) * 12, -7, 7)
     s.v = s.v * 0.55 + push * 0.45
     s.x = e.clientX
     s.t = now
