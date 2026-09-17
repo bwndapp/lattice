@@ -149,7 +149,7 @@ export function prepareInserts() {
 export const STEREO_ORBIT_BASE = 40
 
 let declared = new Map() // orbit → [{ key, kind, params }] from the latest generated code
-let routed = new Map() // orbit → the orbit it plays into (a mixer bus), instead of the speakers
+let routed = new Map() // orbit → { to, gain }: the orbit it plays into (a mixer bus) and at what level
 const racks = new Map() // orbit → { orbit (Orbit object), input, output, units: Map(key → unit) }
 let controller = null
 let armed = false
@@ -165,10 +165,10 @@ export function declareInsert(list, orbit, key, kind, params) {
   list.inserts.get(orbit).push({ key, kind, params })
 }
 
-/** Send everything on one orbit into another (a mixer bus) instead of the speakers. */
-export function declareRoute(list, from, to) {
+/** Send everything on one orbit into another (a mixer bus) instead of the speakers, at `gain`. */
+export function declareRoute(list, from, to, gain = 1) {
   if (!list.inserts.has(from)) list.inserts.set(from, [])
-  list.routes.set(from, to)
+  list.routes.set(from, { to, gain })
 }
 
 /**
@@ -239,19 +239,26 @@ function mount(n, orbit, channels) {
   orbit.output.connect(input)
   // order starts unset so the first wiring always connects input → output, even with no
   // units (a bus that only plays into a mixer bus has none)
-  const rack = { orbit, input, output, units: new Map(), order: null, channels, to: undefined }
+  // what it plays into, at the level the bus it feeds gives it (a mixer's channel fader)
+  const send = stereo()
+  output.connect(send)
+  const rack = { orbit, input, output, send, units: new Map(), order: null, channels, to: undefined }
   racks.set(n, rack)
   wire(n, rack, declared.get(n) ?? [])
   aim(n, rack)
 }
 
-/** Point a rack at the speakers, or into the mixer bus its orbit is routed to. */
+/** Point a rack at the speakers, or into the mixer bus its orbit is routed to, at its level. */
 function aim(n, rack) {
-  const to = routed.get(n) ?? null
+  const route = routed.get(n) ?? null
+  const to = route?.to ?? null
+  smooth(rack.send.gain, route ? route.gain ?? 1 : 1)
   if (rack.to === to) return
   rack.output.disconnect()
-  if (to != null && to !== n) rack.output.connect(controller.getOrbit(to).summingNode)
-  else controller.output.connectToDestination(rack.output, rack.channels)
+  rack.output.connect(rack.send)
+  rack.send.disconnect()
+  if (to != null && to !== n) rack.send.connect(controller.getOrbit(to).summingNode)
+  else controller.output.connectToDestination(rack.send, rack.channels)
   rack.to = to
 }
 
@@ -259,7 +266,7 @@ function teardown(n) {
   const rack = racks.get(n)
   if (!rack) return
   for (const unit of rack.units.values()) unit.dispose()
-  try { rack.input.disconnect(); rack.output.disconnect() } catch { /* already gone */ }
+  try { rack.input.disconnect(); rack.output.disconnect(); rack.send.disconnect() } catch { /* already gone */ }
   racks.delete(n)
 }
 

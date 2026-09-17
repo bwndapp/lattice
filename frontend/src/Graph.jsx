@@ -4,7 +4,7 @@ import {
   applyNodeChanges, applyEdgeChanges, useNodesInitialized, useReactFlow, useUpdateNodeInternals,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { APPLY, BUS_NODES, FX_UNITS, GROUPS, NODE_TYPES, defaultData, inputsOf, makeFxUnit, makesCycle } from './graph'
+import { APPLY, BUS_NODES, CHANNEL_FADER, FX_UNITS, GROUPS, NODE_TYPES, channelGain, defaultData, inputKey, inputsOf, makeFxUnit, makesCycle } from './graph'
 import { ENGINES } from './instruments/index.js'
 import { openSynth } from './instruments/windows.js'
 import { INSTRUMENTS, INSTRUMENT_MIME, instrumentChannel, makePattern, newId } from './project'
@@ -573,6 +573,16 @@ function StudioNode({ id, selected }) {
                       value={node.data.bars?.[w.targetHandle] ?? spec.slotParam.def}
                       onChange={(v) => ctx.updateNode(id, (d) => { d.bars = { ...(d.bars ?? {}), [w.targetHandle]: v } })}
                     />
+                  )}
+                  {node.type === 'bus' && (
+                    // a fader a channel, as a mixer has: it turns that input down into this bus
+                    <span className="slot-fader nodrag">
+                      <Knob
+                        def={CHANNEL_FADER}
+                        value={channelGain(node.data, inputKey(w))}
+                        onChange={(v) => ctx.updateNode(id, (d) => { d.chan = { ...(d.chan ?? {}), [inputKey(w)]: v } })}
+                      />
+                    </span>
                   )}
                   {node.type === 'output' && (
                     <span className="slot-ctl nodrag">

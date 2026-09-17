@@ -482,7 +482,7 @@ export const NODE_TYPES = {
   },
 
   bus: {
-    group: 'combine', label: 'mixer bus', blurb: 'Route several sounds into one track: level, pan and effects after it act on them all',
+    group: 'combine', label: 'mixer bus', blurb: 'Route several sounds into one track: a fader a channel, then level, pan and effects on them all',
     inputs: 'many',
     params: [
       { key: 'name', type: 'text', label: 'name', def: 'bus' },
@@ -498,8 +498,11 @@ export const NODE_TYPES = {
       const orbit = ctx.stereoOrbit(ctx.nodeId)
       const parts = xs.map((x, i) => {
         const from = ctx.inputOrbits?.[i]
-        if (from == null) return `${x}.orbit(${orbit})`
-        if (from !== orbit) ctx.routeBus(from, orbit)
+        const fader = channelGain(d, ctx.inputKeys?.[i])
+        // a channel that carries its own bus is turned down where it plays into this one,
+        // after its own effects, the way a mixer's fader sits after its inserts
+        if (from == null) return `${fader === 1 ? x : `${x}.mul(gain(${tidy(fader)}))`}.orbit(${orbit})`
+        if (from !== orbit) ctx.routeBus(from, orbit, fader)
         return x
       })
       ctx.declare(orbit, ctx.nodeId, 'fader', { gain: d.vol, pan: d.pan })
@@ -580,6 +583,13 @@ export function laneFxParams(type, d, { beatSeconds: beat = 0.5 } = {}) {
   if (type === 'delay') return { mix: d.mix, seconds: (DELAY_DIVISIONS[d.time] ?? 0.75) * beat, feedback: d.feedback, tone: d.tone, mode: d.mode }
   return NODE_TYPES[type]?.code?.insert?.params(d) ?? {}
 }
+
+/** Where a wire came from, as a mixer bus names its channels. */
+export const inputKey = (edge) => `${edge.source}:${edge.sourceHandle ?? 'out'}`
+/** A mixer bus's fader for one channel (1 when it hasn't been touched). */
+export const channelGain = (data, key) => clampNum(key ? data?.chan?.[key] : 1, 1, 0, 1.5)
+/** The fader knob a mixer bus gives each channel. */
+export const CHANNEL_FADER = { key: 'chan', type: 'knob', label: 'level', min: 0, max: 1.5, def: 1 }
 
 /** Saturator characters → Strudel's waveshaping curves. */
 const SATURATION = { warm: 'scurve', tape: 'soft', tube: 'diode', asym: 'asym', harmonics: 'chebyshev', fold: 'fold' }
@@ -751,7 +761,7 @@ export function graphCode(project, { solo = null, song = null, audition = false,
   declareFx(fx, GLOBAL_REVERB, 'reverb', { ...REVERB_DEFAULTS, mix: 1 })
   declareFx(fx, GLOBAL_DELAY, 'delay', { ...DELAY_DEFAULTS, mix: 1, feedback: 0.35, seconds: 0.75 / (cps * beats) })
   const declare = (orbit, key, kind, params) => declareInsert(inserts, orbit, key, kind, params)
-  const routeBus = (from, to) => declareRoute(inserts, from, to)
+  const routeBus = (from, to, gain) => declareRoute(inserts, from, to, gain)
   const orbitOf = new Map() // node id → the bus its sound ends up on, when not the main one
   const channelsOf = (pid) => project.patterns.find((p) => p.id === pid)?.channels ?? []
   /** What a wire carries: one instrument of a pattern, or everything the source node makes. */
@@ -779,6 +789,8 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     }
     if (spec.inputs === 1 && !inputs.length) { exprs.set(id, null); return null }
     const inputOrbits = wires.filter((w) => exprs.get(w.source)).map((w) => orbitOf.get(w.source) ?? null)
+    // what each input came from, so a mixer bus can keep a fader per channel
+    const inputKeys = wires.filter((w) => exprs.get(w.source)).map((w) => inputKey(w))
     // a single input passes its bus on; mixing several inputs lands back on the main bus
     const route = { orbit: inputs.length === 1 && spec.inputs !== 'many' ? inputOrbits[0] : null }
     const autoOf = auto ? (key) => auto(`n:${id}:${key}`) : null
@@ -789,7 +801,7 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     const mixChannels = (pid) => (off.size
       ? channelsOf(pid).filter((c) => !off.has(c.id)).map((c) => patternChanVar(pid, c.id))
       : null)
-    let expr = spec.code(node.data, inputs, { patternIds, mixChannels, slots, nodeId: id, orbit: 2 + sidechains.indexOf(id), cps, beats, route, inputOrbits, stereoOrbit, declare, routeBus, auto, autoOf, declareFx: (key, kind, params) => declareFx(fx, key, kind, params) })
+    let expr = spec.code(node.data, inputs, { patternIds, mixChannels, slots, inputKeys, nodeId: id, orbit: 2 + sidechains.indexOf(id), cps, beats, route, inputOrbits, stereoOrbit, declare, routeBus, auto, autoOf, declareFx: (key, kind, params) => declareFx(fx, key, kind, params) })
     if (!expr) { exprs.set(id, null); return null }
     // a source making sound on its own plays when the song says (patterns are handled where they're defined)
     if (song && spec.group === 'source' && node.type !== 'pattern' && !wires.length) expr = song(`node:${id}`, expr)
