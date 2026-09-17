@@ -6,7 +6,7 @@
  *   effects      filter, space, level, drive          → one pattern in, one out
  *   eq & dynamics  eq, saturator, clipper, compressor, limiter  → one pattern in, one out
  *   combine      stack, sequence, arrange             → many in, one out
- *   output       each wire into it is a lane you hear (with mute / solo)
+ *   output       each wire into it is a lane you hear (mute is the track's, solo is yours)
  *
  * Wires go from a node's right edge (out) to a node's left edge (in). Multi-input nodes
  * grow a new input slot as you connect them; slot order is the order in the code.
@@ -660,7 +660,8 @@ export function normalizeGraph(raw, patterns) {
     if (n.type === 'arrange') data.bars = Object.fromEntries(Object.entries(n.data?.bars ?? {}).filter(([k]) => /^in-\d+$/.test(k)).map(([k, v]) => [k, Math.round(clampNum(v, 4, 1, 64))]))
     if (n.type === 'output') {
       data.muted = Object.fromEntries(Object.entries(n.data?.muted ?? {}).filter(([, v]) => v === true))
-      data.solo = typeof n.data?.solo === 'string' ? n.data.solo : null
+      // (a solo used to be kept here; it belongs to whoever is listening now, so it isn't
+      // saved with the track any more — App picks up an old one as your own when you open it)
     }
     if (typeof n.data?.name === 'string' && n.data.name.trim()) data.name = n.data.name.slice(0, 40)
     nodes.push({ id, type: n.type, x: Math.round(clampNum(n.x, 0, -20000, 20000)), y: Math.round(clampNum(n.y, 0, -20000, 20000)), data })
@@ -738,7 +739,7 @@ export function splitPatternIds(project) {
  * Code for the graph: one `const` per node that makes a pattern, in dependency order,
  * then one lane per wire into each output node. `solo` (a node id) plays only that node.
  */
-export function graphCode(project, { solo = null, song = null, audition = false, auto = null } = {}) {
+export function graphCode(project, { solo = null, song = null, audition = false, auto = null, laneSolo = null } = {}) {
   const { nodes, edges } = project
   const byId = new Map(nodes.map((n) => [n.id, n]))
   const patternIds = new Set(project.patterns.map((p) => p.id))
@@ -819,7 +820,9 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     if (v) lanes.push(`solo: ${v}`)
   } else {
     for (const out of nodes.filter((n) => n.type === 'output')) {
-      const soloWire = out.data.solo
+      // soloing a lane is listening, not a decision about the track: it's whoever is at
+      // this keyboard, so it never travels to the other people in the room (collab.js)
+      const soloWire = laneSolo?.[out.id] ?? null
       for (const w of inputsOf(edges, out.id)) {
         const v = visit(w.source)
         if (!v) continue

@@ -592,9 +592,11 @@ function StudioNode({ id, selected }) {
             {wires.map((w) => {
               const src = ctx.project.nodes.find((n) => n.id === w.source)
               const muted = node.data.muted?.[w.targetHandle]
-              const solo = node.data.solo === w.targetHandle
+              // muting is the track's and everyone hears it; soloing is just you listening
+              const soloed = ctx.laneSolo?.[id] ?? null
+              const solo = soloed === w.targetHandle
               return (
-                <li key={w.targetHandle} className={`slot ${node.type === 'output' && (muted || (node.data.solo && !solo)) ? 'off' : ''}`}>
+                <li key={w.targetHandle} className={`slot ${node.type === 'output' && (muted || (soloed && !solo)) ? 'off' : ''}`}>
                   <Handle type="target" position={Position.Left} id={w.targetHandle} className="port in" />
                   <span className="slot-name">{nodeTitle(src, ctx.project, w.sourceHandle)}</span>
                   {node.type === 'arrange' && (
@@ -617,7 +619,12 @@ function StudioNode({ id, selected }) {
                   {node.type === 'output' && (
                     <span className="slot-ctl nodrag">
                       <button className={`led mute ${muted ? 'on' : ''}`} aria-pressed={!!muted} title="mute" onClick={() => ctx.updateNode(id, (d) => { d.muted = { ...(d.muted ?? {}), [w.targetHandle]: !muted } })}>m</button>
-                      <button className={`led solo ${solo ? 'on' : ''}`} aria-pressed={solo} title="solo" onClick={() => ctx.updateNode(id, (d) => { d.solo = solo ? null : w.targetHandle })}>s</button>
+                      <button
+                        className={`led solo ${solo ? 'on' : ''}`}
+                        aria-pressed={solo}
+                        title={solo ? 'Stop listening to this lane on its own' : 'Hear this lane on its own — yours only, nobody else in the room hears it'}
+                        onClick={() => ctx.setLaneSolo(id, solo ? null : w.targetHandle)}
+                      >s</button>
                     </span>
                   )}
                 </li>
@@ -886,7 +893,7 @@ function Palette({ onAdd }) {
   )
 }
 
-function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) {
+function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onLaneSolo, transport }) {
   const flow = useReactFlow()
   const wrapRef = useRef(null)
   const dock = useRollDock() // the pattern's rack and notes live along the bottom
@@ -1207,6 +1214,13 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
     heard,
     solo,
     setSolo: onSolo,
+    laneSolo,
+    setLaneSolo: (nodeId, handle) => onLaneSolo((was) => {
+      const next = { ...was }
+      if (handle) next[nodeId] = handle
+      else delete next[nodeId]
+      return next
+    }),
     updateNode,
     removeNode: (id) => removeNodes([id]),
     editPattern: (patternId) => dock?.open(patternId, null, 'rack'),
@@ -1226,7 +1240,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
       })
       dock?.open(patternId, null, 'rack')
     },
-  }), [project, heard, solo, onSolo, updateNode, removeNodes, onUpdateProject, automation, dock])
+  }), [project, heard, solo, onSolo, laneSolo, onLaneSolo, updateNode, removeNodes, onUpdateProject, automation, dock])
 
   // what we have selected, so the others see it ringed on their canvas
   useEffect(() => { selectionIs('graph', nodes.filter((n) => n.selected).map((n) => n.id)) }, [nodes])

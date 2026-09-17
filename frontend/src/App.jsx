@@ -174,6 +174,14 @@ export default function App() {
 
   // Project mode: the code's header line holds the patterns/tracks the UI edits.
   const project = useMemo(() => parseProject(code), [code])
+  // tracks saved when a solo was part of the patch: take it as your own, once
+  const tookSolo = useRef(null)
+  useEffect(() => {
+    if (!project || tookSolo.current === trackId) return
+    tookSolo.current = trackId
+    const kept = Object.fromEntries(project.nodes.filter((n) => n.type === 'output' && typeof n.data?.solo === 'string').map((n) => [n.id, n.data.solo]))
+    setLaneSolo(Object.keys(kept).length ? kept : {})
+  }, [project, trackId])
   useEffect(() => { if (view === 'song' && code && !project) setView('graph') }, [view, code, project]) // hand-written code has no song
   // auditioning: a node id; null plays the output
   const [solo, setSolo] = useState(null)
@@ -186,8 +194,12 @@ export default function App() {
     setSwitching(to)
     requestAnimationFrame(() => requestAnimationFrame(() => { setView(to); setSwitching(null) }))
   }
-  const genRef = useRef({ solo: null })
-  genRef.current = { solo }
+  // Which lane of an output you're listening to on your own: soloing is "let me hear that
+  // for a second", not a decision about the track, so it stays on this keyboard and never
+  // reaches the other people in the room. Muting is the track's, and is shared.
+  const [laneSolo, setLaneSolo] = useState({})
+  const genRef = useRef({ solo: null, laneSolo: {} })
+  genRef.current = { solo, laneSolo }
   const readOnlyRef = useRef(null)
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState(null) // { msg, action: { label, run } }
@@ -367,6 +379,20 @@ export default function App() {
     }
     st.timer = setTimeout(run, Math.max(0, LIVE_INTERVAL - (performance.now() - st.last)))
   }, [])
+
+  // listening to a different lane is heard straight away, without touching the track
+  const heardSolo = useRef(null)
+  useEffect(() => {
+    const key = JSON.stringify(laneSolo)
+    if (heardSolo.current === null) { heardSolo.current = key; return } // nothing to redo on the way in
+    if (heardSolo.current === key) return
+    heardSolo.current = key
+    const editor = editorRef.current
+    const p = editor && parseProject(editor.code)
+    if (!p) return
+    const text = generateCode(p, genRef.current)
+    if (text !== editor.code) { replaceCode(text); liveUpdate() }
+  }, [laneSolo, replaceCode, liveUpdate])
 
   // ── working on this track with someone else (collab.js) ──
   // One place watches the code for changes and sends what changed, so every way of
@@ -1436,6 +1462,8 @@ export default function App() {
               started={started}
               solo={solo}
               onSolo={setSolo}
+              laneSolo={laneSolo}
+              onLaneSolo={setLaneSolo}
               transport={transport}
             />
           )}
