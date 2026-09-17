@@ -2,9 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Knob from '../../Knob.jsx'
 import { drawCurve, drawWave, fitCanvas } from '../scope.js'
 import {
-  FM_WAVES, K, LFO_BARS, LFO_MODES, LFO_POLARITIES, LFO_PRESETS, MAX_LAYERS, MAX_MODULATORS, MAX_ROUTES, MAX_ROUTES_EACH,
+  FM_WAVES, K, LANES, LFO_BARS, LFO_MODES, LFO_POLARITIES, LFO_PRESETS, MAX_LAYERS, MAX_MODULATORS, MAX_ROUTES, MAX_ROUTES_EACH,
   NOISES, PRESETS, TABLES, TABLE_NAMES, WARP_MODES, barsLabel, layerKnobKey, layerLetter, makeEnv, makeLayer, makeLfo,
-  modColor, modKnobKey, modName, newPartId, normalizePatch, targetSpec,
+  laneLoops, laneName, modColor, modKnobKey, modName, newPartId, normalizePatch, targetSpec,
 } from './model.js'
 import { tableFrame } from './tables.js'
 import CurveEditor from '../CurveEditor.jsx'
@@ -12,8 +12,8 @@ import './phyllo.css'
 
 /**
  * Phyllo's face, inside its instrument window, laid out as Phase Plant is: generators
- * stacked down the left and out through the amp envelope, effects to their right (next),
- * and a bar of modulators along the bottom — as many LFOs and envelopes as you add, each
+ * stacked down the left, each playing into one of three lanes beside them (each lane out to
+ * master or into another lane, its effects to come), and a bar of modulators along the bottom — as many LFOs and envelopes as you add, each
  * listing where it goes. (Typing plays it: the window's keyboard, see SynthWindow.jsx.)
  *
  * Props from the window: `data` (the patch), `change(fn)` (edit a copy of it),
@@ -238,7 +238,7 @@ const toneKnob = (l) => (l.type === 'wavetable' ? 'pos' : l.type === 'supersaw' 
 
 /** Everything a modulator can move, with names a person would use. */
 function destinations(patch) {
-  const list = [['pitch', 'pitch'], ['amp.level', 'volume']]
+  const list = [['pitch', 'pitch'], ['amp.level', 'volume'], ...Array.from({ length: LANES }, (_, i) => [`lane:${i}.gain`, `lane ${laneName(i)} level`])]
   patch.layers.forEach((l, i) => {
     const knobs = ['level', 'pan']
     const tone = toneKnob(l)
@@ -334,6 +334,10 @@ function Generator({ ui, layer, index }) {
         </select>
         {!open && <span className="ph-gen-sum">{Math.round(layer.level * 100)}%{layer.oct ? ` · ${layer.oct > 0 ? '+' : ''}${layer.oct} oct` : ''}</span>}
         <span className="spacer" />
+        <span className="ph-lane-pick" title="Which lane this generator plays into">
+          <span aria-hidden>→</span>
+          <Segmented label={`Generator ${layerLetter(index)} lane`} value={layer.lane} options={[0, 1, 2]} format={laneName} onChange={(v) => set((l) => { l.lane = v })} />
+        </span>
         <button type="button" className="ph-icon" title="Move up" aria-label="Move up" disabled={index === 0} onClick={() => ui.edit((p) => { const i = p.layers.findIndex((x) => x.id === layer.id); if (i > 0) p.layers.splice(i - 1, 0, ...p.layers.splice(i, 1)) })}>↑</button>
         <button type="button" className="ph-icon" title="Move down" aria-label="Move down" disabled={index === ui.patch.layers.length - 1} onClick={() => ui.edit((p) => { const i = p.layers.findIndex((x) => x.id === layer.id); if (i >= 0 && i < p.layers.length - 1) p.layers.splice(i + 1, 0, ...p.layers.splice(i, 1)) })}>↓</button>
         <button type="button" className="ph-icon" disabled={full} title="Duplicate" aria-label={`Duplicate generator ${layerLetter(index)}`} onClick={() => ui.edit((p) => { const i = p.layers.findIndex((x) => x.id === layer.id); if (i >= 0 && p.layers.length < MAX_LAYERS) p.layers.splice(i + 1, 0, { ...JSON.parse(JSON.stringify(layer)), id: newPartId() }) })}><CopyIcon /></button>
@@ -417,6 +421,47 @@ function AmpOut({ ui }) {
 const LFO_BUTTONS = [['sine', 'sin'], ['tri', 'tri'], ['saw', 'saw'], ['ramp', 'ramp'], ['square', 'sq'], ['pluck', 'pluck'], ['swell', 'swell'], ['stairs', 'steps']]
 const GRIDS = [[0, 'free'], [4, '1/4'], [8, '1/8'], [16, '1/16'], [32, '1/32']]
 const sameShape = (a, b) => a.length === b.length && a.every((p, i) => Math.abs(p.x - b[i].x) < 1e-6 && Math.abs(p.y - b[i].y) < 1e-6 && Math.abs((p.c ?? 0) - (b[i].c ?? 0)) < 0.011 && !p.s === !b[i].s)
+
+/** One lane: what plays into it, its level, its effects (to come), and where it goes. */
+function Lane({ ui, index }) {
+  const { patch, edit } = ui
+  const lane = patch.lanes[index]
+  const set = (fn) => edit((p) => fn(p.lanes[index]))
+  const from = patch.layers.map((l, i) => [l, i]).filter(([l]) => l.lane === index)
+  const feeds = patch.lanes.map((l, i) => i).filter((i) => patch.lanes[i].out === index)
+  return (
+    <section className={`ph-lane ${lane.mute ? 'muted' : ''}`} aria-label={`Lane ${laneName(index)}`}>
+      <header className="ph-lane-head">
+        <span className="ph-lane-num">{laneName(index)}</span>
+        <div className="ph-lane-in" title="What plays into this lane">
+          {from.map(([l, i]) => <span key={l.id} className={`ph-lane-chip ${l.on ? '' : 'off'}`}>{layerLetter(i)}</span>)}
+          {feeds.map((i) => <span key={`n${i}`} className="ph-lane-chip lane">{laneName(i)}</span>)}
+          {!from.length && !feeds.length && <span className="ph-small-label">empty</span>}
+        </div>
+        <span className="spacer" />
+        <button type="button" className={`ph-toggle ${lane.mute ? 'mute' : ''}`} aria-pressed={lane.mute} title={lane.mute ? 'Unmute this lane' : 'Mute this lane'} onClick={() => set((l) => { l.mute = !l.mute })}>m</button>
+      </header>
+      <div className="ph-lane-body">
+        <div className="ph-fx-slot">
+          <span className="ph-fx-mark" aria-hidden>fx</span>
+          <span className="ph-small-label">effects · next</span>
+        </div>
+      </div>
+      <footer className="ph-lane-foot">
+        <ModKnob ui={ui} route={`lane:${index}.gain`} auto={`lane${index + 1}_gain`} def={K.gain} value={lane.gain} onChange={(v) => set((l) => { l.gain = v })} />
+        <label className="ph-lane-out">
+          <span className="ph-small-label">out</span>
+          <select value={String(lane.out)} onChange={(e) => { const v = e.target.value === 'master' ? 'master' : Number(e.target.value); set((l) => { l.out = v }) }}>
+            <option value="master">master</option>
+            {Array.from({ length: LANES }, (_, i) => i).filter((i) => i !== index).map((i) => (
+              <option key={i} value={String(i)} disabled={laneLoops(patch.lanes, index, i)}>lane {laneName(i)}{laneLoops(patch.lanes, index, i) ? ' (loops)' : ''}</option>
+            ))}
+          </select>
+        </label>
+      </footer>
+    </section>
+  )
+}
 
 /** An LFO's insides: a shape you draw, how it runs, how fast. */
 function LfoBody({ ui, mod, slot }) {
@@ -589,11 +634,9 @@ export default function PhylloPanel({ data, change, target, watch, cps = 0.5 }) 
           {/* where every generator goes out: always in view under the stack */}
           <AmpOut ui={ui} />
         </Section>
-        <Section title="effects" className="ph-fxcol" aside={<span className="ph-count">soon</span>}>
-          <div className="ph-fx-empty">
-            <span className="ph-fx-mark" aria-hidden>fx</span>
-            <span className="ph-small-label">the effects chain goes here</span>
-            <p>Next: stack effects after the generators, in order, the way the generators stack.</p>
+        <Section title="lanes" className="ph-fxcol" aside={<span className="ph-count">generators play in, lanes play out</span>}>
+          <div className="ph-lanes">
+            {Array.from({ length: LANES }, (_, i) => <Lane key={i} ui={ui} index={i} />)}
           </div>
         </Section>
       </div>

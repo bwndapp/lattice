@@ -1,11 +1,12 @@
 import { knobsSource } from '../dsp.js'
-import { AUDIO_PARAMS, K, LAYER_KNOBS, MAX_LAYERS, MAX_MODULATORS } from './model.js'
+import { AUDIO_PARAMS, K, LANES, LAYER_KNOBS, MAX_LAYERS, MAX_MODULATORS } from './model.js'
 import { TABLES_SOURCE } from './tables.js'
 import { SHAPE_SOURCE } from '../curve.js'
 
 /**
- * Phyllo on the audio thread: eight voices, each a stack of up to eight layers into the amp
- * envelope, moved by up to sixteen modulators (LFOs and envelopes) through routes.
+ * Phyllo on the audio thread: eight voices, each a stack of up to eight layers playing into
+ * three lanes, which mix into one another or out, then through the amp envelope; moved by
+ * up to sixteen modulators (LFOs and envelopes) through routes.
  *
  * What each layer and modulator is, and where routes go, arrives as a message (onData);
  * their knobs are AudioParams in fixed slots: l<layer>_<knob>, d<modulator>_<knob>.
@@ -27,6 +28,9 @@ const PH_LKNOBS = ${JSON.stringify(LAYER_KNOBS.map(spec))}
 const PH_CONTROL = ${CONTROL}
 const PH_LAYERS = ${MAX_LAYERS}
 const PH_MODS = ${MAX_MODULATORS}
+const PH_LANES = ${LANES}
+const PH_NN = Array.from({ length: PH_LANES }, (_, i) => 'n' + i + '_gain')
+const PH_LANE_SPEC = ${JSON.stringify(spec('gain'))}
 const PH_LN = Array.from({ length: PH_LAYERS }, (_, i) => ${JSON.stringify(LAYER_KNOBS)}.map((k) => 'l' + i + '_' + k))
 const PH_DN = Array.from({ length: PH_MODS }, (_, j) => ({ hz: 'd' + j + '_hz', a: 'd' + j + '_attack', d: 'd' + j + '_decay', s: 'd' + j + '_sustain', r: 'd' + j + '_release' }))
 const PH_LFO_TABLE = 1024
@@ -70,15 +74,17 @@ class PhylloProcessor extends LatticeInstrument {
   constructor(options) {
     super(options)
     // what the patch is: set by onData
-    this.cfg = { layers: [], modulators: [], routes: [], mono: 0 }
+    this.cfg = { layers: [], modulators: [], routes: [], mono: 0, lanes: [[-1, 0], [-1, 0], [-1, 0]], laneOrder: [0, 1, 2] }
     this.lfoPhase = new Float64Array(PH_MODS) // the shared clocks (free lfos)
     this.lfoStart = new Float64Array(PH_MODS) // where they were at the start of this block
     this.lfoRate = new Float64Array(PH_MODS)
     this.lfoTable = [] // slot → table, made when that slot first becomes an lfo
     this.modVal = new Float32Array(PH_MODS)
     this.mods = new Float32Array(100)
-    this.bufL = new Float32Array(PH_CONTROL)
+    this.bufL = new Float32Array(PH_CONTROL) // the voice's mix, out of the lanes
     this.bufR = new Float32Array(PH_CONTROL)
+    this.laneL = Array.from({ length: PH_LANES }, () => new Float32Array(PH_CONTROL))
+    this.laneR = Array.from({ length: PH_LANES }, () => new Float32Array(PH_CONTROL))
     this.fmBuf = new Float32Array(PH_CONTROL)
   }
   newVoice() {
@@ -104,6 +110,8 @@ class PhylloProcessor extends LatticeInstrument {
     if (Array.isArray(data.layers)) cfg.layers = data.layers.slice(0, PH_LAYERS)
     if (Array.isArray(data.routes)) cfg.routes = data.routes
     if (data.mono !== undefined) cfg.mono = data.mono
+    if (Array.isArray(data.lanes)) cfg.lanes = data.lanes
+    if (Array.isArray(data.laneOrder)) cfg.laneOrder = data.laneOrder
     if (Array.isArray(data.modulators)) {
       cfg.modulators = data.modulators.slice(0, PH_MODS)
       cfg.modulators.forEach((m, j) => {
@@ -218,6 +226,9 @@ class PhylloProcessor extends LatticeInstrument {
     const semis = m[1] * 24
     c.ampFrom = c.amp === undefined ? null : c.amp
     c.amp = Math.min(1.5, Math.max(0, 1 + m[2])) * k.volume * 0.35
+    // each lane's level, where routes move it too, gliding from where it was
+    c.laneFrom = c.lane || null
+    c.lane = [0, 1, 2].map((i) => (cfg.lanes[i] && cfg.lanes[i][1] ? 0 : phVal(phPos(k[PH_NN[i]], PH_LANE_SPEC) + m[3 + i], PH_LANE_SPEC)))
     c.count = cfg.layers.length
     for (let i = 0; i < c.count; i++) {
       const L = c.layers[i]
@@ -226,6 +237,7 @@ class PhylloProcessor extends LatticeInstrument {
       if (!L.on) continue
       const N = PH_LN[i]
       const lm = 10 + i * 10
+      L.lane = conf[9] > 0 && conf[9] < PH_LANES ? conf[9] : 0
       L.type = conf[1]
       L.wave = conf[2]
       L.table = conf[3]
@@ -273,10 +285,32 @@ class PhylloProcessor extends LatticeInstrument {
       const c = voice.ctl
       bufL.fill(0, 0, n)
       bufR.fill(0, 0, n)
+      const laneL = this.laneL
+      const laneR = this.laneR
+      for (let q = 0; q < PH_LANES; q++) { laneL[q].fill(0, 0, n); laneR[q].fill(0, 0, n) }
+      // every layer into its lane
       for (let li = 0; li < c.count; li++) {
         const L = c.layers[li]
         if (!L.on || L.level <= 0) continue
-        this.layer(voice.layers[li], L, bufL, bufR, n)
+        this.layer(voice.layers[li], L, laneL[L.lane], laneR[L.lane], n)
+      }
+      // the lanes, in order: each at its level into the lane it feeds, or into the mix
+      const done = PH_CONTROL - voice.counter
+      for (const q of this.cfg.laneOrder) {
+        const to = this.cfg.lanes[q] ? this.cfg.lanes[q][0] : -1
+        const outL = to >= 0 && to !== q ? laneL[to] : bufL
+        const outR = to >= 0 && to !== q ? laneR[to] : bufR
+        const g1 = c.lane[q]
+        const g0 = c.laneFrom ? c.laneFrom[q] : g1
+        if (g0 === 0 && g1 === 0) continue
+        const gs = (g1 - g0) / PH_CONTROL
+        const inL = laneL[q]
+        const inR = laneR[q]
+        for (let j = 0; j < n; j++) {
+          const g = g0 + gs * (done + j)
+          outL[j] += inL[j] * g
+          outR[j] += inR[j] * g
+        }
       }
       // the level glides from where the last few samples left it
       const a0 = c.ampFrom === null ? c.amp : c.ampFrom

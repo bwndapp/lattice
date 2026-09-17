@@ -2,8 +2,11 @@
  * Phyllo's patch: what the window edits and the track saves, laid out the way Phase Plant
  * is. A patch is
  *
- *   layers      generators stacked top to bottom (analog, supersaw, wavetable, noise), up to 8
+ *   layers      generators stacked top to bottom (analog, supersaw, wavetable, noise), up to 8,
+ *               each playing into one of the three lanes
  *   amp         the envelope every voice goes out through
+ *   lanes       three effect lanes, as Phase Plant has: { out, gain, mute } — out is 'master'
+ *               or another lane's number (0 … 2), never round in a loop
  *   modulators  as many LFOs and envelopes as you add (up to 16), each with its own id
  *   routes      { id, src: a modulator's id, target, amt -1…1 }
  *
@@ -43,6 +46,34 @@ export const K = {
   hz: { key: 'hz', label: 'rate', min: 0.05, max: 30, def: 2, log: true, unit: 'hz' },
   volume: { key: 'volume', label: 'volume', min: 0, max: 1.5, def: 0.8 },
   glide: { key: 'glide', label: 'glide', min: 0, max: 1, def: 0, unit: 's' },
+  gain: { key: 'gain', label: 'level', min: 0, max: 1.5, def: 1 },
+}
+
+export const LANES = 3
+export const laneName = (i) => `${i + 1}`
+const makeLanes = () => Array.from({ length: LANES }, () => ({ out: 'master', gain: 1, mute: false }))
+
+/** Would lane `from` sending to `to` make a loop (to reaches back to from)? */
+export function laneLoops(lanes, from, to) {
+  let at = to
+  for (let hops = 0; at !== 'master' && hops <= LANES; hops++) {
+    if (at === from) return true
+    at = lanes[at]?.out ?? 'master'
+  }
+  return false
+}
+/** The lanes in the order sound flows through them: every lane before the lanes it feeds. */
+export function laneOrder(lanes) {
+  const order = []
+  const visit = (i, seen) => {
+    if (order.includes(i) || seen.has(i)) return
+    seen.add(i)
+    // whatever feeds this lane goes first
+    lanes.forEach((l, j) => { if (l.out === i) visit(j, seen) })
+    order.push(i)
+  }
+  for (let i = 0; i < lanes.length; i++) visit(i, new Set())
+  return order
 }
 
 export const LAYER_TYPES = ['analog', 'supersaw', 'wavetable', 'noise']
@@ -135,7 +166,7 @@ export const TABLE_NAMES = Object.keys(TABLES)
 /** Layer knobs a modulator can move, in the order the processor numbers them. */
 export const LAYER_KNOBS = ['level', 'pan', 'fine', 'pw', 'pos', 'warp', 'detune', 'spread', 'fm', 'ratio']
 /** Patch-wide destinations, numbered from 1 (0 is "nowhere"). */
-export const GLOBAL_DESTS = ['pitch', 'amp.level']
+export const GLOBAL_DESTS = ['pitch', 'amp.level', 'lane:0.gain', 'lane:1.gain', 'lane:2.gain']
 
 // ── patches ──────────────────────────────────────────────────────────────────
 
@@ -144,7 +175,7 @@ export function makeLayer(type = 'analog', over = {}) {
     id: newPartId(), type, on: true, level: 0.8, pan: 0.5, oct: 0, semi: 0, fine: 0,
     wave: 'sawtooth', pw: 0.5, table: 'basic', pos: 0, warp: 0, warpmode: 'none',
     unison: type === 'supersaw' ? 7 : 1, detune: type === 'supersaw' ? 0.18 : 0.1, spread: 0.6,
-    fm: 0, ratio: 1, fmwave: 'sine', color: 'pink',
+    fm: 0, ratio: 1, fmwave: 'sine', color: 'pink', lane: 0,
     ...over,
   }
 }
@@ -162,6 +193,7 @@ export function initPatch() {
     name: 'init',
     layers: [], // blank: you add the sounds you want
     amp: { attack: 0.005, decay: 0.3, sustain: 0.8, release: 0.2 },
+    lanes: makeLanes(),
     modulators: [], // and the modulators
     routes: [],
     mono: false,
@@ -234,6 +266,7 @@ export function normalizePatch(raw) {
         ratio: num(l.ratio, 1, K.ratio.min, K.ratio.max),
         fmwave: pick(l.fmwave, FM_WAVES, 'sine'),
         color: pick(l.color, NOISES, 'pink'),
+        lane: [0, 1, 2].includes(l.lane) ? l.lane : 0,
       }
       if (l.collapsed) out.collapsed = true
       return out
@@ -263,11 +296,20 @@ export function normalizePatch(raw) {
     name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.slice(0, 40) : base.name,
     layers,
     amp: cleanEnv(raw.amp, base.amp),
+    lanes: makeLanes(),
     modulators,
     routes: [],
     mono: raw.mono === true,
     glide: num(raw.glide, 0, K.glide.min, K.glide.max),
     volume: num(raw.volume, K.volume.def, K.volume.min, K.volume.max),
+  }
+  // lanes: each out to master or another lane, and a loop falls back to master
+  for (let i = 0; i < LANES; i++) {
+    const l = Array.isArray(raw.lanes) ? raw.lanes[i] : null
+    const lane = patch.lanes[i]
+    lane.gain = num(l?.gain, 1, K.gain.min, K.gain.max)
+    lane.mute = l?.mute === true
+    if ([0, 1, 2].includes(l?.out) && l.out !== i && !laneLoops(patch.lanes, i, l.out)) lane.out = l.out
   }
   const seen = new Set()
   for (const r of Array.isArray(raw.routes) ? raw.routes : Array.isArray(raw.mods) ? raw.mods : []) {
@@ -293,6 +335,8 @@ export function targetSpec(patch, target) {
   if (typeof target !== 'string') return null
   if (target === 'pitch') return { label: 'pitch', spec: { min: -24, max: 24 } }
   if (target === 'amp.level') return { label: 'volume', spec: { min: 0, max: 1 } }
+  const n = /^lane:([012])\.gain$/.exec(target)
+  if (n) return { label: `lane ${laneName(Number(n[1]))} level`, spec: K.gain, get: (p) => p.lanes[n[1]].gain }
   const l = /^layer:(\w+)\.(\w+)$/.exec(target)
   if (l && LAYER_KNOBS.includes(l[2])) {
     const index = patch.layers.findIndex((x) => x.id === l[1])
@@ -302,7 +346,7 @@ export function targetSpec(patch, target) {
   return null
 }
 
-/** Where a route goes, as the processor numbers it: 1 pitch, 2 volume, 10 + layer × 10 + knob. */
+/** Where a route goes, as the processor numbers it: 1 pitch, 2 volume, 3 … 5 lane levels, 10 + layer × 10 + knob. */
 function destIndex(patch, target) {
   const g = GLOBAL_DESTS.indexOf(target)
   if (g >= 0) return g + 1
@@ -321,6 +365,7 @@ export const AUDIO_PARAMS = [
   ...Array.from({ length: MAX_LAYERS }, (_, i) => LAYER_KNOBS.map((k) => ({ key: `l${i}_${k}`, min: K[k].min, max: K[k].max, def: K[k].def }))).flat(),
   ...Array.from({ length: MAX_MODULATORS }, (_, j) => [{ key: `d${j}_hz`, min: K.hz.min, max: K.hz.max, def: K.hz.def }, ...envParams(`d${j}`)]).flat(),
   ...envParams('a'),
+  ...Array.from({ length: LANES }, (_, i) => ({ key: `n${i}_gain`, min: K.gain.min, max: K.gain.max, def: 1 })),
   { key: 'glide', min: 0, max: 1, def: 0 },
   { key: 'volume', min: 0, max: 1.5, def: 0.8 },
   { key: 'cps', min: 0.01, max: 10, def: 0.5 },
@@ -328,7 +373,8 @@ export const AUDIO_PARAMS = [
 
 /**
  * What the processor gets as a message: what each slot is, and where routes go.
- *   layers      [on, type, wave, table, noise, warp mode, fm wave, semitones, unison]
+ *   layers      [on, type, wave, table, noise, warp mode, fm wave, semitones, unison, lane]
+ *   lanes       [out (-1 master, or a lane), muted], and `laneOrder`, the order to mix them in
  *   modulators  { lfo: 1, mode, polarity, sync, bars, points: [[x, y, c, s]] } or { lfo: 0 }
  *   routes      [modulator slot, destination, amount]
  */
@@ -338,7 +384,10 @@ export function patchMessage(patch) {
       l.on ? 1 : 0, LAYER_TYPES.indexOf(l.type), WAVES.indexOf(l.wave), TABLE_NAMES.indexOf(l.table), NOISES.indexOf(l.color),
       WARP_MODES.indexOf(l.warpmode), FM_WAVES.indexOf(l.fmwave), l.oct * 12 + l.semi,
       l.type === 'analog' || l.type === 'noise' ? 1 : l.unison, // analog layers are one voice; the others stack
+      l.lane,
     ]),
+    lanes: patch.lanes.map((n) => [n.out === 'master' ? -1 : n.out, n.mute ? 1 : 0]),
+    laneOrder: laneOrder(patch.lanes),
     modulators: patch.modulators.map((m) => (m.kind === 'lfo'
       ? { lfo: 1, mode: LFO_MODES.indexOf(m.mode), polarity: LFO_POLARITIES.indexOf(m.polarity), sync: m.sync ? 1 : 0, bars: m.bars, points: m.points.map((p) => [p.x, p.y, p.c ?? 0, p.s ?? 0]) }
       : { lfo: 0 })),
@@ -358,6 +407,7 @@ export function encodePatch(patch, { cps = 0.5 } = {}) {
     else for (const k of ENV_STAGES) out[`d${j}_${k}`] = m[k]
   })
   for (const k of ENV_STAGES) out[`a_${k}`] = patch.amp[k]
+  patch.lanes.forEach((n, i) => { out[`n${i}_gain`] = n.gain })
   out.glide = patch.glide
   out.volume = patch.volume
   out.cps = clamp(cps, 0.01, 10)
@@ -368,13 +418,19 @@ export function encodePatch(patch, { cps = 0.5 } = {}) {
 
 /**
  * Automation names a knob by a key made of word characters: "volume", "glide",
- * "amp_attack", "M<modulator id>_hz" or "_attack" (and so on), "L<layer id>_<knob>".
+ * "amp_attack", "lane1_gain" (lanes count from 1), "M<modulator id>_hz" or "_attack" (and so
+ * on), "L<layer id>_<knob>".
  * Version 2's "env_decay" and "lfo1_hz" still work: those modulators kept their names.
  */
 export function knobAt(patch, key) {
   let k = String(key)
   const legacy = /^(env)_(attack|decay|sustain|release)$|^(lfo[12])_hz$/.exec(k)
   if (legacy) k = legacy[1] ? `Menv_${legacy[2]}` : `M${legacy[3]}_hz`
+  const lane = /^lane([123])_gain$/.exec(k)
+  if (lane) {
+    const i = Number(lane[1]) - 1
+    return { def: K.gain, value: patch.lanes[i].gain, label: `lane ${lane[1]} level`, set: (p, v) => { p.lanes[i].gain = v } }
+  }
   const m = /^(?:(volume|glide)|amp_(attack|decay|sustain|release)|M(\w+?)_(hz|attack|decay|sustain|release)|L(\w+?)_(level|pan|fine|pw|pos|warp|detune|spread|fm|ratio))$/.exec(k)
   if (!m) return null
   if (m[1]) return { def: K[m[1]], value: patch[m[1]], label: m[1], set: (p, v) => { p[m[1]] = v } }

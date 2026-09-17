@@ -15,7 +15,7 @@ export default {
   voicesFor: (patch) => (patch.mono ? 1 : 8),
   oneShot: false,
   keyOctave: 3,
-  width: 1180,
+  width: 1320,
   params: [],
   groups: [],
   audioParams: AUDIO_PARAMS,
