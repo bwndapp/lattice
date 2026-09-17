@@ -938,6 +938,8 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
   const [detaching, setDetaching] = useState(null) // wire being pulled off its input (for its look)
   const detachRef = useRef(null) // the same, for the drop handler, which must not read stale state
   const spliceRef = useRef(null)
+  const fromRef = useRef(null) // the port a wire is being pulled out of
+  const joinedRef = useRef(false) // that pull found somewhere to land
   const rfEdges = useMemo(() => project.edges.map((e) => ({
     ...e,
     type: 'wire', // with a + in the middle to add a node into it
@@ -984,7 +986,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
     if (gone.has(solo)) onSolo(null)
   }, [onUpdateProject, solo, onSolo])
 
-  const addNode = useCallback((type, position, instrument, intoWire = null) => {
+  const addNode = useCallback((type, position, instrument, intoWire = null, fromPort = null) => {
     const id = `${type}${newId().slice(-5)}`
     const rect = wrapRef.current?.getBoundingClientRect()
     let at = position
@@ -997,7 +999,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
     // Clicked in the pane (not dropped somewhere): wire it up so it's heard straight away.
     // A sound goes into the output; an effect or transform goes after the selected node,
     // taking over that node's wires, so clicking effects one by one builds a chain.
-    const clicked = !position && !intoWire
+    const clicked = !position && !intoWire && !fromPort
     const selectedIds = nodesRef.current.filter((n) => n.selected).map((n) => n.id)
     const after = clicked && selectedIds.length === 1 && splicable(type) ? project.nodes.find((n) => n.id === selectedIds[0] && n.type !== 'output') : null
     const output = project.nodes.find((n) => n.type === 'output')
@@ -1017,6 +1019,10 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
       }
       p.nodes.push({ id, type, x: Math.round(at.x), y: Math.round(at.y), data })
       if (intoWire) spliceInto(p, intoWire, id)
+      // dragged out of a port and dropped on nothing: the wire you were pulling lands here
+      if (fromPort && NODE_TYPES[type]?.inputs) {
+        p.edges.push({ source: fromPort.nodeId, sourceHandle: fromPort.handleId ?? 'out', target: id, targetHandle: firstInput(type) })
+      }
       if (after) {
         for (const e of p.edges) if (e.source === after.id) e.source = id
         p.edges.push({ source: after.id, target: id, targetHandle: firstInput(type) })
@@ -1130,6 +1136,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
   }, [project])
 
   const onConnect = useCallback((c) => {
+    joinedRef.current = true // it found a port, so nothing needs to be offered
     detachRef.current = null // a pulled wire that lands on an output is rewired, not deleted
     setDetaching(null)
     onUpdateProject((p) => {
@@ -1266,18 +1273,31 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
               })
             }}
             onConnectStart={(_, { nodeId, handleId, handleType }) => {
+              // pulling out of a port: where the wire came from, in case it lands on nothing
+              fromRef.current = handleType === 'source' ? { nodeId, handleId } : null
               // grabbing a connected input pulls its wire off
               if (handleType !== 'target') return
               const wire = project.edges.find((e) => e.target === nodeId && e.targetHandle === (handleId ?? 'in'))
               detachRef.current = wire?.id ?? null
               setDetaching(detachRef.current)
             }}
-            onConnectEnd={() => {
+            onConnectEnd={(e) => {
               const wire = detachRef.current
+              const from = fromRef.current
+              const landed = joinedRef.current
               detachRef.current = null
+              fromRef.current = null
+              joinedRef.current = false
               setDetaching(null)
               // dropped anywhere but an output: the pulled wire goes away (a successful onConnect already replaced it)
               if (wire) onUpdateProject((p) => { p.edges = p.edges.filter((e) => e.id !== wire) })
+              // dragged out of a port onto bare canvas: ask what to put there, and wire it up
+              if (from && !landed && e && !e.target?.closest?.('.react-flow__node')) {
+                const x = e.clientX ?? e.changedTouches?.[0]?.clientX
+                const y = e.clientY ?? e.changedTouches?.[0]?.clientY
+                if (x == null) return
+                setMenu({ x, y, at: flow.screenToFlowPosition({ x: x - 20, y: y - 20 }), from })
+              }
             }}
             onConnect={onConnect}
             isValidConnection={isValidConnection}
@@ -1311,7 +1331,8 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
           score={matchScore}
           intoWire={!!menu.wire}
           onPick={(item) => {
-            if (item.kind === 'instrument') return addNode('pattern', menu.at, item.key)
+            if (item.kind === 'instrument') return addNode('pattern', menu.at, item.key, null, menu.from)
+            if (menu.from) return addNode(item.key, menu.at, null, null, menu.from)
             const into = menu.wire && splicable(item.key) ? project.edges.find((e) => e.id === menu.wire) : null
             const src = into && project.nodes.find((n) => n.id === into.source)
             const dst = into && project.nodes.find((n) => n.id === into.target)
