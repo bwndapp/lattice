@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Handle, Position,
+  ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Handle, Position, SelectionMode,
   applyNodeChanges, applyEdgeChanges, useNodesInitialized, useReactFlow, useUpdateNodeInternals,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
@@ -1441,6 +1441,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
             isValidConnection={isValidConnection}
             deleteKeyCode={['Backspace', 'Delete']}
             multiSelectionKeyCode={['Shift', 'Meta', 'Control']}
+            selectionMode={SelectionMode.Partial}
             minZoom={0.2}
             maxZoom={2}
             edgeTypes={EDGE_TYPES}
