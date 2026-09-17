@@ -153,8 +153,10 @@ export default function SynthWindow({ project, patternId, channelId, order, fron
         onDoubleClick={(e) => { if (!e.target.closest('button')) setPos({ x: Math.max(16, window.innerWidth / 2 - (ref.current?.offsetWidth ?? 760) / 2), y: 90 }) }}
         title="Drag to move · double-click to centre"
       >
-        <h2 id={`sw-title-${channelId}`} className="sw-title">{spec.label}</h2>
-        <span className="sw-where">{ch.name} · {pattern.name}</span>
+        {/* what you called it; what it is, when that isn't the same; where it lives */}
+        <h2 id={`sw-title-${channelId}`} className="sw-title">{ch.name}</h2>
+        {ch.name !== spec.label && <span className="sw-kind">{spec.label}</span>}
+        <span className="sw-where">{pattern.name}</span>
         <span className="sw-spacer" />
         <span className={`sw-keys ${lit ? 'lit' : ''}`} title={'Type to play it while this window has focus: z s x d c v g b h n j m , is one octave, q 2 w 3 e r 5 t 6 y 7 u the next · − and = change octave'}>
           <span className="sw-keys-led" aria-hidden />

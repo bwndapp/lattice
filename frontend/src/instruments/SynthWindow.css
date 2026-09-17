@@ -30,6 +30,10 @@
 }
 .sw-head:active { cursor: grabbing; }
 .sw-title { margin: 0; font-family: var(--display); font-weight: 900; font-stretch: 125%; font-size: 20px; line-height: 1; letter-spacing: -0.03em; }
+.sw-kind {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
+  border: 1px solid var(--line); border-radius: 2px; padding: 1px 5px; white-space: nowrap;
+}
 .sw-where { font-size: 11px; color: var(--acid); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .sw-spacer { flex: 1; }
 .sw-head .btn { border-radius: 2px; height: 26px; padding: 0 0.75rem; }
