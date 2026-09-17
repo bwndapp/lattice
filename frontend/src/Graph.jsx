@@ -922,7 +922,8 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
   const menuItems = useMemo(() => {
     const all = paletteItems()
     if (menu?.wire) return all.filter((it) => it.kind === 'node' && splicable(it.key))
-    if (menu?.from) return all.filter((it) => it.kind === 'node' && NODE_TYPES[it.key]?.inputs > 0)
+    // `inputs` is a count or 'many': anything truthy takes a wire
+    if (menu?.from) return all.filter((it) => it.kind === 'node' && !!NODE_TYPES[it.key]?.inputs)
     // pulled backwards out of an input: anything that plays out (the output plays nowhere)
     if (menu?.to) return all.filter((it) => it.kind === 'instrument' || it.key !== 'output')
     return all
@@ -1350,7 +1351,6 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
               // pulling out of a port: where the wire came from, in case it lands on nothing
               fromRef.current = handleType === 'source' ? { nodeId, handleId } : null
               // grabbing a connected input pulls its wire off; a free one asks for something to feed it
-              console.log('[connectStart]', handleType, handleId)
               if (handleType !== 'target') return
               const wire = project.edges.find((e) => e.target === nodeId && e.targetHandle === (handleId ?? 'in'))
               detachRef.current = wire?.id ?? null
@@ -1370,7 +1370,6 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
               // dropped anywhere but an output: the pulled wire goes away (a successful onConnect already replaced it)
               if (wire) onUpdateProject((p) => { p.edges = p.edges.filter((e) => e.id !== wire) })
               // dragged out of a port onto bare canvas: ask what to put there, and wire it up
-              console.log('[connectEnd]', JSON.stringify({ from: !!from, to: !!to, landed, hasE: !!e, tgt: e?.target?.className?.toString?.().slice(0, 40) }))
               if ((from || to) && !landed && e && !e.target?.closest?.('.react-flow__node')) {
                 const x = e.clientX ?? e.changedTouches?.[0]?.clientX
                 const y = e.clientY ?? e.changedTouches?.[0]?.clientY
