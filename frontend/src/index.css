@@ -839,7 +839,7 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
  * on the header at the top and on whatever runs full width at the bottom.
  */
 .gnode {
-  --node-radius: 10px;
+  --node-radius: 6px;
   width: 250px; font-size: 12px; color: var(--paper); cursor: var(--ring);
   background: var(--panel);
   border: 1px solid var(--line);
@@ -877,12 +877,12 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
 .node-kind { font-family: var(--display); font-weight: 900; font-stretch: 112%; font-size: 13px; }
 .node-bus { font-size: 8px; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.5; border: 1px solid currentColor; padding: 0 2px; line-height: 1.4; }
 .node-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; opacity: 0.85; }
-.node-btn { font: inherit; font-size: 10px; line-height: 1.5; color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 5px; padding: 0 0.32rem; cursor: var(--ring); opacity: 0.75; }
+.node-btn { font: inherit; font-size: 10px; line-height: 1.5; color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 3px; padding: 0 0.32rem; cursor: var(--ring); opacity: 0.75; }
 .node-btn:hover { opacity: 1; }
 .node-btn.on { background: var(--ink); color: var(--acid); border-color: var(--ink); opacity: 1; }
 .node-body { padding: 0.5rem 0.6rem 0.6rem; display: grid; gap: 0.5rem; }
 /* the controls inside a card follow it: softened, not square */
-.gnode .select, .gnode input:not([type=range]), .gnode textarea { border-radius: 5px; }
+.gnode .select, .gnode input:not([type=range]), .gnode textarea { border-radius: 3px; }
 .node-params { display: flex; flex-wrap: wrap; gap: 0.45rem 0.5rem; align-items: flex-end; }
 .node-field { display: flex; flex-direction: column; gap: 0.15rem; font-size: 10px; color: var(--muted); min-width: 0; }
 .node-field.wide { flex-basis: 100%; }
@@ -954,7 +954,7 @@ ul.node-chans { display: block; border-top: 1px solid var(--line); }
 .fx-io { justify-self: center; font-size: 9px; letter-spacing: 0.08em; color: var(--muted); }
 .fx-units { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; position: relative; }
 .fx-units::before { content: ""; position: absolute; left: 50%; top: -0.35rem; bottom: -0.35rem; width: 1px; background: var(--line); z-index: 0; }
-.fx-unit { position: relative; z-index: 1; background: var(--ink); border: 1px solid var(--line); border-left: 3px solid var(--acid); border-radius: 7px; }
+.fx-unit { position: relative; z-index: 1; background: var(--ink); border: 1px solid var(--line); border-left: 3px solid var(--acid); border-radius: 4px; }
 .fx-unit.bypassed { border-left-color: var(--line); }
 .fx-unit.bypassed .node-params, .fx-unit.bypassed .fx-unit-name { opacity: 0.4; }
 .fx-unit-head { display: flex; align-items: center; gap: 0.3rem; padding: 0.25rem 0.35rem 0.25rem 0.45rem; border-bottom: 1px solid var(--line); cursor: grab; touch-action: none; }
@@ -1086,4 +1086,4 @@ ul.node-chans { display: block; border-top: 1px solid var(--line); }
 
 /* nodes nobody hears */
 .gnode.unheard { border-style: dashed; }
-.node-warn { margin: 0; padding: 0.35rem 0.45rem; font-size: 10px; line-height: 1.4; color: var(--danger); border: 1px dashed var(--danger); border-radius: 6px; }
+.node-warn { margin: 0; padding: 0.35rem 0.45rem; font-size: 10px; line-height: 1.4; color: var(--danger); border: 1px dashed var(--danger); border-radius: 4px; }
