@@ -3,7 +3,7 @@ import PianoRoll from './PianoRoll.jsx'
 import { PatternChannels, exactStepAt } from './Rack.jsx'
 import { NameInput } from './NameInput.jsx'
 import { previewInPatch } from './audio'
-import { midiToNote, reshapePattern } from './project'
+import { STEPS_PER_BAR, midiToNote, reshapePattern, stepDivision } from './project'
 import { KEYBOARD, KEY_HIGH as HIGH, KEY_LOW as LOW, OCTAVE_KEY } from './keyboard.js'
 import './DetailDock.css'
 
@@ -150,7 +150,10 @@ export default function DetailDock({ project, at, transport, started, height, on
         <label className="dd-field">
           <span>steps / bar</span>
           <select className="select" value={pattern.stepsPerBar} onChange={(e) => editPattern((pat) => reshapePattern(pat, { stepsPerBar: Number(e.target.value) }))} aria-label="Steps per bar">
-            {[8, 12, 16, 24, 32].map((n) => <option key={n} value={n}>{n}</option>)}
+            {STEPS_PER_BAR.map((n) => {
+              const div = stepDivision(n, project.beats)
+              return <option key={n} value={n}>{div ? `${n} · ${div}` : n}</option>
+            })}
           </select>
         </label>
         {uses > 1 && tab === 'rack' && <span className="dd-uses" title="Every node playing this pattern changes with it">in {uses} nodes</span>}

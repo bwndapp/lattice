@@ -80,6 +80,20 @@ const tidy = (v) => String(Math.round(v * 1000) / 1000)
 export const TICK = 1 / 192
 const tick = (v) => Math.round(v / TICK) * TICK
 
+/** How a pattern's bar can be divided. Each one gives a whole number of steps per beat. */
+export const STEPS_PER_BAR = [4, 8, 12, 16, 24, 32, 48]
+
+/** What one step is worth musically, for the pattern's time signature. Null if it's odd. */
+const DIVISIONS = [
+  [1, '1/4'], [0.75, '1/8 dotted'], [0.5, '1/8'], [1 / 3, '1/8 triplet'],
+  [0.375, '1/16 dotted'], [0.25, '1/16'], [1 / 6, '1/16 triplet'],
+  [0.125, '1/32'], [1 / 12, '1/32 triplet'], [0.0625, '1/64'],
+]
+export function stepDivision(stepsPerBar, beats) {
+  const each = (Number(beats) || 4) / stepsPerBar
+  return DIVISIONS.find(([v]) => Math.abs(v - each) < 1e-6)?.[1] ?? null
+}
+
 export function stepCount(pattern) {
   return pattern.bars * pattern.stepsPerBar
 }
@@ -117,7 +131,7 @@ export function normalizeProject(raw) {
       id: p.id.replace(/\W/g, '') || newId(),
       name: String(p.name ?? 'pattern').slice(0, 40),
       bars: Math.round(num(p.bars, 1, 1, 16)),
-      stepsPerBar: [4, 8, 12, 16, 24, 32].includes(p.stepsPerBar) ? p.stepsPerBar : 16,
+      stepsPerBar: STEPS_PER_BAR.includes(p.stepsPerBar) ? p.stepsPerBar : 16,
       channels: [],
     }
     if (typeof p.parent === 'string' && p.parent) pattern.parent = p.parent.replace(/\W/g, '')
@@ -630,7 +644,8 @@ export function reshapePattern(pat, patch) {
       }
       c.steps = out
     } else if (c.kind === 'synth') {
-      const scaled = c.notes.map((x) => ({ ...x, s: Math.round(x.s * ratio), l: Math.max(1, Math.round(x.l * ratio)) }))
+      const q = (v) => Math.round(v / TICK) * TICK
+      const scaled = c.notes.map((x) => ({ ...x, s: q(x.s * ratio), l: Math.max(TICK, q(x.l * ratio)) }))
       const out = []
       const period = oldTotal * ratio
       for (let offset = 0; offset < newTotal; offset += period) {

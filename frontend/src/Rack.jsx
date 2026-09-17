@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   INSTRUMENTS, INSTRUMENT_MIME, PARAMS,
-  instrumentChannel, midiToNote, newId, paramValue, paramsFor, stepCount,
+  instrumentChannel, midiToNote, newId, paramValue, paramsFor, stepCount, stepDivision,
 } from './project'
 import { previewInPatch } from './audio'
 import Knob from './Knob.jsx'
@@ -190,7 +190,7 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
       )}
       {pattern.channels.length > 0 && (
         <div className="ch ch-ruler">
-          <span className="ruler-label">{pattern.bars} bar{pattern.bars === 1 ? '' : 's'} · {pattern.stepsPerBar} steps</span>
+          <span className="ruler-label">{pattern.bars} bar{pattern.bars === 1 ? '' : 's'} · {stepDivision(pattern.stepsPerBar, project.beats) ?? `${pattern.stepsPerBar} steps`}</span>
           <div className="steps ruler-steps" aria-hidden>
             {Array.from({ length: n }, (_, i) => {
               const bar = i % pattern.stepsPerBar === 0
