@@ -1,0 +1,23 @@
+/* the app's one tooltip (see Tooltip.jsx): anything with data-tip gets this */
+.tip {
+  position: fixed;
+  z-index: 9000;
+  max-width: 24rem;
+  padding: 0.3rem 0.5rem;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--paper);
+  background: #161614;
+  border: 1px solid var(--line);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  transform: translate(calc(-50% + var(--shift, 0px)), 0);
+}
+.tip.above { transform: translate(calc(-50% + var(--shift, 0px)), -100%); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .tip { animation: tip-in 110ms ease-out; }
+}
+@keyframes tip-in {
+  from { opacity: 0; transform: translate(calc(-50% + var(--shift, 0px)), -2px); }
+}

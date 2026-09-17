@@ -835,7 +835,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
           onDragEnd={() => setGhost(null)}
           onClick={() => setActivePart((a) => (a === part.src ? null : part.src))}
           onDoubleClick={(e) => openPart(part.src, { clientX: e.clientX + 60, clientY: e.clientY })}
-          title={part.kind === 'pattern' ? 'Double-click to edit its instruments, sounds, steps and notes' : part.kind === 'auto' ? 'Double-click to draw its curve' : 'Double-click to change its settings'}
+          data-tip={`Drag onto the timeline, or select it and draw on an empty row. Double-click to ${part.kind === 'pattern' ? 'edit its instruments, steps and notes' : part.kind === 'auto' ? 'draw its curve' : 'change its settings'}.`}
         >
           <span className="song-swatch" aria-hidden />
           <span className="song-part-name">{part.name}</span>
@@ -880,7 +880,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
             type="button"
             className="song-part-dup"
             onClick={(e) => duplicatePart(part, e)}
-            title={`Duplicate as a variation: change it freely, it still plays through ${part.parentName ?? part.name}'s spot in the patch`}
+            data-tip={`Make a variation: change it freely and it still plays through ${part.parentName ?? part.name}'s spot in the patch`}
             aria-label={`Duplicate ${part.name} as a variation`}
           >dup</button>
         )}
@@ -951,7 +951,6 @@ export default function Timeline({ project, onUpdateProject, transport, started 
           <span className="song-title">parts</span>
           <button className="btn" onClick={newPattern} title="A new pattern, added to the patch and opened for editing">+ pattern</button>
         </div>
-        <p className="song-parts-hint">Drag onto the timeline; selected, draw it on empty rows. <b>dup</b> makes a variation that plays through the same spot in the patch.</p>
         <ul className="song-part-list">
           {inPatch.map(partRow)}
         </ul>

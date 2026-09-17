@@ -20,6 +20,7 @@ import { AutomationEditor } from './Automation.jsx'
 import { routeVoice } from './fxbus.js'
 import Versions from './Versions.jsx'
 import ExportDialog from './ExportDialog.jsx'
+import Tooltip from './Tooltip.jsx'
 import ProgramMenu from './ProgramMenu.jsx'
 import DetailDock, { readDockHeight } from './DetailDock.jsx'
 import SynthWindows from './instruments/SynthWindows.jsx'
@@ -1310,6 +1311,7 @@ export default function App() {
       )}
       </RollContext.Provider>
       </AutomationContext.Provider>
+      <Tooltip />
 
       {toast && (
         <div className={`toast ${toast.action ? 'with-action' : ''}`} role="status">
