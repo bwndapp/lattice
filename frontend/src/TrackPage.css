@@ -51,3 +51,14 @@
 .tp-diff-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
 .tp-diff-list li { font-size: 10.5px; line-height: 1.5; color: var(--paper); }
 .tp-diff-list li::before { content: '· '; color: var(--acid); }
+
+/* a copy leaving the line where it was taken */
+.tp-fork { position: relative; margin: 5px 0 3px 12px; padding-left: 14px; font-size: 10.5px; line-height: 1.5; }
+.tp-fork-arm {
+  position: absolute; left: 0; top: -4px; width: 10px; height: 12px;
+  border-left: 1px solid color-mix(in srgb, var(--acid) 45%, var(--line));
+  border-bottom: 1px solid color-mix(in srgb, var(--acid) 45%, var(--line));
+  border-bottom-left-radius: 6px;
+}
+/* the dot of a save something branched from is filled, so splits read down the line */
+.tp-save.branching > .tp-dot { background: var(--acid); box-shadow: 0 0 0 3px rgb(228 255 26 / 0.15); }

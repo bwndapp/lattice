@@ -92,6 +92,23 @@ export default function TrackPage({ id, user, onOpen, onClose, onAuthor }) {
 
   const project = parseProject(track.code || '')
 
+  /**
+   * The track as a line you can read down: its saves oldest first, and each copy hanging
+   * off the save it was taken from. Someone else's track has no saves to show, so the
+   * copies hang off the one point there is — the track itself.
+   */
+  const points = track.is_owner && saves?.length
+    ? [...saves].reverse().map((v) => ({ ...v, forks: [] }))
+    : [{ id: 'now', saved_at: track.updated_at, only: true, forks: [] }]
+  for (const c of copies) {
+    const at = c.forked_at ?? c.created_at
+    // the last save it could have been taken from
+    let spot = points[0]
+    for (const p of points) if (p.saved_at <= at) spot = p
+    spot.forks.push(c)
+  }
+  const line = track.is_owner || copies.length ? points : []
+
   return (
     <section className="tp" aria-label={`About ${track.title}`}>
       <div className="tp-head">
@@ -127,41 +144,32 @@ export default function TrackPage({ id, user, onOpen, onClose, onAuthor }) {
         )}
       </div>
 
-      {copies.length > 0 && (
-        <div className="tp-block">
-          <h3 className="tp-h">Copies people made <span className="tp-count">{copies.length}</span></h3>
-          <ul className="tp-copies">
-            {copies.map((c) => (
-              <li key={c.id}>
-                <button type="button" className="tp-link" onClick={() => onOpen(c.id, true)}>{c.title}</button>
-                <span className="tp-quiet"> by {c.author} · {timeAgo(c.updated_at)}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {track.is_owner && (
-        <div className="tp-block">
-          <h3 className="tp-h">History {saves?.length ? <span className="tp-count">{saves.length}</span> : null}</h3>
-          {!saves && <p className="tp-quiet">Reading the saves…</p>}
-          {saves?.length === 0 && <p className="tp-quiet">No saves kept yet.</p>}
-          {/* oldest at the top: the line reads down the way the track was made */}
-          <ol className="tp-saves">
-            {[...(saves ?? [])].reverse().map((v, i, all) => (
-              <li key={v.id} className="tp-save">
+      <div className="tp-block">
+        <h3 className="tp-h">
+          {track.is_owner ? 'History' : 'What came out of it'}
+          {line.length ? <span className="tp-count">{line.length}</span> : null}
+        </h3>
+        {track.is_owner && !saves && <p className="tp-quiet">Reading the saves…</p>}
+        {!line.length && <p className="tp-quiet">{track.is_owner ? 'No saves kept yet.' : 'Nobody has taken a copy of this yet.'}</p>}
+        {/* oldest at the top: the line reads down the way the track was made, with the
+            copies people took branching off it where they left */}
+        <ol className="tp-saves">
+            {line.map((v, i, all) => (
+              <li key={v.id} className={`tp-save ${v.forks.length ? 'branching' : ''}`}>
                 <span className="tp-dot" aria-hidden />
                 <div className="tp-save-what">
                   <span className="tp-save-when">
                     {when(v.saved_at)}
                     {i === all.length - 1 ? ' · latest' : ''}
-                    {i === 0 && all.length > 1 ? ' · where the history starts' : ''}
+                    {i === 0 && all.length > 1 && track.is_owner ? ' · where the history starts' : ''}
                   </span>
-                  <button type="button" className="tp-link tp-save-more" onClick={() => reveal(v, all[i - 1])}>
-                    {shown.has(v.id)
-                      ? 'hide'
-                      : Array.isArray(changes[v.id]) ? summarise(changes[v.id]) : 'what changed'}
-                  </button>
+                  {!v.only && (
+                    <button type="button" className="tp-link tp-save-more" onClick={() => reveal(v, all[i - 1])}>
+                      {shown.has(v.id)
+                        ? 'hide'
+                        : Array.isArray(changes[v.id]) ? summarise(changes[v.id]) : 'what changed'}
+                    </button>
+                  )}
                   {shown.has(v.id) && (
                     <div className="tp-diff">
                       {changes[v.id] === 'loading' && <span className="tp-quiet">reading…</span>}
@@ -172,12 +180,18 @@ export default function TrackPage({ id, user, onOpen, onClose, onAuthor }) {
                         : <span className="tp-quiet">nothing changed in the music</span>)}
                     </div>
                   )}
+                  {v.forks.map((f) => (
+                    <div key={f.id} className="tp-fork">
+                      <span className="tp-fork-arm" aria-hidden />
+                      <button type="button" className="tp-link" onClick={() => onOpen(f.id, true)}>{f.title}</button>
+                      <span className="tp-quiet"> — {f.author} took it from here, {timeAgo(f.forked_at ?? f.created_at)}</span>
+                    </div>
+                  ))}
                 </div>
               </li>
             ))}
-          </ol>
-        </div>
-      )}
+        </ol>
+      </div>
     </section>
   )
 }

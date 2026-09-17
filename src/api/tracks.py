@@ -71,6 +71,10 @@ def _conn():
         # a public handle for whoever made a track, so "everything by this person" can be
         # asked for without their account id ever leaving the server
         cols = {r[1] for r in conn.execute("PRAGMA table_info(tracks)")}
+        # when a copy was taken: where it leaves the track it came from, on its history
+        if "forked_at" not in cols:
+            conn.execute("ALTER TABLE tracks ADD COLUMN forked_at INTEGER")
+            conn.execute("UPDATE tracks SET forked_at = created_at WHERE forked_from IS NOT NULL")
         if "author_id" not in cols:
             conn.execute("ALTER TABLE tracks ADD COLUMN author_id TEXT")
             for row in conn.execute("SELECT DISTINCT owner_sub FROM tracks").fetchall():
@@ -271,17 +275,22 @@ async def create_track(request: Request):
     if error:
         return _err(error, 400)
     forked_from = body.get("forked_from") or None
+    forked_at = None
     now = int(time.time())
     track_id = secrets.token_urlsafe(6)
     conn = _conn()
     try:
-        if forked_from and not conn.execute("SELECT 1 FROM tracks WHERE id = ?", (forked_from,)).fetchone():
-            forked_from = None
+        if forked_from:
+            parent = conn.execute("SELECT updated_at FROM tracks WHERE id = ?", (forked_from,)).fetchone()
+            # the state it was taken from, so the copy can be placed on the parent's history
+            forked_at = parent["updated_at"] if parent else None
+            if not parent:
+                forked_from = None
         conn.execute(
-            "INSERT INTO tracks (id, owner_sub, author, author_id, title, code, visibility, forked_from, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO tracks (id, owner_sub, author, author_id, title, code, visibility, forked_from, forked_at, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (track_id, user["sub"], _author(user), _author_id(user["sub"]), data["title"], data["code"],
-             data["visibility"], forked_from, now, now),
+             data["visibility"], forked_from, forked_at or now, now, now),
         )
         _keep_version(conn, track_id)
         conn.commit()
