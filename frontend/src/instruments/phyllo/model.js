@@ -1,7 +1,8 @@
 /**
  * Phyllo's patch: what the window edits and the track saves. A patch is up to four stacked
- * layers (none at all is fine: a new patch starts blank, as Phase Plant's does) (analog, supersaw, wavetable, noise), one filter, an amp envelope, a mod envelope,
- * two LFOs and the routes from those modulators to knobs.
+ * layers (analog, supersaw, wavetable, noise; none at all is fine, a new patch starts blank
+ * as Phase Plant's does), an amp envelope, a mod envelope, two LFOs and the routes from
+ * those modulators to knobs.
  *
  * The processor (dsp.js) hears a patch as a flat list of numbers (`encode`), one
  * AudioParam each, so a knob moves the notes already ringing and automation lands on the
@@ -29,9 +30,6 @@ export const K = {
   spread: { key: 'spread', label: 'spread', min: 0, max: 1, def: 0.6 },
   fm: { key: 'fm', label: 'fm', min: 0, max: 8, def: 0 },
   ratio: { key: 'ratio', label: 'ratio', min: 0.25, max: 8, def: 1, log: true, unit: 'x' },
-  cutoff: { key: 'cutoff', label: 'cutoff', min: 30, max: 20000, def: 2400, log: true, unit: 'hz' },
-  reso: { key: 'reso', label: 'reso', min: 0, max: 1, def: 0.2 },
-  drive: { key: 'drive', label: 'drive', min: 0, max: 1, def: 0 },
   attack: { key: 'attack', label: 'attack', min: 0.001, max: 4, def: 0.005, log: true, unit: 's' },
   decay: { key: 'decay', label: 'decay', min: 0.01, max: 4, def: 0.3, log: true, unit: 's' },
   sustain: { key: 'sustain', label: 'sustain', min: 0, max: 1, def: 0.8 },
@@ -46,8 +44,6 @@ export const WAVES = ['sine', 'triangle', 'sawtooth', 'square', 'pulse']
 export const NOISES = ['white', 'pink', 'brown']
 export const FM_WAVES = ['sine', 'triangle', 'sawtooth', 'square']
 export const WARP_MODES = ['none', 'bend+', 'bend-', 'sync', 'mirror', 'pwm', 'asym', 'quantize', 'fold']
-export const FILTER_TYPES = ['lowpass', 'highpass', 'bandpass']
-export const FILTER_SLOPES = ['12db', '24db', 'ladder']
 export const LFO_SHAPES = ['sine', 'tri', 'saw', 'ramp', 'square']
 /**
  * Which way an LFO pushes: 'up' from zero at its bottom, 'bi' both ways around zero in its
@@ -123,7 +119,7 @@ export const TABLE_NAMES = Object.keys(TABLES)
 /** Layer knobs a modulator can move, in the order the processor numbers them. */
 export const LAYER_KNOBS = ['level', 'pan', 'fine', 'pw', 'pos', 'warp', 'detune', 'spread', 'fm']
 /** Patch-wide destinations, numbered from 1 (0 is "nowhere"). */
-export const GLOBAL_DESTS = ['filter.cutoff', 'filter.reso', 'filter.drive', 'pitch', 'amp.level']
+export const GLOBAL_DESTS = ['pitch', 'amp.level']
 
 // ── patches ──────────────────────────────────────────────────────────────────
 
@@ -142,7 +138,6 @@ export function initPatch() {
     v: 2,
     name: 'init',
     layers: [], // blank: you add the sounds you want
-    filter: { on: false, type: 'lowpass', slope: '24db', cutoff: 2400, reso: 0.2, drive: 0 },
     amp: { attack: 0.005, decay: 0.3, sustain: 0.8, release: 0.2 },
     env: { attack: 0.005, decay: 0.4, sustain: 0, release: 0.3 },
     lfos: [
@@ -191,7 +186,6 @@ export function normalizePatch(raw) {
     })
   const seen = new Set()
   for (const l of layers) { while (seen.has(l.id)) l.id = newPartId(); seen.add(l.id) }
-  const f = raw.filter ?? {}
   const env = (e, d) => ({
     attack: num(e?.attack, d.attack, K.attack.min, K.attack.max),
     decay: num(e?.decay, d.decay, K.decay.min, K.decay.max),
@@ -202,14 +196,6 @@ export function normalizePatch(raw) {
     v: 2,
     name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.slice(0, 40) : base.name,
     layers,
-    filter: {
-      on: f.on === true,
-      type: pick(f.type, FILTER_TYPES, 'lowpass'),
-      slope: pick(f.slope, FILTER_SLOPES, '24db'),
-      cutoff: num(f.cutoff, K.cutoff.def, K.cutoff.min, K.cutoff.max),
-      reso: num(f.reso, K.reso.def, K.reso.min, K.reso.max),
-      drive: num(f.drive, 0, 0, 1),
-    },
     amp: env(raw.amp, base.amp),
     env: env(raw.env, base.env),
     lfos: [0, 1].map((i) => {
@@ -245,15 +231,12 @@ export function normalizePatch(raw) {
 // ── modulation targets ───────────────────────────────────────────────────────
 
 /**
- * Targets are strings: "filter.cutoff", "filter.reso", "filter.drive", "pitch",
- * "amp.level", or "layer:<id>.<knob>". The knob spec and a name, or null.
+ * Targets are strings: "pitch", "amp.level", or "layer:<id>.<knob>". The knob spec and a name, or null.
  */
 export function targetSpec(patch, target) {
   if (typeof target !== 'string') return null
   if (target === 'pitch') return { label: 'pitch', spec: { min: -24, max: 24 } }
   if (target === 'amp.level') return { label: 'volume', spec: { min: 0, max: 1 } }
-  const f = /^filter\.(cutoff|reso|drive)$/.exec(target)
-  if (f) return { label: `filter ${f[1]}`, spec: K[f[1]], get: (p) => p.filter[f[1]] }
   const l = /^layer:(\w+)\.(\w+)$/.exec(target)
   if (l && LAYER_KNOBS.includes(l[2])) {
     const index = patch.layers.findIndex((x) => x.id === l[1])
@@ -286,12 +269,6 @@ const LAYER_FIELDS = [
 /** Every number the processor reads, with its range: one AudioParam each. */
 export const AUDIO_PARAMS = [
   ...[0, 1, 2, 3].flatMap((i) => LAYER_FIELDS.map(([name, min, max, def]) => ({ key: `l${i}_${name}`, min, max, def }))),
-  { key: 'f_on', min: 0, max: 1, def: 0 },
-  { key: 'f_type', min: 0, max: 2, def: 0 },
-  { key: 'f_slope', min: 0, max: 2, def: 1 },
-  { key: 'f_cutoff', min: K.cutoff.min, max: K.cutoff.max, def: K.cutoff.def },
-  { key: 'f_reso', min: 0, max: 1, def: K.reso.def },
-  { key: 'f_drive', min: 0, max: 1, def: 0 },
   ...['a', 'e'].flatMap((p) => [
     { key: `${p}_attack`, min: K.attack.min, max: K.attack.max, def: K.attack.def },
     { key: `${p}_decay`, min: K.decay.min, max: K.decay.max, def: K.decay.def },
@@ -338,15 +315,6 @@ export function encodePatch(patch, { cps = 0.5 } = {}) {
     // analog layers are one voice; the others stack
     set('unison', l.type === 'analog' || l.type === 'noise' ? 1 : l.unison)
   }
-  const f = patch.filter
-  Object.assign(out, {
-    f_on: f.on ? 1 : 0,
-    f_type: FILTER_TYPES.indexOf(f.type),
-    f_slope: FILTER_SLOPES.indexOf(f.slope),
-    f_cutoff: f.cutoff,
-    f_reso: f.reso,
-    f_drive: f.drive,
-  })
   for (const [p, e] of [['a', patch.amp], ['e', patch.env]]) {
     out[`${p}_attack`] = e.attack
     out[`${p}_decay`] = e.decay
@@ -379,22 +347,21 @@ export function encodePatch(patch, { cps = 0.5 } = {}) {
 
 /**
  * Automation names a knob by a key made of word characters: "volume", "glide",
- * "filter_cutoff", "amp_attack", "env_decay", "lfo1_hz", "L<layer id>_<knob>".
+ * "amp_attack", "env_decay", "lfo1_hz", "L<layer id>_<knob>".
  */
 export function knobAt(patch, key) {
-  const m = /^(?:(volume|glide)|filter_(cutoff|reso|drive)|(amp|env)_(attack|decay|sustain|release)|lfo([12])_hz|L(\w+?)_(level|pan|fine|pw|pos|warp|detune|spread|fm|ratio))$/.exec(String(key))
+  const m = /^(?:(volume|glide)|(amp|env)_(attack|decay|sustain|release)|lfo([12])_hz|L(\w+?)_(level|pan|fine|pw|pos|warp|detune|spread|fm|ratio))$/.exec(String(key))
   if (!m) return null
   if (m[1]) return { def: K[m[1]], value: patch[m[1]], label: m[1], set: (p, v) => { p[m[1]] = v } }
-  if (m[2]) return { def: K[m[2]], value: patch.filter[m[2]], label: `filter ${m[2]}`, set: (p, v) => { p.filter[m[2]] = v } }
-  if (m[3]) return { def: K[m[4]], value: patch[m[3]][m[4]], label: `${m[3] === 'amp' ? 'amp' : 'mod env'} ${m[4]}`, set: (p, v) => { p[m[3]][m[4]] = v } }
-  if (m[5]) return { def: K.hz, value: patch.lfos[m[5] - 1].hz, label: `lfo ${m[5]} rate`, set: (p, v) => { p.lfos[m[5] - 1].hz = v } }
-  const index = patch.layers.findIndex((l) => l.id === m[6])
+  if (m[2]) return { def: K[m[3]], value: patch[m[2]][m[3]], label: `${m[2] === 'amp' ? 'amp' : 'mod env'} ${m[3]}`, set: (p, v) => { p[m[2]][m[3]] = v } }
+  if (m[4]) return { def: K.hz, value: patch.lfos[m[4] - 1].hz, label: `lfo ${m[4]} rate`, set: (p, v) => { p.lfos[m[4] - 1].hz = v } }
+  const index = patch.layers.findIndex((l) => l.id === m[5])
   if (index < 0) return null
   return {
-    def: K[m[7]],
-    value: patch.layers[index][m[7]],
-    label: `${String.fromCharCode(65 + index)} ${K[m[7]].label}`,
-    set: (p, v) => { const l = p.layers.find((x) => x.id === m[6]); if (l) l[m[7]] = v },
+    def: K[m[6]],
+    value: patch.layers[index][m[6]],
+    label: `${String.fromCharCode(65 + index)} ${K[m[6]].label}`,
+    set: (p, v) => { const l = p.layers.find((x) => x.id === m[5]); if (l) l[m[6]] = v },
   }
 }
 export const layerKnobKey = (layerId, knob) => `L${layerId}_${knob}`
@@ -412,28 +379,22 @@ export const PRESETS = [
   preset('init', () => {}),
   preset('sub bass', (p) => {
     p.layers = [makeLayer('analog', { wave: 'sine', oct: -1 }), makeLayer('analog', { wave: 'triangle', level: 0.35 })]
-    p.filter = { ...p.filter, on: true, cutoff: 900, reso: 0.1 }
     p.amp = { attack: 0.003, decay: 0.2, sustain: 0.9, release: 0.08 }
     p.mono = true
     p.glide = 0.04
   }),
   preset('reese', (p) => {
     p.layers = [makeLayer('supersaw', { unison: 7, detune: 0.32, spread: 0.3, level: 0.7 }), makeLayer('analog', { wave: 'sine', oct: -1, level: 0.6 })]
-    p.filter = { ...p.filter, on: true, slope: 'ladder', cutoff: 520, reso: 0.35, drive: 0.35 }
     p.amp = { attack: 0.01, decay: 0.3, sustain: 1, release: 0.15 }
     p.lfos[0] = { ...p.lfos[0], points: presetPoints('sine'), sync: true, bars: 1 / 2 }
-    p.mods = [{ src: 'lfo1', target: 'filter.cutoff', amt: 0.4 }]
   }),
   preset('pluck', (p) => {
     p.layers = [makeLayer('analog', { wave: 'sawtooth' }), makeLayer('analog', { wave: 'square', oct: 1, level: 0.3 })]
-    p.filter = { ...p.filter, on: true, cutoff: 300, reso: 0.4 }
     p.amp = { attack: 0.002, decay: 0.35, sustain: 0, release: 0.2 }
     p.env = { attack: 0.001, decay: 0.25, sustain: 0, release: 0.2 }
-    p.mods = [{ src: 'env', target: 'filter.cutoff', amt: 0.75 }]
   }),
   preset('hoover lead', (p) => {
     p.layers = [makeLayer('supersaw', { unison: 9, detune: 0.45, spread: 0.8 }), makeLayer('analog', { wave: 'pulse', pw: 0.25, oct: -1, level: 0.5 })]
-    p.filter = { ...p.filter, on: true, cutoff: 3200, reso: 0.25 }
     p.env = { attack: 0.08, decay: 0.3, sustain: 0, release: 0.1 }
     p.mods = [{ src: 'env', target: 'pitch', amt: -0.1 }, { src: 'lfo1', target: 'pitch', amt: 0.02 }]
     p.lfos[0] = { ...p.lfos[0], points: presetPoints('sine'), sync: false, hz: 5.5 }
@@ -442,7 +403,6 @@ export const PRESETS = [
   }),
   preset('glass pad', (p) => {
     p.layers = [makeLayer('wavetable', { table: 'bright', pos: 0.3, unison: 4, detune: 0.12 }), makeLayer('wavetable', { table: 'vowel', pos: 0.2, oct: 1, level: 0.4 })]
-    p.filter = { ...p.filter, on: true, cutoff: 4200, reso: 0.15 }
     p.amp = { attack: 0.6, decay: 1, sustain: 0.8, release: 1.8 }
     p.lfos[0] = { ...p.lfos[0], points: presetPoints('tri'), sync: true, bars: 4 }
     p.lfos[1] = { ...p.lfos[1], points: presetPoints('sine'), sync: true, bars: 2 }
@@ -455,13 +415,14 @@ export const PRESETS = [
   }),
   preset('talking wobble', (p) => {
     p.layers = [makeLayer('wavetable', { table: 'vowel', pos: 0.5 }), makeLayer('analog', { wave: 'sine', oct: -1, level: 0.5 })]
-    p.filter = { ...p.filter, on: true, slope: '24db', cutoff: 1400, reso: 0.5 }
     p.lfos[0] = { ...p.lfos[0], points: presetPoints('sine'), sync: true, bars: 1 / 8 }
   }),
 ]
 
 // routes that point at a layer need that layer's id, so they're added once the layers exist
 const LAYER_ROUTES = {
+  reese: [['lfo1', 0, 'detune', 0.3]],
+  pluck: [['env', 1, 'level', 0.6]],
   'glass pad': [['lfo1', 0, 'pos', 0.5], ['lfo2', 1, 'pan', 0.6]],
   'fm bell': [['env', 0, 'fm', 1]],
   'talking wobble': [['lfo1', 0, 'pos', 0.9]],

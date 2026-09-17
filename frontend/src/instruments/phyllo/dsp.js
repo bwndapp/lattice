@@ -4,8 +4,7 @@ import { TABLES_SOURCE } from './tables.js'
 import { SHAPE_SOURCE } from '../curve.js'
 
 /**
- * Phyllo on the audio thread: eight voices, each up to four layers into a filter and an
- * amp envelope, with a mod envelope per voice and two LFOs. An LFO is a drawn shape, read
+ * Phyllo on the audio thread: eight voices, each up to four layers into an amp envelope, with a mod envelope per voice and two LFOs. An LFO is a drawn shape, read
  * from a table rebuilt whenever its points move; in free mode every voice shares one
  * clock, in retrig and env mode each voice starts its own at the note.
  *
@@ -20,7 +19,6 @@ const spec = (k) => ({ min: K[k].min, max: K[k].max, log: !!K[k].log })
 export const PHYLLO_DSP = `
 ${TABLES_SOURCE}
 const PH_LKNOBS = ${JSON.stringify(LAYER_KNOBS.map(spec))}
-const PH_CUTOFF = ${JSON.stringify(spec('cutoff'))}
 const PH_CONTROL = ${CONTROL}
 const PH_LN = [0, 1, 2, 3].map((i) => {
   const n = {}
@@ -86,8 +84,6 @@ class PhylloProcessor extends LatticeInstrument {
       active: false, pitch: 60, target: 60, vel: 1, fresh: true,
       amp: { stage: 0, v: 0 }, env: { stage: 0, v: 0 },
       layers: [0, 1, 2, 3].map(() => ({ ph: new Float64Array(16), fm: 0, pink: new Float32Array(7), brown: 0, gl: new Float32Array(16), gr: new Float32Array(16), warm: false })),
-      svf: new Float64Array(8), // two stages × two sides × two states
-      ladder: new Float64Array(8), // four poles × two sides
       counter: 0, ctl: null,
       lfoPh: new Float64Array(2), // each voice's own place in the LFOs (retrig and env modes)
     }
@@ -143,9 +139,7 @@ class PhylloProcessor extends LatticeInstrument {
     if (!(k.glide > 0.0005 && voice.active)) voice.pitch = n
     if (legato) return
     if (!voice.active) {
-      // a fresh voice: clean filters, and unison voices start at scattered phases
-      voice.svf.fill(0)
-      voice.ladder.fill(0)
+      // a fresh voice: unison voices start at scattered phases
       for (const l of voice.layers) { for (let u = 0; u < 16; u++) l.ph[u] = u ? Math.random() : 0; l.fm = 0; l.warm = false }
       voice.ctl = null
     }
@@ -203,16 +197,16 @@ class PhylloProcessor extends LatticeInstrument {
       }
       m[dest] += amt * src
     }
-    const c = voice.ctl || (voice.ctl = { layers: [0, 1, 2, 3].map(() => ({})), s1: new Float64Array(4), s2: new Float64Array(4) })
+    const c = voice.ctl || (voice.ctl = { layers: [0, 1, 2, 3].map(() => ({})) })
     const coef = (t) => Math.exp(-1 / (Math.max(0.001, t) / 5 * sampleRate))
     if (c.adT !== k.a_decay) { c.adT = k.a_decay; c.ad = coef(k.a_decay) }
     if (c.arT !== k.a_release) { c.arT = k.a_release; c.ar = coef(k.a_release) }
     if (c.edT !== k.e_decay) { c.edT = k.e_decay; c.ed = coef(k.e_decay) }
     if (c.erT !== k.e_release) { c.erT = k.e_release; c.er = coef(k.e_release) }
     c.glide = k.glide > 0.0005 ? Math.exp(-PH_CONTROL / (k.glide / 3 * sampleRate)) : 0
-    const semis = m[4] * 24
+    const semis = m[1] * 24
     c.ampFrom = c.amp === undefined ? null : c.amp
-    c.amp = Math.min(1.5, Math.max(0, 1 + m[5])) * k.volume * 0.35
+    c.amp = Math.min(1.5, Math.max(0, 1 + m[2])) * k.volume * 0.35
     for (let i = 0; i < 4; i++) {
       const L = c.layers[i]
       const N = PH_LN[i]
@@ -248,38 +242,6 @@ class PhylloProcessor extends LatticeInstrument {
         L.lvl = lv
       }
     }
-    // filter
-    c.fon = k.f_on > 0.5
-    if (c.fon) {
-      const fc = Math.min(0.45 * sampleRate, phVal(phPos(k.f_cutoff, PH_CUTOFF) + m[1], PH_CUTOFF))
-      const reso = Math.min(1, Math.max(0, k.f_reso + m[2]))
-      c.drive = Math.min(1, Math.max(0, k.f_drive + m[3]))
-      c.ftype = Math.round(k.f_type)
-      c.slope = Math.round(k.f_slope)
-      c.ladder = c.slope === 2 && c.ftype === 0
-      if (c.ladder) {
-        c.lg = 1 - Math.exp((-2 * Math.PI * fc) / sampleRate)
-        c.lfb = reso * 4.2
-      } else {
-        const g = Math.tan((Math.PI * fc) / sampleRate)
-        const svf = (co, kk) => { const a1 = 1 / (1 + g * (g + kk)); co[0] = a1; co[1] = g * a1; co[2] = g * g * a1; co[3] = kk }
-        svf(c.s1, c.slope === 0 ? 2 - 1.96 * reso : 1.414)
-        svf(c.s2, 2 - 1.96 * reso)
-        c.two = c.slope !== 0
-      }
-    }
-  }
-  svfTick(st, o, co, x, type) {
-    const a1 = co[0]
-    const a2 = co[1]
-    const a3 = co[2]
-    const kk = co[3]
-    const v3 = x - st[o + 1]
-    const v1 = a1 * st[o] + a2 * v3
-    const v2 = st[o + 1] + a2 * st[o] + a3 * v3
-    st[o] = 2 * v1 - st[o]
-    st[o + 1] = 2 * v2 - st[o + 1]
-    return type === 0 ? v2 : type === 1 ? x - kk * v1 - v2 : v1 * kk
   }
   busy(voice) { return voice.active }
   render(voice, OL, OR, from, to) {
@@ -310,37 +272,9 @@ class PhylloProcessor extends LatticeInstrument {
       for (let j = 0; j < n; j++) {
         const amp = this.step(voice.amp, k.a_attack, c.ad, k.a_sustain, c.ar)
         this.step(voice.env, k.e_attack, c.ed, k.e_sustain, c.er)
-        let l = bufL[j]
-        let r = bufR[j]
-        if (c.fon) {
-          if (c.ladder) {
-            const d = 1 + c.drive * 4
-            const st = voice.ladder
-            for (let side = 0; side < 2; side++) {
-              const o = side * 4
-              const x = side ? r : l
-              const u = Math.tanh(x * d - c.lfb * st[o + 3])
-              st[o] += c.lg * (u - st[o])
-              st[o + 1] += c.lg * (st[o] - st[o + 1])
-              st[o + 2] += c.lg * (st[o + 1] - st[o + 2])
-              st[o + 3] += c.lg * (st[o + 2] - st[o + 3])
-              const y = st[o + 3] * (1 + c.lfb * 0.4) / Math.sqrt(d)
-              if (side) r = y; else l = y
-            }
-          } else {
-            if (c.drive > 0.001) { const d = 1 + c.drive * 5; const nrm = 1 / Math.tanh(d); l = Math.tanh(l * d) * nrm; r = Math.tanh(r * d) * nrm }
-            const type = c.slope === 2 ? 0 : c.ftype
-            l = this.svfTick(voice.svf, 0, c.s1, l, type)
-            r = this.svfTick(voice.svf, 2, c.s1, r, type)
-            if (c.two) {
-              l = this.svfTick(voice.svf, 4, c.s2, l, type)
-              r = this.svfTick(voice.svf, 6, c.s2, r, type)
-            }
-          }
-        }
         const g = amp * (aStart + aStep * j)
-        OL[i + j] += l * g
-        if (OR !== OL) OR[i + j] += r * g
+        OL[i + j] += bufL[j] * g
+        if (OR !== OL) OR[i + j] += bufR[j] * g
         if (voice.amp.stage === 0) { voice.active = false; voice.ctl = null; return }
       }
       voice.counter -= n

@@ -8,7 +8,7 @@ import { AUDIO_PARAMS, encodePatch, knobAt, normalizePatch, patchMessage } from 
 export default {
   type: 'phyllo',
   label: 'phyllo',
-  blurb: 'A layered synth: analog, supersaw, wavetable and noise into a filter, with envelopes and LFOs to move it',
+  blurb: 'A layered synth: analog, supersaw, wavetable and noise, with envelopes and LFOs to move it',
   kinds: ['synth'],
   processor: 'lattice-phyllo',
   voices: 8,

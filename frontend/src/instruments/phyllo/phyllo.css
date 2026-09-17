@@ -1,6 +1,6 @@
 /*
  * Phyllo's panel inside its instrument window (see PhylloPanel.jsx), laid out like a
- * desktop plugin: a preset bar, four oscillator slots beside the filter, then a row of
+ * desktop plugin: a preset bar, four oscillator slots, then a row of
  * modulators, then the keys. Sections sit on a hairline grid (1px gaps over the line
  * colour) rather than in rounded cards. Scoped under .ph-panel.
  */
@@ -76,10 +76,9 @@
 .ph-voicing { padding-right: 0.6rem; border-right: 1px solid var(--ph-line); }
 
 /* ── sections ───────────────────────────────────── */
-.ph-main { display: grid; gap: 1px; grid-template-columns: minmax(0, 1fr) minmax(280px, 0.36fr); }
+.ph-main { display: grid; gap: 1px; grid-template-columns: minmax(0, 1fr); }
 .ph-mods { display: grid; gap: 1px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 @container (max-width: 900px) {
-  .ph-main { grid-template-columns: 1fr; }
   .ph-mods { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
@@ -163,14 +162,6 @@
 .ph-stepper-row button:disabled { opacity: 0.3; cursor: default; }
 .ph-stepper-row output { display: grid; place-items: center; min-width: 1.9rem; font-size: 11px; font-variant-numeric: tabular-nums; border-inline: 1px solid var(--ph-line); }
 .ph-stepper .ph-small-label { order: -1; }
-
-/* ── filter ─────────────────────────────────────── */
-.ph-filter-top { display: flex; flex-wrap: wrap; gap: 0.4rem; padding: 0.6rem 0.7rem 0; }
-.ph-filter .ph-scope { height: 120px; }
-.ph-filter.off .ph-knobs, .ph-filter.off .ph-scope, .ph-filter.off .ph-filter-top { opacity: 0.45; }
-.ph-filter .ph-knobs { justify-content: space-between; }
-.ph-env-amt { padding-left: 0.6rem; border-left: 1px solid var(--ph-line); }
-.ph-env-amt .knob-value { stroke: var(--src-env); }
 
 .ph-seg { display: flex; height: 22px; border: 1px solid var(--ph-line); border-radius: 2px; background: var(--ph-well); }
 .ph-seg button { font: inherit; font-size: 10px; color: var(--muted); background: transparent; border: 0; padding: 0 0.5rem; cursor: pointer; white-space: nowrap; }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Knob from '../../Knob.jsx'
 import { drawCurve, drawWave, fitCanvas } from '../scope.js'
 import {
-  FILTER_SLOPES, FILTER_TYPES, FM_WAVES, K, LFO_BARS, LFO_MODES, LFO_POLARITIES, LFO_PRESETS, MAX_LAYERS, MAX_ROUTES, NOISES, PRESETS, SOURCE_LABELS,
+  FM_WAVES, K, LFO_BARS, LFO_MODES, LFO_POLARITIES, LFO_PRESETS, MAX_LAYERS, MAX_ROUTES, NOISES, PRESETS, SOURCE_LABELS,
   TABLES, TABLE_NAMES, WARP_MODES, barsLabel, layerKnobKey, makeLayer, newPartId, normalizePatch, targetSpec,
 } from './model.js'
 import { tableFrame } from './tables.js'
@@ -10,7 +10,7 @@ import CurveEditor from '../CurveEditor.jsx'
 import './phyllo.css'
 
 /**
- * Phyllo's face, inside its instrument window: oscillators and filter across the top,
+ * Phyllo's face, inside its instrument window: oscillators across the top,
  * envelopes and LFOs below, each modulator listing where it goes, and a keyboard.
  *
  * Props from the window: `data` (the patch), `change(fn)` (edit a copy of it),
@@ -103,61 +103,6 @@ function LayerScope({ layer }) {
           ctx.globalAlpha = alpha * (v === Math.floor(voices / 2) ? 1 : 0.35)
           drawWave(ctx, values, { width: w, height: h, color: ink, pad: 3 * dpr, lineWidth: 1.4 * dpr })
         }
-        ctx.globalAlpha = 1
-      }}
-    />
-  )
-}
-
-/** The filter's response, roughly: shaded, with the cutoff marked and the decades named. */
-function FilterScope({ filter }) {
-  return (
-    <Scope
-      className="filter"
-      deps={[filter.on, filter.type, filter.slope, filter.cutoff, filter.reso]}
-      draw={(ctx, w, h, dpr, { ink, grid }) => {
-        const fx = (f) => (Math.log(f / 20) / Math.log(1000)) * w
-        const order = filter.slope === '12db' ? 1 : 2
-        const q = 0.5 + filter.reso * 12
-        const type = filter.slope === 'ladder' ? 'lowpass' : filter.type
-        const dbAt = (f) => {
-          const r = f / filter.cutoff
-          const den = Math.sqrt((1 - r * r) ** 2 + (r / q) ** 2)
-          const mag = type === 'lowpass' ? 1 / den : type === 'highpass' ? (r * r) / den : (r / q) / den
-          return 20 * Math.log10(mag ** order + 1e-6)
-        }
-        const zero = h * 0.42
-        const yOf = (db) => clamp(zero - (db / 36) * h * 0.55, 2 * dpr, h - 2 * dpr)
-        ctx.lineWidth = 1
-        ctx.font = `${9 * dpr}px ${getComputedStyle(document.body).fontFamily}`
-        ctx.textBaseline = 'bottom'
-        for (const [f, label] of [[100, '100'], [1000, '1k'], [10000, '10k']]) {
-          const gx = Math.round(fx(f)) + 0.5
-          ctx.strokeStyle = grid
-          ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, h); ctx.stroke()
-          ctx.fillStyle = grid === '#1a1a16' ? '#4a4a40' : grid
-          ctx.fillText(label, gx + 3 * dpr, h - 3 * dpr)
-        }
-        ctx.strokeStyle = grid
-        ctx.setLineDash([2 * dpr, 3 * dpr])
-        ctx.beginPath(); ctx.moveTo(0, Math.round(zero) + 0.5); ctx.lineTo(w, Math.round(zero) + 0.5); ctx.stroke()
-        ctx.setLineDash([])
-        const values = Float32Array.from({ length: Math.ceil(w) + 1 }, (_, x) => dbAt(20 * 1000 ** (x / w)))
-        ctx.globalAlpha = filter.on ? 1 : 0.35
-        drawCurve(ctx, values, { width: w, map: yOf, color: ink, lineWidth: 1.6 * dpr, fill: h, glow: filter.on ? 6 * dpr : 0 })
-        // the cutoff: a line down from the curve and a dot on it
-        const cx = fx(filter.cutoff)
-        const cy = yOf(dbAt(filter.cutoff))
-        ctx.strokeStyle = ink
-        ctx.globalAlpha *= 0.35
-        ctx.setLineDash([2 * dpr, 2 * dpr])
-        ctx.beginPath(); ctx.moveTo(Math.round(cx) + 0.5, cy); ctx.lineTo(Math.round(cx) + 0.5, h); ctx.stroke()
-        ctx.setLineDash([])
-        ctx.globalAlpha = filter.on ? 1 : 0.35
-        ctx.fillStyle = '#050504'
-        ctx.beginPath(); ctx.arc(cx, cy, 4 * dpr, 0, Math.PI * 2); ctx.fill()
-        ctx.lineWidth = 1.5 * dpr
-        ctx.stroke()
         ctx.globalAlpha = 1
       }}
     />
@@ -293,7 +238,7 @@ const toneKnob = (l) => (l.type === 'wavetable' ? 'pos' : l.type === 'supersaw' 
 
 /** Everything a modulator can move, with names a person would use. */
 function destinations(patch) {
-  const list = [['filter.cutoff', 'filter cutoff'], ['filter.reso', 'filter resonance'], ['filter.drive', 'filter drive'], ['pitch', 'pitch'], ['amp.level', 'volume']]
+  const list = [['pitch', 'pitch'], ['amp.level', 'volume']]
   patch.layers.forEach((l, i) => {
     const knobs = ['level', 'pan']
     const tone = toneKnob(l)
@@ -425,46 +370,11 @@ function EmptySlot({ ui, index, first }) {
   )
 }
 
-function Filter({ ui }) {
-  const f = ui.patch.filter
-  const set = (fn) => ui.edit((p) => fn(p.filter))
-  const envRoute = ui.patch.mods.find((m) => m.src === 'env' && m.target === 'filter.cutoff')
-  const setEnv = (v) => ui.edit((p) => {
-    const r = p.mods.find((m) => m.src === 'env' && m.target === 'filter.cutoff')
-    if (Math.abs(v) < 0.02) p.mods = p.mods.filter((m) => m !== r)
-    else if (r) r.amt = v
-    else if (p.mods.filter((m) => m.src === 'env').length < MAX_ROUTES) p.mods.push({ id: newPartId(), src: 'env', target: 'filter.cutoff', amt: v })
-  })
-  const fk = (k) => <ModKnob ui={ui} route={`filter.${k}`} auto={`filter_${k}`} def={K[k]} value={f[k]} onChange={(v) => set((x) => { x[k] = v; if (k === 'cutoff') x.on = true })} />
-  return (
-    <Section
-      title="filter"
-      index={2}
-      className={`ph-filter ${f.on ? '' : 'off'}`}
-      aside={<button type="button" className={`ph-toggle ${f.on ? 'on' : ''}`} aria-pressed={f.on} onClick={() => set((x) => { x.on = !x.on })}>{f.on ? 'on' : 'off'}</button>}
-    >
-      <div className="ph-filter-top">
-        <Segmented label="Filter type" value={f.type} options={FILTER_TYPES} format={(t) => ({ lowpass: 'low pass', highpass: 'high pass', bandpass: 'band pass' })[t]} onChange={(v) => set((x) => { x.type = v; x.on = true; if (v !== 'lowpass' && x.slope === 'ladder') x.slope = '24db' })} />
-        <Segmented label="Slope" value={f.slope} options={FILTER_SLOPES} format={(s) => ({ '12db': '12 dB', '24db': '24 dB', ladder: 'ladder' })[s]} onChange={(v) => set((x) => { x.slope = v; x.on = true; if (v === 'ladder') x.type = 'lowpass' })} />
-      </div>
-      <FilterScope filter={f} />
-      <div className="ph-knobs">
-        {fk('cutoff')}
-        {fk('reso')}
-        {fk('drive')}
-        <div className="ph-env-amt" title="How far the mod envelope opens (or closes) the cutoff on each note">
-          <Knob def={{ key: 'envamt', label: 'env amount', min: -1, max: 1, def: 0, unit: 'bi', origin: 0 }} value={envRoute?.amt ?? 0} onChange={setEnv} />
-        </div>
-      </div>
-    </Section>
-  )
-}
-
 function Envelope({ ui, which }) {
   const env = ui.patch[which]
   const isAmp = which === 'amp'
   return (
-    <Section title={isAmp ? 'amp envelope' : 'mod envelope'} index={isAmp ? 3 : 4} className={isAmp ? 'ph-amp' : 'ph-src src-env'}>
+    <Section title={isAmp ? 'amp envelope' : 'mod envelope'} index={isAmp ? 2 : 3} className={isAmp ? 'ph-amp' : 'ph-src src-env'}>
       <EnvScope env={env} />
       <div className="ph-knobs tight">
         {['attack', 'decay', 'sustain', 'release'].map((k) => (
@@ -503,7 +413,7 @@ function Lfo({ ui, index }) {
   return (
     <Section
       title={`lfo ${index + 1}`}
-      index={5 + index}
+      index={4 + index}
       className={`ph-src src-${src} ph-lfo`}
       aside={<Segmented label="Mode" value={lfo.mode} options={LFO_MODES} onChange={(v) => set((l) => { l.mode = v })} format={(m) => ({ free: 'free', retrig: 'trig', env: 'env' })[m]} />}
     >
@@ -653,7 +563,6 @@ export default function PhylloPanel({ data, change, target, hold, watch, cps = 0
             ))}
           </div>
         </Section>
-        <Filter ui={ui} />
       </div>
       <div className="ph-mods">
         <Envelope ui={ui} which="amp" />
