@@ -1,25 +1,40 @@
-"""Working on a track together: who else is here and where they are.
+"""Working on a track together: who else is here, where they are, and the track itself.
 
 One websocket per open track, mounted at /api/collab/{track_id} (draft:
-/preview/api/collab/{track_id}). The server is a relay: it hands a new peer the list of
-who's already here, then passes every message on to the rest of the room. Nothing about a
-cursor is stored — presence dies with the connection, which is what makes it cheap.
+/preview/api/collab/{track_id}). The server is a relay with one memory: while at least one
+person is in a room it holds that track's project and the order changes happened in.
+Nothing is written to the database — saving a track is still the person's own decision,
+and an empty room forgets everything, so an abandoned session can never come back to life
+and overwrite what was saved.
 
 Messages are JSON text frames.
 
+  presence (anyone who can open the track)
     → {"t":"hello","token":"<sso access token>","name":"..."}   first frame, always
     → {"t":"at","where":"graph","x":120,"y":40}                 the pointer moved
     → {"t":"sel","where":"graph","ids":["n1","n2"]}             what they have selected
-    ← {"t":"me","id":3,"color":"#e8b"}                          who the server thinks you are
-    ← {"t":"here","peers":[{"id":1,"name":"ana","color":"#6cf","at":{...},"sel":{...}}]}
-    ← {"t":"join","peer":{...}} · {"t":"at","id":1,...} · {"t":"sel","id":1,...} · {"t":"gone","id":1}
+    ← {"t":"me","id":3,"color":"#e8b","edit":true}              who the server thinks you are
+    ← {"t":"here","peers":[...]} · {"t":"join"|"at"|"sel"|"gone", ...}
+
+  the track itself (only people who may edit it — see _may_edit)
+    ← {"t":"seed"}                       you're first in: send what you have
+    → {"t":"doc","doc":{...}}            here it is
+    ← {"t":"doc","doc":{...},"v":12}     what the room already has, for a late arrival
+    → {"t":"ops","ops":[...],"h":"5f2a"} what I just changed, and my fingerprint after it
+    ← {"t":"ops","id":3,"ops":[...],"v":13,"h":"5f2a"}
+    → {"t":"sync"}                       I'm lost, send me the whole thing
+
+Ops are the ones frontend/src/docsync.js makes, applied here by _docsync.py under the same
+rules, so every copy ends up the same. `v` counts changes: a client that sees a gap asks
+for the whole track rather than guessing what it missed.
 
 Coordinates are the surface's own, not pixels: the patch canvas sends flow x/y, the
 timeline sends bars and rows, the piano roll sends bars and midi notes. Whoever draws the
 cursor converts, so it lands in the same place at any zoom or scroll.
 
 A private track only lets its owner in; anyone who can open a track can be present on it,
-signed in or not (a guest is just a peer without a name).
+signed in or not. Changing it is the owner's alone — being able to read a public track is
+not an invitation to reach into someone's session while they work.
 """
 import asyncio
 import json
@@ -29,36 +44,51 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from incubator_lib import db, sso_user
 
+# The server imports a route file by path, not as part of a package, and the draft and live
+# copies must not share one module: load our own helper explicitly, named for this file.
+import importlib.util as _imp
+import pathlib as _pl
+_spec = _imp.spec_from_file_location(f"_docsync_{__name__}", _pl.Path(__file__).with_name("_docsync.py"))
+_docsync = _imp.module_from_spec(_spec)
+_spec.loader.exec_module(_docsync)
+apply_ops = _docsync.apply_ops
+
 router = APIRouter()
 
 MAX_PEERS = 24          # a room bigger than this isn't a jam, it's a broadcast
 MAX_MSG = 4096          # a cursor message is ~80 bytes; anything huge is a mistake
+MAX_DOC = 2_000_000     # a whole project, which is JSON and compresses well over the wire
+MAX_OPS = 200_000       # one edit's worth of changes
 RATE = 60               # messages a second per peer, beyond which we stop listening
 COLORS = ["#6cc9ff", "#ff8fb1", "#8de88d", "#ffcf6b", "#c79bff", "#5ee0cf", "#ff9e6b", "#a8b6ff"]
 
 
 class Peer:
-    __slots__ = ("id", "ws", "name", "color", "at", "sel", "sub")
+    __slots__ = ("id", "ws", "name", "color", "at", "sel", "sub", "edit")
 
-    def __init__(self, pid, ws, name, color, sub):
+    def __init__(self, pid, ws, name, color, sub, edit):
         self.id = pid
         self.ws = ws
         self.name = name
         self.color = color
         self.sub = sub
+        self.edit = edit
         self.at = None
         self.sel = None
 
     def public(self):
-        return {"id": self.id, "name": self.name, "color": self.color, "at": self.at, "sel": self.sel}
+        return {"id": self.id, "name": self.name, "color": self.color, "at": self.at, "sel": self.sel, "edit": self.edit}
 
 
 class Room:
-    """Everyone on one track. Rooms live only as long as someone is in them."""
+    """Everyone on one track, and the track as they have it. Rooms live only as long as
+    someone is in them: the database is still only written by saving."""
 
     def __init__(self):
         self.peers = {}
         self.next_id = 1
+        self.doc = None      # the project, once somebody has sent theirs
+        self.version = 0     # how many changes have been applied
 
     def color_for(self):
         taken = {p.color for p in self.peers.values()}
@@ -77,21 +107,32 @@ class Room:
         msg = json.dumps(payload)
         await asyncio.gather(*(self.send(p, msg) for p in list(self.peers.values()) if p.id != sender_id))
 
+    async def tell_editors(self, sender_id, payload):
+        msg = json.dumps(payload)
+        await asyncio.gather(*(self.send(p, msg) for p in list(self.peers.values()) if p.id != sender_id and p.edit))
+
 
 _rooms: dict[str, Room] = {}
 
 
-def _may_open(track_id, user):
-    """(ok, reason). Anyone can join a public or unlisted track; private is the owner's."""
+def _track(track_id):
     try:
-        row = db().execute("SELECT owner_sub, visibility FROM tracks WHERE id = ?", (track_id,)).fetchone()
+        return db().execute("SELECT owner_sub, visibility FROM tracks WHERE id = ?", (track_id,)).fetchone()
     except Exception:
-        return False, "no track"
+        return None
+
+
+def _may_open(row, user):
+    """Anyone can be present on a public or unlisted track; private is the owner's."""
     if not row:
-        return False, "no track"
-    if row["visibility"] == "private" and (not user or user.get("sub") != row["owner_sub"]):
-        return False, "private"
-    return True, None
+        return False
+    return row["visibility"] != "private" or (user and user.get("sub") == row["owner_sub"])
+
+
+def _may_edit(row, user):
+    """Who may change the track live. The owner — including the owner on another device,
+    which is the common case. Invited collaborators would be added here."""
+    return bool(row and user and user.get("sub") == row["owner_sub"])
 
 
 def _clean_name(raw, user):
@@ -113,20 +154,30 @@ async def collab(ws: WebSocket, track_id: str):
         # verifying a token calls the issuer, so keep it off the event loop
         token = str(hello.get("token") or "")[:4096]
         user = await asyncio.to_thread(sso_user, token) if token else None
-        ok, why = await asyncio.to_thread(_may_open, track_id, user)
-        if not ok:
-            await ws.close(code=4004 if why == "no track" else 4003)
+        row = await asyncio.to_thread(_track, track_id)
+        if not row:
+            await ws.close(code=4004)
+            return
+        if not _may_open(row, user):
+            await ws.close(code=4003)
             return
         room = _rooms.setdefault(track_id, Room())
         if len(room.peers) >= MAX_PEERS:
             await ws.close(code=4008)
             return
-        peer = Peer(room.next_id, ws, _clean_name(hello.get("name"), user), room.color_for(), (user or {}).get("sub"))
+        edit = _may_edit(row, user)
+        peer = Peer(room.next_id, ws, _clean_name(hello.get("name"), user), room.color_for(), (user or {}).get("sub"), edit)
         room.next_id += 1
-        await ws.send_text(json.dumps({"t": "me", "id": peer.id, "color": peer.color, "name": peer.name}))
+        await ws.send_text(json.dumps({"t": "me", "id": peer.id, "color": peer.color, "name": peer.name, "edit": edit}))
         await ws.send_text(json.dumps({"t": "here", "peers": [p.public() for p in room.peers.values()]}))
         await room.tell_others(peer.id, {"t": "join", "peer": peer.public()})
         room.peers[peer.id] = peer
+        if edit:
+            # the room's copy if there is one, otherwise this is the session and we want theirs
+            if room.doc is None:
+                await ws.send_text(json.dumps({"t": "seed"}))
+            else:
+                await ws.send_text(json.dumps({"t": "doc", "doc": room.doc, "v": room.version}))
 
         window, count = time.monotonic(), 0
         while True:
@@ -135,13 +186,16 @@ async def collab(ws: WebSocket, track_id: str):
             if now - window > 1:
                 window, count = now, 0
             count += 1
-            if count > RATE or len(raw) > MAX_MSG:
+            big = len(raw) > MAX_MSG
+            if count > RATE or len(raw) > MAX_DOC:
                 continue  # too much, too fast: drop it rather than pass it on
             try:
                 msg = json.loads(raw)
             except ValueError:
                 continue
             kind = msg.get("t")
+            if big and kind not in ("doc", "ops"):
+                continue  # only the track itself has any business being large
             if kind == "at":
                 peer.at = None if msg.get("where") is None else {"where": msg.get("where"), "x": msg.get("x"), "y": msg.get("y")}
                 await room.tell_others(peer.id, {"t": "at", "id": peer.id, **(peer.at or {"where": None})})
@@ -149,6 +203,24 @@ async def collab(ws: WebSocket, track_id: str):
                 ids = [str(i)[:40] for i in (msg.get("ids") or [])][:60]
                 peer.sel = {"where": msg.get("where"), "ids": ids} if ids else None
                 await room.tell_others(peer.id, {"t": "sel", "id": peer.id, "where": msg.get("where"), "ids": ids})
+            elif kind == "doc" and peer.edit:
+                # the first editor in seeds the room; after that the room's copy is the one
+                doc = msg.get("doc")
+                if room.doc is None and isinstance(doc, dict):
+                    room.doc = doc
+                    room.version = 1
+                    await room.tell_editors(peer.id, {"t": "doc", "doc": room.doc, "v": room.version})
+            elif kind == "ops" and peer.edit:
+                ops = msg.get("ops")
+                if room.doc is None or not isinstance(ops, list) or not ops or len(raw) > MAX_OPS:
+                    continue
+                if apply_ops(room.doc, ops) == 0:
+                    continue
+                room.version += 1
+                await room.tell_editors(peer.id, {"t": "ops", "id": peer.id, "ops": ops, "v": room.version, "h": msg.get("h")})
+            elif kind == "sync" and peer.edit:
+                if room.doc is not None:
+                    await ws.send_text(json.dumps({"t": "doc", "doc": room.doc, "v": room.version}))
             elif kind == "ping":
                 await ws.send_text('{"t":"pong"}')
     except (WebSocketDisconnect, asyncio.TimeoutError, ValueError):
@@ -160,7 +232,7 @@ async def collab(ws: WebSocket, track_id: str):
             room.peers.pop(peer.id, None)
             await room.tell_others(peer.id, {"t": "gone", "id": peer.id})
             if not room.peers:
-                _rooms.pop(track_id, None)
+                _rooms.pop(track_id, None)  # nobody left: the room forgets, the saved track stands
         try:
             await ws.close()
         except Exception:
