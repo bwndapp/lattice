@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { BaseEdge, EdgeLabelRenderer, getBezierPath } from '@xyflow/react'
+import { BaseEdge, EdgeLabelRenderer } from '@xyflow/react'
 
 /** Fired by a wire's + button; the patch canvas opens its add menu there. */
 export const ADD_INTO_WIRE = 'lattice:add-into-wire'
@@ -65,17 +65,20 @@ function useSag(sourceX, sourceY, targetX, targetY) {
  * A wire with a small + in the middle: click it to add a node into this wire. React Flow's
  * bezier gives the shape; the sag pulls its middle down so the wire has some weight in it.
  */
-export function WireEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, style, markerEnd, interactionWidth }) {
-  const sag = useSag(sourceX, sourceY, targetX, targetY)
-  const [path, midX, midY] = getBezierPath({
-    sourceX,
-    sourceY: sourceY + sag * 0.35,
-    targetX,
-    targetY: targetY + sag * 0.35,
-    sourcePosition,
-    targetPosition,
-    curvature: 0.3,
-  })
+export function WireEdge({ id, sourceX, sourceY, targetX, targetY, data, style, markerEnd, interactionWidth }) {
+  const pull = data?.tension ?? 1
+  const sag = useSag(sourceX, sourceY, targetX, targetY) * pull
+  // Its own bezier, not React Flow's: the ends have to stay on their ports, so the weight
+  // goes into the control points and the middle is what drops.
+  const reach = Math.max(40, Math.abs(targetX - sourceX) * 0.45 + Math.max(0, sourceX - targetX) * 0.55)
+  const c1x = sourceX + reach
+  const c2x = targetX - reach
+  const c1y = sourceY + sag
+  const c2y = targetY + sag
+  const path = `M${sourceX},${sourceY} C${c1x},${c1y} ${c2x},${c2y} ${targetX},${targetY}`
+  // where the curve actually is halfway along, for the + button
+  const midX = (sourceX + 3 * c1x + 3 * c2x + targetX) / 8
+  const midY = (sourceY + 3 * c1y + 3 * c2y + targetY) / 8
   const length = Math.hypot(targetX - sourceX, targetY - sourceY)
   const small = length < 90
   const lift = length < 36 ? 17 : 0 // no room between the dots: sit just above the wire instead

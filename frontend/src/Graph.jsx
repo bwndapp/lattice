@@ -934,6 +934,11 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
   const nodesRef = useRef(nodes)
   nodesRef.current = nodes
 
+  // how much weight the wires hang with; 0 pulls them taut
+  const [tension, setTension] = useState(() => {
+    try { const v = Number(localStorage.getItem('lattice:wire-slack')); return Number.isFinite(v) && v >= 0 ? v : 1 } catch { return 1 }
+  })
+  useEffect(() => { try { localStorage.setItem('lattice:wire-slack', String(tension)) } catch { /* storage unavailable */ } }, [tension])
   const [spliceTarget, setSpliceTarget] = useState(null) // wire a dragged node would drop into
   const [detaching, setDetaching] = useState(null) // wire being pulled off its input (for its look)
   const detachRef = useRef(null) // the same, for the drop handler, which must not read stale state
@@ -944,10 +949,11 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
     ...e,
     type: 'wire', // with a + in the middle to add a node into it
     sourceHandle: e.sourceHandle ?? 'out',
+    data: { tension },
     animated: started,
     className: e.id === spliceTarget ? 'splice-target' : e.id === detaching ? 'detaching' : '',
     domAttributes: { 'data-touches': `${e.source} ${e.target}` },
-  })), [project.edges, started, spliceTarget, detaching])
+  })), [project.edges, started, spliceTarget, detaching, tension])
   const [edges, setEdges] = useState(rfEdges)
   useEffect(() => setEdges((prev) => {
     const sel = new Set(prev.filter((e) => e.selected).map((e) => e.id))
@@ -1197,6 +1203,18 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
             addNode(type || 'pattern', at, instrument || null, wire)
           }}
         >
+          <label className="wire-slack nodrag" data-tip="How much weight the wires hang with">
+            <span>slack</span>
+            <input
+              type="range"
+              min="0"
+              max="2"
+              step="0.05"
+              value={tension}
+              onChange={(e) => setTension(Number(e.target.value))}
+              aria-label="Wire slack"
+            />
+          </label>
           <button
             type="button"
             className={`flow-toggle nodrag ${lighting ? 'on' : ''}`}
