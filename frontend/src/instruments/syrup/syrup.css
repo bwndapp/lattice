@@ -204,6 +204,7 @@
 .sy-fx-params .knob { width: 52px; }
 .sy-fx-params .knob-label { max-width: 52px; overflow: hidden; text-overflow: ellipsis; }
 .sy-fx-params .sy-field { width: 100%; flex-direction: row; align-items: center; gap: 0.4rem; }
+.sy-fx-params .sy-stepper { padding: 0.15rem 0.25rem; }
 .sy-fx-params .sy-field select { flex: 1; height: 22px; }
 .sy-panel .sy-fx-add { height: 26px; color: var(--muted); border-style: dashed; }
 .sy-panel .sy-fx-add.first { height: 30px; }

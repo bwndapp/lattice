@@ -530,6 +530,7 @@ function LaneEffect({ ui, laneIndex, fx, index, count, drag }) {
       </div>
       {open && (
         <div className="sy-fx-params">
+          {!spec.params.length && <span className="sy-small-label">nothing to set</span>}
           {spec.params.map((def) => (def.type === 'select'
             ? (
               <label key={def.key} className="sy-field">
@@ -539,9 +540,20 @@ function LaneEffect({ ui, laneIndex, fx, index, count, drag }) {
                 </select>
               </label>
             )
-            : def.type === 'knob'
-              ? <ModKnob key={def.key} ui={ui} route={`fx:${fx.id}.${def.key}`} auto={fxKnobKey(fx.id, def.key)} def={def} value={fx.data[def.key] ?? def.def} onChange={(v) => edit((l, i) => { l[i].data[def.key] = v })} />
-              : null))}
+            : def.type === 'int'
+              ? (
+                <Stepper
+                  key={def.key}
+                  label={def.label}
+                  value={fx.data[def.key] ?? def.def}
+                  min={def.min}
+                  max={def.max}
+                  onChange={(v) => edit((l, i) => { l[i].data[def.key] = v })}
+                />
+              )
+              : def.type === 'knob'
+                ? <ModKnob key={def.key} ui={ui} route={`fx:${fx.id}.${def.key}`} auto={fxKnobKey(fx.id, def.key)} def={def} value={fx.data[def.key] ?? def.def} onChange={(v) => edit((l, i) => { l[i].data[def.key] = v })} />
+                : null))}
         </div>
       )}
     </li>
