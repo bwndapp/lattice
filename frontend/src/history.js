@@ -20,10 +20,29 @@ const byId = (list) => new Map((list ?? []).map((x) => [x.id, x]))
 const round = (v) => (typeof v === 'number' ? Math.round(v * 100) / 100 : v)
 const count = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
-/** Steps or notes that differ between two instruments. */
+/** Knobs that differ between two objects of settings, named by their owner. */
+function knobChanges(who, before, after, skip = []) {
+  const out = []
+  for (const key of Object.keys({ ...before, ...after })) {
+    if (skip.includes(key)) continue
+    const a = before?.[key]
+    const b = after?.[key]
+    if (a === b || typeof a === 'object' || typeof b === 'object') continue
+    out.push(`${who} ${key} ${round(a) ?? 'default'} → ${round(b) ?? 'default'}`)
+  }
+  return out
+}
+
+/** Steps, notes, sound and settings that differ between two instruments. */
 function channelChanges(before, after) {
   const out = []
+  if (before.name !== after.name) out.push(`"${before.name}" renamed "${after.name}"`)
   if (before.sound !== after.sound) out.push(`${after.name} is now ${after.sound}`)
+  if (before.bank !== after.bank) out.push(`${after.name} kit ${before.bank || 'none'} → ${after.bank || 'none'}`)
+  if (!!before.mute !== !!after.mute) out.push(`${after.name} ${after.mute ? 'muted' : 'unmuted'}`)
+  if ((before.fx ?? '') !== (after.fx ?? '')) out.push(`${after.name} extra code ${after.fx ? 'changed' : 'cleared'}`)
+  if (before.engine?.type !== after.engine?.type) out.push(`${after.name} instrument ${before.engine?.type ?? 'sample'} → ${after.engine?.type ?? 'sample'}`)
+  else out.push(...knobChanges(after.name, before.engine?.data, after.engine?.data))
   if (before.kind === 'drum' && after.kind === 'drum') {
     const on = (s) => (s ?? []).reduce((n, v) => n + (v ? 1 : 0), 0)
     const was = on(before.steps)
@@ -37,11 +56,32 @@ function channelChanges(before, after) {
     if (was !== now) out.push(`${after.name}: ${count(Math.abs(now - was), 'note')} ${now > was ? 'added' : 'taken out'}`)
     else if (JSON.stringify(before.notes) !== JSON.stringify(after.notes)) out.push(`${after.name}: notes moved`)
   }
-  for (const key of Object.keys({ ...before.params, ...after.params })) {
-    const a = before.params?.[key]
-    const b = after.params?.[key]
-    if (a !== b) out.push(`${after.name} ${key} ${round(a) ?? 'default'} → ${round(b) ?? 'default'}`)
+  out.push(...knobChanges(after.name, before.params, after.params))
+  return out
+}
+
+/** What one node holds that isn't a plain number: an fx rack's units, mutes, ports. */
+function dataChanges(name, was, now) {
+  const out = []
+  const chainWas = byId(was?.chain)
+  const chainNow = byId(now?.chain)
+  for (const u of now?.chain ?? []) if (!chainWas.has(u.id)) out.push(`${name}: added ${NODE_TYPES[u.type]?.label ?? u.type}`)
+  for (const u of was?.chain ?? []) if (!chainNow.has(u.id)) out.push(`${name}: removed ${NODE_TYPES[u.type]?.label ?? u.type}`)
+  for (const u of now?.chain ?? []) {
+    const before = chainWas.get(u.id)
+    if (!before) continue
+    const label2 = `${name} ${NODE_TYPES[u.type]?.label ?? u.type}`
+    if (!!before.on !== !!u.on) out.push(`${label2} ${u.on ? 'switched on' : 'bypassed'}`)
+    out.push(...knobChanges(label2, before.data, u.data))
   }
+  const order = (c) => (c ?? []).map((u) => u.id).join(',')
+  if (order(was?.chain) !== order(now?.chain) && (was?.chain ?? []).length === (now?.chain ?? []).length && (now?.chain ?? []).length > 1) {
+    out.push(`${name}: effects reordered`)
+  }
+  const lanes = (m) => Object.keys(m ?? {}).filter((k) => m[k]).sort().join(',')
+  if (lanes(was?.muted) !== lanes(now?.muted)) out.push(`${name}: what's muted changed`)
+  if ((was?.solo ?? null) !== (now?.solo ?? null)) out.push(now?.solo ? `${name}: one thing soloed` : `${name}: solo cleared`)
+  if (lanes(was?.offMain) !== lanes(now?.offMain)) out.push(`${name}: which instruments leave the main out changed`)
   return out
 }
 
@@ -67,13 +107,9 @@ export function changesBetween(before, after) {
   for (const n of after.nodes ?? []) {
     const was = wasNodes.get(n.id)
     if (!was || was.type !== n.type) continue
-    for (const key of Object.keys({ ...was.data, ...n.data })) {
-      if (key === 'chain' || key === 'name') continue
-      const a = was.data?.[key]
-      const b = n.data?.[key]
-      if (a === b || typeof a === 'object' || typeof b === 'object') continue
-      out.push(`${label(n, after)} ${key} ${round(a)} → ${round(b)}`)
-    }
+    if ((was.data?.name ?? '') !== (n.data?.name ?? '')) out.push(`${label(was, before)} renamed ${label(n, after)}`)
+    out.push(...knobChanges(label(n, after), was.data, n.data, ['name']))
+    out.push(...dataChanges(label(n, after), was.data, n.data))
   }
   const wire = (e) => `${e.source}>${e.sourceHandle ?? 'out'}>${e.target}>${e.targetHandle}`
   const wasWires = new Set((before.edges ?? []).map(wire))
@@ -119,9 +155,32 @@ export function changesBetween(before, after) {
   if (added) out.push(`${count(added, 'clip')} on the timeline`)
   if (gone) out.push(`${count(gone, 'clip')} taken off the timeline`)
   if (moved) out.push(`${count(moved, 'clip')} moved`)
-  const autos = (nowSong.autos ?? []).length - (wasSong.autos ?? []).length
-  if (autos > 0) out.push(`${count(autos, 'automation')} added`)
-  if (autos < 0) out.push(`${count(-autos, 'automation')} removed`)
+  for (const c of nowSong.clips ?? []) {
+    const w = wasClips.get(c.id)
+    if (w && w.src !== c.src) out.push('a clip now plays something else')
+  }
+  if ((wasSong.snap ?? 'bar') !== (nowSong.snap ?? 'bar')) out.push(`clips snap to the ${nowSong.snap ?? 'bar'}`)
+
+  // rows, and the colours parts are drawn in
+  const rows = (s2) => (s2.lanes ?? []).map((l) => `${l.name ?? ''}:${l.mute ? 'm' : ''}`).join('|')
+  if (rows(wasSong) !== rows(nowSong)) out.push('timeline rows renamed or muted')
+  const colours = (s2) => JSON.stringify(s2.colors ?? {})
+  if (colours(wasSong) !== colours(nowSong)) out.push('a part changed colour')
+
+  // automation: how many, and whether a curve was drawn on
+  const wasAutos = byId(wasSong.autos)
+  const nowAutos = byId(nowSong.autos)
+  for (const a of nowSong.autos ?? []) if (!wasAutos.has(a.id)) out.push(`automated ${a.name ?? a.target}`)
+  for (const a of wasSong.autos ?? []) if (!nowAutos.has(a.id)) out.push(`stopped automating ${a.name ?? a.target}`)
+  for (const a of nowSong.autos ?? []) {
+    const w = wasAutos.get(a.id)
+    if (!w) continue
+    if (w.target !== a.target) out.push(`an automation now moves ${a.name ?? a.target}`)
+    else if (w.bars !== a.bars) out.push(`${a.name ?? a.target} automation ${w.bars} → ${a.bars} bars`)
+    else if (JSON.stringify(w.points) !== JSON.stringify(a.points)) out.push(`${a.name ?? a.target} curve redrawn`)
+  }
+
+  if ((before.prelude ?? '') !== (after.prelude ?? '')) out.push('hand-written setup code changed')
 
   return out
 }
