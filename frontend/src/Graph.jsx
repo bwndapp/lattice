@@ -5,6 +5,8 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { APPLY, BUS_NODES, FX_UNITS, GROUPS, NODE_TYPES, defaultData, inputsOf, makeFxUnit, makesCycle } from './graph'
+import { ENGINES } from './instruments/index.js'
+import { openSynth } from './instruments/windows.js'
 import { INSTRUMENTS, INSTRUMENT_MIME, instrumentChannel, makePattern, newId } from './project'
 import Knob from './Knob.jsx'
 import { canAutomate, nodeTarget, unitTarget } from './automation.js'
@@ -483,7 +485,14 @@ function StudioNode({ id, selected }) {
                     const onMain = !offMain[c.id]
                     return (
                       <li key={c.id} className={`chan ${c.mute ? 'muted' : ''} ${wired ? 'wired' : ''} ${onMain ? '' : 'held'}`} data-flow={`${id}|${c.id}`}>
-                        <span className="chan-name">{c.name}</span>
+                        {ENGINES[c.engine?.type] ? (
+                          // an instrument the app plays itself: its name opens its window
+                          <button
+                            className="chan-name chan-synth nodrag"
+                            title={`Open ${ENGINES[c.engine.type].label}`}
+                            onClick={() => openSynth(node.data.patternId, c.id)}
+                          >{c.name}<span aria-hidden>↗</span></button>
+                        ) : <span className="chan-name">{c.name}</span>}
                         {wired && (
                           <button
                             className={`chan-main nodrag ${onMain ? 'on' : ''}`}

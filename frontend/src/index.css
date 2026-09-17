@@ -917,6 +917,14 @@ ul.node-chans { display: block; border-top: 1px solid var(--line); }
 }
 .node-chans .chan:last-child { border-bottom: 0; }
 .chan-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* an instrument the app plays itself: click its name for its window */
+button.chan-synth {
+  display: flex; align-items: baseline; gap: 0.3rem; font: inherit; text-align: left;
+  color: var(--paper); background: none; border: 0; padding: 0; cursor: var(--ring);
+}
+button.chan-synth span { font-size: 9px; color: var(--muted); }
+button.chan-synth:hover { color: var(--acid); }
+button.chan-synth:hover span { color: var(--acid); }
 .node-chans .chan.muted { opacity: 0.4; text-decoration: line-through; }
 .node-chans .chan.wired .chan-name { color: var(--acid); }
 .node-chans .chan.held .chan-name { opacity: 0.5; }
