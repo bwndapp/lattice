@@ -245,6 +245,9 @@ button.b-card-author {
   font: inherit; font-size: inherit; color: inherit; background: none; border: 0; padding: 0;
   text-align: left; cursor: var(--ring); text-decoration: underline; text-decoration-color: transparent;
   transition: text-decoration-color 0.12s ease, color 0.12s ease;
+  /* the title stretches an invisible cover over the whole card so anywhere on it opens the
+     track; the author's name has to sit above that to be clickable at all */
+  position: relative; z-index: 2; justify-self: start;
 }
 button.b-card-author:hover { color: var(--paper); text-decoration-color: currentColor; }
 
