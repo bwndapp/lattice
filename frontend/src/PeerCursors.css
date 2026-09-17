@@ -1,0 +1,50 @@
+/* Other people's pointers. Nothing here ever takes a click: presence must not get in
+   the way of the work. */
+.peer-cursor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 40;
+  pointer-events: none;
+  transform-origin: 0 0;
+  will-change: transform;
+  transition: transform 80ms linear;
+}
+
+.peer-cursor .peer-name {
+  position: absolute;
+  top: 15px;
+  left: 11px;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  color: #0b0b0f;
+  background: var(--peer);
+  border-radius: 3px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+/* What someone else has hold of, wherever it's drawn (a node, a clip, a note). */
+.peer-held {
+  outline: 2px solid var(--peer);
+  outline-offset: 1px;
+}
+
+/* Who's here, in the header. */
+.peer-list { display: inline-flex; align-items: center; gap: 3px; margin-left: 0.4rem; }
+.peer-dot {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #0b0b0f;
+  background: var(--peer);
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  border-radius: 50%;
+  cursor: default;
+}
+.peer-dot.me { box-shadow: 0 0 0 1.5px var(--fg-dim); }

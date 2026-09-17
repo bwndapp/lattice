@@ -34,6 +34,8 @@ import { capturePatterns, parseLanes, tempoChange } from './lanes'
 import { PROJECT_MARK, blankProject, demoProject, generateCode, newId, normalizeProject, parseProject, projectFromCode } from './project'
 import { createTransport, formatBarBeat, parseBarBeat } from './transport'
 import { songLength } from './song'
+import { join as joinRoom, leave as leaveRoom } from './collab.js'
+import PeerList from './PeerList.jsx'
 
 function readPref(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback } catch { return fallback }
@@ -113,6 +115,12 @@ export default function App() {
   if (hadScratch.current === null) hadScratch.current = !!parseProject(readDraft(null) ?? '')
   const trackIdRef = useRef(trackId)
   trackIdRef.current = trackId
+  // a saved track is a room: everyone who has it open sees the others' cursors (collab.js)
+  useEffect(() => {
+    if (!trackId) return leaveRoom()
+    joinRoom(trackId)
+    return () => leaveRoom()
+  }, [trackId])
   useEffect(() => {
     if (reopened.current) return
     // only as the page loads (this effect runs once): a refresh counts, clicks inside the app don't
@@ -1089,6 +1097,7 @@ export default function App() {
           <span className="export-word">export</span>
         </button>
         <div className="bar-side right">
+        <PeerList />
         <span className="track" role="group" aria-label="Track">
           {loadError ? (
             <span className="meta track-status" title={loadError}>{loadError} <Link className="linkish" to="/">new track</Link></span>

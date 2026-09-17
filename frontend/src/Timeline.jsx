@@ -4,6 +4,8 @@ import { MAX_BARS, laneInfo, songLength, songParts } from './song'
 import Popover from './Popover.jsx'
 import { Glass } from './Glass.jsx'
 import { useAutomation } from './autoLive.js'
+import { pointerAt, pointerGone, selectionIs, useHolders } from './collab.js'
+import PeerCursors from './PeerCursors.jsx'
 import { useRollDock } from './rollDock.js'
 import { KnobMenu } from './KnobMenu.jsx'
 import { AUTO_PREFIX, curveAt, resolveTarget } from './automation.js'
@@ -250,6 +252,9 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const tickEvery = ppb >= 22 ? 1 : Math.ceil(22 / ppb)
 
   // ── geometry ──
+  const peerClips = useHolders('timeline')
+  // the clips we have hold of, so they're ringed in our colour on everyone else's timeline
+  useEffect(() => { selectionIs('timeline', [...selected]) }, [selected])
   const barAt = (clientX) => (clientX - lanesRef.current.getBoundingClientRect().left) / ppb
   const laneAt = (clientY) => clamp(Math.floor((clientY - lanesRef.current.getBoundingClientRect().top) / LANE_H), 0, 63)
   // hold alt and the grid lets go entirely, as it does in FL: put it exactly where you want
@@ -1111,16 +1116,21 @@ export default function Timeline({ project, onUpdateProject, transport, started 
               ref={lanesRef}
               style={{ height: lanes * LANE_H, width: bars * ppb }}
               onPointerDown={onLanesDown}
-              onPointerMove={onLanesMove}
+              onPointerMove={(e) => {
+                const r = lanesRef.current.getBoundingClientRect()
+                pointerAt('timeline', (e.clientX - r.left) / ppb, (e.clientY - r.top) / LANE_H)
+                onLanesMove(e)
+              }}
               onPointerUp={onLanesUp}
               onPointerCancel={() => { dragRef.current = null; panRef.current = null; setDrag(null); setMarquee(null); setErasing(false); leanStop() }}
-              onPointerLeave={() => { if (!dragRef.current) setSliceLine(null) }}
+              onPointerLeave={() => { pointerGone(); if (!dragRef.current) setSliceLine(null) }}
               onContextMenu={(e) => e.preventDefault()}
               onDragOver={onDragOver}
               onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setGhost((g) => (g ? { ...g, lane: -1 } : g)) }}
               onDrop={onDrop}
             >
               {length > 0 && song.on && <div className="song-after" style={{ left: songBars * ppb }} />}
+              <PeerCursors where="timeline" to={(at) => ({ left: at.x * ppb, top: at.y * LANE_H })} />
               {clips.map((c) => {
                 const part = partBySrc.get(c.src)
                 if (!part) return null
@@ -1133,8 +1143,8 @@ export default function Timeline({ project, onUpdateProject, transport, started 
                   <div
                     key={c.id}
                     data-id={c.id}
-                    className={`clip ${LANE_H >= 30 && part.kind !== 'auto' ? 'roomy' : ''} ${part.kind === 'auto' ? 'automation' : ''} ${selected.has(c.id) ? 'selected' : ''} ${c.id.startsWith('__') ? 'preview' : ''} ${c.gone || vanishing?.has(c.id) ? 'gone' : ''} ${drag?.lift && (drag.changes?.[c.id] || c.id.startsWith('__copy')) ? 'lifted' : ''} ${settling?.has(c.id) ? 'settling' : ''} ${arriving?.has(c.id) ? 'arriving' : ''} ${!song.on ? 'off' : ''}`}
-                    style={{ left: c.start * ppb, top: c.lane * LANE_H + 3, width: Math.max(4, c.len * ppb - 1), height: LANE_H - 6, '--clip': colorFor(c.src, song.colors), '--clip-ink': inkFor(colorFor(c.src, song.colors)) }}
+                    className={`clip ${LANE_H >= 30 && part.kind !== 'auto' ? 'roomy' : ''} ${part.kind === 'auto' ? 'automation' : ''} ${selected.has(c.id) ? 'selected' : ''} ${c.id.startsWith('__') ? 'preview' : ''} ${c.gone || vanishing?.has(c.id) ? 'gone' : ''} ${drag?.lift && (drag.changes?.[c.id] || c.id.startsWith('__copy')) ? 'lifted' : ''} ${settling?.has(c.id) ? 'settling' : ''} ${arriving?.has(c.id) ? 'arriving' : ''} ${!song.on ? 'off' : ''} ${peerClips.has(c.id) ? 'peer-held' : ''}`}
+                    style={{ left: c.start * ppb, top: c.lane * LANE_H + 3, width: Math.max(4, c.len * ppb - 1), height: LANE_H - 6, '--clip': colorFor(c.src, song.colors), '--clip-ink': inkFor(colorFor(c.src, song.colors)), ...(peerClips.get(c.id) ? { '--peer': peerClips.get(c.id).color } : {}) }}
                     title={`${part.name} · bar ${Math.floor(c.start) + 1}${c.start % 1 ? `.${Math.round((c.start % 1) * beats) + 1}` : ''} · ${Math.round(c.len * beats) / beats} bar${c.len === 1 ? '' : 's'}`}
                   >
                     <ClipSketch url={sketchFor(c.src)} bars={part.bars} ppb={ppb} into={into} laneH={LANE_H} full={part.kind === 'auto'} />

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Handle, Position,
-  applyNodeChanges, applyEdgeChanges, useNodesInitialized, useReactFlow, useUpdateNodeInternals,
+  ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Handle, Position, ViewportPortal,
+  applyNodeChanges, applyEdgeChanges, useNodesInitialized, useReactFlow, useUpdateNodeInternals, useViewport,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { APPLY, BUS_NODES, CHANNEL_FADER, FX_UNITS, GROUPS, NODE_TYPES, channelGain, defaultData, inputKey, inputsOf, makeFxUnit, makesCycle } from './graph'
@@ -21,6 +21,8 @@ import { colorFor, inkFor, nodeSrc, rgbOf } from './clipColors.js'
 import { addSongClip, songSilence } from './song.js'
 import { useAutomation } from './autoLive.js'
 import { useTypingKeys } from './typingKeys.js'
+import { pointerAt, pointerGone, selectionIs, useHolders } from './collab.js'
+import PeerCursors from './PeerCursors.jsx'
 import { readOctave, writeOctave } from './keyboard.js'
 
 const NODE_MIME = 'application/x-strudel-node'
@@ -406,9 +408,20 @@ function FxRack({ node }) {
   )
 }
 
+/** The other people's pointers, drawn in flow coordinates so they follow pan and zoom. */
+function PeerLayer() {
+  const { zoom } = useViewport()
+  return (
+    <ViewportPortal>
+      <PeerCursors where="graph" to={(at) => ({ left: at.x, top: at.y })} scale={zoom} />
+    </ViewportPortal>
+  )
+}
+
 /** One card on the canvas. Everything reads the project through context, so it's never stale. */
 function StudioNode({ id, selected }) {
   const ctx = useContext(Ctx)
+  const heldBy = useHolders('graph').get(id) // someone else has this one selected
   const node = ctx.project.nodes.find((n) => n.id === id)
   const updateInternals = useUpdateNodeInternals()
   const spec = node && NODE_TYPES[node.type]
@@ -436,8 +449,9 @@ function StudioNode({ id, selected }) {
 
   return (
     <div
-      className={`gnode g-${spec.group} t-${node.type} ${selected ? 'selected' : ''} ${soloing ? 'soloing' : ''} ${node.type !== 'output' && !ctx.heard.has(id) ? 'unheard' : ''}`}
-      style={tint ? { '--tint': tint, '--tint-ink': inkFor(tint) } : undefined}
+      className={`gnode g-${spec.group} t-${node.type} ${selected ? 'selected' : ''} ${soloing ? 'soloing' : ''} ${node.type !== 'output' && !ctx.heard.has(id) ? 'unheard' : ''} ${heldBy ? 'peer-held' : ''}`}
+      style={{ ...(tint ? { '--tint': tint, '--tint-ink': inkFor(tint) } : {}), ...(heldBy ? { '--peer': heldBy.color } : {}) }}
+      title={heldBy ? `${heldBy.name} has this selected` : undefined}
     >
       {spec.inputs === 1 && <Handle type="target" position={Position.Left} id="in" className="port in" />}
       <div className="node-head">
@@ -1214,6 +1228,9 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
     },
   }), [project, heard, solo, onSolo, updateNode, removeNodes, onUpdateProject, automation, dock])
 
+  // what we have selected, so the others see it ringed on their canvas
+  useEffect(() => { selectionIs('graph', nodes.filter((n) => n.selected).map((n) => n.id)) }, [nodes])
+
   const isValidConnection = useCallback((c) => {
     if (c.source === c.target) return false
     const target = project.nodes.find((n) => n.id === c.target)
@@ -1313,6 +1330,11 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
             edges={edges}
             nodeTypes={nodeTypes}
             colorMode="dark"
+            onPointerMove={(e) => {
+              const at = flow.screenToFlowPosition({ x: e.clientX, y: e.clientY })
+              pointerAt('graph', at.x, at.y)
+            }}
+            onPointerLeave={pointerGone}
             onPaneContextMenu={(e) => {
               // right-click empty canvas: add something here (into the wire under the pointer, if any)
               e.preventDefault()
@@ -1410,6 +1432,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
             edgeTypes={EDGE_TYPES}
             defaultEdgeOptions={{ type: 'wire' }}
           >
+            <PeerLayer />
             <Background gap={24} size={1.2} color="#34342f" />
             <Controls showInteractive={false} />
             <MiniMap pannable zoomable nodeColor={(n) => ({ source: '#e4ff1a', output: '#e4ff1a', transform: '#f2f0e6', effect: '#a3a39a', mixing: '#a3a39a', combine: '#6b6b63' })[NODE_TYPES[project.nodes.find((x) => x.id === n.id)?.type]?.group] ?? '#555'} maskColor="rgba(0,0,0,0.6)" />

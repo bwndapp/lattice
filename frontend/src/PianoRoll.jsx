@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { TICK, isBlackKey, midiToNote, noteToMidi, stepCount } from './project'
+import { pointerAt, pointerGone } from './collab.js'
+import PeerCursors from './PeerCursors.jsx'
 
 const KEY_W = 46
 const RULER_H = 20
@@ -101,6 +103,7 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
   const [full, setFull] = useState(false)
   const [draft, setDraft] = useState(null) // notes while dragging
   const [selection, setSelection] = useState(() => new Set()) // keys of selected notes
+  const room = `roll:${pattern.id}` // presence is per pattern: two people may have different ones open
   const [marquee, setMarquee] = useState(null) // { x0, y0, x1, y1 } in grid px while box-selecting
   const pasteAt = useRef(null) // where the next paste lands, so repeated pastes line up
   const dragRef = useRef(null)
@@ -767,16 +770,20 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
                 onPointerDown={onDown}
                 onPointerMove={(e) => {
                   onMove(e)
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  pointerAt(room, (e.clientX - rect.left) / colW, HIGH - (e.clientY - rect.top) / rowH)
                   if (!dragRef.current && !panRef.current) {
                     const h = hit(e)
                     e.currentTarget.style.cursor = h.note ? (h.edge ? 'ew-resize' : 'var(--ring)') : 'crosshair'
                   }
                 }}
+                onPointerLeave={pointerGone}
                 onPointerUp={onUp}
                 onPointerCancel={() => { dragRef.current = null; setDraft(null) }}
                 onContextMenu={(e) => e.preventDefault()}
                 onAuxClick={(e) => e.preventDefault()}
               />
+              <PeerCursors where={room} to={(at) => ({ left: at.x * colW, top: (HIGH - at.y) * rowH })} />
               <div className="pr-cursor" ref={lineRef} hidden style={{ width: colW }} />
             </div>
           </div>
