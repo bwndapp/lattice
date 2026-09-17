@@ -572,7 +572,11 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
     dragRef.current = null
     if (!d) return
     if (d.mode === 'marquee') { setMarquee(null); return }
-    if (d.mode === 'erase') return commit(d.notes)
+    if (d.mode === 'erase') {
+      // a right-press that rubbed nothing out is a press on bare grid: let the selection go
+      if (d.notes.length === channel.notes.length) { setSelection(new Set()); setDraft(null); return }
+      return commit(d.notes)
+    }
     if (d.mode === 'create') {
       const note = d.current ?? d.orig
       lastLen.current = note.l

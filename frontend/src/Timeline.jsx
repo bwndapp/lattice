@@ -560,7 +560,10 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       const min = leastLen(free)
       const changes = {}
       if (d.mode === 'end') {
-        const delta = clamp(snap(bar, free) - c.start, min, MAX_BARS - c.start) - c.len
+        const run = partBySrc.get(c.src)?.bars
+        const want = clamp(snap(bar, free) - c.start, min, MAX_BARS - c.start)
+        // stretching it out repeats the part, so it stops on whole ones
+        const delta = (run && !free ? Math.max(1, Math.round(want / run)) * run : want) - c.len
         for (const x of d.group) changes[x.id] = { len: clamp(x.len + delta, min, MAX_BARS - x.start) }
       } else {
         const delta = clamp(snap(bar, free), 0, c.start + c.len - min) - c.start
@@ -572,7 +575,12 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       d.moved = true
       setDrag({ changes })
     } else if (d.mode === 'draw') {
-      const end = Math.max(d.start + leastLen(free), snap(bar, free))
+      // drawing a part out lays it down whole: a four-bar pattern goes four, eight, twelve,
+      // rather than being cut off halfway through itself
+      const run = partBySrc.get(d.src)?.bars
+      const end = run && !free
+        ? d.start + Math.max(1, Math.round((snap(bar, false) - d.start) / run)) * run
+        : Math.max(d.start + leastLen(free), snap(bar, free))
       setDrag({ changes: {}, added: [{ id: '__draw', src: d.src, lane: d.lane, start: d.start, len: end - d.start }] })
     } else if (d.mode === 'marquee') {
       const box = { b0: d.bar, l0: d.lane, b1: bar, l1: lane }
