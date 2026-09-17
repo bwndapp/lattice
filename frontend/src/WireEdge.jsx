@@ -104,7 +104,7 @@ export function WireEdge({ id, sourceX, sourceY, targetX, targetY, data, style, 
           className="wire-db quiet"
           data-db={id}
           aria-hidden
-          style={{ transform: `translate(-50%, -50%) translate(${midX}px, ${midY - 15}px)` }}
+          style={{ transform: `translate(-50%, -50%) translate(${midX}px, ${midY - 26}px)` }}
         />
       </EdgeLabelRenderer>
     </>
