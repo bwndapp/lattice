@@ -1,5 +1,5 @@
-/* Other people's pointers. Nothing here ever takes a click: presence must not get in
-   the way of the work. */
+/* Other people's pointers: the app's own dot (--dot in index.css) in their colour.
+   Nothing here ever takes a click — presence must not get in the way of the work. */
 .peer-cursor {
   position: absolute;
   top: 0;
@@ -11,10 +11,13 @@
   transition: transform 80ms linear;
 }
 
+/* centred on the spot they're pointing at, like the real cursor's hotspot */
+.peer-cursor svg { display: block; margin: -6px 0 0 -6px; }
+
 .peer-cursor .peer-name {
   position: absolute;
-  top: 15px;
-  left: 11px;
+  top: 7px;
+  left: 6px;
   padding: 1px 5px;
   font-size: 10px;
   font-weight: 600;
@@ -50,3 +53,5 @@
   cursor: default;
 }
 .peer-dot.me { box-shadow: 0 0 0 1.5px var(--fg-dim); }
+/* watching, not editing: the colour outlines them instead of filling them in */
+.peer-dot.watching { color: var(--peer); background: transparent; border-color: var(--peer); }

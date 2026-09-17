@@ -16,7 +16,7 @@ Messages are JSON text frames.
     ← {"t":"me","id":3,"color":"#e8b","edit":true}              who the server thinks you are
     ← {"t":"here","peers":[...]} · {"t":"join"|"at"|"sel"|"gone", ...}
 
-  the track itself (only people who may edit it — see _may_edit)
+  the track itself (anyone signed in — see _may_edit)
     ← {"t":"seed"}                       you're first in: send what you have
     → {"t":"doc","doc":{...}}            here it is
     ← {"t":"doc","doc":{...},"v":12}     what the room already has, for a late arrival
@@ -37,8 +37,9 @@ timeline sends bars and rows, the piano roll sends bars and midi notes. Whoever 
 cursor converts, so it lands in the same place at any zoom or scroll.
 
 A private track only lets its owner in; anyone who can open a track can be present on it,
-signed in or not. Changing it is the owner's alone — being able to read a public track is
-not an invitation to reach into someone's session while they work.
+signed in or not. Changing one needs a sign-in, nothing more: a shared link is an
+invitation to work on it together. Saving is still the owner's alone, so nothing anyone
+does in a room can overwrite the version they keep.
 """
 import asyncio
 import json
@@ -143,9 +144,14 @@ def _may_open(row, user):
 
 
 def _may_edit(row, user):
-    """Who may change the track live. The owner — including the owner on another device,
-    which is the common case. Invited collaborators would be added here."""
-    return bool(row and user and user.get("sub") == row["owner_sub"])
+    """Who may change the track live: anyone signed in who can open it.
+
+    Working on a track together is the point, and a link is how people get to one. Being
+    signed in is the whole gate — a name to put on a cursor and an account behind the
+    change — while saving stays the owner's alone (see tracks.py), so a session can be
+    shared without anyone being able to overwrite what the owner has kept. Someone who
+    isn't signed in watches: cursors, no changes, and never a copy of the document."""
+    return bool(row and user and _may_open(row, user))
 
 
 def _clean_name(raw, user):

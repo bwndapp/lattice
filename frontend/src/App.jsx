@@ -1230,7 +1230,7 @@ export default function App() {
           <span className="export-word">export</span>
         </button>
         <div className="bar-side right">
-        <PeerList together={together} onTogether={canEdit ? setTogether : null} />
+        <PeerList together={together} onTogether={setTogether} />
         <span className="track" role="group" aria-label="Track">
           {loadError ? (
             <span className="meta track-status" title={loadError}>{loadError} <Link className="linkish" to="/">new track</Link></span>

@@ -26,6 +26,7 @@ spec.loader.exec_module(collab)
 collab.db = incubator_lib.db
 # stand-in for the sign-in service: "owner" is the track's owner, anything else is someone else
 collab.sso_user = lambda tok: {'sub': 'someone', 'given_name': 'ana'} if tok == 'owner' else ({'sub': 'other', 'given_name': 'bo'} if tok else None)
+# (no token at all is a guest: present, but nothing of theirs is taken)
 
 from fastapi import FastAPI
 import uvicorn

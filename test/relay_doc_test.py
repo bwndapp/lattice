@@ -70,17 +70,26 @@ async def main():
             ok('both edits are in the room copy', doc['patterns'][0]['channels'][0]['gain'] == 0.4 and len(doc['song']['clips']) == 1, doc)
             ok('the version counts every change', shared['v'] == 3, shared)
 
-            # someone else entirely: present, but the track is not theirs to change
+            # somebody else signed in: a link is an invitation, so their edits count
             async with websockets.connect(URL) as c:
-                me_c, _ = await hello(c, 'stranger', 'nosy')
-                ok('a stranger may look but not edit', me_c.get('edit') is False, me_c)
-                await c.send(json.dumps({'t': 'ops', 'ops': [{'op': 'set', 'path': ['bpm'], 'value': 999}], 'h': 'x'}))
-                await c.send(json.dumps({'t': 'at', 'where': 'graph', 'x': 1, 'y': 2}))
-                await drain(a, 'at')  # their cursor arrives, which means the ops frame was handled first
+                me_c, _ = await hello(c, 'friend', 'bo')
+                ok('anyone signed in may edit', me_c.get('edit') is True, me_c)
+                await c.send(json.dumps({'t': 'ops', 'ops': [{'op': 'set', 'path': ['bpm'], 'value': 128}], 'h': 'x'}))
+                await drain(a, 'ops')
                 await a.send(json.dumps({'t': 'sync'}))
                 after = await drain(a, 'doc')
-                ok("a stranger's edit is ignored", after['doc']['bpm'] == 140, after['doc']['bpm'])
-                ok('a stranger is never sent the track', all(m != 'doc' for m in ['doc']) or True)
+                ok("a friend's edit lands", after['doc']['bpm'] == 128, after['doc']['bpm'])
+
+            # nobody signed in: present, but the track is not theirs to change
+            async with websockets.connect(URL) as g:
+                me_g, _ = await hello(g, '', 'guest')
+                ok('a guest may look but not edit', me_g.get('edit') is False, me_g)
+                await g.send(json.dumps({'t': 'ops', 'ops': [{'op': 'set', 'path': ['bpm'], 'value': 999}], 'h': 'x'}))
+                await g.send(json.dumps({'t': 'at', 'where': 'graph', 'x': 1, 'y': 2}))
+                await drain(a, 'at')  # their cursor arrives, which means the ops frame was handled first
+                await a.send(json.dumps({'t': 'sync'}))
+                still = await drain(a, 'doc')
+                ok("a guest's edit is ignored", still['doc']['bpm'] == 128, still['doc']['bpm'])
 
     # the room forgets once everyone has gone
     await asyncio.sleep(0.3)
