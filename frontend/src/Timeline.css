@@ -267,15 +267,18 @@
    * 80ms rather than teleporting, which is what makes a snap to the grid read as a pull
    * rather than a jump.
    */
-  .clip.lifted {
+  .clip.lifted, .clip.lifted:hover {
     z-index: 6;
-    transform: scale(1.018);
+    /* --lean is how hard you're throwing it, set frame by frame while you drag */
+    transform: scale(1.018) rotate(var(--lean, 0deg));
+    transform-origin: 50% 140%; /* it swings from below, like something held at the top */
     filter: brightness(1.07);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 8px 18px rgba(0, 0, 0, 0.7);
     transition: left 80ms cubic-bezier(0.2, 0.85, 0.3, 1), top 80ms cubic-bezier(0.2, 0.85, 0.3, 1),
-      transform 120ms cubic-bezier(0.2, 0.8, 0.3, 1), box-shadow 0.15s ease, filter 0.15s ease;
+      box-shadow 0.15s ease, filter 0.15s ease;
   }
-  .clip.lifted:hover { transform: scale(1.018); } /* the lift already has it off the canvas */
+  /* let go and it drops the last of the way rather than stopping dead */
+  .clip.settling { animation: clip-settle 300ms cubic-bezier(0.22, 1, 0.3, 1); z-index: 5; }
 }
 @keyframes clip-land {
   from { opacity: 0; transform: scale(0.94); }
@@ -284,6 +287,12 @@
 }
 @keyframes clip-gone {
   to { opacity: 0; transform: scale(0.82); }
+}
+@keyframes clip-settle {
+  0% { transform: scale(1.018) translateY(-2px); }
+  45% { transform: scale(0.995) translateY(0.5px); }
+  75% { transform: scale(1.003); }
+  100% { transform: none; }
 }
 .clip.off { filter: saturate(0.25) brightness(0.7); }
 .clip-sketch { position: absolute; left: 0; right: 0; top: 3px; bottom: 3px; background-repeat: repeat-x; opacity: 0.5; pointer-events: none; }

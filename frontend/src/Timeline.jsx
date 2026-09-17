@@ -131,6 +131,46 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const [drag, setDrag] = useState(null) // live preview while moving / stretching / drawing
   const [marquee, setMarquee] = useState(null)
   const [erasing, setErasing] = useState(false) // right button held: the pointer shows it deletes
+  const [settling, setSettling] = useState(null) // clips that just landed, for a moment
+  const landed = useRef(0)
+  /** Let go of a clip and it drops the last of the way, rather than stopping dead. */
+  const land = (ids) => {
+    if (!ids.length) return
+    setSettling(new Set(ids))
+    clearTimeout(landed.current)
+    landed.current = setTimeout(() => setSettling(null), 320)
+  }
+  useEffect(() => () => clearTimeout(landed.current), [])
+
+  /**
+   * A carried clip leans the way you're throwing it and comes back level when you stop.
+   * One number, read from how fast the pointer is going and eased down every frame, written
+   * straight to the lanes as a custom property — no state, no re-render, no library.
+   */
+  const lean = useRef({ v: 0, x: 0, t: 0, frame: 0, held: false })
+  const leanOn = () => {
+    const s = lean.current
+    if (s.frame) return
+    const step = () => {
+      const now = lean.current
+      now.v *= 0.86 // it settles back level when the pointer stops
+      lanesRef.current?.style.setProperty('--lean', `${now.v.toFixed(2)}deg`)
+      if (!now.held && Math.abs(now.v) < 0.02) { now.v = 0; now.frame = 0; lanesRef.current?.style.setProperty('--lean', '0deg'); return }
+      now.frame = requestAnimationFrame(step)
+    }
+    s.frame = requestAnimationFrame(step)
+  }
+  const leanStart = (e) => { lean.current = { v: 0, x: e.clientX, t: performance.now(), frame: lean.current.frame, held: true }; leanOn() }
+  const leanTo = (e) => {
+    const s = lean.current
+    const now = performance.now()
+    const push = clamp(((e.clientX - s.x) / Math.max(8, now - s.t)) * 7, -3.2, 3.2)
+    s.v = s.v * 0.55 + push * 0.45
+    s.x = e.clientX
+    s.t = now
+  }
+  const leanStop = () => { lean.current.held = false }
+  useEffect(() => () => cancelAnimationFrame(lean.current.frame), [])
   const [ghost, setGhost] = useState(null) // where a part dragged from the sidebar would land
   const dock = useRollDock() // a pattern's rack and notes live along the bottom
   const [tool, setTool] = useState('pointer') // or 'slice'
@@ -400,6 +440,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       // moving and stretching both act on the whole selection; the clip you grabbed leads
       const group = sel.has(id) ? song.clips.filter((c) => sel.has(c.id)) : [clip]
       dragRef.current = { mode, bar, lane, group, anchor: clip, copy: mode === 'move' && e.shiftKey, toggle: e.shiftKey ? id : null, moved: false }
+      if (mode === 'move') leanStart(e)
       return
     }
 
@@ -470,6 +511,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       if (!db && !dl && !d.moved) return
       d.moved = true
       const place = (c) => ({ start: c.start + db, lane: c.lane + dl })
+      leanTo(e)
       // `lift` is what the clips being carried are drawn by: off the canvas, above the rest
       if (d.copy) setDrag({ copy: true, lift: true, changes: {}, added: d.group.map((c) => ({ ...c, ...place(c), id: `__copy${c.id}` })) })
       else setDrag({ lift: true, changes: Object.fromEntries(d.group.map((c) => [c.id, place(c)])) })
@@ -505,6 +547,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
 
   const onLanesUp = (e) => {
     setErasing(false)
+    leanStop()
     if (panRef.current) { panRef.current = null; e?.currentTarget?.classList.remove('zooming'); return }
     const d = dragRef.current
     dragRef.current = null
@@ -558,6 +601,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       updateSong((s) => {
         for (const c of s.clips) if (preview.changes[c.id]) Object.assign(c, preview.changes[c.id])
       })
+      land(Object.keys(preview.changes))
     }
     if (e) e.preventDefault()
   }
@@ -1036,7 +1080,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
               onPointerDown={onLanesDown}
               onPointerMove={onLanesMove}
               onPointerUp={onLanesUp}
-              onPointerCancel={() => { dragRef.current = null; panRef.current = null; setDrag(null); setMarquee(null); setErasing(false) }}
+              onPointerCancel={() => { dragRef.current = null; panRef.current = null; setDrag(null); setMarquee(null); setErasing(false); leanStop() }}
               onPointerLeave={() => { if (!dragRef.current) setSliceLine(null) }}
               onContextMenu={(e) => e.preventDefault()}
               onDragOver={onDragOver}
@@ -1056,7 +1100,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
                   <div
                     key={c.id}
                     data-id={c.id}
-                    className={`clip ${LANE_H >= 30 && part.kind !== 'auto' ? 'roomy' : ''} ${part.kind === 'auto' ? 'automation' : ''} ${selected.has(c.id) ? 'selected' : ''} ${c.id.startsWith('__') ? 'preview' : ''} ${c.gone ? 'gone' : ''} ${drag?.lift && (drag.changes?.[c.id] || c.id.startsWith('__copy')) ? 'lifted' : ''} ${!song.on ? 'off' : ''}`}
+                    className={`clip ${LANE_H >= 30 && part.kind !== 'auto' ? 'roomy' : ''} ${part.kind === 'auto' ? 'automation' : ''} ${selected.has(c.id) ? 'selected' : ''} ${c.id.startsWith('__') ? 'preview' : ''} ${c.gone ? 'gone' : ''} ${drag?.lift && (drag.changes?.[c.id] || c.id.startsWith('__copy')) ? 'lifted' : ''} ${settling?.has(c.id) ? 'settling' : ''} ${!song.on ? 'off' : ''}`}
                     style={{ left: c.start * ppb, top: c.lane * LANE_H + 3, width: Math.max(4, c.len * ppb - 1), height: LANE_H - 6, '--clip': colorFor(c.src, song.colors), '--clip-ink': inkFor(colorFor(c.src, song.colors)) }}
                     title={`${part.name} · bar ${Math.floor(c.start) + 1}${c.start % 1 ? `.${Math.round((c.start % 1) * beats) + 1}` : ''} · ${Math.round(c.len * beats) / beats} bar${c.len === 1 ? '' : 's'}`}
                   >
