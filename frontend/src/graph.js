@@ -345,7 +345,14 @@ export const NODE_TYPES = {
       // a sound already on its own bus (a haas or widener before this) keeps it, so both work
       const orbit = ctx.inputOrbits?.[ctx.slots.indexOf('in-0')] ?? ctx.orbit
       if (ctx.route) ctx.route.orbit = orbit
-      return `stack(${sound}.orbit(${orbit}), ${trigger}.duckorbit(${orbit}).duckonset(${K(ctx, d, 'attack')}).duckattack(${K(ctx, d, 'release')}).duckdepth(${K(ctx, d, 'depth')})${d.hear === 'silent' ? '.postgain(0)' : ''})`
+      // A silent trigger only has to exist for its onset. Left as the instrument it came
+      // from, it takes one of that instrument's voices at the very moment the sound it's
+      // ducking needs one — and an engine with a single voice (the kick synth) has none to
+      // spare, so the note you meant to hear gets cut. A throwaway sound can't take it.
+      const trig = d.hear === 'silent'
+        ? `${trigger}.fmap((v) => ({ ...v, s: 'sine', bank: undefined, _c: undefined, postgain: 0 }))`
+        : trigger
+      return `stack(${sound}.orbit(${orbit}), ${trig}.duckorbit(${orbit}).duckonset(${K(ctx, d, 'attack')}).duckattack(${K(ctx, d, 'release')}).duckdepth(${K(ctx, d, 'depth')}))`
     },
   },
   eq3: {
