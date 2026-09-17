@@ -169,7 +169,7 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
                   <span className="b-card-time">{timeAgo(t.updated_at)}</span>
                   {view === 'mine' && t.visibility !== 'public' && <span className="b-tag">{t.visibility}</span>}
                   {t.id === activeId && <span className="b-tag on">open</span>}
-                  {t.forked_from && <span className="b-tag quiet" data-tip="Made by remixing another track">remix</span>}
+                  {t.forked_from && <span className="b-tag quiet" data-tip="Started as a copy of another track">copy</span>}
                 </div>
               </li>
             ))}

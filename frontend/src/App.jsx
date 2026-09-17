@@ -772,14 +772,14 @@ export default function App() {
     try {
       const t = await api('/tracks', {
         method: 'POST',
-        body: { title: `${track.title} (remix)`.slice(0, 80), code: songCodeOf(editorRef.current.code), visibility: 'public', forked_from: track.id },
+        body: { title: `${track.title} (copy)`.slice(0, 80), code: songCodeOf(editorRef.current.code), visibility: 'public', forked_from: track.id },
       })
       clearDraft(track.id)
       navigate(`/t/${t.id}`)
       setRefreshKey((k) => k + 1)
       flash('Remixed into your tracks')
     } catch (e) {
-      flash(`Couldn’t remix: ${e.message}`)
+      flash(`Couldn’t save a copy: ${e.message}`)
     } finally {
       setBusy(false)
     }
@@ -940,7 +940,7 @@ export default function App() {
       ) : (
         <>
           <span className="pm-head-title">{userLoading ? 'checking…' : 'not signed in'}</span>
-          <span className="pm-head-status">sign in to save, like and remix</span>
+          <span className="pm-head-status">sign in to save, like and copy tracks</span>
         </>
       )}
     </div>
@@ -954,7 +954,7 @@ export default function App() {
         'line',
         canEdit && { label: isNew ? 'save as a track' : 'save', shortcut: 'ctrl/cmd S', onSelect: () => save(), disabled: busy || (!!user && !dirty) },
         isOwner && { label: 'save as a new track', shortcut: 'ctrl/cmd shift S', onSelect: () => saveAsNew(), disabled: busy, hint: 'This track stays as it was saved' },
-        !canEdit && track && { label: 'remix into your tracks', onSelect: () => remix(), disabled: busy },
+        !canEdit && track && { label: 'save a copy', onSelect: () => remix(), disabled: busy, hint: 'Yours to change · it still credits the original' },
         isOwner && { label: 'earlier saves…', onSelect: () => setShowVersions(true), hint: 'Each time you save, the one before is kept here' },
         project && { label: 'export…', onSelect: () => { stop(); setShowExport(true) }, hint: 'Bounce it to a WAV or MP3' },
         codeChanged && track && !isOwner && { label: 'undo my changes', onSelect: () => revert() },
@@ -997,7 +997,7 @@ export default function App() {
         { label: 'your tracks', onSelect: () => openBrowse('mine') },
         { label: 'sign out', onSelect: () => logout(window.location.pathname) },
       ] : [
-        { label: userLoading ? 'checking…' : 'sign in', disabled: userLoading, onSelect: () => login(), hint: 'Save, like and remix with your blue wind account' },
+        { label: userLoading ? 'checking…' : 'sign in', disabled: userLoading, onSelect: () => login(), hint: 'Save, like and copy tracks with your blue wind account' },
       ],
     },
   ].filter(Boolean)
@@ -1123,16 +1123,16 @@ export default function App() {
             <span className="track-line">
               {track.parent && (
                 <Link className="track-line-from" to={`/t/${track.parent.id}`} data-tip={`Opens ${track.parent.title} by ${track.parent.author}`}>
-                  remix of {track.parent.title}
+                  copy of {track.parent.title}
                 </Link>
               )}
               {track.remixes > 0 && (
                 <button
                   type="button"
                   className="track-line-out"
-                  onClick={() => openBrowse('explore', { remixesOf: track.id, name: `remixes of ${track.title}` })}
-                  data-tip="Tracks people made by remixing this one"
-                >{track.remixes} remix{track.remixes === 1 ? '' : 'es'}</button>
+                  onClick={() => openBrowse('explore', { remixesOf: track.id, name: `copies of ${track.title}` })}
+                  data-tip="Tracks people saved a copy of and made their own"
+                >{track.remixes} cop{track.remixes === 1 ? 'y' : 'ies'}</button>
               )}
             </span>
           )}
