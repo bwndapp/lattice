@@ -1,4 +1,4 @@
-import { PHYLLO_DSP } from './dsp.js'
+import { SYRUP_DSP } from './dsp.js'
 import { AUDIO_PARAMS, encodePatch, globalTargets, knobAt, normalizePatch, patchMessage, registerLaneFx, LANES } from './model.js'
 import { makeRig } from './rig.js'
 import { LANE_FX_CATALOG } from '../laneFx.js'
@@ -7,15 +7,15 @@ import { LANE_FX_CATALOG } from '../laneFx.js'
 registerLaneFx(LANE_FX_CATALOG)
 
 /**
- * Phyllo: a layered polysynth (see model.js for the patch, dsp.js for the sound,
- * PhylloPanel.jsx for its window).
+ * Syrup: a layered polysynth (see model.js for the patch, dsp.js for the sound,
+ * SyrupPanel.jsx for its window).
  */
 export default {
-  type: 'phyllo',
-  label: 'phyllo',
+  type: 'syrup',
+  label: 'syrup',
   blurb: 'A layered synth: analog, supersaw, wavetable and noise, with envelopes and LFOs to move it',
   kinds: ['synth'],
-  processor: 'lattice-phyllo',
+  processor: 'lattice-syrup',
   voices: 8,
   extraOutputs: LANES, // the summed lanes, for their effects (rig.js)
   rig: makeRig,
@@ -34,5 +34,5 @@ export default {
   knobAt,
   // the release falls to silence in a little under twice its time
   tail: (patch) => patch.amp.release * 2 + 0.05,
-  dsp: PHYLLO_DSP,
+  dsp: SYRUP_DSP,
 }

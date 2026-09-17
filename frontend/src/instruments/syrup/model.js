@@ -1,5 +1,5 @@
 /**
- * Phyllo's patch: what the window edits and the track saves, laid out the way Phase Plant
+ * Syrup's patch: what the window edits and the track saves, laid out the way Phase Plant
  * is. A patch is
  *
  *   layers      generators stacked top to bottom (analog, supersaw, wavetable, noise), up to 8,

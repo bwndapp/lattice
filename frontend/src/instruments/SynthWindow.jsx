@@ -7,11 +7,11 @@ import { closeSynth, raiseSynth } from './windows.js'
 import { watchInstrument } from './host.js'
 import { keyNote, readOctave, writeOctave } from '../keyboard.js'
 import KickPanel from './KickPanel.jsx'
-import PhylloPanel from './phyllo/PhylloPanel.jsx'
+import SyrupPanel from './syrup/SyrupPanel.jsx'
 import './SynthWindow.css'
 
 /** Engines with a face of their own; the rest get their knobs in groups. */
-const PANELS = { kick: KickPanel, phyllo: PhylloPanel }
+const PANELS = { kick: KickPanel, syrup: SyrupPanel }
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 const POS_KEY = 'lattice:synth-window'

@@ -9,10 +9,10 @@ import {
 } from './model.js'
 import { tableFrame } from './tables.js'
 import CurveEditor from '../CurveEditor.jsx'
-import './phyllo.css'
+import './syrup.css'
 
 /**
- * Phyllo's face, inside its instrument window, laid out as Phase Plant is: generators
+ * Syrup's face, inside its instrument window, laid out as Phase Plant is: generators
  * stacked down the left, each playing into one of three lanes beside them (each a stack of
  * the app's effects, out to master or into another lane), and a bar of modulators along the bottom — as many LFOs and envelopes as you add, each
  * listing where it goes. (Typing plays it: the window's keyboard, see SynthWindow.jsx.)
@@ -22,7 +22,8 @@ import './phyllo.css'
  * `cps` (the track's tempo).
  */
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
-const PRESET_KEY = 'phyllo:presets'
+const PRESET_KEY = 'syrup:presets'
+const OLD_PRESET_KEY = 'phyllo:presets' // what this synth was called before
 
 function readJson(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback } catch { return fallback }
@@ -49,9 +50,9 @@ function Scope({ className = '', draw, deps }) {
     if (!canvas || !size) return
     const [ctx, w, h, dpr] = fitCanvas(canvas)
     const css = getComputedStyle(canvas)
-    draw(ctx, w, h, dpr, { ink: css.getPropertyValue('--ph-ink').trim() || '#e4ff1a', grid: css.getPropertyValue('--ph-grid').trim() || '#2e2e2a' })
+    draw(ctx, w, h, dpr, { ink: css.getPropertyValue('--sy-ink').trim() || '#e4ff1a', grid: css.getPropertyValue('--sy-grid').trim() || '#2e2e2a' })
   }, [size, ...deps]) // eslint-disable-line react-hooks/exhaustive-deps
-  return <canvas className={`ph-scope ${className}`} ref={ref} aria-hidden />
+  return <canvas className={`sy-scope ${className}`} ref={ref} aria-hidden />
 }
 
 const midline = (ctx, w, h, grid) => {
@@ -157,20 +158,20 @@ function EnvScope({ env }) {
 
 function Stepper({ label, value, min, max, onChange, format = (v) => v }) {
   return (
-    <div className="ph-stepper" role="group" aria-label={label}>
-      <div className="ph-stepper-row">
+    <div className="sy-stepper" role="group" aria-label={label}>
+      <div className="sy-stepper-row">
         <button type="button" onClick={() => onChange(clamp(value - 1, min, max))} disabled={value <= min} aria-label={`${label} down`}>−</button>
         <output>{format(value)}</output>
         <button type="button" onClick={() => onChange(clamp(value + 1, min, max))} disabled={value >= max} aria-label={`${label} up`}>+</button>
       </div>
-      <span className="ph-small-label">{label}</span>
+      <span className="sy-small-label">{label}</span>
     </div>
   )
 }
 
 function Segmented({ label, value, options, onChange, format = (o) => o }) {
   return (
-    <div className="ph-seg" role="radiogroup" aria-label={label}>
+    <div className="sy-seg" role="radiogroup" aria-label={label}>
       {options.map((o) => (
         <button key={String(o)} type="button" role="radio" aria-checked={value === o} className={value === o ? 'on' : ''} onClick={() => onChange(o)}>{format(o)}</button>
       ))}
@@ -194,16 +195,16 @@ function ModKnob({ ui, route, auto, def, value, onChange }) {
     return `M ${x0} ${y0} A ${r} ${r} 0 ${Math.abs(a1 - a0) > 2 / 3 ? 1 : 0} 1 ${x1} ${y1}`
   }
   return (
-    <div className="ph-modknob" title={routes.length ? `moved by ${routes.map((r) => modName(ui.patch, r.src)).join(', ')}` : undefined}>
+    <div className="sy-modknob" title={routes.length ? `moved by ${routes.map((r) => modName(ui.patch, r.src)).join(', ')}` : undefined}>
       <Knob def={def} value={value} onChange={onChange} target={auto ? ui.target(auto) : null} />
       {routes.length > 0 && (
-        <svg className="ph-rings" width="44" height="44" viewBox="0 0 44 44" aria-hidden>
+        <svg className="sy-rings" width="44" height="44" viewBox="0 0 44 44" aria-hidden>
           {routes.slice(0, 4).map((r, i) => {
             // a bipolar lfo swings either side of the knob; envelopes and up or down lfos push one way
             const mod = ui.patch.modulators.find((m) => m.id === r.src)
             const pol = mod?.kind === 'lfo' ? mod.polarity : 'up'
             const [a0, a1] = pol === 'bi' ? [at - Math.abs(r.amt) / 2, at + Math.abs(r.amt) / 2] : [at, at + (pol === 'down' ? -r.amt : r.amt)]
-            return <path key={r.id} d={arc(clamp(a0, 0, 1), clamp(a1, 0, 1), 20 - i * 3)} className="ph-ring" style={{ stroke: modColor(ui.patch, r.src) }} />
+            return <path key={r.id} d={arc(clamp(a0, 0, 1), clamp(a1, 0, 1), 20 - i * 3)} className="sy-ring" style={{ stroke: modColor(ui.patch, r.src) }} />
           })}
         </svg>
       )}
@@ -280,10 +281,10 @@ function Destinations({ ui, src }) {
   const color = modColor(patch, src)
   const room = routes.length < MAX_ROUTES_EACH && patch.routes.length < MAX_ROUTES
   return (
-    <div className="ph-dests">
+    <div className="sy-dests">
       {routes.map((r) => (
-        <div key={r.id} className="ph-dest">
-          <span className="ph-dot" style={{ color }} aria-hidden />
+        <div key={r.id} className="sy-dest">
+          <span className="sy-dot" style={{ color }} aria-hidden />
           <select
             value={r.target}
             aria-label={`${modName(patch, src)} destination`}
@@ -299,16 +300,16 @@ function Destinations({ ui, src }) {
               ) : null
             })}
           </select>
-          <div className="ph-dest-amt">
+          <div className="sy-dest-amt">
             <Knob def={AMOUNT} value={r.amt} onChange={(v) => edit((p) => { const x = p.routes.find((y) => y.id === r.id); if (x) x.amt = v })} />
           </div>
-          <button type="button" className="ph-x" aria-label="Remove destination" onClick={() => edit((p) => { p.routes = p.routes.filter((x) => x.id !== r.id) })}>×</button>
+          <button type="button" className="sy-x" aria-label="Remove destination" onClick={() => edit((p) => { p.routes = p.routes.filter((x) => x.id !== r.id) })}>×</button>
         </div>
       ))}
       {free.length > 0 && room && (
-        <button type="button" className="ph-add" onClick={() => edit((p) => { p.routes.push({ id: newPartId(), src, target: free[0][0], amt: 0.5 }) })}>+ destination</button>
+        <button type="button" className="sy-add" onClick={() => edit((p) => { p.routes.push({ id: newPartId(), src, target: free[0][0], amt: 0.5 }) })}>+ destination</button>
       )}
-      {!routes.length && !free.length && <span className="ph-small-label">add a generator to have something to move</span>}
+      {!routes.length && !free.length && <span className="sy-small-label">add a generator to have something to move</span>}
     </div>
   )
 }
@@ -317,8 +318,8 @@ function Destinations({ ui, src }) {
 
 function Section({ title, className = '', aside, children }) {
   return (
-    <section className={`ph-card ${className}`} aria-label={title}>
-      <header className="ph-card-head">
+    <section className={`sy-card ${className}`} aria-label={title}>
+      <header className="sy-card-head">
         <h3>{title}</h3>
         {aside}
       </header>
@@ -348,35 +349,35 @@ function Generator({ ui, layer, index }) {
   const pitched = layer.type !== 'noise'
   const open = !layer.collapsed
   return (
-    <div className={`ph-gen ${layer.on ? '' : 'off'} ${open ? 'open' : 'folded'}`}>
-      <div className="ph-gen-head">
-        <button type="button" className="ph-fold" aria-expanded={open} title={open ? 'Fold it away' : 'Open it'} onClick={() => set((l) => { if (l.collapsed) delete l.collapsed; else l.collapsed = true })}><Chevron open={open} /></button>
-        <button type="button" className={`ph-power ${layer.on ? 'on' : ''}`} aria-pressed={layer.on} title={layer.on ? 'Turn this generator off' : 'Turn this generator on'} aria-label={`Generator ${layerLetter(index)} ${layer.on ? 'on' : 'off'}`} onClick={() => set((l) => { l.on = !l.on })}>{layerLetter(index)}</button>
-        <select className="ph-sound" value={soundOf(layer)} aria-label={`Generator ${layerLetter(index)} sound`} title={layer.type === 'wavetable' ? TABLES[layer.table] : undefined} onChange={(e) => set((l) => applySound(l, e.target.value))}>
+    <div className={`sy-gen ${layer.on ? '' : 'off'} ${open ? 'open' : 'folded'}`}>
+      <div className="sy-gen-head">
+        <button type="button" className="sy-fold" aria-expanded={open} title={open ? 'Fold it away' : 'Open it'} onClick={() => set((l) => { if (l.collapsed) delete l.collapsed; else l.collapsed = true })}><Chevron open={open} /></button>
+        <button type="button" className={`sy-power ${layer.on ? 'on' : ''}`} aria-pressed={layer.on} title={layer.on ? 'Turn this generator off' : 'Turn this generator on'} aria-label={`Generator ${layerLetter(index)} ${layer.on ? 'on' : 'off'}`} onClick={() => set((l) => { l.on = !l.on })}>{layerLetter(index)}</button>
+        <select className="sy-sound" value={soundOf(layer)} aria-label={`Generator ${layerLetter(index)} sound`} title={layer.type === 'wavetable' ? TABLES[layer.table] : undefined} onChange={(e) => set((l) => applySound(l, e.target.value))}>
           {SOUND_GROUPS.map(([group, items]) => (
             <optgroup key={group} label={group}>{items.map(([k, label]) => <option key={k} value={k}>{label}</option>)}</optgroup>
           ))}
         </select>
-        {!open && <span className="ph-gen-sum">{Math.round(layer.level * 100)}%{layer.oct ? ` · ${layer.oct > 0 ? '+' : ''}${layer.oct} oct` : ''}</span>}
+        {!open && <span className="sy-gen-sum">{Math.round(layer.level * 100)}%{layer.oct ? ` · ${layer.oct > 0 ? '+' : ''}${layer.oct} oct` : ''}</span>}
         <span className="spacer" />
-        <span className="ph-lane-pick" title="Which lane this generator plays into">
+        <span className="sy-lane-pick" title="Which lane this generator plays into">
           <span aria-hidden>→</span>
           <Segmented label={`Generator ${layerLetter(index)} lane`} value={layer.lane} options={[0, 1, 2]} format={laneName} onChange={(v) => set((l) => { l.lane = v })} />
         </span>
-        <button type="button" className="ph-icon" title="Move up" aria-label="Move up" disabled={index === 0} onClick={() => ui.edit((p) => { const i = p.layers.findIndex((x) => x.id === layer.id); if (i > 0) p.layers.splice(i - 1, 0, ...p.layers.splice(i, 1)) })}>↑</button>
-        <button type="button" className="ph-icon" title="Move down" aria-label="Move down" disabled={index === ui.patch.layers.length - 1} onClick={() => ui.edit((p) => { const i = p.layers.findIndex((x) => x.id === layer.id); if (i >= 0 && i < p.layers.length - 1) p.layers.splice(i + 1, 0, ...p.layers.splice(i, 1)) })}>↓</button>
-        <button type="button" className="ph-icon" disabled={full} title="Duplicate" aria-label={`Duplicate generator ${layerLetter(index)}`} onClick={() => ui.edit((p) => { const i = p.layers.findIndex((x) => x.id === layer.id); if (i >= 0 && p.layers.length < MAX_LAYERS) p.layers.splice(i + 1, 0, { ...JSON.parse(JSON.stringify(layer)), id: newPartId() }) })}><CopyIcon /></button>
-        <button type="button" className="ph-icon" title="Remove" aria-label={`Remove generator ${layerLetter(index)}`} onClick={() => ui.edit((p) => { p.layers = p.layers.filter((x) => x.id !== layer.id); p.routes = p.routes.filter((r) => !r.target.startsWith(`layer:${layer.id}.`)) })}>×</button>
+        <button type="button" className="sy-icon" title="Move up" aria-label="Move up" disabled={index === 0} onClick={() => ui.edit((p) => { const i = p.layers.findIndex((x) => x.id === layer.id); if (i > 0) p.layers.splice(i - 1, 0, ...p.layers.splice(i, 1)) })}>↑</button>
+        <button type="button" className="sy-icon" title="Move down" aria-label="Move down" disabled={index === ui.patch.layers.length - 1} onClick={() => ui.edit((p) => { const i = p.layers.findIndex((x) => x.id === layer.id); if (i >= 0 && i < p.layers.length - 1) p.layers.splice(i + 1, 0, ...p.layers.splice(i, 1)) })}>↓</button>
+        <button type="button" className="sy-icon" disabled={full} title="Duplicate" aria-label={`Duplicate generator ${layerLetter(index)}`} onClick={() => ui.edit((p) => { const i = p.layers.findIndex((x) => x.id === layer.id); if (i >= 0 && p.layers.length < MAX_LAYERS) p.layers.splice(i + 1, 0, { ...JSON.parse(JSON.stringify(layer)), id: newPartId() }) })}><CopyIcon /></button>
+        <button type="button" className="sy-icon" title="Remove" aria-label={`Remove generator ${layerLetter(index)}`} onClick={() => ui.edit((p) => { p.layers = p.layers.filter((x) => x.id !== layer.id); p.routes = p.routes.filter((r) => !r.target.startsWith(`layer:${layer.id}.`)) })}>×</button>
       </div>
       {open && (
-        <div className="ph-gen-body">
+        <div className="sy-gen-body">
           <LayerScope layer={layer} />
-          <div className="ph-gen-steps">
+          <div className="sy-gen-steps">
             {pitched && <Stepper label="octave" value={layer.oct} min={-3} max={3} onChange={(v) => set((l) => { l.oct = v })} format={(v) => (v > 0 ? `+${v}` : v)} />}
             {pitched && <Stepper label="semi" value={layer.semi} min={-12} max={12} onChange={(v) => set((l) => { l.semi = v })} format={(v) => (v > 0 ? `+${v}` : v)} />}
             {stacked && <Stepper label="voices" value={layer.unison} min={1} max={16} onChange={(v) => set((l) => { l.unison = v })} />}
           </div>
-          <div className="ph-gen-knobs">
+          <div className="sy-gen-knobs">
             {knob('level')}
             {knob('pan')}
             {tone && knob(tone)}
@@ -388,12 +389,12 @@ function Generator({ ui, layer, index }) {
             {pitched && layer.fm > 0 && knob('ratio')}
           </div>
           {(layer.type === 'wavetable' || (pitched && layer.fm > 0)) && (
-            <div className="ph-gen-opts">
+            <div className="sy-gen-opts">
               {layer.type === 'wavetable' && (
-                <label className="ph-field"><span className="ph-small-label">warp</span><select value={layer.warpmode} onChange={(e) => set((l) => { l.warpmode = e.target.value })}>{WARP_MODES.map((w) => <option key={w}>{w}</option>)}</select></label>
+                <label className="sy-field"><span className="sy-small-label">warp</span><select value={layer.warpmode} onChange={(e) => set((l) => { l.warpmode = e.target.value })}>{WARP_MODES.map((w) => <option key={w}>{w}</option>)}</select></label>
               )}
               {pitched && layer.fm > 0 && (
-                <label className="ph-field"><span className="ph-small-label">fm wave</span><select value={layer.fmwave} onChange={(e) => set((l) => { l.fmwave = e.target.value })}>{FM_WAVES.map((w) => <option key={w}>{w}</option>)}</select></label>
+                <label className="sy-field"><span className="sy-small-label">fm wave</span><select value={layer.fmwave} onChange={(e) => set((l) => { l.fmwave = e.target.value })}>{FM_WAVES.map((w) => <option key={w}>{w}</option>)}</select></label>
               )}
             </div>
           )}
@@ -408,9 +409,9 @@ function AddGenerator({ ui }) {
   if (ui.patch.layers.length >= MAX_LAYERS) return null
   const add = (type, over = {}) => ui.edit((p) => { if (p.layers.length < MAX_LAYERS) p.layers.push(makeLayer(type, over)) })
   return (
-    <div className={`ph-gen-add ${ui.patch.layers.length ? '' : 'first'}`}>
-      {!ui.patch.layers.length && <span className="ph-small-label">no sound yet · add a generator</span>}
-      <div className="ph-add-list">
+    <div className={`sy-gen-add ${ui.patch.layers.length ? '' : 'first'}`}>
+      {!ui.patch.layers.length && <span className="sy-small-label">no sound yet · add a generator</span>}
+      <div className="sy-add-list">
         <button type="button" onClick={() => add('analog', { wave: 'sawtooth' })}>analog</button>
         <button type="button" onClick={() => add('supersaw')}>supersaw</button>
         <button type="button" onClick={() => add('wavetable')}>wavetable</button>
@@ -426,14 +427,14 @@ const ADSR = ['attack', 'decay', 'sustain', 'release']
 function AmpOut({ ui }) {
   const amp = ui.patch.amp
   return (
-    <div className="ph-amp-out ph-amp">
-      <div className="ph-gen-head">
-        <span className="ph-out-mark" aria-hidden>out</span>
+    <div className="sy-amp-out sy-amp">
+      <div className="sy-gen-head">
+        <span className="sy-out-mark" aria-hidden>out</span>
         <h4>amp envelope</h4>
       </div>
-      <div className="ph-amp-body">
+      <div className="sy-amp-body">
         <EnvScope env={amp} />
-        <div className="ph-knobs tight">
+        <div className="sy-knobs tight">
           {ADSR.map((k) => (
             <ModKnob key={k} ui={ui} auto={`amp_${k}`} def={K[k]} value={amp[k]} onChange={(v) => ui.edit((p) => { p.amp[k] = v })} />
           ))}
@@ -459,11 +460,11 @@ function useFxDrag(ui) {
   const where = (e) => {
     // the lane under the pointer (the held effect lets the pointer through), and the place in
     // it: before the first effect whose middle is below the pointer
-    const under = document.elementsFromPoint(e.clientX, e.clientY).find((el) => !el.closest('.ph-fx.held, .ph-fx-ghost'))
-    const laneEl = under?.closest?.('.ph-lane')
+    const under = document.elementsFromPoint(e.clientX, e.clientY).find((el) => !el.closest('.sy-fx.held, .sy-fx-ghost'))
+    const laneEl = under?.closest?.('.sy-lane')
     if (!laneEl) return held.current?.to ?? null
     const lane = Number(laneEl.dataset.lane)
-    const items = [...laneEl.querySelectorAll('.ph-fx')].filter((el) => el.dataset.id !== held.current?.id)
+    const items = [...laneEl.querySelectorAll('.sy-fx')].filter((el) => el.dataset.id !== held.current?.id)
     let index = items.findIndex((el) => { const r = el.getBoundingClientRect(); return e.clientY < r.top + r.height / 2 })
     if (index < 0) index = items.length
     return { lane, index }
@@ -510,29 +511,29 @@ function LaneEffect({ ui, laneIndex, fx, index, count, drag }) {
   const held = d?.moved && d.id === fx.id
   const landing = d?.moved && !held && d.to?.lane === laneIndex && d.to.index === index
   return (
-    <li className={`ph-fx ${fx.on ? '' : 'bypassed'} ${held ? 'held' : ''} ${landing ? 'land-before' : ''}`} data-id={fx.id}>
+    <li className={`sy-fx ${fx.on ? '' : 'bypassed'} ${held ? 'held' : ''} ${landing ? 'land-before' : ''}`} data-id={fx.id}>
       <div
-        className="ph-fx-head"
+        className="sy-fx-head"
         title="Drag to move it: up, down, or into another lane"
         onPointerDown={(e) => drag.start(e, laneIndex, fx, spec.label)}
         onPointerMove={drag.move}
         onPointerUp={drag.end}
         onPointerCancel={drag.end}
       >
-        <button type="button" className="ph-fold" aria-expanded={open} title={open ? 'Fold it away' : 'Open it'} onClick={() => edit((l, i) => { if (l[i].collapsed) delete l[i].collapsed; else l[i].collapsed = true })}><Chevron open={open} /></button>
-        <button type="button" className={`ph-led ${fx.on ? 'on' : ''}`} aria-pressed={fx.on} title={fx.on ? 'Bypass it' : 'Turn it back on'} aria-label={`${spec.label} ${fx.on ? 'on' : 'bypassed'}`} onClick={() => edit((l, i) => { l[i].on = !l[i].on })} />
-        <span className="ph-fx-name" title={spec.blurb}>{spec.label}</span>
+        <button type="button" className="sy-fold" aria-expanded={open} title={open ? 'Fold it away' : 'Open it'} onClick={() => edit((l, i) => { if (l[i].collapsed) delete l[i].collapsed; else l[i].collapsed = true })}><Chevron open={open} /></button>
+        <button type="button" className={`sy-led ${fx.on ? 'on' : ''}`} aria-pressed={fx.on} title={fx.on ? 'Bypass it' : 'Turn it back on'} aria-label={`${spec.label} ${fx.on ? 'on' : 'bypassed'}`} onClick={() => edit((l, i) => { l[i].on = !l[i].on })} />
+        <span className="sy-fx-name" title={spec.blurb}>{spec.label}</span>
         <span className="spacer" />
-        <button type="button" className="ph-icon" disabled={index === 0} title="Earlier" aria-label={`Move ${spec.label} up`} onClick={() => edit((l, i) => { if (i > 0) l.splice(i - 1, 0, ...l.splice(i, 1)) })}>↑</button>
-        <button type="button" className="ph-icon" disabled={index === count - 1} title="Later" aria-label={`Move ${spec.label} down`} onClick={() => edit((l, i) => { if (i < l.length - 1) l.splice(i + 1, 0, ...l.splice(i, 1)) })}>↓</button>
-        <button type="button" className="ph-icon" title="Remove" aria-label={`Remove ${spec.label}`} onClick={() => edit((l, i) => { l.splice(i, 1) })}>×</button>
+        <button type="button" className="sy-icon" disabled={index === 0} title="Earlier" aria-label={`Move ${spec.label} up`} onClick={() => edit((l, i) => { if (i > 0) l.splice(i - 1, 0, ...l.splice(i, 1)) })}>↑</button>
+        <button type="button" className="sy-icon" disabled={index === count - 1} title="Later" aria-label={`Move ${spec.label} down`} onClick={() => edit((l, i) => { if (i < l.length - 1) l.splice(i + 1, 0, ...l.splice(i, 1)) })}>↓</button>
+        <button type="button" className="sy-icon" title="Remove" aria-label={`Remove ${spec.label}`} onClick={() => edit((l, i) => { l.splice(i, 1) })}>×</button>
       </div>
       {open && (
-        <div className="ph-fx-params">
+        <div className="sy-fx-params">
           {spec.params.map((def) => (def.type === 'select'
             ? (
-              <label key={def.key} className="ph-field">
-                <span className="ph-small-label">{def.label}</span>
+              <label key={def.key} className="sy-field">
+                <span className="sy-small-label">{def.label}</span>
                 <select value={fx.data[def.key] ?? def.def} onChange={(e) => { const v = e.target.value; edit((l, i) => { l[i].data[def.key] = v }) }}>
                   {def.options.map((o) => <option key={o} value={o}>{o}</option>)}
                 </select>
@@ -560,20 +561,20 @@ function Lane({ ui, index, drag }) {
   const count = lane.effects.filter((e) => e.id !== d?.id).length
   const landingEnd = d && d.to?.lane === index && d.to.index >= count
   return (
-    <section className={`ph-lane ${lane.mute ? 'muted' : ''} ${d?.to?.lane === index ? 'drop' : ''}`} data-lane={index} aria-label={`Lane ${laneName(index)}`}>
-      <header className="ph-lane-head">
-        <span className="ph-lane-num">{laneName(index)}</span>
-        <div className="ph-lane-in" title="What plays into this lane">
-          {from.map(([l, i]) => <span key={l.id} className={`ph-lane-chip ${l.on ? '' : 'off'}`}>{layerLetter(i)}</span>)}
-          {feeds.map((i) => <span key={`n${i}`} className="ph-lane-chip lane">{laneName(i)}</span>)}
-          {!from.length && !feeds.length && <span className="ph-small-label">empty</span>}
+    <section className={`sy-lane ${lane.mute ? 'muted' : ''} ${d?.to?.lane === index ? 'drop' : ''}`} data-lane={index} aria-label={`Lane ${laneName(index)}`}>
+      <header className="sy-lane-head">
+        <span className="sy-lane-num">{laneName(index)}</span>
+        <div className="sy-lane-in" title="What plays into this lane">
+          {from.map(([l, i]) => <span key={l.id} className={`sy-lane-chip ${l.on ? '' : 'off'}`}>{layerLetter(i)}</span>)}
+          {feeds.map((i) => <span key={`n${i}`} className="sy-lane-chip lane">{laneName(i)}</span>)}
+          {!from.length && !feeds.length && <span className="sy-small-label">empty</span>}
         </div>
         <span className="spacer" />
-        {summed && <span className="ph-lane-sum" title="Mixed across every voice, then through its effects">Σ</span>}
-        <button type="button" className={`ph-toggle ${lane.mute ? 'mute' : ''}`} aria-pressed={lane.mute} title={lane.mute ? 'Unmute this lane' : 'Mute this lane'} onClick={() => set((l) => { l.mute = !l.mute })}>m</button>
+        {summed && <span className="sy-lane-sum" title="Mixed across every voice, then through its effects">Σ</span>}
+        <button type="button" className={`sy-toggle ${lane.mute ? 'mute' : ''}`} aria-pressed={lane.mute} title={lane.mute ? 'Unmute this lane' : 'Mute this lane'} onClick={() => set((l) => { l.mute = !l.mute })}>m</button>
       </header>
-      <div className="ph-lane-body">
-        <ol className={`ph-fx-list ${landingEnd ? 'land-end' : ''}`}>
+      <div className="sy-lane-body">
+        <ol className={`sy-fx-list ${landingEnd ? 'land-end' : ''}`}>
           {lane.effects.map((fx, i) => {
             // where it sits counting without the one being dragged, so the landing line matches
             const at = lane.effects.slice(0, i).filter((e) => e.id !== d?.id).length
@@ -582,7 +583,7 @@ function Lane({ ui, index, drag }) {
         </ol>
         {lane.effects.length < MAX_LANE_FX && catalog && (
           <select
-            className={`ph-fx-add ${lane.effects.length ? '' : 'first'}`}
+            className={`sy-fx-add ${lane.effects.length ? '' : 'first'}`}
             value=""
             aria-label={`Add an effect to lane ${laneName(index)}`}
             onChange={(e) => { const type = e.target.value; if (type) edit((p) => { if (p.lanes[index].effects.length < MAX_LANE_FX) p.lanes[index].effects.push(makeLaneFx(type)) }) }}
@@ -591,12 +592,12 @@ function Lane({ ui, index, drag }) {
             {catalog.types.map((t) => <option key={t} value={t}>{catalog.spec(t).label}</option>)}
           </select>
         )}
-        {!lane.effects.length && <span className="ph-fx-hint">{from.length || feeds.length ? 'plays straight through' : 'nothing plays in yet'}</span>}
+        {!lane.effects.length && <span className="sy-fx-hint">{from.length || feeds.length ? 'plays straight through' : 'nothing plays in yet'}</span>}
       </div>
-      <footer className="ph-lane-foot">
+      <footer className="sy-lane-foot">
         <ModKnob ui={ui} route={`lane:${index}.gain`} auto={`lane${index + 1}_gain`} def={K.gain} value={lane.gain} onChange={(v) => set((l) => { l.gain = v })} />
-        <label className="ph-lane-out">
-          <span className="ph-small-label">out</span>
+        <label className="sy-lane-out">
+          <span className="sy-small-label">out</span>
           <select value={String(lane.out)} onChange={(e) => { const v = e.target.value === 'master' ? 'master' : Number(e.target.value); set((l) => { l.out = v }) }}>
             <option value="master">master</option>
             {Array.from({ length: LANES }, (_, i) => i).filter((i) => i !== index).map((i) => (
@@ -628,12 +629,12 @@ function LfoBody({ ui, mod, slot }) {
   const preset = LFO_BUTTONS.find(([name]) => sameShape(mod.points, LFO_PRESETS[name]))?.[0]
   return (
     <>
-      <div className="ph-lfo-shapes" role="group" aria-label="Start from a shape">
+      <div className="sy-lfo-shapes" role="group" aria-label="Start from a shape">
         {LFO_BUTTONS.map(([name, label]) => (
           <button key={name} type="button" className={preset === name ? 'on' : ''} onClick={() => set((m) => { m.points = LFO_PRESETS[name].map((p) => ({ ...p })) })} title={`Start from a ${name} shape`}>{label}</button>
         ))}
       </div>
-      <div className="ph-lfo-draw">
+      <div className="sy-lfo-draw">
         <CurveEditor
           points={mod.points}
           grid={mod.grid}
@@ -643,15 +644,15 @@ function LfoBody({ ui, mod, slot }) {
           onChange={(points) => set((m) => { m.points = points })}
         />
       </div>
-      <div className="ph-lfo-controls">
-        <div className="ph-rate">
+      <div className="sy-lfo-controls">
+        <div className="sy-rate">
           <Segmented label="Rate mode" value={mod.sync ? 'bars' : 'hz'} options={['bars', 'hz']} onChange={(v) => set((m) => { m.sync = v === 'bars' })} />
           {mod.sync
-            ? <select className="ph-rate-select" aria-label="Every" value={String(mod.bars)} onChange={(e) => set((m) => { m.bars = Number(e.target.value) })}>{LFO_BARS.map((b) => <option key={b} value={String(b)}>{barsLabel(b)}</option>)}</select>
+            ? <select className="sy-rate-select" aria-label="Every" value={String(mod.bars)} onChange={(e) => set((m) => { m.bars = Number(e.target.value) })}>{LFO_BARS.map((b) => <option key={b} value={String(b)}>{barsLabel(b)}</option>)}</select>
             : <Knob def={K.hz} value={mod.hz} onChange={(v) => set((m) => { m.hz = v })} target={ui.target(modKnobKey(mod.id, 'hz'))} />}
         </div>
         <Segmented label="Polarity" value={mod.polarity} options={LFO_POLARITIES} format={(v) => ({ up: '+', bi: '±', down: '−' })[v]} onChange={(v) => set((m) => { m.polarity = v })} />
-        <select className="ph-grid-select" value={mod.grid} aria-label="Grid" title="Where points snap to (alt: anywhere)" onChange={(e) => set((m) => { m.grid = Number(e.target.value) })}>
+        <select className="sy-grid-select" value={mod.grid} aria-label="Grid" title="Where points snap to (alt: anywhere)" onChange={(e) => set((m) => { m.grid = Number(e.target.value) })}>
           {GRIDS.map(([g, label]) => <option key={g} value={g}>{label === 'free' ? 'no grid' : `grid ${label}`}</option>)}
         </select>
       </div>
@@ -664,7 +665,7 @@ function EnvBody({ ui, mod }) {
   return (
     <>
       <EnvScope env={mod} />
-      <div className="ph-knobs tight">
+      <div className="sy-knobs tight">
         {ADSR.map((k) => (
           <Knob key={k} def={K[k]} value={mod[k]} onChange={(v) => ui.edit((p) => { const m = p.modulators.find((x) => x.id === mod.id); if (m) m[k] = v })} target={ui.target(modKnobKey(mod.id, k))} />
         ))}
@@ -678,18 +679,18 @@ function Modulator({ ui, mod, slot }) {
   const color = modColor(ui.patch, mod.id)
   const set = (fn) => ui.edit((p) => { const m = p.modulators.find((x) => x.id === mod.id); if (m) fn(m) })
   return (
-    <section className={`ph-mod ${mod.kind}`} style={{ '--ph-ink': color }} aria-label={modName(ui.patch, mod.id)}>
-      <header className="ph-mod-head">
-        <span className="ph-mod-kind">{mod.kind === 'lfo' ? 'lfo' : 'env'}</span>
+    <section className={`sy-mod ${mod.kind}`} style={{ '--sy-ink': color }} aria-label={modName(ui.patch, mod.id)}>
+      <header className="sy-mod-head">
+        <span className="sy-mod-kind">{mod.kind === 'lfo' ? 'lfo' : 'env'}</span>
         <h3>{modName(ui.patch, mod.id)}</h3>
         <span className="spacer" />
         {mod.kind === 'lfo' && (
           <Segmented label="Mode" value={mod.mode} options={LFO_MODES} onChange={(v) => set((m) => { m.mode = v })} format={(m) => ({ free: 'free', retrig: 'trig', env: 'env' })[m]} />
         )}
-        <button type="button" className="ph-icon" title="Duplicate" aria-label="Duplicate" disabled={ui.patch.modulators.length >= MAX_MODULATORS} onClick={() => ui.edit((p) => { const i = p.modulators.findIndex((x) => x.id === mod.id); if (i >= 0 && p.modulators.length < MAX_MODULATORS) { const copy = { ...JSON.parse(JSON.stringify(mod)), id: newPartId() }; delete copy.name; p.modulators.splice(i + 1, 0, copy) } })}><CopyIcon /></button>
-        <button type="button" className="ph-icon" title="Remove (and where it goes)" aria-label="Remove" onClick={() => ui.edit((p) => { p.modulators = p.modulators.filter((x) => x.id !== mod.id); p.routes = p.routes.filter((r) => r.src !== mod.id) })}>×</button>
+        <button type="button" className="sy-icon" title="Duplicate" aria-label="Duplicate" disabled={ui.patch.modulators.length >= MAX_MODULATORS} onClick={() => ui.edit((p) => { const i = p.modulators.findIndex((x) => x.id === mod.id); if (i >= 0 && p.modulators.length < MAX_MODULATORS) { const copy = { ...JSON.parse(JSON.stringify(mod)), id: newPartId() }; delete copy.name; p.modulators.splice(i + 1, 0, copy) } })}><CopyIcon /></button>
+        <button type="button" className="sy-icon" title="Remove (and where it goes)" aria-label="Remove" onClick={() => ui.edit((p) => { p.modulators = p.modulators.filter((x) => x.id !== mod.id); p.routes = p.routes.filter((r) => r.src !== mod.id) })}>×</button>
       </header>
-      <div className="ph-mod-body">
+      <div className="sy-mod-body">
         {mod.kind === 'lfo' ? <LfoBody ui={ui} mod={mod} slot={slot} /> : <EnvBody ui={ui} mod={mod} />}
       </div>
       <Destinations ui={ui} src={mod.id} />
@@ -702,19 +703,19 @@ function AddModulator({ ui, compact = false }) {
   const full = ui.patch.modulators.length >= MAX_MODULATORS
   const add = (make) => ui.edit((p) => { if (p.modulators.length < MAX_MODULATORS) p.modulators.push(make()) })
   return (
-    <div className={compact ? 'ph-mod-add-inline' : 'ph-mod-add'}>
-      {!compact && <span className="ph-small-label">{full ? `${MAX_MODULATORS} is the most` : ui.patch.modulators.length ? 'another' : 'nothing moving yet'}</span>}
-      <button type="button" className="ph-btn" disabled={full} onClick={() => add(() => makeLfo())}>+ lfo</button>
-      <button type="button" className="ph-btn" disabled={full} onClick={() => add(() => makeEnv())}>+ envelope</button>
+    <div className={compact ? 'sy-mod-add-inline' : 'sy-mod-add'}>
+      {!compact && <span className="sy-small-label">{full ? `${MAX_MODULATORS} is the most` : ui.patch.modulators.length ? 'another' : 'nothing moving yet'}</span>}
+      <button type="button" className="sy-btn" disabled={full} onClick={() => add(() => makeLfo())}>+ lfo</button>
+      <button type="button" className="sy-btn" disabled={full} onClick={() => add(() => makeEnv())}>+ envelope</button>
     </div>
   )
 }
 
 // ── the panel ────────────────────────────────────────────────────────────────
 
-export default function PhylloPanel({ data, change, target, watch, cps = 0.5 }) {
+export default function SyrupPanel({ data, change, target, watch, cps = 0.5 }) {
   const patch = data
-  const [userPresets, setUserPresets] = useState(() => readJson(PRESET_KEY, []))
+  const [userPresets, setUserPresets] = useState(() => readJson(PRESET_KEY, null) ?? readJson(OLD_PRESET_KEY, []))
   // what the processor last said about its LFOs, and when (see dsp.js report)
   const live = useRef({ t: -Infinity, lfo: [], voices: [] })
   useEffect(() => watch?.((report) => { live.current = { ...report, t: performance.now() } }), []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -751,57 +752,57 @@ export default function PhylloPanel({ data, change, target, watch, cps = 0.5 }) 
   }
 
   return (
-    <div className="ph-panel">
-      <div className="ph-top">
-        <div className="ph-preset">
-          <button type="button" className="ph-arrow" onClick={() => stepPreset(-1)} aria-label="Previous preset">‹</button>
-          <input className="ph-name" value={patch.name} maxLength={40} aria-label="Patch name" onChange={(e) => { const v = e.target.value; change((p) => { p.name = v }) }} />
-          <select className="ph-preset-list" value="" aria-label="Presets" onChange={(e) => { if (e.target.value) loadPreset(e.target.value) }}>
+    <div className="sy-panel">
+      <div className="sy-top">
+        <div className="sy-preset">
+          <button type="button" className="sy-arrow" onClick={() => stepPreset(-1)} aria-label="Previous preset">‹</button>
+          <input className="sy-name" value={patch.name} maxLength={40} aria-label="Patch name" onChange={(e) => { const v = e.target.value; change((p) => { p.name = v }) }} />
+          <select className="sy-preset-list" value="" aria-label="Presets" onChange={(e) => { if (e.target.value) loadPreset(e.target.value) }}>
             <option value="">▾</option>
             <optgroup label="presets">{allPresets.filter((p) => p.key.startsWith('builtin')).map((p) => <option key={p.key} value={p.key}>{p.name}</option>)}</optgroup>
             {userPresets.length > 0 && <optgroup label="saved in this browser">{allPresets.filter((p) => p.key.startsWith('user')).map((p) => <option key={p.key} value={p.key}>{p.name}</option>)}</optgroup>}
           </select>
-          <button type="button" className="ph-arrow" onClick={() => stepPreset(1)} aria-label="Next preset">›</button>
+          <button type="button" className="sy-arrow" onClick={() => stepPreset(1)} aria-label="Next preset">›</button>
         </div>
-        <button type="button" className="ph-btn" onClick={savePreset} title="Keep this patch in this browser's presets">save</button>
+        <button type="button" className="sy-btn" onClick={savePreset} title="Keep this patch in this browser's presets">save</button>
         <span className="spacer" />
-        <div className="ph-voicing">
+        <div className="sy-voicing">
           <Segmented label="Voicing" value={patch.mono ? 'mono' : 'poly'} options={['poly', 'mono']} onChange={(v) => change((p) => { p.mono = v === 'mono' })} />
           <Knob def={K.glide} value={patch.glide} onChange={(v) => change((p) => { p.glide = v })} target={target('glide')} />
         </div>
-        <div className="ph-volume"><ModKnob ui={ui} route="amp.level" auto="volume" def={K.volume} value={patch.volume} onChange={(v) => change((p) => { p.volume = v })} /></div>
+        <div className="sy-volume"><ModKnob ui={ui} route="amp.level" auto="volume" def={K.volume} value={patch.volume} onChange={(v) => change((p) => { p.volume = v })} /></div>
       </div>
 
-      <div className="ph-main">
-        <Section title="generators" className="ph-gens" aside={<span className="ph-count">{patch.layers.length} / {MAX_LAYERS}</span>}>
-          <div className="ph-gen-list">
+      <div className="sy-main">
+        <Section title="generators" className="sy-gens" aside={<span className="sy-count">{patch.layers.length} / {MAX_LAYERS}</span>}>
+          <div className="sy-gen-list">
             {patch.layers.map((l, i) => <Generator key={l.id} ui={ui} layer={l} index={i} />)}
             <AddGenerator ui={ui} />
           </div>
           {/* where every generator goes out: always in view under the stack */}
           <AmpOut ui={ui} />
         </Section>
-        <Section title="lanes" className="ph-fxcol" aside={<span className="ph-count">generators play in, lanes play out</span>}>
-          <div className="ph-lanes">
+        <Section title="lanes" className="sy-fxcol" aside={<span className="sy-count">generators play in, lanes play out</span>}>
+          <div className="sy-lanes">
             {Array.from({ length: LANES }, (_, i) => <Lane key={i} ui={ui} index={i} drag={fxDrag} />)}
           </div>
         </Section>
       </div>
 
       {fxDrag.drag?.moved && createPortal(
-        <div className="ph-fx-ghost" style={{ left: fxDrag.drag.px, top: fxDrag.drag.py }} aria-hidden>
+        <div className="sy-fx-ghost" style={{ left: fxDrag.drag.px, top: fxDrag.drag.py }} aria-hidden>
           {fxDrag.drag.label}
           {fxDrag.drag.to && <span>→ lane {laneName(fxDrag.drag.to.lane)}</span>}
         </div>,
         document.body,
       )}
-      <section className="ph-modbar" aria-label="Modulators">
-        <header className="ph-card-head">
+      <section className="sy-modbar" aria-label="Modulators">
+        <header className="sy-card-head">
           <h3>modulators</h3>
-          <span className="ph-count">{patch.modulators.length} / {MAX_MODULATORS}</span>
+          <span className="sy-count">{patch.modulators.length} / {MAX_MODULATORS}</span>
           <AddModulator ui={ui} compact />
         </header>
-        <div className="ph-mod-scroll">
+        <div className="sy-mod-scroll">
           {patch.modulators.map((m, j) => <Modulator key={m.id} ui={ui} mod={m} slot={j} />)}
           <AddModulator ui={ui} />
         </div>

@@ -16,7 +16,7 @@
 import { applyGainCurve, getAudioContext, registerSound } from '@strudel/webaudio'
 import { noteToMidi } from '@strudel/core'
 import { DSP_BASE } from './dsp.js'
-import { ENGINES, engineAudio, engineAudioParams, engineData, engineSound, withKnobs } from './index.js'
+import { ENGINES, WAS_CALLED, engineAudio, engineAudioParams, engineData, engineSound, engineType, withKnobs } from './index.js'
 
 // ── the module the audio thread loads ─────────────────────────────────────────
 let moduleUrl = null
@@ -50,10 +50,11 @@ export function declareEngines(project) {
   const cps = (Number(project?.bpm) || 120) / beats / 60
   for (const pattern of project?.patterns ?? []) {
     for (const ch of pattern.channels) {
-      if (!ch.engine || !ENGINES[ch.engine.type]) continue
-      const found = { type: ch.engine.type, data: engineData(ch.engine), cps, beats }
+      const type = engineType(ch.engine?.type)
+      if (!ENGINES[type]) continue
+      const found = { type, data: engineData(ch.engine), cps, beats }
       declared.set(ch.id, found)
-      for (const inst of live(ch.id, ch.engine.type)) inst.apply(found)
+      for (const inst of live(ch.id, type)) inst.apply(found)
     }
   }
 }
@@ -281,7 +282,7 @@ export function registerEngineSounds() {
   if (registered) return
   registered = true
   for (const spec of Object.values(ENGINES)) {
-    registerSound(engineSound(spec.type), async (t, value, onended) => {
+    const play = async (t, value, onended) => {
       const ac = getAudioContext()
       if (!(await prepareInstruments(ac))) return null
       // the instrument this note came from (project.js marks every note with it); code
@@ -308,6 +309,9 @@ export function registerEngineSounds() {
         node: note.tap,
         stop: (when) => { note.gateOff(when); if (spec.oneShot) note.cut(when) },
       }
-    }, { type: 'engine', prebake: true })
+    }
+    registerSound(engineSound(spec.type), play, { type: 'engine', prebake: true })
+    // code written when this engine went by another name still plays
+    for (const [was, now] of Object.entries(WAS_CALLED)) if (now === spec.type) registerSound(engineSound(was), play, { type: 'engine', prebake: true })
   }
 }

@@ -4,12 +4,12 @@ import { TABLES_SOURCE } from './tables.js'
 import { SHAPE_SOURCE } from '../curve.js'
 
 /**
- * Phyllo on the audio thread: eight voices, each a stack of up to eight layers through the
+ * Syrup on the audio thread: eight voices, each a stack of up to eight layers through the
  * amp envelope into three lanes, which mix into one another or out; moved by up to sixteen
  * modulators (LFOs and envelopes) through routes.
  *
  * A lane with effects is summed: every voice adds into it, and it leaves by one of the
- * three outputs after the voices' (8, 9, 10), for the effects outside (phyllo/rig.js), which
+ * three outputs after the voices' (8, 9, 10), for the effects outside (syrup/rig.js), which
  * also give it its level. Other lanes mix inside each voice and leave by the voice's output.
  * What a voice adds to a summed lane carries its note's own level and pan.
  *
@@ -30,32 +30,32 @@ import { SHAPE_SOURCE } from '../curve.js'
 const CONTROL = 32
 const spec = (k) => ({ min: K[k].min, max: K[k].max, log: !!K[k].log })
 
-export const PHYLLO_DSP = `
+export const SYRUP_DSP = `
 ${TABLES_SOURCE}
-const PH_LKNOBS = ${JSON.stringify(LAYER_KNOBS.map(spec))}
-const PH_CONTROL = ${CONTROL}
-const PH_LAYERS = ${MAX_LAYERS}
-const PH_MODS = ${MAX_MODULATORS}
-const PH_LANES = ${LANES}
-const PH_NN = Array.from({ length: PH_LANES }, (_, i) => 'n' + i + '_gain')
-const PH_LANE_SPEC = ${JSON.stringify(spec('gain'))}
-const PH_LN = Array.from({ length: PH_LAYERS }, (_, i) => ${JSON.stringify(LAYER_KNOBS)}.map((k) => 'l' + i + '_' + k))
-const PH_DN = Array.from({ length: PH_MODS }, (_, j) => ({ hz: 'd' + j + '_hz', a: 'd' + j + '_attack', d: 'd' + j + '_decay', s: 'd' + j + '_sustain', r: 'd' + j + '_release' }))
-const PH_LFO_TABLE = 1024
-const phShape = ${SHAPE_SOURCE}
-const phPos = (v, s) => (s.log ? Math.log(v / s.min) / Math.log(s.max / s.min) : (v - s.min) / (s.max - s.min))
-const phVal = (t, s) => { t = t < 0 ? 0 : t > 1 ? 1 : t; return s.log ? s.min * (s.max / s.min) ** t : s.min + t * (s.max - s.min) }
+const SY_LKNOBS = ${JSON.stringify(LAYER_KNOBS.map(spec))}
+const SY_CONTROL = ${CONTROL}
+const SY_LAYERS = ${MAX_LAYERS}
+const SY_MODS = ${MAX_MODULATORS}
+const SY_LANES = ${LANES}
+const SY_NN = Array.from({ length: SY_LANES }, (_, i) => 'n' + i + '_gain')
+const SY_LANE_SPEC = ${JSON.stringify(spec('gain'))}
+const SY_LN = Array.from({ length: SY_LAYERS }, (_, i) => ${JSON.stringify(LAYER_KNOBS)}.map((k) => 'l' + i + '_' + k))
+const SY_DN = Array.from({ length: SY_MODS }, (_, j) => ({ hz: 'd' + j + '_hz', a: 'd' + j + '_attack', d: 'd' + j + '_decay', s: 'd' + j + '_sustain', r: 'd' + j + '_release' }))
+const SY_LFO_TABLE = 1024
+const syShape = ${SHAPE_SOURCE}
+const syPos = (v, s) => (s.log ? Math.log(v / s.min) / Math.log(s.max / s.min) : (v - s.min) / (s.max - s.min))
+const syVal = (t, s) => { t = t < 0 ? 0 : t > 1 ? 1 : t; return s.log ? s.min * (s.max / s.min) ** t : s.min + t * (s.max - s.min) }
 // a layer knob moved by its routes, on the knob's travel
-const phMod = (m, at, j, base) => { const mod = m[at + j]; return mod ? phVal(phPos(base, PH_LKNOBS[j]) + mod, PH_LKNOBS[j]) : base }
-const phMtof = (m) => 440 * 2 ** ((m - 69) / 12)
-const phBlep = (t, dt) => {
+const syMod = (m, at, j, base) => { const mod = m[at + j]; return mod ? syVal(syPos(base, SY_LKNOBS[j]) + mod, SY_LKNOBS[j]) : base }
+const syMtof = (m) => 440 * 2 ** ((m - 69) / 12)
+const syBlep = (t, dt) => {
   if (t < dt) { t /= dt; return t + t - t * t - 1 }
   if (t > 1 - dt) { t = (t - 1) / dt; return t * t + t + t + 1 }
   return 0
 }
-const phWrap = (p) => p - Math.floor(p)
-const phDecay = (t, samples) => Math.exp(-samples / ((Math.max(0.001, t) / 5) * sampleRate))
-const PH_FMWAVE = [
+const syWrap = (p) => p - Math.floor(p)
+const syDecay = (t, samples) => Math.exp(-samples / ((Math.max(0.001, t) / 5) * sampleRate))
+const SY_FMWAVE = [
   (p) => Math.sin(2 * Math.PI * p),
   (p) => 1 - 4 * Math.abs(p - 0.5),
   (p) => 2 * p - 1,
@@ -63,11 +63,11 @@ const PH_FMWAVE = [
 ]
 
 // the phase a wavetable is read at, bent by its warp mode
-function phWarp(mode, p, w) {
+function syWarp(mode, p, w) {
   switch (mode) {
     case 1: return p ** (1 + w * 4) // bend+
     case 2: return 1 - (1 - p) ** (1 + w * 4) // bend-
-    case 3: return phWrap(p * (1 + w * 7)) // sync
+    case 3: return syWrap(p * (1 + w * 7)) // sync
     case 4: { const m = (p < 0.5 ? p * 2 : 2 - p * 2) * 0.5; return p + (m - p) * w } // mirror: the first half, there and back
     case 5: { const k = 0.5 - w * 0.45; return p < k ? (p * 0.5) / k : 0.5 + ((p - k) * 0.5) / (1 - k) } // pwm
     case 6: { const k = 0.5 + w * 0.45; return p < k ? (p * 0.5) / k : 0.5 + ((p - k) * 0.5) / (1 - k) } // asym
@@ -76,40 +76,40 @@ function phWarp(mode, p, w) {
   }
 }
 
-class PhylloProcessor extends LatticeInstrument {
+class SyrupProcessor extends LatticeInstrument {
   static voiceCount = 8
   static knobs = ${knobsSource(AUDIO_PARAMS)}
   constructor(options) {
     super(options)
     // what the patch is: set by onData
     this.cfg = { layers: [], modulators: [], routes: [], shared: [], mono: 0, lanes: [[-1, 0], [-1, 0], [-1, 0]], laneOrder: [0, 1, 2] }
-    this.lfoPhase = new Float64Array(PH_MODS) // the shared clocks (free lfos)
-    this.lfoStart = new Float64Array(PH_MODS) // where they were at the start of this block
-    this.lfoRate = new Float64Array(PH_MODS)
+    this.lfoPhase = new Float64Array(SY_MODS) // the shared clocks (free lfos)
+    this.lfoStart = new Float64Array(SY_MODS) // where they were at the start of this block
+    this.lfoRate = new Float64Array(SY_MODS)
     this.lfoTable = [] // slot → table, made when that slot first becomes an lfo
-    this.modVal = new Float32Array(PH_MODS)
+    this.modVal = new Float32Array(SY_MODS)
     this.notes = 0 // counts notes, to know the newest voice
     this.sharedTicks = 0
     this.mods = new Float32Array(100)
-    this.bufL = new Float32Array(PH_CONTROL) // the voice's mix, out of the lanes
-    this.bufR = new Float32Array(PH_CONTROL)
+    this.bufL = new Float32Array(SY_CONTROL) // the voice's mix, out of the lanes
+    this.bufR = new Float32Array(SY_CONTROL)
     // the summed lanes, this block, across every voice
-    this.busL = Array.from({ length: PH_LANES }, () => new Float32Array(128))
-    this.busR = Array.from({ length: PH_LANES }, () => new Float32Array(128))
-    this.ampBuf = new Float32Array(PH_CONTROL)
-    this.laneL = Array.from({ length: PH_LANES }, () => new Float32Array(PH_CONTROL))
-    this.laneR = Array.from({ length: PH_LANES }, () => new Float32Array(PH_CONTROL))
-    this.fmBuf = new Float32Array(PH_CONTROL)
+    this.busL = Array.from({ length: SY_LANES }, () => new Float32Array(128))
+    this.busR = Array.from({ length: SY_LANES }, () => new Float32Array(128))
+    this.ampBuf = new Float32Array(SY_CONTROL)
+    this.laneL = Array.from({ length: SY_LANES }, () => new Float32Array(SY_CONTROL))
+    this.laneR = Array.from({ length: SY_LANES }, () => new Float32Array(SY_CONTROL))
+    this.fmBuf = new Float32Array(SY_CONTROL)
   }
   newVoice() {
     return {
       active: false, pitch: 60, target: 60, vel: 1,
       amp: { stage: 0, v: 0 },
-      envs: Array.from({ length: PH_MODS }, () => ({ stage: 0, v: 0 })), // envelope modulators
-      modPh: new Float64Array(PH_MODS), // each voice's own place in retrig and env lfos
-      mv: new Float32Array(PH_MODS), // its modulators' values, last worked out
+      envs: Array.from({ length: SY_MODS }, () => ({ stage: 0, v: 0 })), // envelope modulators
+      modPh: new Float64Array(SY_MODS), // each voice's own place in retrig and env lfos
+      mv: new Float32Array(SY_MODS), // its modulators' values, last worked out
       order: 0, gain: 1, panL: [1, 0], panR: [0, 1], // when it started, and its note's level and pan
-      layers: Array.from({ length: PH_LAYERS }, () => ({ ph: new Float64Array(16), fm: 0, pink: new Float32Array(7), brown: 0, gl: new Float32Array(16), gr: new Float32Array(16), warm: false })),
+      layers: Array.from({ length: SY_LAYERS }, () => ({ ph: new Float64Array(16), fm: 0, pink: new Float32Array(7), brown: 0, gl: new Float32Array(16), gr: new Float32Array(16), warm: false })),
       counter: 0, ctl: null,
     }
   }
@@ -123,14 +123,14 @@ class PhylloProcessor extends LatticeInstrument {
   // what the patch is, when it changes
   onData(data) {
     const cfg = this.cfg
-    if (Array.isArray(data.layers)) cfg.layers = data.layers.slice(0, PH_LAYERS)
+    if (Array.isArray(data.layers)) cfg.layers = data.layers.slice(0, SY_LAYERS)
     if (Array.isArray(data.routes)) cfg.routes = data.routes
     if (Array.isArray(data.shared)) cfg.shared = data.shared
     if (data.mono !== undefined) cfg.mono = data.mono
     if (Array.isArray(data.lanes)) cfg.lanes = data.lanes
     if (Array.isArray(data.laneOrder)) cfg.laneOrder = data.laneOrder
     if (Array.isArray(data.modulators)) {
-      cfg.modulators = data.modulators.slice(0, PH_MODS)
+      cfg.modulators = data.modulators.slice(0, SY_MODS)
       cfg.modulators.forEach((m, j) => {
         if (!m.lfo || !Array.isArray(m.points) || m.points.length < 2) return
         this.buildLfo(j, m.points)
@@ -144,37 +144,37 @@ class PhylloProcessor extends LatticeInstrument {
       this.busL = this.busL.map(() => new Float32Array(frames))
       this.busR = this.busR.map(() => new Float32Array(frames))
     }
-    for (let q = 0; q < PH_LANES; q++) { this.busL[q].fill(0); this.busR[q].fill(0) }
+    for (let q = 0; q < SY_LANES; q++) { this.busL[q].fill(0); this.busR[q].fill(0) }
     const mods = this.cfg.modulators
     for (let j = 0; j < mods.length; j++) {
       const m = mods[j]
       if (!m.lfo) continue
-      const rate = m.sync ? k.cps / Math.max(1 / 64, m.bars) : k[PH_DN[j].hz]
+      const rate = m.sync ? k.cps / Math.max(1 / 64, m.bars) : k[SY_DN[j].hz]
       this.lfoRate[j] = rate
       this.lfoStart[j] = this.lfoPhase[j]
-      this.lfoPhase[j] = phWrap(this.lfoPhase[j] + (rate * frames) / sampleRate)
+      this.lfoPhase[j] = syWrap(this.lfoPhase[j] + (rate * frames) / sampleRate)
     }
   }
   // a drawn shape as a table: the same curve as the editor, point to point
   buildLfo(j, pts) {
-    const t = this.lfoTable[j] || (this.lfoTable[j] = new Float32Array(PH_LFO_TABLE + 1))
+    const t = this.lfoTable[j] || (this.lfoTable[j] = new Float32Array(SY_LFO_TABLE + 1))
     const n = pts.length
     let seg = 0
-    for (let i = 0; i <= PH_LFO_TABLE; i++) {
-      const x = i / PH_LFO_TABLE
+    for (let i = 0; i <= SY_LFO_TABLE; i++) {
+      const x = i / SY_LFO_TABLE
       while (seg < n - 2 && x >= pts[seg + 1][0]) seg++
       const [x0, y0, c, sh] = pts[seg]
       const [x1, y1] = pts[seg + 1]
       const u = x1 > x0 ? Math.min(1, Math.max(0, (x - x0) / (x1 - x0))) : 1
-      t[i] = (y0 + (y1 - y0) * phShape(u, c || 0, sh || 0)) * 2 - 1
+      t[i] = (y0 + (y1 - y0) * syShape(u, c || 0, sh || 0)) * 2 - 1
     }
   }
   lfoAt(j, p) {
     const t = this.lfoTable[j]
     if (!t) return 0
-    const x = p * PH_LFO_TABLE
+    const x = p * SY_LFO_TABLE
     const i = x | 0
-    return i >= PH_LFO_TABLE ? t[PH_LFO_TABLE] : t[i] + (t[i + 1] - t[i]) * (x - i)
+    return i >= SY_LFO_TABLE ? t[SY_LFO_TABLE] : t[i] + (t[i + 1] - t[i]) * (x - i)
   }
   noteOn(voice, note, vel, gain = 1, pan = 0.5) {
     const k = this.k
@@ -233,17 +233,17 @@ class PhylloProcessor extends LatticeInstrument {
     for (let j = 0; j < cfg.modulators.length; j++) {
       const mod = cfg.modulators[j]
       if (!mod.lfo) {
-        const N = PH_DN[j]
-        mv[j] = this.step(voice.envs[j], PH_CONTROL, k[N.a], phDecay(k[N.d], PH_CONTROL), k[N.s], phDecay(k[N.r], PH_CONTROL))
+        const N = SY_DN[j]
+        mv[j] = this.step(voice.envs[j], SY_CONTROL, k[N.a], syDecay(k[N.d], SY_CONTROL), k[N.s], syDecay(k[N.r], SY_CONTROL))
         continue
       }
       let p
       // free: the shared clock at this very sample, not where the block began (that stepped)
-      if (!mod.mode) p = phWrap(this.lfoStart[j] + (this.lfoRate[j] * offset) / sampleRate)
+      if (!mod.mode) p = syWrap(this.lfoStart[j] + (this.lfoRate[j] * offset) / sampleRate)
       else {
         p = voice.modPh[j]
-        const next = p + (this.lfoRate[j] * PH_CONTROL) / sampleRate
-        voice.modPh[j] = mod.mode === 1 ? phWrap(next) : Math.min(1, next) // env: once, then hold
+        const next = p + (this.lfoRate[j] * SY_CONTROL) / sampleRate
+        voice.modPh[j] = mod.mode === 1 ? syWrap(next) : Math.min(1, next) // env: once, then hold
       }
       const v = this.lfoAt(j, p)
       mv[j] = mod.polarity === 1 ? v * 0.5 : mod.polarity === 0 ? (v + 1) * 0.5 : (v - 1) * 0.5
@@ -251,47 +251,47 @@ class PhylloProcessor extends LatticeInstrument {
     for (const [src, dest, amt] of cfg.routes) m[dest] += amt * mv[src]
     voice.mv.set(mv.subarray(0, cfg.modulators.length))
 
-    const c = voice.ctl || (voice.ctl = { layers: Array.from({ length: PH_LAYERS }, () => ({})) })
-    if (c.adT !== k.a_decay) { c.adT = k.a_decay; c.ad = phDecay(k.a_decay, 1) }
-    if (c.arT !== k.a_release) { c.arT = k.a_release; c.ar = phDecay(k.a_release, 1) }
-    c.glide = k.glide > 0.0005 ? Math.exp(-PH_CONTROL / (k.glide / 3 * sampleRate)) : 0
+    const c = voice.ctl || (voice.ctl = { layers: Array.from({ length: SY_LAYERS }, () => ({})) })
+    if (c.adT !== k.a_decay) { c.adT = k.a_decay; c.ad = syDecay(k.a_decay, 1) }
+    if (c.arT !== k.a_release) { c.arT = k.a_release; c.ar = syDecay(k.a_release, 1) }
+    c.glide = k.glide > 0.0005 ? Math.exp(-SY_CONTROL / (k.glide / 3 * sampleRate)) : 0
     const semis = m[1] * 24
     c.ampFrom = c.amp === undefined ? null : c.amp
     c.amp = Math.min(1.5, Math.max(0, 1 + m[2])) * k.volume * 0.35
     // each lane's level, where routes move it too, gliding from where it was
     c.laneFrom = c.lane || null
-    c.lane = [0, 1, 2].map((i) => (cfg.lanes[i] && cfg.lanes[i][1] ? 0 : phVal(phPos(k[PH_NN[i]], PH_LANE_SPEC) + m[3 + i], PH_LANE_SPEC)))
+    c.lane = [0, 1, 2].map((i) => (cfg.lanes[i] && cfg.lanes[i][1] ? 0 : syVal(syPos(k[SY_NN[i]], SY_LANE_SPEC) + m[3 + i], SY_LANE_SPEC)))
     c.count = cfg.layers.length
     for (let i = 0; i < c.count; i++) {
       const L = c.layers[i]
       const conf = cfg.layers[i]
       L.on = conf[0] > 0
       if (!L.on) continue
-      const N = PH_LN[i]
+      const N = SY_LN[i]
       const lm = 10 + i * 10
-      L.lane = conf[9] > 0 && conf[9] < PH_LANES ? conf[9] : 0
+      L.lane = conf[9] > 0 && conf[9] < SY_LANES ? conf[9] : 0
       L.type = conf[1]
       L.wave = conf[2]
       L.table = conf[3]
       L.noise = conf[4]
       L.warpmode = conf[5]
       L.fmwave = conf[6]
-      L.level = phMod(m, lm, 0, k[N[0]])
-      L.pan = phMod(m, lm, 1, k[N[1]]) * 2 - 1
-      L.pw = phMod(m, lm, 3, k[N[3]])
-      L.pos = phMod(m, lm, 4, k[N[4]])
-      L.warp = phMod(m, lm, 5, k[N[5]])
-      L.detune = phMod(m, lm, 6, k[N[6]])
-      L.spread = phMod(m, lm, 7, k[N[7]])
-      L.fm = phMod(m, lm, 8, k[N[8]])
-      L.ratio = phMod(m, lm, 9, k[N[9]])
+      L.level = syMod(m, lm, 0, k[N[0]])
+      L.pan = syMod(m, lm, 1, k[N[1]]) * 2 - 1
+      L.pw = syMod(m, lm, 3, k[N[3]])
+      L.pos = syMod(m, lm, 4, k[N[4]])
+      L.warp = syMod(m, lm, 5, k[N[5]])
+      L.detune = syMod(m, lm, 6, k[N[6]])
+      L.spread = syMod(m, lm, 7, k[N[7]])
+      L.fm = syMod(m, lm, 8, k[N[8]])
+      L.ratio = syMod(m, lm, 9, k[N[9]])
       L.unison = Math.max(1, Math.min(16, conf[8] | 0))
-      L.freq = phMtof(voice.pitch + conf[7] + phMod(m, lm, 2, k[N[2]]) / 100 + semis)
+      L.freq = syMtof(voice.pitch + conf[7] + syMod(m, lm, 2, k[N[2]]) / 100 + semis)
       L.norm = 1 / Math.sqrt(L.unison)
       if (L.type === 2) {
         // the richest copy of the table whose harmonics all fit under the top of the band
         const room = (0.45 * sampleRate) / Math.max(1, L.freq)
-        const table = phTable(L.table)
+        const table = syTable(L.table)
         const levels = table.levels
         let lv = levels[levels.length - 1]
         for (let x = 0; x < levels.length; x++) if (levels[x].harmonics <= room) { lv = levels[x]; break }
@@ -322,7 +322,7 @@ class PhylloProcessor extends LatticeInstrument {
       this.port.postMessage({ mods: out })
     }
     const base = this.voices.length
-    for (let q = 0; q < PH_LANES; q++) {
+    for (let q = 0; q < SY_LANES; q++) {
       const out = outputs[base + q]
       if (!out || !out.length) continue
       out[0].set(this.busL[q])
@@ -340,7 +340,7 @@ class PhylloProcessor extends LatticeInstrument {
         if (voice.ctl && voice.ctl.glide) voice.pitch = voice.target + (voice.pitch - voice.target) * voice.ctl.glide
         else voice.pitch = voice.target
         this.control(voice, i)
-        voice.counter = PH_CONTROL
+        voice.counter = SY_CONTROL
       }
       const n = Math.min(to - i, voice.counter)
       const c = voice.ctl
@@ -348,7 +348,7 @@ class PhylloProcessor extends LatticeInstrument {
       bufR.fill(0, 0, n)
       const laneL = this.laneL
       const laneR = this.laneR
-      for (let q = 0; q < PH_LANES; q++) { laneL[q].fill(0, 0, n); laneR[q].fill(0, 0, n) }
+      for (let q = 0; q < SY_LANES; q++) { laneL[q].fill(0, 0, n); laneR[q].fill(0, 0, n) }
       // every layer into its lane
       for (let li = 0; li < c.count; li++) {
         const L = c.layers[li]
@@ -357,22 +357,22 @@ class PhylloProcessor extends LatticeInstrument {
       }
       // the amp envelope and the voice's level, on everything, before the lanes
       const a0 = c.ampFrom === null ? c.amp : c.ampFrom
-      const aStep = (c.amp - a0) / PH_CONTROL
-      const aStart = a0 + aStep * (PH_CONTROL - voice.counter)
+      const aStep = (c.amp - a0) / SY_CONTROL
+      const aStart = a0 + aStep * (SY_CONTROL - voice.counter)
       const amp = this.ampBuf
       let ended = n
       for (let j = 0; j < n; j++) {
         amp[j] = this.step(voice.amp, 1, k.a_attack, c.ad, k.a_sustain, c.ar) * (aStart + aStep * j)
         if (voice.amp.stage === 0) { ended = j + 1; break }
       }
-      for (let q = 0; q < PH_LANES; q++) {
+      for (let q = 0; q < SY_LANES; q++) {
         const inL = laneL[q]
         const inR = laneR[q]
         for (let j = 0; j < ended; j++) { inL[j] *= amp[j]; inR[j] *= amp[j] }
       }
       // the lanes, in order: a summed one adds this voice into the shared mix (its level is
       // applied outside); the others go at their level into the lane they feed, or out
-      const done = PH_CONTROL - voice.counter
+      const done = SY_CONTROL - voice.counter
       const lanes = this.cfg.lanes
       for (const q of this.cfg.laneOrder) {
         const conf = lanes[q] || [-1, 0, 0]
@@ -401,7 +401,7 @@ class PhylloProcessor extends LatticeInstrument {
         const g1 = c.lane[q]
         const g0 = c.laneFrom ? c.laneFrom[q] : g1
         if (g0 === 0 && g1 === 0) continue
-        const gs = (g1 - g0) / PH_CONTROL
+        const gs = (g1 - g0) / SY_CONTROL
         for (let j = 0; j < ended; j++) {
           const g = (g0 + gs * (done + j)) * vel
           outL[at + j] += inL[j] * g
@@ -454,7 +454,7 @@ class PhylloProcessor extends LatticeInstrument {
       return
     }
     const fmOn = L.fm > 0.001
-    const fmw = PH_FMWAVE[L.fmwave] || PH_FMWAVE[0]
+    const fmw = SY_FMWAVE[L.fmwave] || SY_FMWAVE[0]
     const fmDepth = L.fm / (2 * Math.PI)
     // the FM modulator, once for the layer: every unison voice hears the same one
     if (fmOn) {
@@ -496,10 +496,10 @@ class PhylloProcessor extends LatticeInstrument {
         ph += dt
         if (ph >= 1) ph -= 1
         let p = ph
-        if (fmOn) p = phWrap(ph + fmDepth * this.fmBuf[j])
+        if (fmOn) p = syWrap(ph + fmDepth * this.fmBuf[j])
         let y
         if (wt) {
-          const x = (warpmode ? phWarp(warpmode, p, warp) : p) * len
+          const x = (warpmode ? syWarp(warpmode, p, warp) : p) * len
           const i0 = x | 0
           const fr = x - i0
           const ya = fa[i0] + (fa[i0 + 1] - fa[i0]) * fr
@@ -507,8 +507,8 @@ class PhylloProcessor extends LatticeInstrument {
           if (fold) y = Math.sin(y * fold)
         } else if (wave === 0) y = Math.sin(2 * Math.PI * p)
         else if (wave === 1) y = 1 - 4 * Math.abs(p - 0.5)
-        else if (wave === 2) y = 2 * p - 1 - phBlep(p, dt)
-        else y = (p < pw ? 1 : -1) + phBlep(p, dt) - phBlep(phWrap(p - pw + 1), dt)
+        else if (wave === 2) y = 2 * p - 1 - syBlep(p, dt)
+        else y = (p < pw ? 1 : -1) + syBlep(p, dt) - syBlep(syWrap(p - pw + 1), dt)
         bufL[j] += y * gl
         bufR[j] += y * gr
       }
@@ -517,5 +517,5 @@ class PhylloProcessor extends LatticeInstrument {
     st.warm = true
   }
 }
-registerProcessor('lattice-phyllo', PhylloProcessor)
+registerProcessor('lattice-syrup', SyrupProcessor)
 `

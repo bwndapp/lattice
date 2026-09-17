@@ -1,5 +1,5 @@
 import kick from './kick.js'
-import phyllo from './phyllo/index.js'
+import syrup from './syrup/index.js'
 
 /**
  * Instrument engines: sounds the app makes itself, from settings saved with the track, as
@@ -36,7 +36,11 @@ import phyllo from './phyllo/index.js'
  *   rig(ac, node, voices) (optional) audio outside the processor for those outputs:
  *                         { update({ data, cps, beats }), target(noteValue), dispose() }
  */
-export const ENGINES = Object.fromEntries([kick, phyllo].map((e) => [e.type, e]))
+export const ENGINES = Object.fromEntries([kick, syrup].map((e) => [e.type, e]))
+
+/** Engines that were called something else once: what a saved track may still say. */
+export const WAS_CALLED = { phyllo: 'syrup' }
+export const engineType = (type) => WAS_CALLED[type] ?? type
 
 export const ENGINE_PREFIX = 'lattice_'
 export const engineSound = (type) => `${ENGINE_PREFIX}${type}`
@@ -44,7 +48,7 @@ export const engineOfSound = (sound) => (String(sound ?? '').startsWith(ENGINE_P
 
 /** The engine's settings, complete: saved values where valid, defaults for the rest. */
 export function engineData(engine) {
-  const spec = ENGINES[engine?.type]
+  const spec = ENGINES[engineType(engine?.type)]
   if (!spec) return {}
   if (spec.normalize) return spec.normalize(engine.data)
   const out = {}
@@ -60,7 +64,7 @@ export function engineData(engine) {
  * A list of knobs keeps only those away from their default, so tracks stay small.
  */
 export function normalizeEngine(raw, kind) {
-  const spec = ENGINES[raw?.type]
+  const spec = ENGINES[engineType(raw?.type)]
   if (!spec || !spec.kinds.includes(kind)) return null
   if (spec.normalize) return { type: spec.type, data: spec.normalize(raw.data) }
   const full = engineData(raw)

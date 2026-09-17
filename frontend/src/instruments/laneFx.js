@@ -12,7 +12,7 @@ const stereo = (ac, gain = 1) => new GainNode(ac, { gain, channelCount: 2, chann
 
 export { LANE_FX }
 
-/** What a lane's patch model needs to know about these effects (see phyllo/model.js). */
+/** What a lane's patch model needs to know about these effects (see syrup/model.js). */
 export const LANE_FX_CATALOG = {
   types: LANE_FX,
   spec: (type) => NODE_TYPES[type],

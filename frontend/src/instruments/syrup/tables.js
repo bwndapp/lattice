@@ -1,25 +1,25 @@
 /**
- * Phyllo's wavetables, written once as source: the audio thread builds them from this to
+ * Syrup's wavetables, written once as source: the audio thread builds them from this to
  * play them, and the window builds them from the same text to draw them.
  *
  * Every table is kept as harmonics (a sine and a cosine amount per harmonic, per frame),
  * and played from copies with fewer harmonics as notes get higher, so no harmonic ever
  * lands above what the sample rate can hold (that's what makes a wavetable fizz).
  *
- *   phTable(index) → { frames, levels: [{ harmonics, length, data: Float32Array[] }] }
+ *   syTable(index) → { frames, levels: [{ harmonics, length, data: Float32Array[] }] }
  *
  * Levels run from all 40 harmonics down to 1; `data[f]` is frame f, `length` samples long.
  */
 export const TABLES_SOURCE = `
-const PH_FRAMES = 32
-const PH_H = 40
-const PH_LEVELS = [[40, 1024], [20, 512], [10, 256], [5, 128], [2, 64], [1, 32]]
-const phTableCache = []
+const SY_FRAMES = 32
+const SY_H = 40
+const SY_LEVELS = [[40, 1024], [20, 512], [10, 256], [5, 128], [2, 64], [1, 32]]
+const syTableCache = []
 
-function phHarmonics(index) {
-  const H = PH_H
+function syHarmonics(index) {
+  const H = SY_H
   const frames = []
-  const add = (fn) => { for (let f = 0; f < PH_FRAMES; f++) frames.push(fn(f / (PH_FRAMES - 1))) }
+  const add = (fn) => { for (let f = 0; f < SY_FRAMES; f++) frames.push(fn(f / (SY_FRAMES - 1))) }
   const shapes = {
     sine: (h) => (h === 1 ? 1 : 0),
     tri: (h) => (h % 2 ? ((((h - 1) / 2) % 2 ? -1 : 1) * 8) / (Math.PI * Math.PI * h * h) : 0),
@@ -82,10 +82,10 @@ function phHarmonics(index) {
   return frames
 }
 
-function phTable(index) {
-  if (phTableCache[index]) return phTableCache[index]
-  const harmonics = phHarmonics(index)
-  const levels = PH_LEVELS.map(([count, length]) => {
+function syTable(index) {
+  if (syTableCache[index]) return syTableCache[index]
+  const harmonics = syHarmonics(index)
+  const levels = SY_LEVELS.map(([count, length]) => {
     const data = harmonics.map(({ s, c }) => {
       const out = new Float32Array(length + 1) // one more, so reading between samples never wraps
       for (let h = 1; h <= count; h++) {
@@ -103,13 +103,13 @@ function phTable(index) {
     return { harmonics: count, length, data }
   })
   // every frame peaks just under full scale; its thinner copies keep the same scale
-  for (let f = 0; f < PH_FRAMES; f++) {
+  for (let f = 0; f < SY_FRAMES; f++) {
     let peak = 0
     for (const v of levels[0].data[f]) peak = Math.max(peak, Math.abs(v))
     if (peak > 0) for (const level of levels) { const d = level.data[f]; for (let i = 0; i < d.length; i++) d[i] *= 0.95 / peak }
   }
-  phTableCache[index] = { frames: PH_FRAMES, levels }
-  return phTableCache[index]
+  syTableCache[index] = { frames: SY_FRAMES, levels }
+  return syTableCache[index]
 }
 `
 
@@ -117,7 +117,7 @@ let built = null
 /** The tables on this side, for drawing: one frame of a table at a position 0 … 1. */
 export function tableFrame(index, pos) {
   // eslint-disable-next-line no-new-func
-  if (!built) built = new Function(`${TABLES_SOURCE}; return phTable`)()
+  if (!built) built = new Function(`${TABLES_SOURCE}; return syTable`)()
   const table = built(index)
   const f = Math.round(Math.min(1, Math.max(0, pos)) * (table.frames - 1))
   const level = table.levels[0]

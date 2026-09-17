@@ -1,5 +1,5 @@
 /**
- * Phyllo's lanes outside the processor: for each summed lane (see dsp.js), its effects in
+ * Syrup's lanes outside the processor: for each summed lane (see dsp.js), its effects in
  * order, its level, and where it goes — another lane, or out. Out is the same place a note
  * of this instrument goes: its bus (orbit), after its post-gain, and into the sends it has
  * (each note's own level and pan are already on it, from the processor, before the lane's
@@ -84,7 +84,7 @@ export function makeRig(ac, node, voices) {
             if (def) data[knob] = moved(data[knob] ?? def.def, def, by)
           }
         }
-        try { unit.set(data, tempo) } catch (err) { console.warn('[phyllo] could not set an effect', err) }
+        try { unit.set(data, tempo) } catch (err) { console.warn('[syrup] could not set an effect', err) }
       }
       const level = summedNow[q] && !lane.mute ? moved(lane.gain, K.gain, byLane.get(q) || 0) : 0
       glide(l.level.gain, level, ac)
