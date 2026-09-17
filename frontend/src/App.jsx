@@ -422,8 +422,10 @@ export default function App() {
   const userRef = useRef(null)
   userRef.current = user
   /** Open the track list, on your own tracks when that's what was asked for. */
-  const openBrowse = useCallback((which) => {
+  const [browseNarrow, setBrowseNarrow] = useState(null) // one person's tracks, or one track's remixes
+  const openBrowse = useCallback((which, narrow = null) => {
     if (which) setBrowseView(which === 'mine' && !userRef.current ? 'explore' : which)
+    setBrowseNarrow(narrow)
     setView('browse')
   }, [])
   const [roll, setRoll] = useState(null) // { patternId, channelId, tab }
@@ -1117,6 +1119,23 @@ export default function App() {
               <button className={`btn ${track.liked ? 'on' : ''}`} onClick={like} title="Like">♥{track.likes}</button>
             </>
           ) : null}
+          {track && (track.parent || track.remixes > 0) && (
+            <span className="track-line">
+              {track.parent && (
+                <Link className="track-line-from" to={`/t/${track.parent.id}`} data-tip={`Opens ${track.parent.title} by ${track.parent.author}`}>
+                  remix of {track.parent.title}
+                </Link>
+              )}
+              {track.remixes > 0 && (
+                <button
+                  type="button"
+                  className="track-line-out"
+                  onClick={() => openBrowse('explore', { remixesOf: track.id, name: `remixes of ${track.title}` })}
+                  data-tip="Tracks people made by remixing this one"
+                >{track.remixes} remix{track.remixes === 1 ? '' : 'es'}</button>
+              )}
+            </span>
+          )}
         </span>
         {/* everything else lives in one menu, like a desktop program's */}
         <Popover
@@ -1175,6 +1194,7 @@ export default function App() {
               activeId={trackId}
               refreshKey={refreshKey}
               view={browseView}
+              narrowTo={browseNarrow}
               onView={setBrowseView}
               onPlay={playFromList}
               onPick={() => setView('graph')}

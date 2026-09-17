@@ -20,7 +20,7 @@ function Switch({ options, value, onChange, label, small = false }) {
   )
 }
 
-export default function Browser({ user, login, activeId, refreshKey, onPlay, onPick, onNew, view = 'explore', onView }) {
+export default function Browser({ user, login, activeId, refreshKey, onPlay, onPick, onNew, view = 'explore', onView, narrowTo = null }) {
   const setView = onView
   const [sort, setSort] = useState('new')
   const [q, setQ] = useState('')
@@ -88,6 +88,8 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
 
   // going back to the whole list, or into one person's, resets where paging is
   const narrow = (to) => { next.current = 0; setOnly(to) }
+  // opened already narrowed (a track's remixes, say)
+  useEffect(() => { if (narrowTo) narrow(narrowTo) }, [narrowTo])
 
   const heading = only?.name ? only.name
     : view === 'mine' ? 'Your tracks' : view === 'liked' ? 'Tracks you liked' : 'Shared tracks'

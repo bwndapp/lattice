@@ -321,6 +321,15 @@ body {
 .select.tm-select { padding: 0.15rem 0.35rem; font-size: 11px; }
 .file-item.danger { color: #e8836f; }
 .file-item.danger:hover { color: var(--danger); }
+/* where a track came from, and what came out of it */
+.track-line { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 10px; color: var(--muted); }
+.track-line-from, .track-line-out {
+  font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: var(--ring);
+  text-decoration: underline; text-decoration-color: transparent;
+  transition: color 0.12s ease, text-decoration-color 0.12s ease;
+  max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.track-line-from:hover, .track-line-out:hover { color: var(--paper); text-decoration-color: currentColor; }
 .track-heading { display: flex; flex-direction: column; margin-right: 0.35rem; min-width: 0; max-width: 16rem; }
 .track-heading .meta { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .track-title {
