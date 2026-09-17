@@ -24,6 +24,11 @@ Messages are JSON text frames.
     ← {"t":"ops","id":3,"ops":[...],"v":13,"h":"5f2a"}
     → {"t":"sync"}                       I'm lost, send me the whole thing
 
+  the owner deciding whether anyone else may join in
+    → {"t":"lock","on":false}             owner only; remembered on the track
+    ← {"t":"role","edit":false,"open":false}   what you may do now
+    ← {"t":"open","on":false}                  what the track is set to now
+
   playing in time (also editors only)
     → {"t":"time","c":<the client's clock>}        ← {"t":"time","c":...,"s":<the server's>}
     → {"t":"play","on":true,"pos":12.5,"cps":0.58} ← {"t":"play","id":3,...,"at":<server ms>}
@@ -94,6 +99,7 @@ class Room:
         self.next_id = 1
         self.doc = None      # the project, once somebody has sent theirs
         self.version = 0     # how many changes have been applied
+        self.open = True     # whether anyone but the owner may change it (the owner's call)
 
     def color_for(self):
         taken = {p.color for p in self.peers.values()}
@@ -131,9 +137,20 @@ def _env_of(ws):
 def _track(track_id, env):
     try:
         with use_env(env):
-            return db().execute("SELECT owner_sub, visibility FROM tracks WHERE id = ?", (track_id,)).fetchone()
+            return db().execute("SELECT owner_sub, visibility, collab FROM tracks WHERE id = ?", (track_id,)).fetchone()
     except Exception:
         return None
+
+
+def _set_collab(track_id, env, on):
+    """Remember the owner's answer, so it holds after everyone has gone home."""
+    try:
+        with use_env(env):
+            conn = db()
+            conn.execute("UPDATE tracks SET collab = ? WHERE id = ?", (1 if on else 0, track_id))
+            conn.commit()
+    except Exception:
+        pass  # the room still obeys it; it just won't outlive the room
 
 
 def _may_open(row, user):
@@ -143,15 +160,23 @@ def _may_open(row, user):
     return row["visibility"] != "private" or (user and user.get("sub") == row["owner_sub"])
 
 
-def _may_edit(row, user):
-    """Who may change the track live: anyone signed in who can open it.
+def _is_owner(row, user):
+    return bool(row and user and user.get("sub") == row["owner_sub"])
 
-    Working on a track together is the point, and a link is how people get to one. Being
-    signed in is the whole gate — a name to put on a cursor and an account behind the
-    change — while saving stays the owner's alone (see tracks.py), so a session can be
-    shared without anyone being able to overwrite what the owner has kept. Someone who
-    isn't signed in watches: cursors, no changes, and never a copy of the document."""
-    return bool(row and user and _may_open(row, user))
+
+def _may_edit(row, user, open_to_others):
+    """Who may change the track live: its owner always, and anyone else signed in while
+    the owner leaves it open.
+
+    Working on a track together is the point, and a link is how people get to one, so a
+    track starts out open. Being signed in is then the whole gate — a name to put on a
+    cursor and an account behind the change — while saving stays the owner's alone (see
+    tracks.py), so a session can be shared without anyone overwriting what the owner has
+    kept. Someone who isn't signed in watches: cursors, no changes, and never a copy of
+    the document."""
+    if _is_owner(row, user):
+        return True
+    return bool(row and user and open_to_others and _may_open(row, user))
 
 
 def _clean_name(raw, user):
@@ -185,10 +210,15 @@ async def collab(ws: WebSocket, track_id: str):
         if len(room.peers) >= MAX_PEERS:
             await ws.close(code=4008)
             return
-        edit = _may_edit(row, user)
+        if not room.peers:
+            room.open = bool(row["collab"]) if "collab" in row.keys() else True
+        edit = _may_edit(row, user, room.open)
         peer = Peer(room.next_id, ws, _clean_name(hello.get("name"), user), room.color_for(), (user or {}).get("sub"), edit)
         room.next_id += 1
-        await ws.send_text(json.dumps({"t": "me", "id": peer.id, "color": peer.color, "name": peer.name, "edit": edit}))
+        await ws.send_text(json.dumps({
+            "t": "me", "id": peer.id, "color": peer.color, "name": peer.name,
+            "edit": edit, "owner": _is_owner(row, user), "open": room.open,
+        }))
         await ws.send_text(json.dumps({"t": "here", "peers": [p.public() for p in room.peers.values()]}))
         await room.tell_others(peer.id, {"t": "join", "peer": peer.public()})
         room.peers[peer.id] = peer
@@ -258,6 +288,22 @@ async def collab(ws: WebSocket, track_id: str):
                     "cps": msg.get("cps"),
                     "at": time.time() * 1000,  # stamped here, so it needs no clock of its own
                 })
+            elif kind == "lock":
+                # only the owner, and everyone finds out at once: someone who has just
+                # lost the right stops being sent changes, and stops being able to send any
+                if not _is_owner(row, user):
+                    continue
+                room.open = bool(msg.get("on"))
+                await asyncio.to_thread(_set_collab, track_id, _env_of(ws), room.open)
+                for other in list(room.peers.values()):
+                    was = other.edit
+                    other.edit = _may_edit(row, {"sub": other.sub} if other.sub else None, room.open)
+                    if other.edit != was:
+                        await room.send(other, json.dumps({"t": "role", "edit": other.edit, "open": room.open}))
+                        # a peer who has just been let in needs the track as it stands
+                        if other.edit and room.doc is not None:
+                            await room.send(other, json.dumps({"t": "doc", "doc": room.doc, "v": room.version}))
+                await room.tell_others(peer.id, {"t": "open", "on": room.open})
             elif kind == "ping":
                 await ws.send_text('{"t":"pong"}')
     except (WebSocketDisconnect, asyncio.TimeoutError, ValueError):

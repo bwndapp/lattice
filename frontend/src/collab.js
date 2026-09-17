@@ -9,6 +9,7 @@
  *   onDoc({ seed, doc, ops, reset })    the shared project: see below
  *   sendOps(ops, hash)                  what we just changed
  *   onPlay(fn) / sendPlay(on, pos, cps) playing in time together
+ *   openToOthers(on)                    the owner deciding whether anyone else may join in
  *   serverNow()                         the room's clock, in ms, or null while we're alone
  *
  * One websocket per open track (src/api/collab.py). Positions are each surface's own
@@ -46,6 +47,7 @@ let mayEdit = false // whether the server lets us change this track
 let skew = null // what to add to our clock to get the server's
 let bestTrip = Infinity // the quickest round trip we've measured, which is the honest one
 let onPlayFn = null
+let onRoleFn = null
 let clockTimer = 0
 let version = 0 // the room's change count, as far as we've seen
 let doc = null // what the document half of the app has hooked up, if anything
@@ -133,6 +135,21 @@ export function onPlay(fn) {
   return () => { if (onPlayFn === fn) onPlayFn = null }
 }
 
+/**
+ * The owner letting others in, or working alone. Everyone finds out at once: someone who
+ * has just lost the right stops being sent changes there and then, and someone who has
+ * just been given it is handed the track as it stands.
+ */
+export function openToOthers(on) {
+  if (sock?.readyState === WebSocket.OPEN) sock.send(JSON.stringify({ t: 'lock', on: !!on }))
+}
+
+/** Told when what we may do changes: fn({ edit, open }). */
+export function onRole(fn) {
+  onRoleFn = fn
+  return () => { if (onRoleFn === fn) onRoleFn = null }
+}
+
 /** Say where ours is. `pos` is in cycles (bars), `cps` cycles a second. */
 export function sendPlay(on, pos, cps) {
   if (!canEdit()) return
@@ -190,9 +207,24 @@ async function open(trackId) {
       tries = 0
       mayEdit = !!msg.edit
       version = 0
-      me = { id: msg.id, color: msg.color, name: msg.name, edit: mayEdit }
+      me = { id: msg.id, color: msg.color, name: msg.name, edit: mayEdit, owner: !!msg.owner, open: msg.open !== false }
       doc?.reset?.()
       changed()
+      onRoleFn?.({ edit: mayEdit, open: me.open })
+      return
+    }
+    if (msg.t === 'role') {
+      mayEdit = !!msg.edit
+      if (me) me = { ...me, edit: mayEdit, open: msg.open !== false }
+      if (!mayEdit) doc?.reset?.() // we're watching now: we no longer know what the room has
+      changed()
+      onRoleFn?.({ edit: mayEdit, open: msg.open !== false })
+      return
+    }
+    if (msg.t === 'open') {
+      if (me) me = { ...me, open: !!msg.on }
+      changed()
+      onRoleFn?.({ edit: mayEdit, open: !!msg.on })
       return
     }
     if (msg.t === 'seed') {

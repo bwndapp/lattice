@@ -70,6 +70,9 @@ def _conn():
         # a public handle for whoever made a track, so "everything by this person" can be
         # asked for without their account id ever leaving the server
         cols = {r[1] for r in conn.execute("PRAGMA table_info(tracks)")}
+        # whether anyone signed in may work on the track with its owner (see collab.py)
+        if "collab" not in cols:
+            conn.execute("ALTER TABLE tracks ADD COLUMN collab INTEGER NOT NULL DEFAULT 1")
         if "author_id" not in cols:
             conn.execute("ALTER TABLE tracks ADD COLUMN author_id TEXT")
             for row in conn.execute("SELECT DISTINCT owner_sub FROM tracks").fetchall():
@@ -167,6 +170,9 @@ def _validate(body, partial=False):
         if vis not in VISIBILITIES:
             return None, "visibility must be public, unlisted or private"
         out["visibility"] = vis
+    # off means the owner works on it alone; others can still watch (collab.py)
+    if "collab" in body:
+        out["collab"] = 1 if body.get("collab") else 0
     return out, None
 
 

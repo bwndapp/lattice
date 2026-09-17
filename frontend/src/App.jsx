@@ -34,7 +34,7 @@ import { capturePatterns, parseLanes, tempoChange } from './lanes'
 import { PROJECT_MARK, blankProject, demoProject, generateCode, newId, normalizeProject, parseProject, projectFromCode } from './project'
 import { createTransport, formatBarBeat, parseBarBeat } from './transport'
 import { songLength } from './song'
-import { canEdit as roomTakesEdits, join as joinRoom, leave as leaveRoom, onDoc, onPlay, sendOps, sendPlay } from './collab.js'
+import { canEdit as roomTakesEdits, join as joinRoom, leave as leaveRoom, onDoc, onPlay, onRole, openToOthers, sendOps, sendPlay } from './collab.js'
 import { applyOps, diffOps, docHash, invertOps } from './docsync.js'
 import PeerList from './PeerList.jsx'
 
@@ -220,6 +220,19 @@ export default function App() {
     clearTimeout(toastTimer.current)
     toastTimer.current = setTimeout(() => setToast(null), action ? 9000 : 2200) // time to reach an undo
   }, [])
+
+  // whether anyone else in the room may change this track: the owner's call, kept on the
+  // track itself, and answered by the server the moment it's flipped
+  const [openToAll, setOpenToAll] = useState(true)
+  const wasAllowed = useRef(null)
+  useEffect(() => onRole(({ edit, open }) => {
+    setOpenToAll(open)
+    // say so when it changes under you, but not when you've just walked in
+    if (wasAllowed.current !== null && edit !== wasAllowed.current && !track?.is_owner) {
+      flash(edit ? 'You can change this track now' : "You're watching: the owner is working on this one alone")
+    }
+    wasAllowed.current = edit
+  }), [flash, track])
 
   // One editor for the life of the page; tracks are swapped into it.
   useEffect(() => {
@@ -1128,6 +1141,16 @@ export default function App() {
         { custom: <input className="tm-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="untitled" maxLength={80} aria-label="Track title" /> },
         { heading: 'visible to' },
         ...[['public', 'anyone', 'Listed in explore'], ['unlisted', 'anyone with the link', 'Not listed'], ['private', 'only me', 'Only you']].map(([v, label, hint]) => ({ label, hint, checked: visibility === v, onSelect: () => setVisibility(v) })),
+        isOwner && !isNew && 'line',
+        isOwner && !isNew && { heading: 'working on it together' },
+        isOwner && !isNew && {
+          label: 'others can edit',
+          checked: openToAll,
+          onSelect: () => { setOpenToAll(!openToAll); openToOthers(!openToAll) },
+          hint: openToAll
+            ? 'Anyone signed in who opens the link can change this track while you both have it open. Saving is still only yours.'
+            : "Off: everyone else can watch and hear it, but it's yours to change",
+        },
         isOwner && 'line',
         isOwner && { label: 'delete track…', danger: true, onSelect: () => setConfirmDelete(true), hint: 'Remove the saved track for everyone' },
       ],
