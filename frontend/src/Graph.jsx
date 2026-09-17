@@ -885,7 +885,17 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
   }, [initialized, flow])
   const [picking, setPicking] = useState(null) // { nodeId, key, x, y }
   const [menu, setMenu] = useState(null) // right-click add menu: { x, y, at (flow position), wire (edge id or null) }
-  const menuItems = useMemo(() => paletteItems(), [])
+  /**
+   * What the add menu offers, which depends on where it was opened: into a wire, only what
+   * can sit in line (something that takes a wire in and passes it on); pulled out of a
+   * port, only what can take that wire; anywhere else, everything.
+   */
+  const menuItems = useMemo(() => {
+    const all = paletteItems()
+    if (menu?.wire) return all.filter((it) => it.kind === 'node' && splicable(it.key))
+    if (menu?.from) return all.filter((it) => it.kind === 'node' && NODE_TYPES[it.key]?.inputs > 0)
+    return all
+  }, [menu?.wire, menu?.from])
   const closeMenu = useCallback(() => setMenu(null), [])
   const pointerRef = useRef(null) // last pointer position over the canvas, for shift + A
 
@@ -1356,7 +1366,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
           items={menuItems}
           groups={PAL_GROUPS}
           score={matchScore}
-          intoWire={!!menu.wire}
+          context={menu.wire ? 'wire' : menu.from ? 'after' : null}
           onPick={(item) => {
             if (item.kind === 'instrument') return addNode('pattern', menu.at, item.key, null, menu.from)
             if (menu.from) return addNode(item.key, menu.at, null, null, menu.from)

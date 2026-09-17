@@ -8,9 +8,10 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
  * (hover, click or arrow right); typing searches everything at once. Enter or a click
  * adds the item where you right-clicked. Esc, a click outside or scrolling closes it.
  *
- * `items` and `score` come from the add pane, so both always offer the same things.
+ * `items` and `score` come from the add pane, so both always offer the same things; where the
+ * menu was opened (`context`) narrows them to what can go there.
  */
-export default function AddMenu({ x, y, items, groups, score, onPick, onClose, intoWire = false }) {
+export default function AddMenu({ x, y, items, groups, score, onPick, onClose, context = null }) {
   const ref = useRef(null)
   const searchRef = useRef(null)
   const [query, setQuery] = useState('')
@@ -128,7 +129,7 @@ export default function AddMenu({ x, y, items, groups, score, onPick, onClose, i
     >
       <div className="am-main">
         <div className="am-head">
-          <span className="am-title">add{intoWire ? ' into this wire' : ''}<kbd className="am-kbd">shift A</kbd></span>
+          <span className="am-title">add{context === 'wire' ? ' into this wire' : context === 'after' ? ' onto this wire' : ''}<kbd className="am-kbd">shift A</kbd></span>
           <input
             ref={searchRef}
             className="node-input am-search"
