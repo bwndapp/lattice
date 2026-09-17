@@ -92,6 +92,12 @@ class PhylloProcessor extends LatticeInstrument {
       lfoPh: new Float64Array(2), // each voice's own place in the LFOs (retrig and env modes)
     }
   }
+  // for the window: where the shared LFO clock is, and each sounding voice's own place
+  report() {
+    const voices = []
+    for (const v of this.voices) if (v.active) voices.push([v.lfoPh[0], v.lfoPh[1]])
+    return { lfo: [this.lfoPhase[0], this.lfoPhase[1]], voices }
+  }
   // the drawn shapes, when they change
   onData(data) {
     if (data.lfos) data.lfos.forEach((points, i) => { if (i < 2 && Array.isArray(points) && points.length >= 2) this.buildLfo(i, points) })

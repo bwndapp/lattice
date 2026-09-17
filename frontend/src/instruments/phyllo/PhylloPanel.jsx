@@ -485,13 +485,19 @@ function Lfo({ ui, index }) {
   const src = `lfo${index + 1}`
   const lfo = ui.patch.lfos[index]
   const set = (fn) => ui.edit((p) => fn(p.lfos[index]))
-  // the dot: where the lfo is on the window's clock (a voice's own run starts at its note)
+  // the dots: where the synth says this lfo is, carried on at its rate between reports.
+  // Free: one shared place. Trig and env: one per sounding voice, none when nothing plays.
   const rate = lfo.sync ? ui.cps / lfo.bars : lfo.hz
   const dot = useRef(null)
   dot.current = () => {
-    const t = performance.now() / 1000
-    if (lfo.mode === 'env') { const period = 1 / rate; const loop = period + 0.6; return Math.min(1, (t % loop) / period) }
-    return (t * rate) % 1
+    const now = performance.now()
+    const r = ui.live.current
+    const age = (now - r.t) / 1000
+    const fresh = age < 0.4
+    const wrap1 = (p) => p - Math.floor(p)
+    if (lfo.mode === 'free') return fresh ? wrap1(r.lfo[index] + rate * age) : wrap1((now / 1000) * rate)
+    if (!fresh) return null
+    return r.voices.map((v) => (lfo.mode === 'env' ? Math.min(1, v[index] + rate * age) : wrap1(v[index] + rate * age)))
   }
   const preset = LFO_BUTTONS.find(([name]) => sameShape(lfo.points, LFO_PRESETS[name]))?.[0]
   return (
@@ -583,11 +589,14 @@ function Keys({ hold, base, setBase }) {
 
 // ── the panel ────────────────────────────────────────────────────────────────
 
-export default function PhylloPanel({ data, change, target, hold, cps = 0.5 }) {
+export default function PhylloPanel({ data, change, target, hold, watch, cps = 0.5 }) {
   const patch = data
   const [userPresets, setUserPresets] = useState(() => readJson(PRESET_KEY, []))
   const [base, setBase] = useState(48)
-  const ui = { patch, edit: change, target, cps }
+  // what the processor last said about its LFOs, and when (see dsp.js report)
+  const live = useRef({ t: -Infinity, lfo: [0, 0], voices: [] })
+  useEffect(() => watch?.((report) => { live.current = { ...report, t: performance.now() } }), []) // eslint-disable-line react-hooks/exhaustive-deps
+  const ui = { patch, edit: change, target, cps, live }
 
   const allPresets = [
     ...PRESETS.map((p) => ({ key: `builtin:${p.name}`, name: p.name, patch: p })),

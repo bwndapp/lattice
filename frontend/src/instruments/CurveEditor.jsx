@@ -11,7 +11,8 @@ import './CurveEditor.css'
  *   grid     columns to snap to (0: none); alt places a point off the grid
  *   zero     where zero sits: 'middle' (the curve swings both ways), 'bottom' or 'top'
  *   pinEnds  the first and last points stay at x 0 and x 1
- *   dot      optional ref: the editor puts a dot at `dot.current()` → x (0…1), every frame
+ *   dot      optional ref: every frame, `dot.current()` gives where dots go on the curve: an
+ *            x (0…1), a list of them (one per voice, say), or null for none
  *
  * Click adds a point, drag moves it, right-click or double-click removes it, and the
  * diamond between two points bends the line: drag it up or down. Double-click the diamond
@@ -19,13 +20,14 @@ import './CurveEditor.css'
  */
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 const MAX_POINTS = 24
+const DOTS = 8 // one per voice at most
 
 export { curveAt }
 
 export default function CurveEditor({ points, onChange, grid = 8, zero = 'middle', pinEnds = true, height = 120, dot = null, className = '' }) {
   const box = useRef(null)
   const drag = useRef(null)
-  const dotEl = useRef(null)
+  const dotEls = useRef([])
   const [width, setWidth] = useState(240)
   const [active, setActive] = useState(null)
   const [hover, setHover] = useState(null) // what's under the pointer: 'p3', 'b2' or null
@@ -53,12 +55,15 @@ export default function CurveEditor({ points, onChange, grid = 8, zero = 'middle
     let raf = 0
     const tick = () => {
       raf = requestAnimationFrame(tick)
-      const el = dotEl.current
-      const x = dot.current?.()
-      if (!el) return
-      if (x == null) { el.style.opacity = '0'; return }
-      el.style.opacity = '1'
-      el.style.transform = `translate(${sx(x)}px, ${sy(curveAt(points, x))}px)`
+      const at = dot.current?.()
+      const xs = at == null ? [] : Array.isArray(at) ? at : [at]
+      dotEls.current.forEach((el, i) => {
+        if (!el) return
+        const x = xs[i]
+        if (x == null) { el.style.opacity = '0'; return }
+        el.style.opacity = '1'
+        el.style.transform = `translate(${sx(x)}px, ${sy(curveAt(points, x))}px)`
+      })
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
@@ -199,7 +204,7 @@ export default function CurveEditor({ points, onChange, grid = 8, zero = 'middle
           </g>
         ))}
       </svg>
-      {dot && <span className="ce-dot" ref={dotEl} aria-hidden />}
+      {dot && Array.from({ length: DOTS }, (_, i) => <span key={i} className="ce-dot" ref={(el) => { dotEls.current[i] = el }} aria-hidden />)}
       {active !== null && points[active] && (
         <span className="ce-readout">{Math.round(points[active].x * 100)}% · {valueOf(points[active].y) > 0 ? '+' : ''}{valueOf(points[active].y)}</span>
       )}

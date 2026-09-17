@@ -65,6 +65,28 @@ export function setEngineParams(channelId, patch) {
   for (const inst of live(channelId, found.type)) inst.apply(found)
 }
 
+// ── windows watching their instrument ─────────────────────────────────────────
+const watchers = new Map() // `${channel}:${type}` → Set of functions given each report
+
+/**
+ * Hear what an instrument's processor is doing (its reports, see dsp.js) while `fn` wants
+ * to: returns the function that stops. Instances made later are watched too.
+ */
+export function watchInstrument(channelId, type, fn) {
+  const key = `${channelId}:${type}`
+  if (!watchers.has(key)) watchers.set(key, new Set())
+  watchers.get(key).add(fn)
+  for (const inst of live(channelId, type)) inst.watch(true)
+  return () => {
+    const set = watchers.get(key)
+    set?.delete(fn)
+    if (set && !set.size) {
+      watchers.delete(key)
+      for (const inst of live(channelId, type)) inst.watch(false)
+    }
+  }
+}
+
 // ── instances ─────────────────────────────────────────────────────────────────
 const instances = new WeakMap() // audio context → Map(`${channel}:${type}` → instance)
 const everywhere = new Set() // every instance, to find them by instrument
@@ -101,6 +123,12 @@ function createInstance(ac, channelId, type) {
     processorOptions: spec.message ? { data: spec.message(settings.data) } : {},
   })
   let said = spec.message ? JSON.stringify(spec.message(settings.data)) : ''
+  const key = `${channelId}:${type}`
+  node.port.onmessage = (e) => {
+    if (!e.data?.report || ac !== getAudioContext()) return // an offline render's reports aren't the live sound
+    for (const fn of watchers.get(key) ?? []) fn(e.data.report)
+  }
+  if (watchers.has(key)) node.port.postMessage({ watch: true })
   const param = (name) => node.parameters.get(name)
   const voices = Array.from({ length: spec.voices }, () => ({ until: 0, started: 0, note: null }))
   let trig = 0
@@ -111,6 +139,7 @@ function createInstance(ac, channelId, type) {
     channelId,
     type,
     get data() { return current },
+    watch(on) { node.port.postMessage({ watch: on }) },
     apply({ data, cps }) {
       current = data
       const next = engineAudio(spec, data, { cps })

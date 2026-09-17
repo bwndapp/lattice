@@ -4,6 +4,7 @@ import { engineTarget } from '../automation.js'
 import { holdInPatch, previewInPatch } from '../audio'
 import { ENGINES, engineData } from './index.js'
 import { closeSynth, raiseSynth } from './windows.js'
+import { watchInstrument } from './host.js'
 import { keyNote, readOctave, writeOctave } from '../keyboard.js'
 import KickPanel from './KickPanel.jsx'
 import PhylloPanel from './phyllo/PhylloPanel.jsx'
@@ -84,6 +85,8 @@ export default function SynthWindow({ project, patternId, channelId, order, fron
     c.engine = { ...c.engine, data: draft }
   })
   const target = (key) => engineTarget(patternId, channelId, key)
+  // what the instrument is doing right now (its processor's reports)
+  const watch = (fn) => watchInstrument(channelId, spec.type, fn)
   const reset = () => edit((c) => { c.engine = { ...c.engine, data: {} } })
   const play = (note) => previewInPatch(project, patternId, ch, note == null ? {} : { note, pitched: true })
   // a note that lasts until `release()` (the on-screen keys and the computer keyboard)
@@ -166,7 +169,7 @@ export default function SynthWindow({ project, patternId, channelId, order, fron
       </header>
       <div className="sw-body">
         {Panel
-          ? <Panel data={data} groups={groups} knob={knob} change={change} target={target} play={play} hold={hold} cps={(Number(project.bpm) || 120) / (Number(project.beats) || 4) / 60} />
+          ? <Panel data={data} groups={groups} knob={knob} change={change} target={target} play={play} hold={hold} watch={watch} cps={(Number(project.bpm) || 120) / (Number(project.beats) || 4) / 60} />
           : (
             <div className="sw-groups">
               {groups.map((g) => (

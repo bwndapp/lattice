@@ -13,6 +13,9 @@
  *   v<n>_gate   1 while the note is held, 0 once it's let go
  *   p_<key>     the engine's knobs (k-rate: they move once per block)
  *
+ * While an instrument's window is open the processor reports what it's doing, about 38
+ * times a second: `report()` returns something to post (or null).
+ *
  * Settings that aren't knobs (a drawn shape, say) come as a message, `onData(data)`: once
  * with the processor (processorOptions.data, so an offline render has them from the
  * start) and again whenever they change.
@@ -58,13 +61,17 @@ class LatticeInstrument extends AudioWorkletProcessor {
     this.knobNames = cls.knobs.map((k) => [k.key, 'p_' + k.key])
     this.voiceNames = this.voices.map((_, v) => ['v' + v + '_trig', 'v' + v + '_gate', 'v' + v + '_note', 'v' + v + '_vel'])
     this.alive = true
+    this.watching = false
+    this.ticks = 0
     this.port.onmessage = (e) => {
       if (e.data === 'dispose') this.alive = false
+      else if (e.data && e.data.watch !== undefined) this.watching = !!e.data.watch
       else if (e.data && e.data.data) this.onData(e.data.data)
     }
     this.initial = options && options.processorOptions && options.processorOptions.data
   }
   onData() {}
+  report() { return null }
   newVoice() { return {} }
   noteOn() {}
   noteOff() {}
@@ -114,6 +121,11 @@ class LatticeInstrument extends AudioWorkletProcessor {
         }
       }
       if (from < L.length && this.busy(voice)) this.render(voice, L, R, from, L.length)
+    }
+    if (this.watching && ++this.ticks >= 10) {
+      this.ticks = 0
+      const report = this.report()
+      if (report) this.port.postMessage({ report })
     }
     return true
   }
