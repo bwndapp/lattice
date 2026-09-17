@@ -142,6 +142,34 @@ function groupIntoRack(p, ids) {
   return id
 }
 
+/**
+ * What's actually coming down a wire, rather than whatever it passed through last. Walks
+ * back up the patch until it reaches something that makes sound, or a mixer bus — a bus
+ * stands for everything inside it, so it's the answer rather than a signpost to more.
+ *
+ * A sidechain is followed by its sound, not its trigger: the trigger only says when to
+ * duck and isn't what you hear.
+ */
+function originsOf(project, nodeId, handle = 'out', seen = new Set()) {
+  const node = project.nodes.find((n) => n.id === nodeId)
+  if (!node || seen.has(nodeId)) return []
+  const spec = NODE_TYPES[node.type]
+  if (node.type === 'bus' || spec?.group === 'source') return [{ node, handle }]
+  seen.add(nodeId)
+  const ins = inputsOf(project.edges, nodeId)
+    .filter((e) => node.type !== 'sidechain' || e.targetHandle === 'in-0')
+  if (!ins.length) return [{ node, handle: 'out' }]
+  return ins.flatMap((e) => originsOf(project, e.source, e.sourceHandle ?? 'out', seen))
+}
+
+/** Those origins as one label: the first, and how many others share the wire. */
+function originLabel(project, edge) {
+  const found = originsOf(project, edge.source, edge.sourceHandle ?? 'out')
+  if (!found.length) return nodeTitle(project.nodes.find((n) => n.id === edge.source), project, edge.sourceHandle)
+  const names = [...new Set(found.map((f) => nodeTitle(f.node, project, f.handle)))]
+  return names.length === 1 ? names[0] : `${names[0]} +${names.length - 1}`
+}
+
 /** What a node is called on wires and in lists; `from` names the port the wire left by. */
 function nodeTitle(node, project, from = 'out') {
   if (!node) return '?'
@@ -560,7 +588,7 @@ function StudioNode({ id, selected }) {
                 <li key={handle} className={`slot ${wire ? '' : 'free'}`}>
                   <Handle type="target" position={Position.Left} id={handle} className={`port in ${wire ? '' : 'free'}`} />
                   <span className="slot-role">{role}</span>
-                  <span className="slot-name">{wire ? nodeTitle(src, ctx.project, wire.sourceHandle) : 'connect'}</span>
+                  <span className="slot-name">{wire ? originLabel(ctx.project, wire) : 'connect'}</span>
                 </li>
               )
             })}
@@ -582,7 +610,14 @@ function StudioNode({ id, selected }) {
               return (
                 <li key={w.targetHandle} className={`slot ${node.type === 'output' && (muted || (node.data.solo && !solo)) ? 'off' : ''}`}>
                   <Handle type="target" position={Position.Left} id={w.targetHandle} className="port in" />
-                  <span className="slot-name">{nodeTitle(src, ctx.project, w.sourceHandle)}</span>
+                  <span className="slot-name">
+                    {originLabel(ctx.project, w)}
+                    {(() => {
+                      // two paths from the same part look identical without saying where they've been
+                      const last = nodeTitle(src, ctx.project, w.sourceHandle)
+                      return last === originLabel(ctx.project, w) ? null : <em className="slot-via"> via {last}</em>
+                    })()}
+                  </span>
                   {node.type === 'arrange' && (
                     <Stepper
                       param={{ ...spec.slotParam, label: 'bars' }}

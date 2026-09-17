@@ -997,6 +997,7 @@ button.chan-synth:hover span { color: var(--acid); }
 .slot { position: relative; display: flex; align-items: center; gap: 0.4rem; min-height: 2rem; padding: 0.3rem 0.6rem 0.3rem 0.9rem; border-bottom: 1px solid var(--line); }
 .slot:last-child { border-bottom: 0; }
 .slot-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slot-via { font-style: normal; font-size: 10px; color: var(--muted); }
 .slot.off .slot-name { opacity: 0.4; text-decoration: line-through; }
 .slot.free .slot-name { color: var(--muted); }
 .slot-ctl { display: inline-flex; gap: 0.2rem; }
