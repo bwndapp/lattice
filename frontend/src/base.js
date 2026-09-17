@@ -8,8 +8,12 @@
  *  and database (API_ROOT), because that's the work in progress — but its room comes from
  *  the branch itself (COLLAB_ROOT), so trying a branch out never puts a file of its own in
  *  the folder the draft and live sites share. */
-const mount = /^\/(preview|multiplayer)(\/|$)/.exec(window.location.pathname)
-export const BASE = mount ? `/${mount[1]}` : ''
+/** Everywhere this app is served from other than the live site itself. */
+export const MOUNTS = ['/preview', '/multiplayer']
+const at = (path, m) => path === m || path.startsWith(`${m}/`)
+export const BASE = MOUNTS.find((m) => at(window.location.pathname, m)) ?? ''
+/** Whether a path belongs to some other mount than the one this page was served from. */
+export const elsewhere = (path) => (BASE ? !at(path, BASE) : MOUNTS.some((m) => at(path, m)))
 export const API_ROOT = BASE === '/multiplayer' ? '/preview/api' : `${BASE}/api`
 /** The room lives with the branch, not with the draft: a branch serves its own (src/api/multiplayer.py). */
 export const COLLAB_ROOT = BASE === '/multiplayer' ? '/multiplayer/api/collab' : `${API_ROOT}/collab`

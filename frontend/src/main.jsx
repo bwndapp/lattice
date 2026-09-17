@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { BrowserRouter, HashRouter, Routes, Route, Link, Navigate, useNavigate } from 'react-router-dom'
 import App from './App.jsx'
 import { handleCallback } from './bwnd'
-import { BASE } from './base'
+import { BASE, elsewhere } from './base'
 import './index.css'
 
 /*
@@ -26,10 +26,10 @@ function AuthCallback() {
     ran.current = true
     handleCallback()
       .then((next) => {
-        // Sign-in always returns to /auth/callback on the live site; `next` may be a
-        // draft page under /preview/, which this router (basename '') can't reach.
-        const inThisBuild = BASE ? next.startsWith(`${BASE}/`) : !/^\/preview(\/|$)/.test(next)
-        if (!inThisBuild) window.location.replace(next)
+        // Sign-in always returns to /auth/callback on the live site; `next` may belong to
+        // another mount — the draft under /preview/, a branch under /multiplayer/ — which
+        // this router (basename '') can't reach, so the browser has to go there itself.
+        if (elsewhere(next)) window.location.replace(next)
         else navigate(next.slice(BASE.length) || '/', { replace: true })
       })
       .catch((e) => setError(e.message))
