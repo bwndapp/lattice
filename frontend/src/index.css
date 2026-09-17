@@ -889,7 +889,8 @@ ul.node-chans { display: block; border-top: 1px solid var(--line); }
 .graph-canvas .port.chan-port { width: 9px; height: 9px; border-width: 1px; }
 .graph-canvas .port.chan-port.free { opacity: 0.45; }
 .gnode:hover .graph-canvas .port.chan-port.free, .graph-canvas .gnode:hover .port.chan-port.free { opacity: 1; }
-.out-label { position: absolute; right: 12px; bottom: -2px; font-size: 9px; color: var(--muted); pointer-events: none; }
+.node-chans .chan.mix { border-top: 1px solid var(--line); border-bottom: 0; min-height: 1.7rem; }
+.node-chans .chan.mix .chan-name { font-size: 9px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
 .node-hint { color: var(--muted); font-size: 11px; }
 .node-actions { display: flex; gap: 0.3rem; flex-wrap: wrap; }
 .node-actions .btn { padding: 0.25rem 0.5rem; font-size: 11px; }

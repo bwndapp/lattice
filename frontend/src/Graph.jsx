@@ -418,6 +418,9 @@ function StudioNode({ id, selected }) {
   const nextSlot = `in-${wires.reduce((m, w) => Math.max(m, slotNum(w.targetHandle)), -1) + 1}`
   const soloing = ctx.solo === id
   const pattern = patternOf
+  // with instruments listed down the side, the main out joins them as the last row rather
+  // than floating at the node's middle, where it landed on top of one of them
+  const outInList = !!pattern && pattern.channels.length > 0
 
   // a part wears the same colour here as its clips do on the timeline
   const tint = spec.group === 'source' ? colorFor(nodeSrc(node, ctx.project), ctx.project.song?.colors) : null
@@ -487,6 +490,16 @@ function StudioNode({ id, selected }) {
                       </li>
                     )
                   })}
+                  <li className="chan mix">
+                    <span className="chan-name">{splitOff > 0 ? 'rest' : 'all'}</span>
+                    <Handle
+                      type="source"
+                      position={Position.Right}
+                      id="out"
+                      className="port out"
+                      title={splitOff > 0 ? 'Everything not wired out on its own' : 'The whole pattern'}
+                    />
+                  </li>
                 </ul>
               ) : <div className="node-chans"><span className="node-hint">empty: add instruments</span></div>
             )}
@@ -555,18 +568,7 @@ function StudioNode({ id, selected }) {
         )}
       </div>
 
-      {node.type !== 'output' && (
-        <>
-          {splitOff > 0 && <span className="out-label">rest</span>}
-          <Handle
-            type="source"
-            position={Position.Right}
-            id="out"
-            className="port out"
-            title={splitOff > 0 ? 'Everything else in the pattern' : undefined}
-          />
-        </>
-      )}
+      {node.type !== 'output' && !outInList && <Handle type="source" position={Position.Right} id="out" className="port out" />}
     </div>
   )
 }
