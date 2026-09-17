@@ -147,26 +147,43 @@ export function drawWave(ctx, samples, { x = 0, y = 0, width, height, color, ran
   ctx.restore()
 }
 
-/** A smooth line for a value that changes slowly (a pitch, an envelope), `map` → screen y. */
-export function drawCurve(ctx, values, { x = 0, width, map, color, lineWidth = 1.5, dash = null }) {
+/**
+ * A smooth line for a value that changes slowly (a pitch, an envelope), `map` → screen y.
+ * With `fill` (a screen y), the area between the line and it is shaded, fading away.
+ */
+export function drawCurve(ctx, values, { x = 0, width, map, color, lineWidth = 1.5, dash = null, fill = null, glow = 0 }) {
   const n = values.length
   if (n < 2) return
   ctx.save()
-  ctx.strokeStyle = color
-  ctx.lineWidth = lineWidth
   ctx.lineJoin = 'round'
-  if (dash) ctx.setLineDash(dash)
-  ctx.beginPath()
   // one point per device pixel is as smooth as a slow curve gets
   const cols = Math.ceil(width)
+  const path = new Path2D()
+  let top = Infinity
   for (let c = 0; c <= cols; c++) {
     const at = Math.min(n - 1, (c / cols) * (n - 1))
     const i = Math.floor(at)
     const f = at - i
-    const v = values[i] + (values[Math.min(n - 1, i + 1)] - values[i]) * f
-    if (c === 0) ctx.moveTo(x + c, map(v)); else ctx.lineTo(x + c, map(v))
+    const y = map(values[i] + (values[Math.min(n - 1, i + 1)] - values[i]) * f)
+    top = Math.min(top, y)
+    if (c === 0) path.moveTo(x + c, y); else path.lineTo(x + c, y)
   }
-  ctx.stroke()
+  if (fill != null) {
+    const area = new Path2D(path)
+    area.lineTo(x + cols, fill)
+    area.lineTo(x, fill)
+    area.closePath()
+    const shade = ctx.createLinearGradient(0, Math.min(top, fill), 0, Math.max(top, fill) + 1)
+    shade.addColorStop(fill > top ? 0 : 1, withAlpha(color, 0.3))
+    shade.addColorStop(fill > top ? 1 : 0, withAlpha(color, 0))
+    ctx.fillStyle = shade
+    ctx.fill(area)
+  }
+  ctx.strokeStyle = color
+  ctx.lineWidth = lineWidth
+  if (dash) ctx.setLineDash(dash)
+  if (glow) { ctx.shadowColor = withAlpha(color, 0.55); ctx.shadowBlur = glow }
+  ctx.stroke(path)
   ctx.restore()
 }
 

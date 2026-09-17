@@ -108,7 +108,7 @@ function LayerScope({ layer }) {
   )
 }
 
-/** The filter's response, roughly. */
+/** The filter's response, roughly: shaded, with the cutoff marked and the decades named. */
 function FilterScope({ filter }) {
   return (
     <Scope
@@ -116,20 +116,47 @@ function FilterScope({ filter }) {
       deps={[filter.on, filter.type, filter.slope, filter.cutoff, filter.reso]}
       draw={(ctx, w, h, dpr, { ink, grid }) => {
         const fx = (f) => (Math.log(f / 20) / Math.log(1000)) * w
-        ctx.strokeStyle = grid
-        ctx.lineWidth = 1
-        for (const f of [100, 1000, 10000]) { ctx.beginPath(); ctx.moveTo(Math.round(fx(f)) + 0.5, 0); ctx.lineTo(Math.round(fx(f)) + 0.5, h); ctx.stroke() }
         const order = filter.slope === '12db' ? 1 : 2
         const q = 0.5 + filter.reso * 12
         const type = filter.slope === 'ladder' ? 'lowpass' : filter.type
-        const values = Float32Array.from({ length: Math.ceil(w) + 1 }, (_, x) => {
-          const r = (20 * 1000 ** (x / w)) / filter.cutoff
+        const dbAt = (f) => {
+          const r = f / filter.cutoff
           const den = Math.sqrt((1 - r * r) ** 2 + (r / q) ** 2)
           const mag = type === 'lowpass' ? 1 / den : type === 'highpass' ? (r * r) / den : (r / q) / den
           return 20 * Math.log10(mag ** order + 1e-6)
-        })
+        }
+        const zero = h * 0.42
+        const yOf = (db) => clamp(zero - (db / 36) * h * 0.55, 2 * dpr, h - 2 * dpr)
+        ctx.lineWidth = 1
+        ctx.font = `${9 * dpr}px ${getComputedStyle(document.body).fontFamily}`
+        ctx.textBaseline = 'bottom'
+        for (const [f, label] of [[100, '100'], [1000, '1k'], [10000, '10k']]) {
+          const gx = Math.round(fx(f)) + 0.5
+          ctx.strokeStyle = grid
+          ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, h); ctx.stroke()
+          ctx.fillStyle = grid === '#1a1a16' ? '#4a4a40' : grid
+          ctx.fillText(label, gx + 3 * dpr, h - 3 * dpr)
+        }
+        ctx.strokeStyle = grid
+        ctx.setLineDash([2 * dpr, 3 * dpr])
+        ctx.beginPath(); ctx.moveTo(0, Math.round(zero) + 0.5); ctx.lineTo(w, Math.round(zero) + 0.5); ctx.stroke()
+        ctx.setLineDash([])
+        const values = Float32Array.from({ length: Math.ceil(w) + 1 }, (_, x) => dbAt(20 * 1000 ** (x / w)))
         ctx.globalAlpha = filter.on ? 1 : 0.35
-        drawCurve(ctx, values, { width: w, map: (db) => clamp(h * 0.35 - (db / 36) * h * 0.6, dpr, h - dpr), color: ink, lineWidth: 1.5 * dpr })
+        drawCurve(ctx, values, { width: w, map: yOf, color: ink, lineWidth: 1.6 * dpr, fill: h, glow: filter.on ? 6 * dpr : 0 })
+        // the cutoff: a line down from the curve and a dot on it
+        const cx = fx(filter.cutoff)
+        const cy = yOf(dbAt(filter.cutoff))
+        ctx.strokeStyle = ink
+        ctx.globalAlpha *= 0.35
+        ctx.setLineDash([2 * dpr, 2 * dpr])
+        ctx.beginPath(); ctx.moveTo(Math.round(cx) + 0.5, cy); ctx.lineTo(Math.round(cx) + 0.5, h); ctx.stroke()
+        ctx.setLineDash([])
+        ctx.globalAlpha = filter.on ? 1 : 0.35
+        ctx.fillStyle = '#050504'
+        ctx.beginPath(); ctx.arc(cx, cy, 4 * dpr, 0, Math.PI * 2); ctx.fill()
+        ctx.lineWidth = 1.5 * dpr
+        ctx.stroke()
         ctx.globalAlpha = 1
       }}
     />
@@ -145,6 +172,9 @@ function EnvScope({ env }) {
         const hold = 0.35
         const total = env.attack + env.decay + hold + env.release
         const n = Math.ceil(w)
+        const base = h - 4 * dpr
+        const top = 5 * dpr
+        const yOf = (v) => base - v * (base - top)
         // the shape the processor makes: a straight rise, then curves that settle
         const values = Float32Array.from({ length: n + 1 }, (_, x) => {
           const t = (x / n) * total
@@ -153,10 +183,24 @@ function EnvScope({ env }) {
           const s = env.sustain + (1 - env.sustain) * Math.exp((-5 * (env.decay + hold)) / env.decay)
           return s * Math.exp((-5 * (t - env.attack - env.decay - hold)) / env.release)
         })
-        ctx.strokeStyle = grid
+        // where each stage starts, named
+        ctx.font = `${8 * dpr}px ${getComputedStyle(document.body).fontFamily}`
+        ctx.textBaseline = 'top'
         ctx.lineWidth = 1
-        ctx.beginPath(); ctx.moveTo(0, h - 3 * dpr + 0.5); ctx.lineTo(w, h - 3 * dpr + 0.5); ctx.stroke()
-        drawCurve(ctx, values, { width: w, map: (v) => h - 3 * dpr - v * (h - 6 * dpr), color: ink, lineWidth: 1.5 * dpr })
+        let at = 0
+        for (const [label, len] of [['A', env.attack], ['D', env.decay], ['S', hold], ['R', env.release]]) {
+          const sx = Math.round((at / total) * w) + 0.5
+          if (at > 0) {
+            ctx.strokeStyle = grid
+            ctx.beginPath(); ctx.moveTo(sx, top); ctx.lineTo(sx, base); ctx.stroke()
+          }
+          ctx.fillStyle = '#4a4a40'
+          if ((len / total) * w > 10 * dpr) ctx.fillText(label, sx + 3 * dpr, 2 * dpr)
+          at += len
+        }
+        ctx.strokeStyle = grid
+        ctx.beginPath(); ctx.moveTo(0, Math.round(base) + 0.5); ctx.lineTo(w, Math.round(base) + 0.5); ctx.stroke()
+        drawCurve(ctx, values, { width: w, map: yOf, color: ink, lineWidth: 1.6 * dpr, fill: base, glow: 5 * dpr })
       }}
     />
   )
@@ -169,17 +213,44 @@ const LFO_FN = {
   ramp: (p) => 2 * wrap(p) - 1,
   square: (p) => (wrap(p) < 0.5 ? 1 : -1),
 }
-function LfoScope({ lfo }) {
+function LfoScope({ lfo, cps }) {
+  const dot = useRef(null)
+  const box = useRef(null)
+  // a dot riding the wave at the lfo's rate (its phase is the window's, not the voice's)
+  useEffect(() => {
+    let raf = 0
+    const rate = lfo.sync ? cps / lfo.bars : lfo.hz
+    const fn = LFO_FN[lfo.shape]
+    const tick = (now) => {
+      raf = requestAnimationFrame(tick)
+      const el = dot.current
+      const frame = box.current
+      if (!el || !frame) return
+      const p = ((now / 1000) * rate) % 2 // two cycles are drawn
+      const w = frame.clientWidth
+      const h = frame.clientHeight
+      const y = h / 2 - fn(p) * (h / 2 - 4)
+      el.style.transform = `translate(${(p / 2) * w}px, ${y}px)`
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [lfo.shape, lfo.sync, lfo.bars, lfo.hz, cps])
   return (
-    <Scope
-      className="lfo"
-      deps={[lfo.shape]}
-      draw={(ctx, w, h, dpr, { ink, grid }) => {
-        midline(ctx, w, h, grid)
-        const values = Float32Array.from({ length: 800 }, (_, i) => LFO_FN[lfo.shape]((i / 800) * 2))
-        drawWave(ctx, values, { width: w, height: h, color: ink, pad: 3 * dpr, lineWidth: 1.5 * dpr })
-      }}
-    />
+    <div className="ph-scope-box" ref={box}>
+      <Scope
+        className="lfo"
+        deps={[lfo.shape]}
+        draw={(ctx, w, h, dpr, { ink, grid }) => {
+          midline(ctx, w, h, grid)
+          ctx.strokeStyle = grid
+          ctx.lineWidth = 1
+          ctx.beginPath(); ctx.moveTo(Math.round(w / 2) + 0.5, 0); ctx.lineTo(Math.round(w / 2) + 0.5, h); ctx.stroke()
+          const values = Float32Array.from({ length: 800 }, (_, i) => LFO_FN[lfo.shape]((i / 800) * 2))
+          drawWave(ctx, values, { width: w, height: h, color: ink, pad: 4 * dpr, lineWidth: 1.6 * dpr })
+        }}
+      />
+      <span className="ph-lfo-dot" ref={dot} aria-hidden />
+    </div>
   )
 }
 
@@ -315,10 +386,14 @@ function Destinations({ ui, src }) {
 
 // ── sections ─────────────────────────────────────────────────────────────────
 
-function Section({ title, className = '', aside, children }) {
+function Section({ title, index, className = '', aside, children }) {
   return (
     <section className={`ph-card ${className}`} aria-label={title}>
-      <header className="ph-card-head"><h3>{title}</h3>{aside}</header>
+      <header className="ph-card-head">
+        {index != null && <span className="ph-card-num" aria-hidden>{String(index).padStart(2, '0')}</span>}
+        <h3>{title}</h3>
+        {aside}
+      </header>
       {children}
     </section>
   )
@@ -409,6 +484,7 @@ function Filter({ ui }) {
   return (
     <Section
       title="filter"
+      index={2}
       className={`ph-filter ${f.on ? '' : 'off'}`}
       aside={<button type="button" className={`ph-toggle ${f.on ? 'on' : ''}`} aria-pressed={f.on} onClick={() => set((x) => { x.on = !x.on })}>{f.on ? 'on' : 'off'}</button>}
     >
@@ -433,7 +509,7 @@ function Envelope({ ui, which }) {
   const env = ui.patch[which]
   const isAmp = which === 'amp'
   return (
-    <Section title={isAmp ? 'amp envelope' : 'mod envelope'} className={isAmp ? 'ph-amp' : 'ph-src src-env'}>
+    <Section title={isAmp ? 'amp envelope' : 'mod envelope'} index={isAmp ? 3 : 4} className={isAmp ? 'ph-amp' : 'ph-src src-env'}>
       <EnvScope env={env} />
       <div className="ph-knobs tight">
         {['attack', 'decay', 'sustain', 'release'].map((k) => (
@@ -450,8 +526,8 @@ function Lfo({ ui, index }) {
   const lfo = ui.patch.lfos[index]
   const set = (fn) => ui.edit((p) => fn(p.lfos[index]))
   return (
-    <Section title={`lfo ${index + 1}`} className={`ph-src src-${src}`}>
-      <LfoScope lfo={lfo} />
+    <Section title={`lfo ${index + 1}`} index={5 + index} className={`ph-src src-${src}`}>
+      <LfoScope lfo={lfo} cps={ui.cps} />
       <div className="ph-lfo-controls">
         <Segmented label="Shape" value={lfo.shape} options={LFO_SHAPES} format={(s) => ({ sine: 'sin', tri: 'tri', saw: 'saw', ramp: 'ramp', square: 'sq' })[s]} onChange={(v) => set((l) => { l.shape = v })} />
         <div className="ph-rate">
@@ -510,11 +586,11 @@ function Keys({ hold, base, setBase }) {
 
 // ── the panel ────────────────────────────────────────────────────────────────
 
-export default function PhylloPanel({ data, change, target, hold }) {
+export default function PhylloPanel({ data, change, target, hold, cps = 0.5 }) {
   const patch = data
   const [userPresets, setUserPresets] = useState(() => readJson(PRESET_KEY, []))
   const [base, setBase] = useState(48)
-  const ui = { patch, edit: change, target }
+  const ui = { patch, edit: change, target, cps }
 
   const allPresets = [
     ...PRESETS.map((p) => ({ key: `builtin:${p.name}`, name: p.name, patch: p })),
@@ -563,7 +639,7 @@ export default function PhylloPanel({ data, change, target, hold }) {
       </div>
 
       <div className="ph-main">
-        <Section title="oscillators" className="ph-oscs" aside={<span className="ph-count">{patch.layers.length} / {MAX_LAYERS}</span>}>
+        <Section title="oscillators" index={1} className="ph-oscs" aside={<span className="ph-count">{patch.layers.length} / {MAX_LAYERS}</span>}>
           <div className="ph-slots">
             {patch.layers.map((l, i) => <LayerSlot key={l.id} ui={ui} layer={l} index={i} />)}
             {Array.from({ length: MAX_LAYERS - patch.layers.length }, (_, i) => (

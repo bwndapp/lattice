@@ -166,7 +166,7 @@ export default function SynthWindow({ project, patternId, channelId, order, fron
       </header>
       <div className="sw-body">
         {Panel
-          ? <Panel data={data} groups={groups} knob={knob} change={change} target={target} play={play} hold={hold} />
+          ? <Panel data={data} groups={groups} knob={knob} change={change} target={target} play={play} hold={hold} cps={(Number(project.bpm) || 120) / (Number(project.beats) || 4) / 60} />
           : (
             <div className="sw-groups">
               {groups.map((g) => (
