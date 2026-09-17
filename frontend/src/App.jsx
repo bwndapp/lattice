@@ -34,7 +34,7 @@ import { capturePatterns, parseLanes, tempoChange } from './lanes'
 import { PROJECT_MARK, blankProject, demoProject, generateCode, newId, normalizeProject, parseProject, projectFromCode } from './project'
 import { createTransport, formatBarBeat, parseBarBeat } from './transport'
 import { songLength } from './song'
-import { canEdit as roomTakesEdits, join as joinRoom, leave as leaveRoom, onDoc, sendOps } from './collab.js'
+import { canEdit as roomTakesEdits, join as joinRoom, leave as leaveRoom, onDoc, onPlay, sendOps, sendPlay } from './collab.js'
 import { applyOps, diffOps, docHash, invertOps } from './docsync.js'
 import PeerList from './PeerList.jsx'
 
@@ -671,11 +671,65 @@ export default function App() {
     replaceCode(body.join('\n'))
   }, [replaceCode])
 
+  // ── playing in time together (collab.js) ──
+  // Two browsers have two audio clocks. Rather than try to make them agree, whoever hits
+  // play says where the song is and the server stamps when; everyone following works out
+  // where that is by now and seeks there. Small differences are left alone — a seek
+  // re-sets the running pattern, and correcting 10ms sounds worse than being 10ms out.
+  const LEAD = 0.03 // seconds of grace, so the seek lands just ahead of where we aim
+  const TOL = 0.05 // seconds out of step before it's worth a correction
+  const [together, setTogether] = useState(false)
+  const togetherRef = useRef(false)
+  togetherRef.current = together
+  const following = useRef(null) // the last thing we heard: { on, pos, cps, at }
+  const settingRef = useRef(false) // true while we're acting on what we heard, so we don't echo
+  const cpsOf = useCallback((p) => (Number(p?.bpm) || 120) / (Number(p?.beats) || 4) / 60, [])
+  const tellRoom = useCallback((on) => {
+    if (!togetherRef.current || settingRef.current) return
+    sendPlay(on, transport.position(), cpsOf(parseProject(editorRef.current?.code)))
+  }, [transport, cpsOf])
+  /** Where the song must be now, given what we were told and how long ago. */
+  const wantedAt = useCallback((heard) => heard.pos + (heard.on ? ((Date.now() - heard.at) / 1000) * (heard.cps || 0) : 0), [])
+  const lineUp = useCallback((heard) => {
+    if (!togetherRef.current || !heard) return
+    const cps = heard.cps || cpsOf(parseProject(editorRef.current?.code))
+    settingRef.current = true
+    try {
+      if (!heard.on) {
+        if (transport.playing()) { editorRef.current?.stop(); silenceNow() }
+        transport.pausedAt(heard.pos)
+        return
+      }
+      const target = wantedAt(heard) + LEAD * cps
+      if (!transport.playing()) {
+        transport.seek(target)
+        playRef.current?.()
+      } else if (Math.abs(transport.position() - target) > TOL * cps) {
+        transport.seek(target)
+      }
+    } finally {
+      settingRef.current = false
+    }
+  }, [transport, cpsOf, wantedAt])
+  useEffect(() => onPlay((heard) => { following.current = heard; lineUp(heard) }), [lineUp])
+  // clocks drift and a browser in a background tab drifts further: check now and then
+  useEffect(() => {
+    if (!together) return
+    const timer = setInterval(() => { if (following.current?.on) lineUp(following.current) }, 4000)
+    return () => clearInterval(timer)
+  }, [together, lineUp])
+  // moving the playhead, looping, changing the tempo: everything the transport announces
+  useEffect(() => transport.subscribe(() => { if (togetherRef.current) tellRoom(transport.playing()) }), [transport, tellRoom])
+  // nobody to play along with
+  useEffect(() => { if (!trackId) setTogether(false) }, [trackId])
+
+  const playRef = useRef(null)
   const play = useCallback(() => {
     const editor = editorRef.current
     if (!editor || preparingRef.current) return // already starting: sounds are loading
     if (!editor.repl.scheduler.started) transport.cue() // start from the cue, not bar 1
     editor.evaluate()
+    tellRoom(true)
     const id = loadedIdRef.current
     if (id && !countedRef.current.has(id)) {
       countedRef.current.add(id)
@@ -683,20 +737,24 @@ export default function App() {
     }
   }, [transport])
 
+  playRef.current = play
+
   /** Stop: back to where playback started (the cue). */
   // Stop cuts everything at once: notes still ringing or queued, reverb and delay tails
   const stop = useCallback(() => {
     editorRef.current?.stop()
     silenceNow()
     transport.toMark() // back to wherever the playhead was put
-  }, [transport])
+    tellRoom(false)
+  }, [transport, tellRoom])
   /** Pause: stop, and resume from here next time. */
   const pause = useCallback(() => {
     const at = transport.position()
     editorRef.current?.stop()
     silenceNow() // a note already ringing would otherwise play itself out after the pause
     transport.pausedAt(at)
-  }, [transport])
+    tellRoom(false)
+  }, [transport, tellRoom])
   const toStart = useCallback(() => transport.seek(transport.looping() ? transport.loop.from : 0), [transport])
 
   // Load whatever the URL points at: the scratch pad at /, or a saved track.
@@ -1172,7 +1230,7 @@ export default function App() {
           <span className="export-word">export</span>
         </button>
         <div className="bar-side right">
-        <PeerList />
+        <PeerList together={together} onTogether={canEdit ? setTogether : null} />
         <span className="track" role="group" aria-label="Track">
           {loadError ? (
             <span className="meta track-status" title={loadError}>{loadError} <Link className="linkish" to="/">new track</Link></span>

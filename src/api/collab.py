@@ -24,6 +24,10 @@ Messages are JSON text frames.
     ← {"t":"ops","id":3,"ops":[...],"v":13,"h":"5f2a"}
     → {"t":"sync"}                       I'm lost, send me the whole thing
 
+  playing in time (also editors only)
+    → {"t":"time","c":<the client's clock>}        ← {"t":"time","c":...,"s":<the server's>}
+    → {"t":"play","on":true,"pos":12.5,"cps":0.58} ← {"t":"play","id":3,...,"at":<server ms>}
+
 Ops are the ones frontend/src/docsync.js makes, applied here by _docsync.py under the same
 rules, so every copy ends up the same. `v` counts changes: a client that sees a gap asks
 for the whole track rather than guessing what it missed.
@@ -224,6 +228,20 @@ async def collab(ws: WebSocket, track_id: str):
             elif kind == "sync" and peer.edit:
                 if room.doc is not None:
                     await ws.send_text(json.dumps({"t": "doc", "doc": room.doc, "v": room.version}))
+            elif kind == "time":
+                # what time the server makes it, so a follower can work out the offset
+                # between its clock and everyone else's (the round trip is measured there)
+                await ws.send_text(json.dumps({"t": "time", "c": msg.get("c"), "s": time.time() * 1000}))
+            elif kind == "play" and peer.edit:
+                # where the song is, and when: whoever hits play says so, everyone else lines up
+                await room.tell_editors(peer.id, {
+                    "t": "play",
+                    "id": peer.id,
+                    "on": bool(msg.get("on")),
+                    "pos": msg.get("pos"),
+                    "cps": msg.get("cps"),
+                    "at": time.time() * 1000,  # stamped here, so it needs no clock of its own
+                })
             elif kind == "ping":
                 await ws.send_text('{"t":"pong"}')
     except (WebSocketDisconnect, asyncio.TimeoutError, ValueError):

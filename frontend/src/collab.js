@@ -8,6 +8,8 @@
  *   selectionIs(where, ids)
  *   onDoc({ seed, doc, ops, reset })    the shared project: see below
  *   sendOps(ops, hash)                  what we just changed
+ *   onPlay(fn) / sendPlay(on, pos, cps) playing in time together
+ *   serverNow()                         the room's clock, in ms, or null while we're alone
  *
  * One websocket per open track (src/api/collab.py). Positions are each surface's own
  * coordinates — flow x/y on the patch canvas, bars and rows on the timeline, bars and
@@ -31,6 +33,7 @@ import { currentUser, getToken } from './bwnd'
 
 const RETRY = [700, 1500, 3000, 6000, 12000] // how long to wait before trying again
 const PING = 25000 // keeps the connection alive through anything that times idle ones out
+const CLOCK_EVERY = 20000 // how often we check our clock against the server's
 
 let sock = null
 let room = null // the track id we're in, or null
@@ -40,6 +43,10 @@ let tries = 0
 let timer = 0
 let pinger = 0
 let mayEdit = false // whether the server lets us change this track
+let skew = null // what to add to our clock to get the server's
+let bestTrip = Infinity // the quickest round trip we've measured, which is the honest one
+let onPlayFn = null
+let clockTimer = 0
 let version = 0 // the room's change count, as far as we've seen
 let doc = null // what the document half of the app has hooked up, if anything
 let snapshot = [] // a stable array for useSyncExternalStore: only rebuilt on a real change
@@ -96,6 +103,48 @@ export function sendOps(ops, hash) {
 
 const askForTrack = () => { if (canEdit()) sock.send('{"t":"sync"}') }
 
+/**
+ * Playing in time together. Two browsers have two audio clocks that agree about nothing,
+ * so positions travel with the server's clock on them: whoever hits play says where the
+ * song is, the server stamps when, and everyone else works out where that is by now.
+ *
+ * The offset is measured the way clocks have always been measured over a network: ask,
+ * see how long the answer took, and believe the quickest round trip most — a slow one
+ * spent its time somewhere we can't account for.
+ */
+export const serverNow = () => (skew == null ? null : Date.now() + skew)
+
+function measureClock() {
+  if (sock?.readyState !== WebSocket.OPEN) return
+  sock.send(JSON.stringify({ t: 'time', c: Date.now() }))
+}
+
+function tookClock(msg) {
+  const trip = Date.now() - (msg.c ?? 0)
+  if (!(trip >= 0) || typeof msg.s !== 'number') return
+  if (skew != null && trip > bestTrip * 2) return // a slow answer tells us nothing new
+  bestTrip = Math.min(bestTrip, trip)
+  skew = msg.s + trip / 2 - Date.now() // the answer was made about halfway through the trip
+}
+
+/** Hear where everyone else's playhead is: fn({ on, pos, cps, at }) with `at` on our clock. */
+export function onPlay(fn) {
+  onPlayFn = fn
+  return () => { if (onPlayFn === fn) onPlayFn = null }
+}
+
+/** Say where ours is. `pos` is in cycles (bars), `cps` cycles a second. */
+export function sendPlay(on, pos, cps) {
+  if (!canEdit()) return
+  sock.send(JSON.stringify({ t: 'play', on: !!on, pos, cps }))
+}
+
+const forgetClock = () => {
+  skew = null
+  bestTrip = Infinity
+  clearInterval(clockTimer)
+}
+
 /** The other people on this track, each `{ id, name, color, at, sel }`. */
 export function usePeers() {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
@@ -128,6 +177,10 @@ async function open(trackId) {
     if (sock !== ws || ws.readyState !== WebSocket.OPEN) return
     ws.send(JSON.stringify({ t: 'hello', token: token || '', name: currentUser()?.givenName || currentUser()?.name || '' }))
     pinger = setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.send('{"t":"ping"}') }, PING)
+    // a burst to settle on an offset, then now and then, because clocks drift
+    for (const wait of [0, 250, 600, 1200]) setTimeout(measureClock, wait)
+    clearInterval(clockTimer)
+    clockTimer = setInterval(measureClock, CLOCK_EVERY)
   }
   ws.onmessage = (e) => {
     if (sock !== ws) return
@@ -145,6 +198,13 @@ async function open(trackId) {
     if (msg.t === 'seed') {
       const project = doc?.seed?.()
       if (project && canEdit()) sock.send(JSON.stringify({ t: 'doc', doc: project }))
+      return
+    }
+    if (msg.t === 'time') { tookClock(msg); return }
+    if (msg.t === 'play') {
+      // `at` is on the server's clock: put it on ours before anyone tries to use it
+      if (skew == null || typeof msg.at !== 'number') return
+      onPlayFn?.({ on: !!msg.on, pos: msg.pos, cps: msg.cps, at: msg.at - skew })
       return
     }
     if (msg.t === 'doc') { version = msg.v ?? 0; doc?.doc?.(msg.doc); return }
@@ -180,6 +240,7 @@ async function open(trackId) {
     sock = null
     me = null
     mayEdit = false
+    forgetClock()
     doc?.reset?.()
     if (peers.size) { peers = new Map(); changed(); selChanged() }
     retry(trackId)
@@ -211,6 +272,7 @@ export function leave() {
   sock = null
   me = null
   mayEdit = false
+  forgetClock()
   doc?.reset?.()
   if (ws) { ws.onclose = null; try { ws.close() } catch { /* already gone */ } }
   lastSel = ''

@@ -1,0 +1,19 @@
+# Tests
+
+No framework and no dependencies: everything runs with what's already installed.
+
+**The document** — `node frontend/test/docsync.test.mjs` covers diffing a project edit,
+applying it somewhere else and undoing it without touching anyone else's work.
+`node frontend/test/collab.client.test.mjs` drives the client half of a room against a
+stubbed socket: seeding, adopting, noticing a gap, going quiet when the connection drops.
+
+**The relay** — start it on a throwaway database and port, then run the suites against it:
+
+    python3 test/relay_serve.py &
+    python3 test/relay_presence_test.py   # cursors, joining, leaving, who may open a track
+    python3 test/relay_doc_test.py        # seeding, ops, a late arrival, who may edit
+    python3 test/relay_play_test.py       # the clock, and where the playhead is going
+    pkill -f relay_serve.py
+
+The harness stands in for the sign-in service: the token `owner` is the track's owner,
+anything else is somebody else, and no token at all is a guest.

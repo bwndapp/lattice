@@ -33,7 +33,9 @@
 }
 
 /* Who's here, in the header. */
-.peer-list { display: inline-flex; align-items: center; gap: 3px; margin-left: 0.4rem; }
+.peer-list { display: inline-flex; align-items: center; gap: 5px; margin-left: 0.4rem; }
+.peer-dots { display: inline-flex; align-items: center; gap: 3px; }
+.btn.tiny { padding: 0.1rem 0.35rem; font-size: 10px; }
 .peer-dot {
   display: grid;
   place-items: center;
