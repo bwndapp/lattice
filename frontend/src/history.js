@@ -17,7 +17,16 @@ const label = (node, project) => {
 }
 
 const byId = (list) => new Map((list ?? []).map((x) => [x.id, x]))
-const round = (v) => (typeof v === 'number' ? Math.round(v * 100) / 100 : v)
+/**
+ * A number as you'd read it: enough figures to tell two values apart, and no more. Knobs
+ * hold far more precision than anyone turns them by, so a move of a thousandth would
+ * otherwise print as "0.01 → 0.01" and take up a line saying nothing.
+ */
+const round = (v) => {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return v
+  if (Math.abs(v) >= 100) return Math.round(v)
+  return Number(v.toPrecision(3))
+}
 const count = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
 /** Knobs that differ between two objects of settings, named by their owner. */
@@ -28,6 +37,8 @@ function knobChanges(who, before, after, skip = []) {
     const a = before?.[key]
     const b = after?.[key]
     if (a === b || typeof a === 'object' || typeof b === 'object') continue
+    // moved by less than it's worth saying: not a change anyone made on purpose
+    if (round(a) === round(b)) continue
     out.push(`${who} ${key} ${round(a) ?? 'default'} → ${round(b) ?? 'default'}`)
   }
   return out
