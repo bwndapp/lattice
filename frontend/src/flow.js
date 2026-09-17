@@ -22,6 +22,10 @@ let frame = 0
 const els = new Map() // element id → the element, while it's on screen
 const lit = new Map() // element id → the light we last wrote there
 const dbs = new Map() // wire id → the reading we last wrote above it
+const meters = new Map() // wire id → where its needle is now, in dB
+const FALL = 26 // dB a second the reading drops: it jumps to a peak and eases back down
+const FLOOR_DB = -60 // quieter than this and it may as well say nothing
+let painted = 0 // when the last frame was, for the fall
 let colors = new Map() // source key → its colour as [r, g, b]
 
 const key = (nodeId, chanId) => (chanId ? `${nodeId}|${chanId}` : nodeId)
@@ -100,12 +104,15 @@ export function stopFlow() {
   source = null
   hits = []
   cycle = null
+  // nothing playing reads as nothing, not as a number that vanished
   for (const [id, el] of els) {
-    if (id.startsWith('db:')) { el.textContent = ''; el.hidden = true } else write(el, id, 0)
+    if (id.startsWith('db:')) { el.textContent = '-∞'; el.classList.add('quiet') } else write(el, id, 0)
   }
   els.clear()
   lit.clear()
   dbs.clear()
+  meters.clear()
+  painted = 0
 }
 
 const elementFor = (id, kind) => {
@@ -133,8 +140,12 @@ function write(el, id, value, glow = '') {
   if (glow) el.style.setProperty('--glow', glow)
 }
 
+let gap = 0.016 // seconds since the last frame, for anything that eases over time
 function tick() {
   frame = requestAnimationFrame(tick)
+  const beat = performance.now()
+  gap = Math.min(0.1, painted ? (beat - painted) / 1000 : 0.016)
+  painted = beat
   if (!source) return
   const now = source.now()
   const cps = source.cps() || 0.5
@@ -222,16 +233,23 @@ function tick() {
     return carried
   }
 
-  /** What the wire is carrying, in decibels, for the readout above it. */
+  /**
+   * What the wire is carrying, in decibels. It goes straight to a peak and falls back at a
+   * steady rate, the way a meter's needle does, rather than following the sound exactly —
+   * which would be a number flickering too fast to read.
+   */
   const meter = (id, carried) => {
     const el = elementFor(`db:${id}`, 'db')
     if (!el) return
-    const db = carried > 0.0001 ? 20 * Math.log10(Math.min(4, carried)) : null
-    const text = db === null ? '' : `${db > -0.05 ? '' : ''}${db.toFixed(1)}`
+    const to = carried > 1e-4 ? 20 * Math.log10(Math.min(4, carried)) : -Infinity
+    const was = meters.get(id) ?? -Infinity
+    const now = to > was ? to : Math.max(to, was - FALL * gap)
+    meters.set(id, now)
+    const text = now > FLOOR_DB ? now.toFixed(1) : '-∞'
     if (dbs.get(id) === text) return
     dbs.set(id, text)
     el.textContent = text
-    el.hidden = !text
+    el.classList.toggle('quiet', text === '-∞')
   }
   for (const [id, keys] of paths.nodes) {
     const el = keys.length && elementFor(id, 'node')

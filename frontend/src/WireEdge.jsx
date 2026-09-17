@@ -101,9 +101,8 @@ export function WireEdge({ id, sourceX, sourceY, targetX, targetY, data, style, 
         >+</button>
         {/* what's going through, in dB, written here frame by frame by flow.js */}
         <span
-          className="wire-db"
+          className="wire-db quiet"
           data-db={id}
-          hidden
           aria-hidden
           style={{ transform: `translate(-50%, -50%) translate(${midX}px, ${midY - 15}px)` }}
         />
