@@ -145,6 +145,27 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     clearTimeout(landed.current)
     landed.current = setTimeout(() => setSettling(null), 90)
   }
+  /**
+   * Only clips that have just turned up play the arriving animation. Hanging it on every
+   * clip meant the whole timeline popped each time you came back to it from the patch,
+   * since coming back builds the list again from nothing.
+   */
+  const [arriving, setArriving] = useState(null)
+  const seen = useRef(null)
+  const arrived = useRef(0)
+  useEffect(() => {
+    const ids = new Set(song.clips.map((c) => c.id))
+    const before = seen.current
+    seen.current = ids
+    if (!before) return // the first look: everything here was already here
+    const fresh = [...ids].filter((id) => !before.has(id))
+    if (!fresh.length) return
+    setArriving(new Set(fresh))
+    clearTimeout(arrived.current)
+    arrived.current = setTimeout(() => setArriving(null), 340)
+  }, [song.clips])
+  useEffect(() => () => clearTimeout(arrived.current), [])
+
   const [vanishing, setVanishing] = useState(null) // erased, and still shrinking away
   const vanished = useRef(0)
   const vanish = (ids) => {
@@ -1112,7 +1133,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
                   <div
                     key={c.id}
                     data-id={c.id}
-                    className={`clip ${LANE_H >= 30 && part.kind !== 'auto' ? 'roomy' : ''} ${part.kind === 'auto' ? 'automation' : ''} ${selected.has(c.id) ? 'selected' : ''} ${c.id.startsWith('__') ? 'preview' : ''} ${c.gone || vanishing?.has(c.id) ? 'gone' : ''} ${drag?.lift && (drag.changes?.[c.id] || c.id.startsWith('__copy')) ? 'lifted' : ''} ${settling?.has(c.id) ? 'settling' : ''} ${!song.on ? 'off' : ''}`}
+                    className={`clip ${LANE_H >= 30 && part.kind !== 'auto' ? 'roomy' : ''} ${part.kind === 'auto' ? 'automation' : ''} ${selected.has(c.id) ? 'selected' : ''} ${c.id.startsWith('__') ? 'preview' : ''} ${c.gone || vanishing?.has(c.id) ? 'gone' : ''} ${drag?.lift && (drag.changes?.[c.id] || c.id.startsWith('__copy')) ? 'lifted' : ''} ${settling?.has(c.id) ? 'settling' : ''} ${arriving?.has(c.id) ? 'arriving' : ''} ${!song.on ? 'off' : ''}`}
                     style={{ left: c.start * ppb, top: c.lane * LANE_H + 3, width: Math.max(4, c.len * ppb - 1), height: LANE_H - 6, '--clip': colorFor(c.src, song.colors), '--clip-ink': inkFor(colorFor(c.src, song.colors)) }}
                     title={`${part.name} · bar ${Math.floor(c.start) + 1}${c.start % 1 ? `.${Math.round((c.start % 1) * beats) + 1}` : ''} · ${Math.round(c.len * beats) / beats} bar${c.len === 1 ? '' : 's'}`}
                   >
