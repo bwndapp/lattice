@@ -923,9 +923,12 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
     const all = paletteItems()
     if (menu?.wire) return all.filter((it) => it.kind === 'node' && splicable(it.key))
     if (menu?.from) return all.filter((it) => it.kind === 'node' && NODE_TYPES[it.key]?.inputs > 0)
+    // pulled backwards out of an input: anything that plays out (the output plays nowhere)
+    if (menu?.to) return all.filter((it) => it.kind === 'instrument' || it.key !== 'output')
     return all
-  }, [menu?.wire, menu?.from])
+  }, [menu?.wire, menu?.from, menu?.to])
   const closeMenu = useCallback(() => setMenu(null), [])
+  const toRef = useRef(null) // a free input pulled backwards, waiting for something to feed it
   const pointerRef = useRef(null) // last pointer position over the canvas, for shift + A
 
   // Shift + A (as in Blender): the add menu at the pointer, ready to search
@@ -1041,7 +1044,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
     if (gone.has(solo)) onSolo(null)
   }, [onUpdateProject, solo, onSolo])
 
-  const addNode = useCallback((type, position, instrument, intoWire = null, fromPort = null) => {
+  const addNode = useCallback((type, position, instrument, intoWire = null, fromPort = null, toPort = null) => {
     const id = `${type}${newId().slice(-5)}`
     const rect = wrapRef.current?.getBoundingClientRect()
     let at = position
@@ -1054,7 +1057,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
     // Clicked in the pane (not dropped somewhere): wire it up so it's heard straight away.
     // A sound goes into the output; an effect or transform goes after the selected node,
     // taking over that node's wires, so clicking effects one by one builds a chain.
-    const clicked = !position && !intoWire && !fromPort
+    const clicked = !position && !intoWire && !fromPort && !toPort
     const selectedIds = nodesRef.current.filter((n) => n.selected).map((n) => n.id)
     const after = clicked && selectedIds.length === 1 && splicable(type) ? project.nodes.find((n) => n.id === selectedIds[0] && n.type !== 'output') : null
     const output = project.nodes.find((n) => n.type === 'output')
@@ -1077,6 +1080,10 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
       // dragged out of a port and dropped on nothing: the wire you were pulling lands here
       if (fromPort && NODE_TYPES[type]?.inputs) {
         p.edges.push({ source: fromPort.nodeId, sourceHandle: fromPort.handleId ?? 'out', target: id, targetHandle: firstInput(type) })
+      }
+      // pulled backwards out of an input: the new node plays into it
+      if (toPort && type !== 'output') {
+        p.edges.push({ source: id, sourceHandle: 'out', target: toPort.nodeId, targetHandle: toPort.handleId ?? 'in' })
       }
       if (after) {
         for (const e of p.edges) if (e.source === after.id) e.source = id
@@ -1342,28 +1349,32 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
             onConnectStart={(_, { nodeId, handleId, handleType }) => {
               // pulling out of a port: where the wire came from, in case it lands on nothing
               fromRef.current = handleType === 'source' ? { nodeId, handleId } : null
-              // grabbing a connected input pulls its wire off
+              // grabbing a connected input pulls its wire off; a free one asks for something to feed it
               if (handleType !== 'target') return
               const wire = project.edges.find((e) => e.target === nodeId && e.targetHandle === (handleId ?? 'in'))
               detachRef.current = wire?.id ?? null
+              toRef.current = wire ? null : { nodeId, handleId }
               setDetaching(detachRef.current)
             }}
             onConnectEnd={(e) => {
               const wire = detachRef.current
               const from = fromRef.current
+              const to = toRef.current
               const landed = joinedRef.current
               detachRef.current = null
               fromRef.current = null
+              toRef.current = null
               joinedRef.current = false
               setDetaching(null)
               // dropped anywhere but an output: the pulled wire goes away (a successful onConnect already replaced it)
               if (wire) onUpdateProject((p) => { p.edges = p.edges.filter((e) => e.id !== wire) })
               // dragged out of a port onto bare canvas: ask what to put there, and wire it up
-              if (from && !landed && e && !e.target?.closest?.('.react-flow__node')) {
+              if ((from || to) && !landed && e && !e.target?.closest?.('.react-flow__node')) {
                 const x = e.clientX ?? e.changedTouches?.[0]?.clientX
                 const y = e.clientY ?? e.changedTouches?.[0]?.clientY
                 if (x == null) return
-                setMenu({ x, y, at: flow.screenToFlowPosition({ x: x - 20, y: y - 20 }), from })
+                // a backwards pull lands to the left of the pointer, where it will sit
+                setMenu({ x, y, at: flow.screenToFlowPosition({ x: x - (to ? 240 : 20), y: y - 20 }), from, to })
               }
             }}
             onConnect={onConnect}
@@ -1396,10 +1407,10 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
           items={menuItems}
           groups={PAL_GROUPS}
           score={matchScore}
-          context={menu.wire ? 'wire' : menu.from ? 'after' : null}
+          context={menu.wire ? 'wire' : menu.from ? 'after' : menu.to ? 'before' : null}
           onPick={(item) => {
-            if (item.kind === 'instrument') return addNode('pattern', menu.at, item.key, null, menu.from)
-            if (menu.from) return addNode(item.key, menu.at, null, null, menu.from)
+            if (item.kind === 'instrument') return addNode('pattern', menu.at, item.key, null, menu.from, menu.to)
+            if (menu.from || menu.to) return addNode(item.key, menu.at, null, null, menu.from, menu.to)
             const into = menu.wire && splicable(item.key) ? project.edges.find((e) => e.id === menu.wire) : null
             const src = into && project.nodes.find((n) => n.id === into.source)
             const dst = into && project.nodes.find((n) => n.id === into.target)

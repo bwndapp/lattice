@@ -129,7 +129,7 @@ export default function AddMenu({ x, y, items, groups, score, onPick, onClose, c
     >
       <div className="am-main">
         <div className="am-head">
-          <span className="am-title">add{context === 'wire' ? ' into this wire' : context === 'after' ? ' onto this wire' : ''}<kbd className="am-kbd">shift A</kbd></span>
+          <span className="am-title">add{context === 'wire' ? ' into this wire' : context === 'after' ? ' onto this wire' : context === 'before' ? ' into this input' : ''}<kbd className="am-kbd">shift A</kbd></span>
           <input
             ref={searchRef}
             className="node-input am-search"
