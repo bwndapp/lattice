@@ -130,6 +130,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const [activePart, setActivePart] = useState(null) // src: empty-row drags draw this part
   const [drag, setDrag] = useState(null) // live preview while moving / stretching / drawing
   const [marquee, setMarquee] = useState(null)
+  const [erasing, setErasing] = useState(false) // right button held: the pointer shows it deletes
   const [ghost, setGhost] = useState(null) // where a part dragged from the sidebar would land
   const dock = useRollDock() // a pattern's rack and notes live along the bottom
   const [tool, setTool] = useState('pointer') // or 'slice'
@@ -345,6 +346,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       // right-click deletes a clip; keep holding and sweep to delete every clip you pass over
       e.currentTarget.setPointerCapture(e.pointerId)
       const hit = e.target.closest('.clip:not(.preview)')?.dataset.id
+      setErasing(true) // the pointer says so while the button is down
       dragRef.current = { mode: 'erase', gone: new Set(hit ? [hit] : []) }
       setDrag({ changes: {}, erased: new Set(dragRef.current.gone) })
       return
@@ -500,6 +502,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   }
 
   const onLanesUp = (e) => {
+    setErasing(false)
     if (panRef.current) { panRef.current = null; e?.currentTarget?.classList.remove('zooming'); return }
     const d = dragRef.current
     dragRef.current = null
@@ -1025,13 +1028,13 @@ export default function Timeline({ project, onUpdateProject, transport, started 
               })}
             </div>
             <div
-              className={`song-lanes ${drag ? 'dragging' : ''} ${tool === 'slice' ? 'slicing' : ''}`}
+              className={`song-lanes ${drag ? 'dragging' : ''} ${tool === 'slice' ? 'slicing' : ''} ${erasing ? 'erasing' : ''}`}
               ref={lanesRef}
               style={{ height: lanes * LANE_H, width: bars * ppb }}
               onPointerDown={onLanesDown}
               onPointerMove={onLanesMove}
               onPointerUp={onLanesUp}
-              onPointerCancel={() => { dragRef.current = null; panRef.current = null; setDrag(null); setMarquee(null) }}
+              onPointerCancel={() => { dragRef.current = null; panRef.current = null; setDrag(null); setMarquee(null); setErasing(false) }}
               onPointerLeave={() => { if (!dragRef.current) setSliceLine(null) }}
               onContextMenu={(e) => e.preventDefault()}
               onDragOver={onDragOver}

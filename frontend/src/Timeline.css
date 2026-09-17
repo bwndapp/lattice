@@ -259,6 +259,7 @@
 .song-lanes.dragging .clip { cursor: var(--ring); }
 .song-lanes.zooming, .song-lanes.zooming .clip { cursor: move; }
 .song-lanes.slicing, .song-lanes.slicing .clip { cursor: crosshair; }
+.song-lanes.erasing, .song-lanes.erasing .clip, .song-lanes.erasing .clip * { cursor: var(--cut); }
 .song-slice { position: absolute; z-index: 5; width: 0; margin-left: -1px; border-left: 2px dashed var(--danger); pointer-events: none; }
 .song-slice::before { content: ''; position: absolute; top: -4px; left: -6px; border: 5px solid transparent; border-top-color: var(--danger); }
 

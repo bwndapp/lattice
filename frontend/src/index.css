@@ -30,11 +30,13 @@
   --mono: "Martian Mono", ui-monospace, "SF Mono", Menlo, monospace;
 }
 /* ── cursor: a small dot, a ring over anything you can click or drag (as jameskemp.cc) ── */
-:root { --dot: default; --ring: pointer; }
+:root { --dot: default; --ring: pointer; --cut: not-allowed; }
 @media (pointer: fine) {
   :root {
     --dot: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="4" fill="white" stroke="black" stroke-width="1"/></svg>') 6 6, default;
     --ring: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7" stroke="white" stroke-width="1.5"/><circle cx="10" cy="10" r="8.25" stroke="black" stroke-width="0.75"/></svg>') 10 10, pointer;
+    /* the right button deletes: a red cross, outlined so it reads on a bright clip too */
+    --cut: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M5 5 13 13M13 5 5 13" stroke="black" stroke-width="4.5" stroke-linecap="round"/><path d="M5 5 13 13M13 5 5 13" stroke="%23ff3b30" stroke-width="2.2" stroke-linecap="round"/></svg>') 9 9, not-allowed;
   }
 }
 html { cursor: var(--dot); }
