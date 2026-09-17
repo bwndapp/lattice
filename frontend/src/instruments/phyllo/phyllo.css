@@ -183,7 +183,8 @@
 }
 .ph-led.on { background: var(--acid); border-color: var(--acid); box-shadow: 0 0 8px rgba(228, 255, 26, 0.6); }
 .ph-fx-params { display: flex; flex-wrap: wrap; gap: 0.2rem 0.05rem; padding: 0.25rem 0.3rem 0.4rem; border-top: 1px solid #1c1c18; }
-.ph-fx-params .knob { width: 44px; }
+.ph-fx-params .knob { width: 52px; }
+.ph-fx-params .knob-label { max-width: 52px; overflow: hidden; text-overflow: ellipsis; }
 .ph-fx-params .ph-field { width: 100%; flex-direction: row; align-items: center; gap: 0.4rem; }
 .ph-fx-params .ph-field select { flex: 1; height: 22px; }
 .ph-panel .ph-fx-add { height: 26px; color: var(--muted); border-style: dashed; }
