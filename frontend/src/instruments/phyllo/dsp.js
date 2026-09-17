@@ -68,6 +68,7 @@ class PhylloProcessor extends LatticeInstrument {
   constructor(options) {
     super(options)
     this.lfoPhase = [0, 0]
+    this.lfoStart = [0, 0] // where the shared clock was at the start of this block
     this.lfoRate = [0, 0]
     this.lfoMode = [0, 0]
     this.lfoTable = [new Float32Array(PH_LFO_TABLE + 1), new Float32Array(PH_LFO_TABLE + 1)]
@@ -82,7 +83,7 @@ class PhylloProcessor extends LatticeInstrument {
     return {
       active: false, pitch: 60, target: 60, vel: 1, fresh: true,
       amp: { stage: 0, v: 0 }, env: { stage: 0, v: 0 },
-      layers: [0, 1, 2, 3].map(() => ({ ph: new Float64Array(16), fm: 0, pink: new Float32Array(7), brown: 0 })),
+      layers: [0, 1, 2, 3].map(() => ({ ph: new Float64Array(16), fm: 0, pink: new Float32Array(7), brown: 0, gl: new Float32Array(16), gr: new Float32Array(16), warm: false })),
       svf: new Float64Array(8), // two stages × two sides × two states
       ladder: new Float64Array(8), // four poles × two sides
       counter: 0, ctl: null,
@@ -101,6 +102,7 @@ class PhylloProcessor extends LatticeInstrument {
       const rate = k[N.sync] > 0.5 ? k.cps / Math.max(1 / 64, k[N.bars]) : k[N.hz]
       this.lfoRate[i] = rate
       this.lfoMode[i] = Math.round(k[N.mode])
+      this.lfoStart[i] = this.lfoPhase[i]
       this.lfoPhase[i] = phWrap(this.lfoPhase[i] + (rate * frames) / sampleRate)
     }
   }
@@ -136,7 +138,8 @@ class PhylloProcessor extends LatticeInstrument {
       // a fresh voice: clean filters, and unison voices start at scattered phases
       voice.svf.fill(0)
       voice.ladder.fill(0)
-      for (const l of voice.layers) { for (let u = 0; u < 16; u++) l.ph[u] = u ? Math.random() : 0; l.fm = 0 }
+      for (const l of voice.layers) { for (let u = 0; u < 16; u++) l.ph[u] = u ? Math.random() : 0; l.fm = 0; l.warm = false }
+      voice.ctl = null
     }
     voice.active = true
     voice.lfoPh[0] = 0 // retrig and env LFOs start over with the note
@@ -160,7 +163,7 @@ class PhylloProcessor extends LatticeInstrument {
     return e.v
   }
   // what the knobs and routes add up to for this voice, for the next few samples
-  control(voice) {
+  control(voice, offset) {
     const k = this.k
     const m = this.mods
     m.fill(0)
@@ -169,7 +172,8 @@ class PhylloProcessor extends LatticeInstrument {
     for (let i = 0; i < 2; i++) {
       const mode = this.lfoMode[i]
       let p
-      if (mode === 0) p = this.lfoPhase[i]
+      // free: the shared clock at this very sample, not where the block began (that stepped)
+      if (mode === 0) p = phWrap(this.lfoStart[i] + (this.lfoRate[i] * offset) / sampleRate)
       else {
         p = voice.lfoPh[i]
         const next = p + (this.lfoRate[i] * PH_CONTROL) / sampleRate
@@ -192,6 +196,7 @@ class PhylloProcessor extends LatticeInstrument {
     if (c.erT !== k.e_release) { c.erT = k.e_release; c.er = coef(k.e_release) }
     c.glide = k.glide > 0.0005 ? Math.exp(-PH_CONTROL / (k.glide / 3 * sampleRate)) : 0
     const semis = m[4] * 24
+    c.ampFrom = c.amp === undefined ? null : c.amp
     c.amp = Math.min(1.5, Math.max(0, 1 + m[5])) * k.volume * 0.35
     for (let i = 0; i < 4; i++) {
       const L = c.layers[i]
@@ -271,7 +276,7 @@ class PhylloProcessor extends LatticeInstrument {
       if (voice.counter <= 0) {
         if (voice.ctl && voice.ctl.glide) voice.pitch = voice.target + (voice.pitch - voice.target) * voice.ctl.glide
         else voice.pitch = voice.target
-        this.control(voice)
+        this.control(voice, i)
         voice.counter = PH_CONTROL
       }
       const n = Math.min(to - i, voice.counter)
@@ -283,6 +288,10 @@ class PhylloProcessor extends LatticeInstrument {
         if (!L.on || L.level <= 0) continue
         this.layer(voice.layers[li], L, bufL, bufR, n)
       }
+      // the level glides from where the last few samples left it
+      const a0 = c.ampFrom === null ? c.amp : c.ampFrom
+      const aStep = (c.amp - a0) / PH_CONTROL
+      const aStart = a0 + aStep * (PH_CONTROL - voice.counter)
       for (let j = 0; j < n; j++) {
         const amp = this.step(voice.amp, k.a_attack, c.ad, k.a_sustain, c.ar)
         this.step(voice.env, k.e_attack, c.ed, k.e_sustain, c.er)
@@ -314,7 +323,7 @@ class PhylloProcessor extends LatticeInstrument {
             }
           }
         }
-        const g = amp * c.amp
+        const g = amp * (aStart + aStep * j)
         OL[i + j] += l * g
         if (OR !== OL) OR[i + j] += r * g
         if (voice.amp.stage === 0) { voice.active = false; voice.ctl = null; return }
@@ -329,10 +338,19 @@ class PhylloProcessor extends LatticeInstrument {
     const dt0 = L.freq / sampleRate
     // noise: one source, panned
     if (L.type === 3) {
-      const gl = Math.cos(((L.pan + 1) * Math.PI) / 4) * L.level
-      const gr = Math.sin(((L.pan + 1) * Math.PI) / 4) * L.level
+      const gl1 = Math.cos(((L.pan + 1) * Math.PI) / 4) * L.level
+      const gr1 = Math.sin(((L.pan + 1) * Math.PI) / 4) * L.level
+      let gl = st.warm ? st.gl[0] : gl1
+      let gr = st.warm ? st.gr[0] : gr1
+      const sl = (gl1 - gl) / n
+      const sr = (gr1 - gr) / n
+      st.gl[0] = gl1
+      st.gr[0] = gr1
+      st.warm = true
       const p = st.pink
       for (let j = 0; j < n; j++) {
+        gl += sl
+        gr += sr
         const w = Math.random() * 2 - 1
         let y = w
         if (L.noise === 1) {
@@ -378,10 +396,18 @@ class PhylloProcessor extends LatticeInstrument {
       const at = N === 1 ? 0 : (u / (N - 1)) * 2 - 1
       const dt = dt0 * 2 ** ((at * L.detune * 100) / 1200)
       const pan = Math.max(-1, Math.min(1, L.pan + at * L.spread * (u % 2 ? -1 : 1) * (N > 1 ? 1 : 0)))
-      const gl = Math.cos(((pan + 1) * Math.PI) / 4) * L.level * L.norm
-      const gr = Math.sin(((pan + 1) * Math.PI) / 4) * L.level * L.norm
+      const gl1 = Math.cos(((pan + 1) * Math.PI) / 4) * L.level * L.norm
+      const gr1 = Math.sin(((pan + 1) * Math.PI) / 4) * L.level * L.norm
+      let gl = st.warm ? st.gl[u] : gl1
+      let gr = st.warm ? st.gr[u] : gr1
+      const sl = (gl1 - gl) / n
+      const sr = (gr1 - gr) / n
+      st.gl[u] = gl1
+      st.gr[u] = gr1
       let ph = st.ph[u]
       for (let j = 0; j < n; j++) {
+        gl += sl
+        gr += sr
         ph += dt
         if (ph >= 1) ph -= 1
         let p = ph
@@ -403,6 +429,7 @@ class PhylloProcessor extends LatticeInstrument {
       }
       st.ph[u] = ph
     }
+    st.warm = true
   }
 }
 registerProcessor('lattice-phyllo', PhylloProcessor)
