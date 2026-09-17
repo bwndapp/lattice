@@ -826,7 +826,26 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
 
 /* signal flow: a hit lights its source and every wire that carries it onward (flow.js) */
 @property --lit { syntax: '<number>'; inherits: true; initial-value: 0; }
-.graph-canvas .react-flow__edge.animated .react-flow__edge-path { stroke: #4a4a42; }
+/*
+ * A wire at rest wears a dimmed version of whatever colour runs through it, so you can
+ * read the patch without playing it. Round ends, and a dark line under each one so wires
+ * stay legible where they cross.
+ */
+.graph-canvas .react-flow__edge-path {
+  stroke: color-mix(in srgb, var(--wire, #6f6f66) 34%, #1c1c19);
+  stroke-linecap: round;
+  stroke-width: 1.8;
+  paint-order: stroke;
+}
+.graph-canvas .react-flow__edge:hover .react-flow__edge-path {
+  stroke: color-mix(in srgb, var(--wire, #8f8f86) 62%, #1c1c19);
+  stroke-width: 2.4;
+}
+.graph-canvas .react-flow__edge.selected .react-flow__edge-path {
+  stroke: color-mix(in srgb, var(--wire, var(--paper)) 78%, var(--paper));
+  stroke-width: 2.6;
+}
+.graph-canvas .react-flow__edge.animated .react-flow__edge-path { stroke: color-mix(in srgb, var(--wire, #6f6f66) 40%, #1c1c19); }
 /* with the lighting off, a playing patch looks as it used to: every wire live */
 .graph-canvas.flow-off .react-flow__edge.animated .react-flow__edge-path { stroke: var(--acid); }
 .graph-canvas .react-flow__edge[style*="--lit"] .react-flow__edge-path {

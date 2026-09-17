@@ -870,6 +870,25 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
     return map
   }, [project, litPaths])
   useEffect(() => setFlowPaths(litPaths, litColors), [litPaths, litColors])
+
+  // A wire wears the colour of what it carries, blended where several parts share it —
+  // the same colours the lighting uses, worked out once instead of frame by frame.
+  const wireTint = useMemo(() => {
+    const out = new Map()
+    for (const [id, keys] of litPaths.edges) {
+      let r = 0
+      let g = 0
+      let b = 0
+      let n = 0
+      for (const k of keys) {
+        const c = litColors.get(k)
+        if (!c) continue
+        r += c[0]; g += c[1]; b += c[2]; n += 1
+      }
+      if (n) out.set(id, `rgb(${Math.round(r / n)} ${Math.round(g / n)} ${Math.round(b / n)})`)
+    }
+    return out
+  }, [litPaths, litColors])
   const [lighting, setLighting] = useState(flowWanted)
   useEffect(() => {
     if (!started || !lighting) return undefined
@@ -969,10 +988,11 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
     type: 'wire', // with a + in the middle to add a node into it
     sourceHandle: e.sourceHandle ?? 'out',
     data: { tension },
+    style: wireTint.get(e.id) ? { '--wire': wireTint.get(e.id) } : undefined,
     animated: started,
     className: e.id === spliceTarget ? 'splice-target' : e.id === detaching ? 'detaching' : '',
     domAttributes: { 'data-touches': `${e.source} ${e.target}` },
-  })), [project.edges, started, spliceTarget, detaching, tension])
+  })), [project.edges, started, spliceTarget, detaching, tension, wireTint])
   const [edges, setEdges] = useState(rfEdges)
   useEffect(() => setEdges((prev) => {
     const sel = new Set(prev.filter((e) => e.selected).map((e) => e.id))
