@@ -1259,17 +1259,13 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
             <Controls showInteractive={false} />
             <MiniMap pannable zoomable nodeColor={(n) => ({ source: '#e4ff1a', output: '#e4ff1a', transform: '#f2f0e6', effect: '#a3a39a', mixing: '#a3a39a', combine: '#6b6b63' })[NODE_TYPES[project.nodes.find((x) => x.id === n.id)?.type]?.group] ?? '#555'} maskColor="rgba(0,0,0,0.6)" />
           </ReactFlow>
-          {project.nodes.length === 1 && project.nodes[0].type === 'output' && (
-            <div className="graph-empty">
-              <strong>blank patch</strong>
-              <p>Click a sound in the pane (<b>pattern</b>, <b>rhythm</b>, <b>melody</b>): it wires into the output by itself. With it selected, click effects to chain them after it.</p>
-            </div>
-          )}
           <div className="graph-tip" aria-live="polite">
             {solo
               ? <>auditioning <b>{nodeTitle(project.nodes.find((n) => n.id === solo), project)}</b> · <button className="linkish" onClick={() => onSolo(null)}>back to the output</button></>
               : selected ? <>{NODE_TYPES[selected.type]?.blurb}{selected.type !== 'output' && <> · click an effect in the pane to chain it after this</>}</>
-              : 'double-click a pattern to open its rack · wire: drag right dot → left dot · pull a wire off an input to remove it · drop a node on a wire to insert it'}
+              : project.nodes.length === 1 && project.nodes[0].type === 'output'
+                ? <>empty patch · click a sound in the pane (<b>pattern</b>, <b>rhythm</b>, <b>melody</b>) and it wires itself into the output · with it selected, click effects to chain them after it</>
+                : 'double-click a pattern to open its rack · wire: drag right dot → left dot · pull a wire off an input to remove it · drop a node on a wire to insert it'}
           </div>
         </div>
       </div>
