@@ -21,7 +21,7 @@
  */
 import { NODE_TYPES } from './graph.js'
 import { PARAMS, paramValue } from './project.js'
-import { ENGINES, engineData } from './instruments/index.js'
+import { ENGINES, engineData, engineKnob } from './instruments/index.js'
 
 const num = (v, fallback, lo, hi) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : fallback)
 const snapTo = (v, step) => Math.round(v / step) * step
@@ -117,9 +117,9 @@ export function resolveTarget(project, target) {
   if (parts[0] === 'e' && parts.length === 4) {
     const pattern = project.patterns.find((p) => p.id === parts[1])
     const ch = pattern?.channels.find((c) => c.id === parts[2])
-    const def = ch?.engine && ENGINES[ch.engine.type]?.params.find((p) => p.key === parts[3])
-    if (!def) return null
-    return { def, value: engineData(ch.engine)[def.key], owner: `${pattern.name} ${ch.name}`, label: def.label }
+    const found = ch?.engine && engineKnob(ENGINES[ch.engine.type], engineData(ch.engine), parts[3])
+    if (!found) return null
+    return { def: found.def, value: found.value, owner: `${pattern.name} ${ch.name}`, label: found.label }
   }
   return null
 }

@@ -19,6 +19,7 @@
  *   noteOff(voice)                   the gate closed (optional)
  *   render(voice, L, R, from, to)    add this voice's sound for samples [from, to)
  *   busy(voice)                      whether it's making sound (default: voice.active)
+ *   beginBlock(frames)               once per block, before the voices (optional)
  * reading its knobs from `this.k`.
  */
 export const DSP_BASE = `
@@ -40,8 +41,18 @@ class LatticeInstrument extends AudioWorkletProcessor {
   constructor() {
     super()
     const cls = this.constructor
-    this.k = {}
+    // the knobs as an object with every key from the start: filled in one at a time, a
+    // hundred-odd keys would make a slow dictionary of it, and it's read every sample
+    try {
+      // eslint-disable-next-line no-new-func
+      this.k = new Function('return {' + cls.knobs.map((k) => JSON.stringify(k.key) + ': 0').join(', ') + '}')()
+    } catch (err) {
+      this.k = {}
+    }
     this.voices = Array.from({ length: cls.voiceCount }, () => ({ trig: 0, gate: 0, ...this.newVoice() }))
+    // param names, worked out once rather than every block
+    this.knobNames = cls.knobs.map((k) => [k.key, 'p_' + k.key])
+    this.voiceNames = this.voices.map((_, v) => ['v' + v + '_trig', 'v' + v + '_gate', 'v' + v + '_note', 'v' + v + '_vel'])
     this.alive = true
     this.port.onmessage = (e) => { if (e.data === 'dispose') this.alive = false }
   }
@@ -50,9 +61,12 @@ class LatticeInstrument extends AudioWorkletProcessor {
   noteOff() {}
   render() {}
   busy(voice) { return voice.active }
+  beginBlock() {}
   process(inputs, outputs, params) {
     if (!this.alive) return false
-    for (const k of this.constructor.knobs) this.k[k.key] = params['p_' + k.key][0]
+    const knobNames = this.knobNames
+    for (let i = 0; i < knobNames.length; i++) this.k[knobNames[i][0]] = params[knobNames[i][1]][0]
+    this.beginBlock(outputs[0] && outputs[0][0] ? outputs[0][0].length : 128)
     for (let v = 0; v < this.voices.length; v++) {
       const out = outputs[v]
       if (!out || !out.length) continue
@@ -61,10 +75,11 @@ class LatticeInstrument extends AudioWorkletProcessor {
       L.fill(0)
       if (R !== L) R.fill(0)
       const voice = this.voices[v]
-      const trig = params['v' + v + '_trig']
-      const gate = params['v' + v + '_gate']
-      const note = params['v' + v + '_note']
-      const vel = params['v' + v + '_vel']
+      const names = this.voiceNames[v]
+      const trig = params[names[0]]
+      const gate = params[names[1]]
+      const note = params[names[2]]
+      const vel = params[names[3]]
       const at = (arr, i) => (arr.length > 1 ? arr[i] : arr[0])
       // nothing changes this block: one go
       if (trig.length === 1 && gate.length === 1 && trig[0] === voice.trig && gate[0] === voice.gate) {

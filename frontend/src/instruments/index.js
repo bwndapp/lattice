@@ -1,4 +1,5 @@
 import kick from './kick.js'
+import phyllo from './phyllo/index.js'
 
 /**
  * Instrument engines: sounds the app makes itself, from settings saved with the track, as
@@ -21,22 +22,26 @@ import kick from './kick.js'
  *   groups      [group key, title] in the order the window shows them
  *   tail(data)  seconds a note rings past its end (or, one-shot, past its start)
  *   dsp         the processor's source (see dsp.js)
+ *   width       (optional) how wide its window opens, in CSS pixels
+ *
+ * An engine whose settings are more than a list of knobs (layers, routes…) also has
+ *   normalize(raw)        anything → complete settings
+ *   encode(data, {cps})   settings → { audio param key: number }
+ *   audioParams           the processor's params, { key, min, max, def } (instead of `params`)
+ *   knobAt(data, key)     a knob by automation key → { def, value, label, set(data, v) }
+ *   voicesFor(data)       (optional) how many voices notes may use (1 for mono)
  */
-export const ENGINES = Object.fromEntries([kick].map((e) => [e.type, e]))
+export const ENGINES = Object.fromEntries([kick, phyllo].map((e) => [e.type, e]))
 
 export const ENGINE_PREFIX = 'lattice_'
 export const engineSound = (type) => `${ENGINE_PREFIX}${type}`
 export const engineOfSound = (sound) => (String(sound ?? '').startsWith(ENGINE_PREFIX) ? ENGINES[String(sound).slice(ENGINE_PREFIX.length)] ?? null : null)
 
-/** Every knob at its default. */
-export function engineDefaults(type) {
-  return Object.fromEntries((ENGINES[type]?.params ?? []).map((p) => [p.key, p.def]))
-}
-
 /** The engine's settings, complete: saved values where valid, defaults for the rest. */
 export function engineData(engine) {
   const spec = ENGINES[engine?.type]
   if (!spec) return {}
+  if (spec.normalize) return spec.normalize(engine.data)
   const out = {}
   for (const p of spec.params) {
     const v = Number(engine.data?.[p.key])
@@ -47,15 +52,37 @@ export function engineData(engine) {
 
 /**
  * Clean an engine from a (possibly hand-edited) header, for an instrument of `kind`.
- * Only knobs away from their default are kept, so tracks stay small.
+ * A list of knobs keeps only those away from their default, so tracks stay small.
  */
 export function normalizeEngine(raw, kind) {
   const spec = ENGINES[raw?.type]
   if (!spec || !spec.kinds.includes(kind)) return null
+  if (spec.normalize) return { type: spec.type, data: spec.normalize(raw.data) }
   const full = engineData(raw)
   const data = {}
   for (const p of spec.params) if (full[p.key] !== p.def) data[p.key] = full[p.key]
   return { type: spec.type, data }
+}
+
+/** The processor's params for an engine. */
+export const engineAudioParams = (spec) => spec.audioParams ?? spec.params
+
+/** Settings → the numbers its processor reads. */
+export const engineAudio = (spec, data, ctx = {}) => (spec.encode ? spec.encode(data, ctx) : data)
+
+/** One knob by its automation key: { def, value, label }, or null. */
+export function engineKnob(spec, data, key) {
+  if (spec?.knobAt) return spec.knobAt(data, key)
+  const def = spec?.params.find((p) => p.key === key)
+  return def ? { def, value: data[key] ?? def.def, label: def.label } : null
+}
+
+/** Settings with some knobs moved: { key: value } by automation key. */
+export function withKnobs(spec, data, patch) {
+  if (!spec?.knobAt) return { ...data, ...patch }
+  const next = JSON.parse(JSON.stringify(data))
+  for (const [key, v] of Object.entries(patch)) spec.knobAt(next, key)?.set(next, v)
+  return next
 }
 
 /** Engines an instrument of `kind` can use. */

@@ -611,6 +611,7 @@ export const INSTRUMENTS = [
   { key: 'pad', label: 'pad', kind: 'synth', patch: { sound: 'supersaw', note: 'c3', params: { attack: 0.2, release: 0.8, room: 0.5, gain: 0.5 } } },
   { key: 'pluck', label: 'pluck', kind: 'synth', patch: { sound: 'triangle', note: 'c4', params: { delay: 0.3 }, fx: '.decay(.12).sustain(0)' } },
   { key: 'piano', label: 'piano', kind: 'synth', patch: { sound: 'piano', note: 'c4' } },
+  { key: 'phyllo', label: 'phyllo', kind: 'synth', patch: { sound: engineSound('phyllo'), note: 'c3', engine: { type: 'phyllo', data: {} } } },
   { key: 'code', label: 'code', kind: 'code', patch: {} },
 ]
 

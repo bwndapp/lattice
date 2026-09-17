@@ -16,7 +16,7 @@
 import { getAudioContext, registerSound } from '@strudel/webaudio'
 import { noteToMidi } from '@strudel/core'
 import { DSP_BASE } from './dsp.js'
-import { ENGINES, engineData, engineSound } from './index.js'
+import { ENGINES, engineAudio, engineAudioParams, engineData, engineSound, withKnobs } from './index.js'
 
 // ── the module the audio thread loads ─────────────────────────────────────────
 let moduleUrl = null
@@ -42,16 +42,17 @@ export function prepareInstruments(ac = getAudioContext()) {
 }
 
 // ── settings, from the project ────────────────────────────────────────────────
-const declared = new Map() // instrument (channel) id → { type, data }
+const declared = new Map() // instrument (channel) id → { type, data, cps }
 
 /** Every instrument's engine settings, from a project (called as its code is generated). */
 export function declareEngines(project) {
+  const cps = (Number(project?.bpm) || 120) / (Number(project?.beats) || 4) / 60
   for (const pattern of project?.patterns ?? []) {
     for (const ch of pattern.channels) {
-      if (!ch.engine) continue
-      const data = engineData(ch.engine)
-      declared.set(ch.id, { type: ch.engine.type, data })
-      for (const inst of live(ch.id, ch.engine.type)) inst.apply(data)
+      if (!ch.engine || !ENGINES[ch.engine.type]) continue
+      const found = { type: ch.engine.type, data: engineData(ch.engine), cps }
+      declared.set(ch.id, found)
+      for (const inst of live(ch.id, ch.engine.type)) inst.apply(found)
     }
   }
 }
@@ -60,8 +61,8 @@ export function declareEngines(project) {
 export function setEngineParams(channelId, patch) {
   const found = declared.get(channelId)
   if (!found) return
-  found.data = { ...found.data, ...patch }
-  for (const inst of live(channelId, found.type)) inst.apply(found.data)
+  found.data = withKnobs(ENGINES[found.type], found.data, patch)
+  for (const inst of live(channelId, found.type)) inst.apply(found)
 }
 
 // ── instances ─────────────────────────────────────────────────────────────────
@@ -89,36 +90,47 @@ function instanceFor(ac, channelId, type) {
 
 function createInstance(ac, channelId, type) {
   const spec = ENGINES[type]
-  const data = declared.get(channelId)?.type === type ? declared.get(channelId).data : engineData({ type })
+  const settings = declared.get(channelId)?.type === type ? declared.get(channelId) : { data: engineData({ type }), cps: 0.5 }
+  const params = engineAudioParams(spec)
+  const first = engineAudio(spec, settings.data, settings)
   const node = new AudioWorkletNode(ac, spec.processor, {
     numberOfInputs: 0,
     numberOfOutputs: spec.voices,
     outputChannelCount: Array.from({ length: spec.voices }, () => 2),
-    parameterData: Object.fromEntries(spec.params.map((p) => [`p_${p.key}`, data[p.key]])),
+    parameterData: Object.fromEntries(params.filter((p) => Number.isFinite(first[p.key])).map((p) => [`p_${p.key}`, first[p.key]])),
   })
   const param = (name) => node.parameters.get(name)
   const voices = Array.from({ length: spec.voices }, () => ({ until: 0, started: 0, note: null }))
   let trig = 0
-  let current = data
+  let current = settings.data
+  let sent = first
   return {
     ac,
     channelId,
     type,
     get data() { return current },
-    apply(next) {
-      current = next
-      for (const p of spec.params) {
+    apply({ data, cps }) {
+      current = data
+      const next = engineAudio(spec, data, { cps })
+      for (const p of params) {
         const v = next[p.key]
-        if (Number.isFinite(v)) param(`p_${p.key}`).setTargetAtTime(v, ac.currentTime, 0.005)
+        if (!Number.isFinite(v) || v === sent[p.key]) continue
+        // a switch (a wave, a mode) jumps; a knob glides a few milliseconds
+        if (Number.isInteger(v) && Number.isInteger(sent[p.key]) && p.max - p.min <= 64) param(`p_${p.key}`).setValueAtTime(v, ac.currentTime)
+        else param(`p_${p.key}`).setTargetAtTime(v, ac.currentTime, 0.005)
       }
+      sent = next
     },
     /** Start a note: which voice, and the note's handle. */
     play(t, { midi, vel, duration }) {
-      // a free voice, else the one that started longest ago
-      let slot = voices.findIndex((v) => v.until <= t)
-      if (slot < 0) slot = voices.reduce((best, v, i) => (v.started < voices[best].started ? i : best), 0)
+      // a free voice, else the one that started longest ago (a mono engine has one to use)
+      const usable = voices.slice(0, Math.max(1, Math.min(voices.length, spec.voicesFor?.(current) ?? voices.length)))
+      let slot = usable.findIndex((v) => v.until <= t)
+      if (slot < 0) slot = usable.reduce((best, v, i) => (v.started < usable[best].started ? i : best), 0)
       const voice = voices[slot]
       voice.note?.cut(t)
+      // the note it takes over from mustn't let go of the key in the middle of this one
+      param(`v${slot}_gate`).cancelScheduledValues(t)
       trig = (trig % 1e6) + 1
       param(`v${slot}_note`).setValueAtTime(midi ?? -1, t)
       param(`v${slot}_vel`).setValueAtTime(vel, t)

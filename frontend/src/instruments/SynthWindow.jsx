@@ -6,10 +6,11 @@ import { ENGINES, engineData } from './index.js'
 import { closeSynth, raiseSynth } from './windows.js'
 import { keyNote, readOctave, writeOctave } from '../keyboard.js'
 import KickPanel from './KickPanel.jsx'
+import PhylloPanel from './phyllo/PhylloPanel.jsx'
 import './SynthWindow.css'
 
 /** Engines with a face of their own; the rest get their knobs in groups. */
-const PANELS = { kick: KickPanel }
+const PANELS = { kick: KickPanel, phyllo: PhylloPanel }
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 const POS_KEY = 'lattice:synth-window'
@@ -68,6 +69,13 @@ export default function SynthWindow({ project, patternId, channelId, order, fron
     if (c?.engine) fn(c)
   })
   const set = (key, value) => edit((c) => { c.engine = { ...c.engine, data: { ...c.engine.data, [key]: value } } })
+  // settings with structure (layers, routes): `fn` changes a copy of them
+  const change = (fn) => edit((c) => {
+    const draft = JSON.parse(JSON.stringify(engineData(c.engine)))
+    fn(draft)
+    c.engine = { ...c.engine, data: draft }
+  })
+  const target = (key) => engineTarget(patternId, channelId, key)
   const reset = () => edit((c) => { c.engine = { ...c.engine, data: {} } })
   const play = (note) => previewInPatch(project, patternId, ch, note == null ? {} : { note, pitched: true })
   const knob = (def) => (
@@ -104,7 +112,7 @@ export default function SynthWindow({ project, patternId, channelId, order, fron
       role="dialog"
       aria-labelledby={`sw-title-${channelId}`}
       tabIndex={-1}
-      style={{ left: pos.x, top: pos.y, zIndex: 50 + order }}
+      style={{ left: pos.x, top: pos.y, zIndex: 50 + order, width: spec.width ? `min(${spec.width}px, calc(100vw - 32px))` : undefined }}
       onPointerDownCapture={() => raiseSynth(channelId)}
       onFocusCapture={() => raiseSynth(channelId)}
       onKeyDown={(e) => {
@@ -148,7 +156,7 @@ export default function SynthWindow({ project, patternId, channelId, order, fron
       </header>
       <div className="sw-body">
         {Panel
-          ? <Panel data={data} groups={groups} knob={knob} />
+          ? <Panel data={data} groups={groups} knob={knob} change={change} target={target} play={play} />
           : (
             <div className="sw-groups">
               {groups.map((g) => (
