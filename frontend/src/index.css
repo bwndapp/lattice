@@ -121,6 +121,20 @@ body {
   align-items: flex-start;
   gap: 0.1em;
 }
+/* the mark leans toward the pointer, the way the card on jameskemp.cc does */
+.logo-card { display: inline-flex; }
+@media (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .logo-card { perspective: 420px; }
+  .logo {
+    transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+    transform-style: preserve-3d;
+    transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .logo-card[data-live] .logo { transition: transform 0.08s linear; }
+  .logo-mark, .logo-word { transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .logo-card[data-live] .logo-mark { transform: translateZ(18px) rotate(calc(var(--ry, 0deg) * -0.35)); }
+  .logo-card[data-live] .logo-word { transform: translateZ(7px); }
+}
 .logo-mark {
   flex: none;
   width: 0.46em;

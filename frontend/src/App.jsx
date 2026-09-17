@@ -1043,8 +1043,27 @@ export default function App() {
     <div className="studio">
       <header className="bar">
         <div className="bar-side left">
-        {/* a mark, not a way out: clicking it used to throw away what you had open for a
-            fresh scratch pad, which is a lot to do by accident */}
+        {/*
+          * A mark, not a way out: clicking it used to throw away what you had open for a
+          * fresh scratch pad, which is a lot to do by accident. It leans toward the pointer
+          * instead — the woven mark standing off the word behind it.
+          */}
+        <span
+          className="logo-card"
+          onPointerMove={(e) => {
+            const el = e.currentTarget
+            const r = el.getBoundingClientRect()
+            el.style.setProperty('--ry', `${(((e.clientX - r.left) / r.width - 0.5) * 22).toFixed(1)}deg`)
+            el.style.setProperty('--rx', `${((0.5 - (e.clientY - r.top) / r.height) * 18).toFixed(1)}deg`)
+            el.dataset.live = '1'
+          }}
+          onPointerLeave={(e) => {
+            const el = e.currentTarget
+            delete el.dataset.live
+            el.style.setProperty('--rx', '0deg')
+            el.style.setProperty('--ry', '0deg')
+          }}
+        >
         <span className="logo" aria-label="lattice">
           {/* the woven mark from the app icon: two strips over two, gaps cut in the header's black */}
           <svg className="logo-mark" viewBox="14 14 36 36" aria-hidden="true">
@@ -1054,7 +1073,8 @@ export default function App() {
               <path d="M14 38 38 14M26 50 50 26" stroke="currentColor" strokeWidth="7" />
             </g>
           </svg>
-          <span>lattice</span>
+          <span className="logo-word">lattice</span>
+        </span>
         </span>
         <span className="transport" role="group" aria-label="Transport">
           <button className="btn tport to-start" onClick={toStart} title="Back to the start (Home)" aria-label="Back to the start">|&lt;</button>
