@@ -155,7 +155,13 @@ export default function App() {
   // the evaluated pattern, each labeled pattern in it, and which track (null = scratch) it belongs to
   const [evaluated, setEvaluated] = useState({ pattern: null, lanes: new Map(), forId: undefined })
   const capturedRef = useRef(new Map())
-  const [view, setView] = useState(() => (['browse', 'graph', 'song', 'code'].includes(readPref('strudel:view', 'graph')) ? readPref('strudel:view', 'graph') : 'graph'))
+  const [view, setView] = useState(() => {
+    // a link into the browser wins over whichever view you left open
+    const q = new URLSearchParams(window.location.hash.split('?')[1] || window.location.search)
+    if (q.get('browse') || q.get('by') || q.get('copies')) return 'browse'
+    const kept = readPref('strudel:view', 'graph')
+    return ['browse', 'graph', 'song', 'code'].includes(kept) ? kept : 'graph'
+  })
   const codeViewRef = useRef(null)
   const lastViewRef = useRef('graph') // where ctrl/cmd+J returns to from the code
   const lastCanvasRef = useRef('graph') // where browse goes back to
@@ -418,7 +424,11 @@ export default function App() {
   const [showVersions, setShowVersions] = useState(false)
   const [showExport, setShowExport] = useState(false)
   // the piano roll, docked along the bottom: { patternId, channelId }
-  const [browseView, setBrowseView] = useState('explore') // which list the browse page shows
+  // a shared link into the browser (?browse=explore&by=…) opens there
+  const [browseView, setBrowseView] = useState(() => {
+    const from = new URLSearchParams(window.location.hash.split('?')[1] || window.location.search).get('browse')
+    return ['explore', 'mine', 'liked'].includes(from) ? from : 'explore'
+  })
   const userRef = useRef(null)
   userRef.current = user
   /** Open the track list, on your own tracks when that's what was asked for. */

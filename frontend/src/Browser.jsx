@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { api, timeAgo } from './api'
 import { Glass } from './Glass.jsx'
 import './Browser.css'
@@ -22,15 +22,22 @@ function Switch({ options, value, onChange, label, small = false }) {
 
 export default function Browser({ user, login, activeId, refreshKey, onPlay, onPick, onNew, view = 'explore', onView, narrowTo = null }) {
   const setView = onView
-  const [sort, setSort] = useState('new')
-  const [q, setQ] = useState('')
+  // Where you are in the browser lives in the address, so reloading keeps it, the back
+  // button walks out of it, and "everything by this person" is a link you can send.
+  const [params, setParams] = useSearchParams()
+  const [sort, setSort] = useState(() => params.get('sort') || 'new')
+  const [q, setQ] = useState(() => params.get('q') || '')
   const [tracks, setTracks] = useState(null)
   const [error, setError] = useState('')
   const [more, setMore] = useState(false)
   const [filling, setFilling] = useState(false)
   const next = useRef(0)
   // narrowing the list to one person, or to what came out of one track
-  const [only, setOnly] = useState(null) // { author, name } | { remixesOf, name }
+  const [only, setOnly] = useState(() => (params.get('by')
+    ? { author: params.get('by'), name: params.get('who') || 'this person' }
+    : params.get('copies')
+      ? { remixesOf: params.get('copies'), name: params.get('who') || 'copies' }
+      : null))
 
   const needsUser = view !== 'explore' && !user
   const PAGE = 24
@@ -88,8 +95,22 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
 
   // going back to the whole list, or into one person's, resets where paging is
   const narrow = (to) => { next.current = 0; setOnly(to) }
-  // opened already narrowed (a track's remixes, say)
+  // opened already narrowed (a track's copies, say)
   useEffect(() => { if (narrowTo) narrow(narrowTo) }, [narrowTo])
+
+  useEffect(() => {
+    const now = new URLSearchParams(window.location.search || params.toString())
+    const set = (k, v) => (v ? now.set(k, v) : now.delete(k))
+    set('browse', view)
+    set('sort', sort === 'new' ? '' : sort)
+    set('q', q)
+    set('by', only?.author || '')
+    set('copies', only?.remixesOf || '')
+    set('who', only?.name || '')
+    // typing or sorting rewrites where you are; going into someone's tracks is a place you
+    // can come back out of
+    setParams(now, { replace: !only })
+  }, [view, sort, q, only]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const heading = only?.name ? only.name
     : view === 'mine' ? 'Your tracks' : view === 'liked' ? 'Tracks you liked' : 'Shared tracks'
