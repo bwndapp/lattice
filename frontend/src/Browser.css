@@ -254,3 +254,13 @@ button.b-card-author:hover { color: var(--paper); text-decoration-color: current
 .b-end { display: flex; justify-content: center; padding: 1rem 0 2rem; }
 .b-end-note { font-size: 11px; color: var(--muted); }
 .b-tag.quiet { opacity: 0.6; }
+
+.browser.one { display: block; overflow: hidden; }
+.browser.one .tp { height: 100%; max-width: 62rem; }
+button.b-card-about {
+  position: relative; z-index: 2; justify-self: start;
+  font: inherit; font-size: 10px; color: var(--muted); background: none;
+  border: 0; padding: 0; cursor: var(--ring);
+  text-decoration: underline; text-decoration-color: transparent; transition: color 0.12s ease, text-decoration-color 0.12s ease;
+}
+button.b-card-about:hover { color: var(--paper); text-decoration-color: currentColor; }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api, timeAgo } from './api'
+import TrackPage from './TrackPage.jsx'
 import { Glass } from './Glass.jsx'
 import './Browser.css'
 
@@ -26,6 +27,7 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
   // button walks out of it, and "everything by this person" is a link you can send.
   const [params, setParams] = useSearchParams()
   const [sort, setSort] = useState(() => params.get('sort') || 'new')
+  const [page, setPage] = useState(() => params.get('track') || null) // one track's own page
   const [q, setQ] = useState(() => params.get('q') || '')
   const [tracks, setTracks] = useState(null)
   const [error, setError] = useState('')
@@ -107,13 +109,29 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
     set('by', only?.author || '')
     set('copies', only?.remixesOf || '')
     set('who', only?.name || '')
+    set('track', page || '')
     // typing or sorting rewrites where you are; going into someone's tracks is a place you
     // can come back out of
     setParams(now, { replace: !only })
-  }, [view, sort, q, only]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [view, sort, q, only, page]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const heading = only?.name ? only.name
     : view === 'mine' ? 'Your tracks' : view === 'liked' ? 'Tracks you liked' : 'Shared tracks'
+
+  if (page) {
+    return (
+      <section className="browser one" aria-label="Track">
+        <TrackPage
+          id={page}
+          user={user}
+          onPick={onPick}
+          onClose={() => setPage(null)}
+          onOpen={(id, asPage) => (asPage ? setPage(id) : window.location.assign(`/t/${id}`))}
+          onAuthor={(author, name) => { setPage(null); narrow({ author, name }) }}
+        />
+      </section>
+    )
+  }
 
   return (
     <section className="browser" aria-label="Browse tracks">
@@ -177,6 +195,12 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
                 </button>
                 <div className="b-card-body">
                   <Link to={`/t/${t.id}`} className="b-card-title" onClick={onPick} title={t.title}>{t.title}</Link>
+                  <button
+                    type="button"
+                    className="b-card-about"
+                    onClick={() => setPage(t.id)}
+                    data-tip="What this track is, where it came from, and what came out of it"
+                  >about</button>
                   <button
                     type="button"
                     className="b-card-author"
