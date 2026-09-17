@@ -12,7 +12,7 @@ const tmp = path.join(process.env.TMPDIR || '/tmp', 'collab.under-test.mjs')
 // stand-ins for the two browser-only imports, so this runs in node
 let source = fs.readFileSync(SRC, 'utf8')
 source = source.replace("import { useSyncExternalStore } from 'react'", 'const useSyncExternalStore = () => {}')
-source = source.replace("import { BASE } from './base'", "const BASE = ''")
+source = source.replace("import { COLLAB_ROOT } from './base'", "const COLLAB_ROOT = '/api/collab'")
 source = source.replace("import { currentUser, getToken } from './bwnd'", 'const currentUser = () => ({ givenName: "ana" }); const getToken = async () => "tok"')
 fs.writeFileSync(tmp, source)
 
@@ -40,11 +40,12 @@ const ok = (name, cond, extra) => {
 }
 const last = (t) => [...sent].reverse().find((m) => m.t === t)
 
-const seen = { doc: null, ops: [], resets: 0 }
+const seen = { doc: null, ops: [], resets: 0, hash: 'mine' }
 collab.onDoc({
   seed: () => ({ bpm: 120, patterns: [] }),
   doc: (d) => { seen.doc = d },
   ops: (ops, hash) => { seen.ops.push([ops, hash]); return hash !== 'bad' },
+  hash: () => seen.hash,
   reset: () => { seen.resets++ },
 })
 
@@ -86,6 +87,40 @@ collab.sendOps([{ op: 'set', path: ['bpm'], value: 123 }], 'hash1')
 ok('our edit goes out with its fingerprint', last('ops')?.h === 'hash1', last('ops'))
 collab.sendOps([], 'hash2')
 ok('an edit with nothing in it is not sent', sent.filter((m) => m.t === 'ops').length === 1)
+
+// our own change comes back to us, in the place the room gave it
+seen.ops.length = 0
+ws.arrive({ t: 'ops', id: 1, v: 11, ops: [{ op: 'set', path: ['bpm'], value: 123 }], h: 'hash1' })
+ok('our own change, once nothing else is in flight, is applied in its place', seen.ops.length === 1, seen.ops)
+
+// while we still have one in flight, an older copy of our own change is not put back
+seen.ops.length = 0
+collab.sendOps([{ op: 'set', path: ['bpm'], value: 141 }], 'h141')
+collab.sendOps([{ op: 'set', path: ['bpm'], value: 142 }], 'h142')
+ws.arrive({ t: 'ops', id: 1, v: 12, ops: [{ op: 'set', path: ['bpm'], value: 141 }], h: 'h141' })
+ok('an older change of ours is not dropped back on top of a newer one', seen.ops.length === 0, seen.ops)
+ws.arrive({ t: 'ops', id: 1, v: 13, ops: [{ op: 'set', path: ['bpm'], value: 142 }], h: 'h142' })
+ok('the last one of ours does land', seen.ops.length === 1, seen.ops)
+
+// the room says it dropped something of ours
+sent.length = 0
+ws.arrive({ t: 'behind' })
+ok('being told we are behind asks for the whole track', !!last('sync'))
+
+// comparing notes once it has gone quiet
+sent.length = 0
+ws.arrive({ t: 'same', id: 2, v: 13, h: 'mine' })
+ok('a copy that matches ours is left alone', !last('sync'))
+ws.arrive({ t: 'same', id: 2, v: 13, h: 'theirs-differs' })
+ok('a copy that disagrees at the same count asks for the whole track', !!last('sync'))
+sent.length = 0
+ws.arrive({ t: 'same', id: 2, v: 99, h: 'theirs-differs' })
+ok('a copy from another moment is not compared', !last('sync'))
+
+// and we say what we have, once it stays quiet
+sent.length = 0
+await new Promise((r) => setTimeout(r, 4400))
+ok('we say what we have after a quiet spell', last('same')?.h === 'mine', last('same'))
 
 // a dropped connection
 ws.close()

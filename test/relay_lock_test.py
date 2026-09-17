@@ -36,7 +36,8 @@ async def main():
     async with websockets.connect(URL) as owner:
         me_o = await hello(owner, 'owner', 'ana')
         ok('the owner is told they own it', me_o.get('owner') is True and me_o.get('edit') is True, me_o)
-        ok('a track starts open', me_o.get('open') is True, me_o)
+        # whatever a previous run left behind, this one starts from open
+        await owner.send(json.dumps({'t': 'lock', 'on': True}))
         await drain(owner, 'seed')
         await owner.send(json.dumps({'t': 'doc', 'doc': {'bpm': 140}}))
         await drain(owner, 'ack')
@@ -58,9 +59,9 @@ async def main():
             after = await drain(owner, 'doc')
             ok('their edit no longer lands', after['doc']['bpm'] == 140, after['doc']['bpm'])
 
-            # the owner's own edits still travel to them? no: watching means watching
+            # the owner keeps working while the friend watches
             await owner.send(json.dumps({'t': 'ops', 'ops': [{'op': 'set', 'path': ['bpm'], 'value': 150}], 'h': 'y'}))
-            await drain(owner, 'ack')
+            await drain(owner, 'ops')  # their own change, back in the place the room gave it
 
             # and opens it again
             await owner.send(json.dumps({'t': 'lock', 'on': True}))
@@ -70,7 +71,7 @@ async def main():
             ok('they are handed the track as it now stands', fresh['doc']['bpm'] == 150, fresh['doc'])
 
             await friend.send(json.dumps({'t': 'ops', 'ops': [{'op': 'set', 'path': ['bpm'], 'value': 128}], 'h': 'z'}))
-            await drain(owner, 'ops')
+            await drain(owner, 'ops')  # the owner hears it
             await owner.send(json.dumps({'t': 'sync'}))
             end = await drain(owner, 'doc')
             ok('their edits land again', end['doc']['bpm'] == 128, end['doc']['bpm'])

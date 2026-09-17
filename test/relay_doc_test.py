@@ -55,11 +55,14 @@ async def main():
             doc_b = await drain(b, 'doc')
             ok('a late arrival is handed the whole track', doc_b['doc']['bpm'] == 140 and doc_b['v'] == 1, doc_b)
 
-            # an edit travels
+            # an edit travels — to the other window, and back to whoever made it, so both
+            # put it in the same place in the order (see the note in collab.py)
             ops = [{'op': 'set', 'path': ['patterns', {'id': 'p1'}, 'channels', {'id': 'c1'}, 'gain'], 'value': 0.4}]
             await a.send(json.dumps({'t': 'ops', 'ops': ops, 'h': 'abc'}))
             got = await drain(b, 'ops')
             ok('an edit reaches the other window', got['ops'] == ops and got['v'] == 2, got)
+            mine = await drain(a, 'ops')
+            ok('and comes back to the one who made it', mine['ops'] == ops and mine['v'] == 2 and mine['id'] == 1, mine)
 
             # a clip added by one, a knob turned by the other, both survive
             await b.send(json.dumps({'t': 'ops', 'ops': [{'op': 'ins', 'path': ['song', 'clips'], 'at': 0, 'value': {'id': 'k1', 'src': 'pattern:p1', 'lane': 0, 'start': 0, 'len': 4}}], 'h': 'def'}))

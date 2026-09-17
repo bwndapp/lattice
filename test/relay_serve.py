@@ -14,8 +14,8 @@ if os.path.exists(path):
 conn = sqlite3.connect(path, check_same_thread=False)
 conn.row_factory = sqlite3.Row
 conn.execute("CREATE TABLE tracks (id TEXT, owner_sub TEXT, visibility TEXT, collab INTEGER NOT NULL DEFAULT 1)")
-conn.execute("INSERT INTO tracks (id, owner_sub, visibility) VALUES ('pub','someone','public')")
-conn.execute("INSERT INTO tracks (id, owner_sub, visibility) VALUES ('priv','someone','private')")
+conn.execute("INSERT INTO tracks VALUES ('pub','someone','public',1)")
+conn.execute("INSERT INTO tracks VALUES ('priv','someone','private',1)")
 conn.commit()
 incubator_lib.db = lambda: conn
 
@@ -25,7 +25,8 @@ collab = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(collab)
 collab.db = incubator_lib.db
 # stand-in for the sign-in service: "owner" is the track's owner, anything else is someone else
-collab.sso_user = lambda tok: {'sub': 'someone', 'given_name': 'ana'} if tok == 'owner' else ({'sub': 'other', 'given_name': 'bo'} if tok else None)
+_people = {'owner': {'sub': 'someone', 'given_name': 'ana'}, 'friend': {'sub': 'other', 'given_name': 'bo'}, 'third': {'sub': 'third', 'given_name': 'cy'}}
+collab.sso_user = lambda tok: _people.get(tok, {'sub': f'someone-{tok}', 'given_name': 'someone'} if tok else None)
 # (no token at all is a guest: present, but nothing of theirs is taken)
 
 from fastapi import FastAPI

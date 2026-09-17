@@ -21,8 +21,10 @@ Messages are JSON text frames.
     → {"t":"doc","doc":{...}}            here it is
     ← {"t":"doc","doc":{...},"v":12}     what the room already has, for a late arrival
     → {"t":"ops","ops":[...],"h":"5f2a"} what I just changed, and my fingerprint after it
-    ← {"t":"ops","id":3,"ops":[...],"v":13,"h":"5f2a"}
+    ← {"t":"ops","id":3,"ops":[...],"v":13,"h":"5f2a"}   to everyone, the sender included
     → {"t":"sync"}                       I'm lost, send me the whole thing
+    → {"t":"same","v":13,"h":"5f2a"}     this is what I have, when it's all gone quiet
+    ← {"t":"same","id":3,"v":13,"h":"5f2a"}
 
   the owner deciding whether anyone else may join in
     → {"t":"lock","on":false}             owner only; remembered on the track
@@ -69,7 +71,11 @@ MAX_PEERS = 24          # a room bigger than this isn't a jam, it's a broadcast
 MAX_MSG = 4096          # a cursor message is ~80 bytes; anything huge is a mistake
 MAX_DOC = 2_000_000     # a whole project, which is JSON and compresses well over the wire
 MAX_OPS = 200_000       # one edit's worth of changes
-RATE = 60               # messages a second per peer, beyond which we stop listening
+# Two budgets, not one. A pointer moving at 60 frames a second would otherwise use up a
+# shared allowance and take an edit down with it — and a dropped cursor is nothing, while a
+# dropped edit is two people looking at different tracks and not being told.
+CURSORS = 45            # cursor and selection messages a second, beyond which they're dropped
+EDITS = 30              # everything else: far more than a person can do, so it means trouble
 COLORS = ["#6cc9ff", "#ff8fb1", "#8de88d", "#ffcf6b", "#c79bff", "#5ee0cf", "#ff9e6b", "#a8b6ff"]
 
 
@@ -119,6 +125,7 @@ class Room:
         await asyncio.gather(*(self.send(p, msg) for p in list(self.peers.values()) if p.id != sender_id))
 
     async def tell_editors(self, sender_id, payload):
+        """Everyone who may edit, except `sender_id` — pass None to include them."""
         msg = json.dumps(payload)
         await asyncio.gather(*(self.send(p, msg) for p in list(self.peers.values()) if p.id != sender_id and p.edit))
 
@@ -237,23 +244,32 @@ async def collab(ws: WebSocket, track_id: str):
             else:
                 await ws.send_text(json.dumps({"t": "doc", "doc": room.doc, "v": room.version}))
 
-        window, count = time.monotonic(), 0
+        window, moves, edits = time.monotonic(), 0, 0
         while True:
             raw = await ws.receive_text()
             now = time.monotonic()
             if now - window > 1:
-                window, count = now, 0
-            count += 1
-            big = len(raw) > MAX_MSG
-            if count > RATE or len(raw) > MAX_DOC:
-                continue  # too much, too fast: drop it rather than pass it on
+                window, moves, edits = now, 0, 0
+            if len(raw) > MAX_DOC:
+                continue
             try:
                 msg = json.loads(raw)
             except ValueError:
                 continue
             kind = msg.get("t")
-            if big and kind not in ("doc", "ops"):
-                continue  # only the track itself has any business being large
+            if kind in ("at", "sel"):
+                moves += 1
+                if moves > CURSORS or len(raw) > MAX_MSG:
+                    continue  # a cursor is disposable: the next one is along in a moment
+            else:
+                edits += 1
+                if edits > EDITS:
+                    # never drop a change quietly: being behind and not knowing it is the
+                    # one failure that leaves two people working on different tracks
+                    await ws.send_text('{"t":"behind"}')
+                    continue
+                if len(raw) > MAX_MSG and kind not in ("doc", "ops"):
+                    continue  # only the track itself has any business being large
             if kind == "at":
                 peer.at = None if msg.get("where") is None else {"where": msg.get("where"), "x": msg.get("x"), "y": msg.get("y")}
                 await room.tell_others(peer.id, {"t": "at", "id": peer.id, **(peer.at or {"where": None})})
@@ -276,9 +292,18 @@ async def collab(ws: WebSocket, track_id: str):
                 if apply_ops(room.doc, ops) == 0:
                     continue
                 room.version += 1
-                # the sender counts changes too, so it can tell a gap from its own edit
-                await ws.send_text(json.dumps({"t": "ack", "v": room.version}))
-                await room.tell_editors(peer.id, {"t": "ops", "id": peer.id, "ops": ops, "v": room.version, "h": msg.get("h")})
+                # Back to everyone, the sender included. Two people turning the same knob
+                # each apply their own first, so without hearing their own change come back
+                # in its place they would settle on different values — the one who went
+                # last locally would be the only one not to see themselves win. Everybody
+                # applying the same changes in the same order is what makes them agree.
+                await room.tell_editors(None, {"t": "ops", "id": peer.id, "ops": ops, "v": room.version, "h": msg.get("h")})
+            elif kind == "same" and peer.edit:
+                # a quiet moment: everyone says what they think they have, and anyone whose
+                # copy doesn't match at the same version asks for the whole track. Two
+                # people adding something at the same instant can end up with the same
+                # things in a different order, and this is what settles it.
+                await room.tell_editors(peer.id, {"t": "same", "id": peer.id, "v": msg.get("v"), "h": msg.get("h")})
             elif kind == "sync" and peer.edit:
                 if room.doc is not None:
                     await ws.send_text(json.dumps({"t": "doc", "doc": room.doc, "v": room.version}))

@@ -407,6 +407,8 @@ export default function App() {
       applyShared(project)
       return !hash || docHash(project) === hash
     },
+    // what we have, for comparing notes with the others when it goes quiet
+    hash: () => (shared.current ? docHash(shared.current) : null),
     reset: () => { shared.current = null },
   }), [applyShared, flash])
   // what we changed goes out on the next frame the code settles

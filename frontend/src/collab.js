@@ -22,11 +22,23 @@
  *   seed()          we're the first one in; hand over what we have
  *   doc(project)    what the room already has — adopt it
  *   ops(ops, hash)  what someone else changed; answer false to say we've lost the plot
+ *   hash()          a fingerprint of the track as we have it, for comparing notes
  *   reset()         the room is gone (a reconnection); we know nothing until it seeds again
  *
  * `v` counts changes on the server. A gap means we missed one, which is not worth being
  * clever about: ask for the whole track again. So does a fingerprint that doesn't match
- * after applying someone's ops.
+ * after applying someone's ops, when nothing of ours is still in flight.
+ *
+ * Our own changes come back to us too, in the place the room gave them. Applying them
+ * again is what makes two people turning the same knob agree about who turned it last:
+ * everybody ends up applying the same changes in the same order.
+ *
+ * Two people adding something at the very same moment can still end up with the same
+ * things in a different order, because each had already put their own in before hearing
+ * about the other's. So when it goes quiet, everyone says what they think they have, and
+ * anyone whose copy doesn't match at the same change count asks for the whole track. It
+ * costs one small message a few seconds after the last edit, and it means a session can
+ * never sit there quietly disagreeing with itself.
  */
 import { useSyncExternalStore } from 'react'
 import { COLLAB_ROOT } from './base'
@@ -35,6 +47,7 @@ import { currentUser, getToken } from './bwnd'
 const RETRY = [700, 1500, 3000, 6000, 12000] // how long to wait before trying again
 const PING = 25000 // keeps the connection alive through anything that times idle ones out
 const CLOCK_EVERY = 20000 // how often we check our clock against the server's
+const SETTLED = 4000 // quiet for this long and we compare notes with the others
 
 let sock = null
 let room = null // the track id we're in, or null
@@ -48,6 +61,8 @@ let skew = null // what to add to our clock to get the server's
 let bestTrip = Infinity // the quickest round trip we've measured, which is the honest one
 let onPlayFn = null
 let onRoleFn = null
+let pending = 0 // our own changes the room hasn't put in order yet
+let settleTimer = 0
 let clockTimer = 0
 let version = 0 // the room's change count, as far as we've seen
 let doc = null // what the document half of the app has hooked up, if anything
@@ -100,10 +115,22 @@ export const canEdit = () => mayEdit && !!sock && sock.readyState === WebSocket.
 /** What we just changed, and our fingerprint of the project afterwards. */
 export function sendOps(ops, hash) {
   if (!canEdit() || !ops?.length) return
+  pending++
   sock.send(JSON.stringify({ t: 'ops', ops, h: hash }))
+  compareNotes()
 }
 
 const askForTrack = () => { if (canEdit()) sock.send('{"t":"sync"}') }
+
+/** After a quiet spell, tell the others what we have, so a disagreement can't go unnoticed. */
+function compareNotes() {
+  clearTimeout(settleTimer)
+  settleTimer = setTimeout(() => {
+    const hash = doc?.hash?.()
+    if (!hash || pending || !canEdit()) return
+    sock.send(JSON.stringify({ t: 'same', v: version, h: hash }))
+  }, SETTLED)
+}
 
 /**
  * Playing in time together. Two browsers have two audio clocks that agree about nothing,
@@ -239,13 +266,31 @@ async function open(trackId) {
       onPlayFn?.({ on: !!msg.on, pos: msg.pos, cps: msg.cps, at: msg.at - skew })
       return
     }
-    if (msg.t === 'doc') { version = msg.v ?? 0; doc?.doc?.(msg.doc); return }
+    if (msg.t === 'doc') { version = msg.v ?? 0; pending = 0; doc?.doc?.(msg.doc); return }
     if (msg.t === 'ack') { version = msg.v ?? version; return }
+    if (msg.t === 'behind') { askForTrack(); return } // the room dropped something of ours
+    if (msg.t === 'same') {
+      // someone else's copy at our own change count: if it isn't ours, one of us is wrong
+      if (pending || msg.v !== version) return
+      const ours = doc?.hash?.()
+      if (ours && msg.h && ours !== msg.h) askForTrack()
+      return
+    }
     if (msg.t === 'ops') {
       // a gap means we missed a change: the whole track is cheaper than working out which
       if (msg.v != null && msg.v !== version + 1) { version = msg.v; askForTrack(); return }
       version = msg.v ?? version
-      if (doc?.ops?.(msg.ops, msg.h) === false) askForTrack()
+      compareNotes()
+      if (msg.id === me?.id) {
+        // our own change, come back in the place the room gave it. Applying it again is
+        // how we end up agreeing with everyone else about who turned the knob last — but
+        // only once it's the last one we're waiting on, or a fast drag would judder as
+        // each older value landed on top of a newer one.
+        pending = Math.max(0, pending - 1)
+        if (pending === 0) doc?.ops?.(msg.ops, null)
+        return
+      }
+      if (doc?.ops?.(msg.ops, pending ? null : msg.h) === false) askForTrack()
       return
     }
     if (msg.t === 'here') { peers = new Map(msg.peers.map((p) => [p.id, p])); changed(); selChanged(); return }
@@ -272,6 +317,8 @@ async function open(trackId) {
     sock = null
     me = null
     mayEdit = false
+    pending = 0
+    clearTimeout(settleTimer)
     forgetClock()
     doc?.reset?.()
     if (peers.size) { peers = new Map(); changed(); selChanged() }
@@ -304,6 +351,8 @@ export function leave() {
   sock = null
   me = null
   mayEdit = false
+  pending = 0
+  clearTimeout(settleTimer)
   forgetClock()
   doc?.reset?.()
   if (ws) { ws.onclose = null; try { ws.close() } catch { /* already gone */ } }
@@ -311,17 +360,23 @@ export function leave() {
   if (peers.size) { peers = new Map(); changed(); selChanged() }
 }
 
-// Cursors move far more often than a frame, so the last position wins each frame.
-let pending = null
+// A pointer moves far more often than anyone can see, so the last position wins each
+// frame, and no more than thirty go out a second: smooth to watch, and well under what
+// the room will take (collab.py), so a cursor can never crowd out an edit.
+const CURSOR_EVERY = 33
+let queued = null
 let frame = 0
+let sentAt = 0
 const flush = () => {
   frame = 0
-  const msg = pending
-  pending = null
-  if (msg && sock?.readyState === WebSocket.OPEN) sock.send(JSON.stringify(msg))
+  const msg = queued
+  const wait = CURSOR_EVERY - (Date.now() - sentAt)
+  if (wait > 0) { frame = setTimeout(flush, wait); return } // still holding the latest
+  queued = null
+  if (msg && sock?.readyState === WebSocket.OPEN) { sentAt = Date.now(); sock.send(JSON.stringify(msg)) }
 }
 const queue = (msg) => {
-  pending = msg
+  queued = msg
   if (!frame && sock?.readyState === WebSocket.OPEN) frame = requestAnimationFrame(flush)
 }
 
