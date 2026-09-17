@@ -209,6 +209,7 @@ async def collab(ws: WebSocket, track_id: str):
                 if room.doc is None and isinstance(doc, dict):
                     room.doc = doc
                     room.version = 1
+                    await ws.send_text(json.dumps({"t": "ack", "v": room.version}))
                     await room.tell_editors(peer.id, {"t": "doc", "doc": room.doc, "v": room.version})
             elif kind == "ops" and peer.edit:
                 ops = msg.get("ops")
@@ -217,6 +218,8 @@ async def collab(ws: WebSocket, track_id: str):
                 if apply_ops(room.doc, ops) == 0:
                     continue
                 room.version += 1
+                # the sender counts changes too, so it can tell a gap from its own edit
+                await ws.send_text(json.dumps({"t": "ack", "v": room.version}))
                 await room.tell_editors(peer.id, {"t": "ops", "id": peer.id, "ops": ops, "v": room.version, "h": msg.get("h")})
             elif kind == "sync" and peer.edit:
                 if room.doc is not None:

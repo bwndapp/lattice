@@ -1,16 +1,29 @@
 /**
- * Everyone else on this track: their cursor, their selection, their name.
+ * Everyone else on this track: their cursor, their selection, their name — and, when it's
+ * a track they may change, the track itself.
  *
  *   join(trackId)                       open the room (leave() when the track changes)
- *   usePeers()                          the others, for drawing them
- *   pointerAt(where, x, y) / pointerGone(where)
+ *   usePeers() / usePresence()          the others, and us, for drawing them
+ *   pointerAt(where, x, y) / pointerGone()
  *   selectionIs(where, ids)
+ *   onDoc({ seed, doc, ops, reset })    the shared project: see below
+ *   sendOps(ops, hash)                  what we just changed
  *
- * One websocket per open track (src/api/collab.py). Presence only: nothing here touches
- * the project, so a dropped connection costs nothing but the other cursors. Positions are
- * each surface's own coordinates — flow x/y on the patch canvas, bars and rows on the
- * timeline, bars and notes in the piano roll — so they land in the right place whatever
- * the viewer has zoomed or scrolled to.
+ * One websocket per open track (src/api/collab.py). Positions are each surface's own
+ * coordinates — flow x/y on the patch canvas, bars and rows on the timeline, bars and
+ * notes in the piano roll — so they land in the right place whatever the viewer has
+ * zoomed or scrolled to.
+ *
+ * The document half is a conversation with the room:
+ *
+ *   seed()          we're the first one in; hand over what we have
+ *   doc(project)    what the room already has — adopt it
+ *   ops(ops, hash)  what someone else changed; answer false to say we've lost the plot
+ *   reset()         the room is gone (a reconnection); we know nothing until it seeds again
+ *
+ * `v` counts changes on the server. A gap means we missed one, which is not worth being
+ * clever about: ask for the whole track again. So does a fingerprint that doesn't match
+ * after applying someone's ops.
  */
 import { useSyncExternalStore } from 'react'
 import { BASE } from './base'
@@ -26,6 +39,9 @@ let peers = new Map()
 let tries = 0
 let timer = 0
 let pinger = 0
+let mayEdit = false // whether the server lets us change this track
+let version = 0 // the room's change count, as far as we've seen
+let doc = null // what the document half of the app has hooked up, if anything
 let snapshot = [] // a stable array for useSyncExternalStore: only rebuilt on a real change
 let holders = new Map() // surface → (id of the thing → the peer holding it)
 const listeners = new Set()
@@ -59,6 +75,26 @@ export function useHolders(where) {
   const get = () => holders.get(where) ?? NOBODY
   return useSyncExternalStore(subscribeSel, get, get)
 }
+
+/**
+ * Hook the project up to the room. The handlers are called from the socket; returns a
+ * function that unhooks them.
+ */
+export function onDoc(handlers) {
+  doc = handlers
+  return () => { if (doc === handlers) doc = null }
+}
+
+/** Whether the server will take our changes to this track (the owner's, for now). */
+export const canEdit = () => mayEdit && !!sock && sock.readyState === WebSocket.OPEN
+
+/** What we just changed, and our fingerprint of the project afterwards. */
+export function sendOps(ops, hash) {
+  if (!canEdit() || !ops?.length) return
+  sock.send(JSON.stringify({ t: 'ops', ops, h: hash }))
+}
+
+const askForTrack = () => { if (canEdit()) sock.send('{"t":"sync"}') }
 
 /** The other people on this track, each `{ id, name, color, at, sel }`. */
 export function usePeers() {
@@ -97,7 +133,29 @@ async function open(trackId) {
     if (sock !== ws) return
     let msg
     try { msg = JSON.parse(e.data) } catch { return }
-    if (msg.t === 'me') { tries = 0; me = { id: msg.id, color: msg.color, name: msg.name }; changed(); return }
+    if (msg.t === 'me') {
+      tries = 0
+      mayEdit = !!msg.edit
+      version = 0
+      me = { id: msg.id, color: msg.color, name: msg.name, edit: mayEdit }
+      doc?.reset?.()
+      changed()
+      return
+    }
+    if (msg.t === 'seed') {
+      const project = doc?.seed?.()
+      if (project && canEdit()) sock.send(JSON.stringify({ t: 'doc', doc: project }))
+      return
+    }
+    if (msg.t === 'doc') { version = msg.v ?? 0; doc?.doc?.(msg.doc); return }
+    if (msg.t === 'ack') { version = msg.v ?? version; return }
+    if (msg.t === 'ops') {
+      // a gap means we missed a change: the whole track is cheaper than working out which
+      if (msg.v != null && msg.v !== version + 1) { version = msg.v; askForTrack(); return }
+      version = msg.v ?? version
+      if (doc?.ops?.(msg.ops, msg.h) === false) askForTrack()
+      return
+    }
     if (msg.t === 'here') { peers = new Map(msg.peers.map((p) => [p.id, p])); changed(); selChanged(); return }
     if (msg.t === 'join') { peers.set(msg.peer.id, msg.peer); changed(); selChanged(); return }
     if (msg.t === 'gone') { peers.delete(msg.id); changed(); selChanged(); return }
@@ -121,6 +179,8 @@ async function open(trackId) {
     clearInterval(pinger)
     sock = null
     me = null
+    mayEdit = false
+    doc?.reset?.()
     if (peers.size) { peers = new Map(); changed(); selChanged() }
     retry(trackId)
   }
@@ -150,6 +210,8 @@ export function leave() {
   const ws = sock
   sock = null
   me = null
+  mayEdit = false
+  doc?.reset?.()
   if (ws) { ws.onclose = null; try { ws.close() } catch { /* already gone */ } }
   lastSel = ''
   if (peers.size) { peers = new Map(); changed(); selChanged() }

@@ -34,7 +34,8 @@ import { capturePatterns, parseLanes, tempoChange } from './lanes'
 import { PROJECT_MARK, blankProject, demoProject, generateCode, newId, normalizeProject, parseProject, projectFromCode } from './project'
 import { createTransport, formatBarBeat, parseBarBeat } from './transport'
 import { songLength } from './song'
-import { join as joinRoom, leave as leaveRoom } from './collab.js'
+import { canEdit as roomTakesEdits, join as joinRoom, leave as leaveRoom, onDoc, sendOps } from './collab.js'
+import { applyOps, diffOps, docHash } from './docsync.js'
 import PeerList from './PeerList.jsx'
 
 function readPref(key, fallback) {
@@ -353,6 +354,58 @@ export default function App() {
     }
     st.timer = setTimeout(run, Math.max(0, LIVE_INTERVAL - (performance.now() - st.last)))
   }, [])
+
+  // ── working on this track with someone else (collab.js) ──
+  // One place watches the code for changes and sends what changed, so every way of
+  // editing — a knob, an undo, pasting code, loading a template — travels the same way.
+  // `shared` is the project as the room has it; while it's null we're on our own.
+  const shared = useRef(null)
+  const applyShared = useCallback((project) => {
+    const editor = editorRef.current
+    if (!editor) return
+    shared.current = project
+    const text = generateCode(project, genRef.current)
+    if (text === editor.code) return
+    replaceCode(text)
+    liveUpdate()
+  }, [replaceCode, liveUpdate])
+  useEffect(() => onDoc({
+    // first one in: the room takes the track as we have it
+    seed: () => {
+      const p = parseProject(editorRef.current?.code)
+      if (p) shared.current = p
+      return p
+    },
+    // somebody was already working on it: theirs is the one that counts
+    doc: (project) => {
+      const p = normalizeProject(project)
+      const had = shared.current
+      applyShared(p)
+      if (had && JSON.stringify(had) !== JSON.stringify(p)) flash('Caught up with the shared version of this track')
+    },
+    // one edit from someone else; false means we've drifted and want the whole track
+    ops: (ops, hash) => {
+      const editor = editorRef.current
+      const base = editor && parseProject(editor.code)
+      if (!base) return false
+      const next = JSON.parse(JSON.stringify(base))
+      applyOps(next, ops)
+      const project = normalizeProject(next)
+      applyShared(project)
+      return !hash || docHash(project) === hash
+    },
+    reset: () => { shared.current = null },
+  }), [applyShared, flash])
+  // what we changed goes out on the next frame the code settles
+  useEffect(() => {
+    if (!shared.current || !roomTakesEdits()) return
+    const project = parseProject(code)
+    if (!project) return
+    const ops = diffOps(shared.current, project)
+    if (!ops.length) return
+    shared.current = project
+    sendOps(ops, docHash(project))
+  }, [code])
 
   // Undo history of project snapshots. Edits within half a second (a knob turn, a paint
   // stroke) count as one step.
