@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import Knob from '../../Knob.jsx'
 import { drawCurve, drawWave, fitCanvas } from '../scope.js'
 import {
@@ -447,9 +448,9 @@ const GRIDS = [[0, 'free'], [4, '1/4'], [8, '1/8'], [16, '1/16'], [32, '1/32']]
 const sameShape = (a, b) => a.length === b.length && a.every((p, i) => Math.abs(p.x - b[i].x) < 1e-6 && Math.abs(p.y - b[i].y) < 1e-6 && Math.abs((p.c ?? 0) - (b[i].c ?? 0)) < 0.011 && !p.s === !b[i].s)
 
 /**
- * Dragging a lane effect by its header: up and down its lane, or across into another. The
- * effect follows the pointer; a line shows where it lands; letting go moves it.
- * `drag` is { id, lane, x, y, dx, dy, to: { lane, index } } while one is held.
+ * Dragging a lane effect by its header: up and down its lane, or across into another. A
+ * label follows the pointer (the effect stays put, dimmed); a line shows where it lands;
+ * letting go moves it. `drag` is { id, label, lane, x, y, px, py, to: { lane, index } }.
  */
 function useFxDrag(ui) {
   const [drag, setDrag] = useState(null)
@@ -458,7 +459,8 @@ function useFxDrag(ui) {
   const where = (e) => {
     // the lane under the pointer (the held effect lets the pointer through), and the place in
     // it: before the first effect whose middle is below the pointer
-    const laneEl = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.ph-lane')
+    const under = document.elementsFromPoint(e.clientX, e.clientY).find((el) => !el.closest('.ph-fx.held, .ph-fx-ghost'))
+    const laneEl = under?.closest?.('.ph-lane')
     if (!laneEl) return held.current?.to ?? null
     const lane = Number(laneEl.dataset.lane)
     const items = [...laneEl.querySelectorAll('.ph-fx')].filter((el) => el.dataset.id !== held.current?.id)
@@ -468,21 +470,22 @@ function useFxDrag(ui) {
   }
   return {
     drag,
-    start(e, lane, fx) {
+    start(e, lane, fx, label) {
       if (e.button !== 0 || e.target.closest('button, input, select')) return
       e.preventDefault()
       e.currentTarget.setPointerCapture(e.pointerId)
-      setDrag({ id: fx.id, lane, x: e.clientX, y: e.clientY, dx: 0, dy: 0, to: null })
+      setDrag({ id: fx.id, label, lane, x: e.clientX, y: e.clientY, px: e.clientX, py: e.clientY, to: null, moved: false })
     },
     move(e) {
       const d = held.current
       if (!d) return
-      setDrag({ ...d, dx: e.clientX - d.x, dy: e.clientY - d.y, to: where(e) })
+      const moved = d.moved || Math.abs(e.clientX - d.x) > 3 || Math.abs(e.clientY - d.y) > 3
+      setDrag({ ...d, px: e.clientX, py: e.clientY, moved, to: moved ? where(e) : null })
     },
     end() {
       const d = held.current
       setDrag(null)
-      if (!d?.to || (Math.abs(d.dx) < 3 && Math.abs(d.dy) < 3)) return
+      if (!d?.to || !d.moved) return
       ui.edit((p) => {
         const from = p.lanes[d.lane].effects
         const i = from.findIndex((x) => x.id === d.id)
@@ -504,18 +507,14 @@ function LaneEffect({ ui, laneIndex, fx, index, count, drag }) {
   const edit = (fn) => ui.edit((p) => { const list = p.lanes[laneIndex].effects; const i = list.findIndex((e) => e.id === fx.id); if (i >= 0) fn(list, i) })
   const open = !fx.collapsed
   const d = drag.drag
-  const held = d?.id === fx.id
-  const landing = d && !held && d.to?.lane === laneIndex && d.to.index === index
+  const held = d?.moved && d.id === fx.id
+  const landing = d?.moved && !held && d.to?.lane === laneIndex && d.to.index === index
   return (
-    <li
-      className={`ph-fx ${fx.on ? '' : 'bypassed'} ${held ? 'held' : ''} ${landing ? 'land-before' : ''}`}
-      data-id={fx.id}
-      style={held ? { transform: `translate(${d.dx}px, ${d.dy}px)` } : undefined}
-    >
+    <li className={`ph-fx ${fx.on ? '' : 'bypassed'} ${held ? 'held' : ''} ${landing ? 'land-before' : ''}`} data-id={fx.id}>
       <div
         className="ph-fx-head"
         title="Drag to move it: up, down, or into another lane"
-        onPointerDown={(e) => drag.start(e, laneIndex, fx)}
+        onPointerDown={(e) => drag.start(e, laneIndex, fx, spec.label)}
         onPointerMove={drag.move}
         onPointerUp={drag.end}
         onPointerCancel={drag.end}
@@ -557,7 +556,7 @@ function Lane({ ui, index, drag }) {
   const summed = lanesSummed(patch.lanes)[index]
   const catalog = laneFxCatalog()
   const feeds = patch.lanes.map((l, i) => i).filter((i) => patch.lanes[i].out === index)
-  const d = drag.drag
+  const d = drag.drag?.moved ? drag.drag : null
   const count = lane.effects.filter((e) => e.id !== d?.id).length
   const landingEnd = d && d.to?.lane === index && d.to.index >= count
   return (
@@ -789,6 +788,13 @@ export default function PhylloPanel({ data, change, target, watch, cps = 0.5 }) 
         </Section>
       </div>
 
+      {fxDrag.drag?.moved && createPortal(
+        <div className="ph-fx-ghost" style={{ left: fxDrag.drag.px, top: fxDrag.drag.py }} aria-hidden>
+          {fxDrag.drag.label}
+          {fxDrag.drag.to && <span>→ lane {laneName(fxDrag.drag.to.lane)}</span>}
+        </div>,
+        document.body,
+      )}
       <section className="ph-modbar" aria-label="Modulators">
         <header className="ph-card-head">
           <h3>modulators</h3>
