@@ -446,16 +446,80 @@ const LFO_BUTTONS = [['sine', 'sin'], ['tri', 'tri'], ['saw', 'saw'], ['ramp', '
 const GRIDS = [[0, 'free'], [4, '1/4'], [8, '1/8'], [16, '1/16'], [32, '1/32']]
 const sameShape = (a, b) => a.length === b.length && a.every((p, i) => Math.abs(p.x - b[i].x) < 1e-6 && Math.abs(p.y - b[i].y) < 1e-6 && Math.abs((p.c ?? 0) - (b[i].c ?? 0)) < 0.011 && !p.s === !b[i].s)
 
+/**
+ * Dragging a lane effect by its header: up and down its lane, or across into another. The
+ * effect follows the pointer; a line shows where it lands; letting go moves it.
+ * `drag` is { id, lane, x, y, dx, dy, to: { lane, index } } while one is held.
+ */
+function useFxDrag(ui) {
+  const [drag, setDrag] = useState(null)
+  const held = useRef(null)
+  held.current = drag
+  const where = (e) => {
+    // the lane under the pointer (the held effect lets the pointer through), and the place in
+    // it: before the first effect whose middle is below the pointer
+    const laneEl = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.ph-lane')
+    if (!laneEl) return held.current?.to ?? null
+    const lane = Number(laneEl.dataset.lane)
+    const items = [...laneEl.querySelectorAll('.ph-fx')].filter((el) => el.dataset.id !== held.current?.id)
+    let index = items.findIndex((el) => { const r = el.getBoundingClientRect(); return e.clientY < r.top + r.height / 2 })
+    if (index < 0) index = items.length
+    return { lane, index }
+  }
+  return {
+    drag,
+    start(e, lane, fx) {
+      if (e.button !== 0 || e.target.closest('button, input, select')) return
+      e.preventDefault()
+      e.currentTarget.setPointerCapture(e.pointerId)
+      setDrag({ id: fx.id, lane, x: e.clientX, y: e.clientY, dx: 0, dy: 0, to: null })
+    },
+    move(e) {
+      const d = held.current
+      if (!d) return
+      setDrag({ ...d, dx: e.clientX - d.x, dy: e.clientY - d.y, to: where(e) })
+    },
+    end() {
+      const d = held.current
+      setDrag(null)
+      if (!d?.to || (Math.abs(d.dx) < 3 && Math.abs(d.dy) < 3)) return
+      ui.edit((p) => {
+        const from = p.lanes[d.lane].effects
+        const i = from.findIndex((x) => x.id === d.id)
+        if (i < 0) return
+        const target = p.lanes[d.to.lane].effects
+        if (target !== from && target.length >= MAX_LANE_FX) return
+        const [unit] = from.splice(i, 1)
+        target.splice(Math.min(d.to.index, target.length), 0, unit)
+      })
+    },
+  }
+}
+
 /** One effect in a lane: its name, on or bypassed, its place in the stack, its knobs. */
-function LaneEffect({ ui, laneIndex, fx, index, count }) {
+function LaneEffect({ ui, laneIndex, fx, index, count, drag }) {
   const catalog = laneFxCatalog()
   const spec = catalog?.spec(fx.type)
   if (!spec) return null
   const edit = (fn) => ui.edit((p) => { const list = p.lanes[laneIndex].effects; const i = list.findIndex((e) => e.id === fx.id); if (i >= 0) fn(list, i) })
   const open = !fx.collapsed
+  const d = drag.drag
+  const held = d?.id === fx.id
+  const landing = d && !held && d.to?.lane === laneIndex && d.to.index === index
   return (
-    <li className={`ph-fx ${fx.on ? '' : 'bypassed'}`}>
-      <div className="ph-fx-head">
+    <li
+      className={`ph-fx ${fx.on ? '' : 'bypassed'} ${held ? 'held' : ''} ${landing ? 'land-before' : ''}`}
+      data-id={fx.id}
+      style={held ? { transform: `translate(${d.dx}px, ${d.dy}px)` } : undefined}
+    >
+      <div
+        className="ph-fx-head"
+        title="Drag to move it: up, down, or into another lane"
+        onPointerDown={(e) => drag.start(e, laneIndex, fx)}
+        onPointerMove={drag.move}
+        onPointerUp={drag.end}
+        onPointerCancel={drag.end}
+      >
         <button type="button" className="ph-fold" aria-expanded={open} title={open ? 'Fold it away' : 'Open it'} onClick={() => edit((l, i) => { if (l[i].collapsed) delete l[i].collapsed; else l[i].collapsed = true })}><Chevron open={open} /></button>
         <button type="button" className={`ph-led ${fx.on ? 'on' : ''}`} aria-pressed={fx.on} title={fx.on ? 'Bypass it' : 'Turn it back on'} aria-label={`${spec.label} ${fx.on ? 'on' : 'bypassed'}`} onClick={() => edit((l, i) => { l[i].on = !l[i].on })} />
         <span className="ph-fx-name" title={spec.blurb}>{spec.label}</span>
@@ -485,7 +549,7 @@ function LaneEffect({ ui, laneIndex, fx, index, count }) {
 }
 
 /** One lane: what plays into it, its effects top to bottom, its level, and where it goes. */
-function Lane({ ui, index }) {
+function Lane({ ui, index, drag }) {
   const { patch, edit } = ui
   const lane = patch.lanes[index]
   const set = (fn) => edit((p) => fn(p.lanes[index]))
@@ -493,8 +557,11 @@ function Lane({ ui, index }) {
   const summed = lanesSummed(patch.lanes)[index]
   const catalog = laneFxCatalog()
   const feeds = patch.lanes.map((l, i) => i).filter((i) => patch.lanes[i].out === index)
+  const d = drag.drag
+  const count = lane.effects.filter((e) => e.id !== d?.id).length
+  const landingEnd = d && d.to?.lane === index && d.to.index >= count
   return (
-    <section className={`ph-lane ${lane.mute ? 'muted' : ''}`} aria-label={`Lane ${laneName(index)}`}>
+    <section className={`ph-lane ${lane.mute ? 'muted' : ''} ${d?.to?.lane === index ? 'drop' : ''}`} data-lane={index} aria-label={`Lane ${laneName(index)}`}>
       <header className="ph-lane-head">
         <span className="ph-lane-num">{laneName(index)}</span>
         <div className="ph-lane-in" title="What plays into this lane">
@@ -507,8 +574,12 @@ function Lane({ ui, index }) {
         <button type="button" className={`ph-toggle ${lane.mute ? 'mute' : ''}`} aria-pressed={lane.mute} title={lane.mute ? 'Unmute this lane' : 'Mute this lane'} onClick={() => set((l) => { l.mute = !l.mute })}>m</button>
       </header>
       <div className="ph-lane-body">
-        <ol className="ph-fx-list">
-          {lane.effects.map((fx, i) => <LaneEffect key={fx.id} ui={ui} laneIndex={index} fx={fx} index={i} count={lane.effects.length} />)}
+        <ol className={`ph-fx-list ${landingEnd ? 'land-end' : ''}`}>
+          {lane.effects.map((fx, i) => {
+            // where it sits counting without the one being dragged, so the landing line matches
+            const at = lane.effects.slice(0, i).filter((e) => e.id !== d?.id).length
+            return <LaneEffect key={fx.id} ui={ui} laneIndex={index} fx={fx} index={at} count={lane.effects.length} drag={drag} />
+          })}
         </ol>
         {lane.effects.length < MAX_LANE_FX && catalog && (
           <select
@@ -649,6 +720,7 @@ export default function PhylloPanel({ data, change, target, watch, cps = 0.5 }) 
   const live = useRef({ t: -Infinity, lfo: [], voices: [] })
   useEffect(() => watch?.((report) => { live.current = { ...report, t: performance.now() } }), []) // eslint-disable-line react-hooks/exhaustive-deps
   const ui = { patch, edit: change, target, cps, live }
+  const fxDrag = useFxDrag(ui)
 
   const allPresets = [
     ...PRESETS.map((p) => ({ key: `builtin:${p.name}`, name: p.name, patch: p })),
@@ -712,7 +784,7 @@ export default function PhylloPanel({ data, change, target, watch, cps = 0.5 }) 
         </Section>
         <Section title="lanes" className="ph-fxcol" aside={<span className="ph-count">generators play in, lanes play out</span>}>
           <div className="ph-lanes">
-            {Array.from({ length: LANES }, (_, i) => <Lane key={i} ui={ui} index={i} />)}
+            {Array.from({ length: LANES }, (_, i) => <Lane key={i} ui={ui} index={i} drag={fxDrag} />)}
           </div>
         </Section>
       </div>

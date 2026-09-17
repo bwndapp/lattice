@@ -155,8 +155,9 @@
 .ph-amp-body .ph-knobs { padding: 0; }
 
 /* ── lanes: three columns, each out to master or another lane ── */
-.ph-lanes { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--ph-line); }
-.ph-lane { display: flex; flex-direction: column; min-width: 0; background: linear-gradient(180deg, #10100e, #0b0b0a); }
+.ph-lanes { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr); gap: 1px; background: var(--ph-line); }
+.ph-lane { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: linear-gradient(180deg, #10100e, #0b0b0a); }
+.ph-lane.drop { background: linear-gradient(180deg, rgba(228, 255, 26, 0.05), #0b0b0a); }
 .ph-lane.muted .ph-lane-body, .ph-lane.muted .ph-lane-foot .ph-modknob { opacity: 0.35; }
 .ph-lane-head { display: flex; align-items: center; gap: 0.35rem; height: 34px; padding: 0 0.45rem; border-bottom: 1px solid #1c1c18; }
 .ph-lane-num {
@@ -174,7 +175,18 @@
 .ph-fx { background: linear-gradient(180deg, #151513, #0d0d0b); border: 1px solid var(--ph-line); border-radius: 2px; box-shadow: inset 2px 0 0 var(--acid); }
 .ph-fx.bypassed { box-shadow: inset 2px 0 0 #2a2a24; }
 .ph-fx.bypassed .ph-fx-params, .ph-fx.bypassed .ph-fx-name { opacity: 0.4; }
-.ph-fx-head { display: flex; align-items: center; gap: 0.2rem; height: 28px; padding: 0 0.2rem 0 0.1rem; }
+.ph-fx-head { display: flex; align-items: center; gap: 0.2rem; height: 28px; padding: 0 0.2rem 0 0.1rem; cursor: grab; touch-action: none; user-select: none; }
+.ph-fx-head:active { cursor: grabbing; }
+/* the one being dragged floats over everything and lets the pointer through to what's under it */
+.ph-fx.held { position: relative; z-index: 20; pointer-events: none; opacity: 0.92; box-shadow: inset 2px 0 0 var(--acid), 0 12px 30px rgba(0, 0, 0, 0.7); border-color: var(--ph-line-strong); }
+.ph-fx.held .ph-fx-head { pointer-events: auto; }
+/* where it lands */
+.ph-fx.land-before { position: relative; }
+.ph-fx.land-before::before, .ph-fx-list.land-end::after {
+  content: ''; display: block; height: 2px; border-radius: 1px; background: var(--acid); box-shadow: 0 0 8px var(--acid);
+}
+.ph-fx.land-before::before { position: absolute; left: 0; right: 0; top: -4px; }
+.ph-fx-list.land-end::after { margin-top: 1px; }
 .ph-fx-head .ph-icon { width: 20px; height: 20px; font-size: 11px; }
 .ph-fx-name { font-size: 10.5px; font-weight: 600; color: var(--paper); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .ph-led {
