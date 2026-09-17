@@ -20,7 +20,7 @@ import { generateCode } from './project'
 import { activeAutos, appParam, autoValueFn } from './automation.js'
 import { routeVoice, setFxParams, silenceFx } from './fxbus.js'
 import { prepareInserts, setInsertParams } from './stereo.js'
-import { prepareInstruments, setEngineParams } from './instruments/host.js'
+import { enginesNeedTicks, prepareInstruments, setEngineParams } from './instruments/host.js'
 import { ensureAudio, forgetAudio } from './audio'
 
 let mp3Ready = false
@@ -67,6 +67,9 @@ export function stackLanes(code) {
 const hapValue = (hap) => { hap.ensureObjectValue(); return hap.value }
 
 const STEP = 0.05 // seconds between app-side knob updates while rendering
+const FINE_STEP = 0.01 // … when an instrument's modulators move things outside it
+/** Let the page handle what's waiting (an instrument's reports) before going on. */
+const yieldTask = () => new Promise((resolve) => { const c = new MessageChannel(); c.port1.onmessage = () => resolve(); c.port2.postMessage(0) })
 
 /**
  * Render part of a project to an AudioBuffer. `from`/`to` are in bars; `tail` gives
@@ -127,9 +130,14 @@ export async function renderProject(project, { from = 0, to = 4, tail = 2, sampl
   const moving = (project.song?.on ? activeAutos(project) : [])
     .map((a) => ({ app: appParam(project, a.target), value: autoValueFn(project, a) }))
     .filter((a) => a.app && a.value)
-  if (moving.length) {
-    for (let t = 0; t < seconds; t += STEP) {
-      offline.suspend(t).then(() => {
+  // an instrument whose modulators turn knobs outside it reports as it renders: pause often,
+  // and let those reports land before going on
+  const ticks = enginesNeedTicks()
+  if (moving.length || ticks) {
+    const step = ticks ? FINE_STEP : STEP
+    for (let t = step; t < seconds; t += step) {
+      offline.suspend(Math.round(t * sampleRate / 128) * 128 / sampleRate).then(async () => {
+        if (ticks) await yieldTask()
         const bar = from + t * cps
         for (const a of moving) {
           const patch = { [a.app.param]: a.value(bar) * (a.app.scale ?? 1) }

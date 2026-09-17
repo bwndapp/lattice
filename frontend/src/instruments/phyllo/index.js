@@ -1,5 +1,5 @@
 import { PHYLLO_DSP } from './dsp.js'
-import { AUDIO_PARAMS, encodePatch, knobAt, normalizePatch, patchMessage, registerLaneFx, LANES } from './model.js'
+import { AUDIO_PARAMS, encodePatch, globalTargets, knobAt, normalizePatch, patchMessage, registerLaneFx, LANES } from './model.js'
 import { makeRig } from './rig.js'
 import { LANE_FX_CATALOG } from '../laneFx.js'
 
@@ -19,6 +19,8 @@ export default {
   voices: 8,
   extraOutputs: LANES, // the summed lanes, for their effects (rig.js)
   rig: makeRig,
+  // its rig follows modulators, so an export pauses often enough to keep up
+  needsTicks: (patch) => globalTargets(patch).length > 0,
   voicesFor: (patch) => (patch.mono ? 1 : 8),
   oneShot: false,
   keyOctave: 3,

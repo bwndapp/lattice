@@ -5,15 +5,24 @@
  * sends it has, so the patch around it (inserts, sidechains, reverb and delay knobs) still
  * applies.
  *
+ * Modulators reach in here too: the processor reports where each outside destination is
+ * (lane effects' knobs, summed lanes' levels — see model.js globalTargets), and the rig
+ * turns them, on the knob's travel the way routes work inside the voices.
+ *
  * One rig per instrument per audio context (host.js makes it with the processor).
  */
 import { applyGainCurve, getSuperdoughAudioController } from '@strudel/webaudio'
-import { LANES, lanesSummed } from './model.js'
+import { K, LANES, globalTargets, laneFxCatalog, lanesSummed, targetSpec } from './model.js'
 import { makeLaneEffect } from '../laneFx.js'
 
 const stereo = (ac, gain = 1) => new GainNode(ac, { gain, channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' })
 const glide = (param, value, ac) => { if (Number.isFinite(value)) param.setTargetAtTime(value, ac.currentTime, 0.01) }
 const num = (v, fallback) => (Number.isFinite(Number(v)) ? Number(v) : fallback)
+const clamp01 = (v) => Math.min(1, Math.max(0, v))
+const toPos = (v, { min, max, log }) => (log ? Math.log(v / min) / Math.log(max / min) : (v - min) / (max - min))
+const fromPos = (t, { min, max, log }) => (log ? min * (max / min) ** t : min + t * (max - min))
+/** A knob moved `by` along its travel. */
+const moved = (value, def, by) => fromPos(clamp01(toPos(value, def) + by), def)
 
 export function makeRig(ac, node, voices) {
   const lanes = Array.from({ length: LANES }, (_, q) => {
@@ -31,6 +40,57 @@ export function makeRig(ac, node, voices) {
   gain.connect(send)
   let orbit = null
   let bus = null
+  // the patch as last set, and what the modulators said last
+  let patch = null
+  let tempo = { beatSeconds: 0.5 }
+  let targets = []
+  let summedNow = [false, false, false]
+  let offsets = []
+  let wasMoved = new Set() // effects the modulators moved last time
+
+  /**
+   * Effects and summed lanes at their knobs plus what the modulators add. `movedOnly`: just
+   * the effects the modulators move (or just stopped moving), as reports come in.
+   */
+  const apply = (movedOnly = false) => {
+    if (!patch) return
+    const byFx = new Map() // effect id → { knob: offset }
+    const byLane = new Map() // lane → offset
+    targets.forEach((target, i) => {
+      const by = offsets[i]
+      if (!by) return
+      const t = targetSpec(patch, target)
+      if (t?.fxId) {
+        if (!byFx.has(t.fxId)) byFx.set(t.fxId, {})
+        byFx.get(t.fxId)[t.knob] = (byFx.get(t.fxId)[t.knob] || 0) + by
+      } else {
+        const m = /^lane:(\d)\.gain$/.exec(target)
+        if (m) byLane.set(Number(m[1]), (byLane.get(Number(m[1])) || 0) + by)
+      }
+    })
+    patch.lanes.forEach((lane, q) => {
+      const l = lanes[q]
+      for (const e of lane.effects) {
+        const unit = l.units.get(e.id)
+        if (!unit) continue
+        const mods = byFx.get(e.id)
+        if (movedOnly && !mods && !wasMoved.has(e.id)) continue
+        let data = e.data
+        if (mods) {
+          data = { ...e.data }
+          const spec = unit.spec
+          for (const [knob, by] of Object.entries(mods)) {
+            const def = spec?.params.find((p) => p.key === knob)
+            if (def) data[knob] = moved(data[knob] ?? def.def, def, by)
+          }
+        }
+        try { unit.set(data, tempo) } catch (err) { console.warn('[phyllo] could not set an effect', err) }
+      }
+      const level = summedNow[q] && !lane.mute ? moved(lane.gain, K.gain, byLane.get(q) || 0) : 0
+      glide(l.level.gain, level, ac)
+    })
+    wasMoved = new Set(byFx.keys())
+  }
 
   /** Wire a lane: input → its effects that are on → level → where it goes. */
   const wire = (q, lane, summed) => {
@@ -62,7 +122,11 @@ export function makeRig(ac, node, voices) {
     /** The patch's lanes changed (or a knob on one of their effects). */
     update({ data, cps = 0.5, beats = 4 }) {
       const summed = lanesSummed(data.lanes)
-      const tempo = { beatSeconds: 1 / (Math.max(0.01, cps) * Math.max(1, beats)) }
+      tempo = { beatSeconds: 1 / (Math.max(0.01, cps) * Math.max(1, beats)) }
+      patch = data
+      summedNow = summed
+      const nextTargets = globalTargets(data)
+      if (nextTargets.join('|') !== targets.join('|')) { targets = nextTargets; offsets = [] }
       data.lanes.forEach((lane, q) => {
         const l = lanes[q]
         // effects made, kept or dropped by id; bypassed ones stay made, just not wired
@@ -76,14 +140,20 @@ export function makeRig(ac, node, voices) {
             unit = makeLaneEffect(e.type, ac)
             if (!unit) continue
             unit.type = e.type
+            unit.spec = laneFxCatalog()?.spec(e.type)
             l.units.set(e.id, unit)
             l.chain = null
           }
-          try { unit.set(e.data, tempo) } catch (err) { console.warn('[phyllo] could not set an effect', err) }
         }
-        glide(l.level.gain, summed[q] && !lane.mute ? lane.gain : 0, ac)
         wire(q, lane, summed[q])
       })
+      apply()
+    },
+    /** Where the modulators have the outside destinations now (the processor's report). */
+    modulate(values) {
+      if (!Array.isArray(values)) return
+      offsets = values
+      apply(true)
     },
     /** A note is starting: out goes where it goes, at its level and pan. */
     target(value) {

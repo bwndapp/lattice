@@ -11,6 +11,10 @@ import { SHAPE_SOURCE } from '../curve.js'
  * A lane with effects is summed: every voice adds into it, and it leaves by one of the
  * three outputs after the voices' (8, 9, 10), for the effects outside (phyllo/rig.js), which
  * also give it its level. Other lanes mix inside each voice and leave by the voice's output.
+ * What a voice adds to a summed lane carries its note's own level and pan.
+ *
+ * Destinations outside the voices (lane effects' knobs, summed lanes' levels) follow the
+ * newest note's modulators, and are reported to the rig about ninety times a second.
  *
  * What each layer and modulator is, and where routes go, arrives as a message (onData);
  * their knobs are AudioParams in fixed slots: l<layer>_<knob>, d<modulator>_<knob>.
@@ -78,12 +82,14 @@ class PhylloProcessor extends LatticeInstrument {
   constructor(options) {
     super(options)
     // what the patch is: set by onData
-    this.cfg = { layers: [], modulators: [], routes: [], mono: 0, lanes: [[-1, 0], [-1, 0], [-1, 0]], laneOrder: [0, 1, 2] }
+    this.cfg = { layers: [], modulators: [], routes: [], shared: [], mono: 0, lanes: [[-1, 0], [-1, 0], [-1, 0]], laneOrder: [0, 1, 2] }
     this.lfoPhase = new Float64Array(PH_MODS) // the shared clocks (free lfos)
     this.lfoStart = new Float64Array(PH_MODS) // where they were at the start of this block
     this.lfoRate = new Float64Array(PH_MODS)
     this.lfoTable = [] // slot → table, made when that slot first becomes an lfo
     this.modVal = new Float32Array(PH_MODS)
+    this.notes = 0 // counts notes, to know the newest voice
+    this.sharedTicks = 0
     this.mods = new Float32Array(100)
     this.bufL = new Float32Array(PH_CONTROL) // the voice's mix, out of the lanes
     this.bufR = new Float32Array(PH_CONTROL)
@@ -101,6 +107,8 @@ class PhylloProcessor extends LatticeInstrument {
       amp: { stage: 0, v: 0 },
       envs: Array.from({ length: PH_MODS }, () => ({ stage: 0, v: 0 })), // envelope modulators
       modPh: new Float64Array(PH_MODS), // each voice's own place in retrig and env lfos
+      mv: new Float32Array(PH_MODS), // its modulators' values, last worked out
+      order: 0, gain: 1, panL: [1, 0], panR: [0, 1], // when it started, and its note's level and pan
       layers: Array.from({ length: PH_LAYERS }, () => ({ ph: new Float64Array(16), fm: 0, pink: new Float32Array(7), brown: 0, gl: new Float32Array(16), gr: new Float32Array(16), warm: false })),
       counter: 0, ctl: null,
     }
@@ -117,6 +125,7 @@ class PhylloProcessor extends LatticeInstrument {
     const cfg = this.cfg
     if (Array.isArray(data.layers)) cfg.layers = data.layers.slice(0, PH_LAYERS)
     if (Array.isArray(data.routes)) cfg.routes = data.routes
+    if (Array.isArray(data.shared)) cfg.shared = data.shared
     if (data.mono !== undefined) cfg.mono = data.mono
     if (Array.isArray(data.lanes)) cfg.lanes = data.lanes
     if (Array.isArray(data.laneOrder)) cfg.laneOrder = data.laneOrder
@@ -167,8 +176,17 @@ class PhylloProcessor extends LatticeInstrument {
     const i = x | 0
     return i >= PH_LFO_TABLE ? t[PH_LFO_TABLE] : t[i] + (t[i + 1] - t[i]) * (x - i)
   }
-  noteOn(voice, note, vel) {
+  noteOn(voice, note, vel, gain = 1, pan = 0.5) {
     const k = this.k
+    voice.order = ++this.notes
+    // the note's level and pan, as a stereo panner does it, for what this voice sums
+    voice.gain = gain
+    const x = pan * 2 - 1
+    const t = ((x <= 0 ? x + 1 : x) * Math.PI) / 2
+    const cl = Math.cos(t)
+    const sn = Math.sin(t)
+    // [from left, from right] into each side
+    if (x <= 0) { voice.panL = [1, cl]; voice.panR = [0, sn] } else { voice.panL = [cl, 0]; voice.panR = [sn, 1] }
     const n = note >= 0 ? note : 60
     const legato = this.cfg.mono && voice.active && voice.gate && voice.amp.stage > 0 && voice.amp.stage < 4
     voice.target = n
@@ -231,6 +249,7 @@ class PhylloProcessor extends LatticeInstrument {
       mv[j] = mod.polarity === 1 ? v * 0.5 : mod.polarity === 0 ? (v + 1) * 0.5 : (v - 1) * 0.5
     }
     for (const [src, dest, amt] of cfg.routes) m[dest] += amt * mv[src]
+    voice.mv.set(mv.subarray(0, cfg.modulators.length))
 
     const c = voice.ctl || (voice.ctl = { layers: Array.from({ length: PH_LAYERS }, () => ({})) })
     if (c.adT !== k.a_decay) { c.adT = k.a_decay; c.ad = phDecay(k.a_decay, 1) }
@@ -281,8 +300,27 @@ class PhylloProcessor extends LatticeInstrument {
       }
     }
   }
-  // the summed lanes out, after the voices' outputs
+  // the summed lanes out, after the voices' outputs; and, now and then, where the shared
+  // destinations are: the newest note's modulators (free lfos from their own clock)
   endBlock(outputs) {
+    const shared = this.cfg.shared
+    if (shared.length && ++this.sharedTicks >= 4) {
+      this.sharedTicks = 0
+      let newest = null
+      for (const v of this.voices) if (v.order && (!newest || v.order > newest.order)) newest = v
+      const mods = this.cfg.modulators
+      const vals = new Float32Array(mods.length)
+      for (let j = 0; j < mods.length; j++) {
+        const m = mods[j]
+        if (m.lfo && !m.mode) {
+          const v = this.lfoAt(j, this.lfoPhase[j])
+          vals[j] = m.polarity === 1 ? v * 0.5 : m.polarity === 0 ? (v + 1) * 0.5 : (v - 1) * 0.5
+        } else vals[j] = newest ? newest.mv[j] : 0
+      }
+      const out = []
+      for (const [src, at, amt] of shared) out[at] = (out[at] || 0) + amt * (vals[src] || 0)
+      this.port.postMessage({ mods: out })
+    }
     const base = this.voices.length
     for (let q = 0; q < PH_LANES; q++) {
       const out = outputs[base + q]
@@ -343,7 +381,15 @@ class PhylloProcessor extends LatticeInstrument {
         if (conf[2]) {
           const bL = this.busL[q]
           const bR = this.busR[q]
-          for (let j = 0; j < ended; j++) { bL[i + j] += inL[j] * voice.vel; bR[i + j] += inR[j] * voice.vel }
+          const g = voice.vel * voice.gain
+          const [aL, bLr] = voice.panL
+          const [aR, bRr] = voice.panR
+          for (let j = 0; j < ended; j++) {
+            const l = inL[j] * g
+            const r = inR[j] * g
+            bL[i + j] += l * aL + r * bLr
+            bR[i + j] += l * aR + r * bRr
+          }
           continue
         }
         const to = conf[0] >= 0 && conf[0] !== q ? conf[0] : -1
@@ -351,7 +397,7 @@ class PhylloProcessor extends LatticeInstrument {
         const outL = to < 0 ? bufL : summedTo ? this.busL[to] : laneL[to]
         const outR = to < 0 ? bufR : summedTo ? this.busR[to] : laneR[to]
         const at = summedTo ? i : 0 // the shared mix is laid out by the block, a voice's by the step
-        const vel = summedTo ? voice.vel : 1
+        const vel = summedTo ? voice.vel * voice.gain : 1
         const g1 = c.lane[q]
         const g0 = c.laneFrom ? c.laneFrom[q] : g1
         if (g0 === 0 && g1 === 0) continue

@@ -365,8 +365,8 @@ export function normalizePatch(raw) {
 export const layerLetter = (i) => String.fromCharCode(65 + i)
 
 /**
- * Targets are strings: "pitch", "amp.level", or "layer:<id>.<knob>". The knob spec and a
- * name, or null.
+ * Targets are strings: "pitch", "amp.level", "lane:<n>.gain", "layer:<id>.<knob>", or
+ * "fx:<effect id>.<knob>" (a lane effect's knob). The knob spec and a name, or null.
  */
 export function targetSpec(patch, target) {
   if (typeof target !== 'string') return null
@@ -374,6 +374,18 @@ export function targetSpec(patch, target) {
   if (target === 'amp.level') return { label: 'volume', spec: { min: 0, max: 1 } }
   const n = /^lane:([012])\.gain$/.exec(target)
   if (n) return { label: `lane ${laneName(Number(n[1]))} level`, spec: K.gain, get: (p) => p.lanes[n[1]].gain }
+  const f = /^fx:(\w+)\.(\w+)$/.exec(target)
+  if (f) {
+    for (const [li, lane] of patch.lanes.entries()) {
+      const fx = lane.effects.find((e) => e.id === f[1])
+      if (!fx) continue
+      const spec = fxCatalog?.spec(fx.type)
+      const def = spec?.params.find((p) => p.key === f[2] && p.type === 'knob')
+      if (!def) return null
+      return { label: `${laneName(li)} ${spec.label} ${def.label}`, spec: def, fxId: fx.id, knob: def.key, lane: li, get: (p) => p.lanes[li].effects.find((e) => e.id === f[1])?.data[f[2]] ?? def.def }
+    }
+    return null
+  }
   const l = /^layer:(\w+)\.(\w+)$/.exec(target)
   if (l && LAYER_KNOBS.includes(l[2])) {
     const index = patch.layers.findIndex((x) => x.id === l[1])
@@ -381,6 +393,22 @@ export function targetSpec(patch, target) {
     return { label: `${layerLetter(index)} ${K[l[2]].label}`, spec: K[l[2]], layerId: l[1], knob: l[2], index, get: (p) => p.layers.find((x) => x.id === l[1])?.[l[2]] }
   }
   return null
+}
+
+/**
+ * Destinations outside the voices: lane effects' knobs, and the levels of lanes mixed
+ * across voices. The processor moves these from the newest note's modulators (free LFOs
+ * from their own clock) and reports them; the rig (rig.js) turns the knobs. Their order
+ * here is the order of the numbers in those reports.
+ */
+export function globalTargets(patch) {
+  const summed = lanesSummed(patch.lanes)
+  const list = []
+  for (const r of patch.routes) {
+    const shared = r.target.startsWith('fx:') || (/^lane:(\d)\.gain$/.test(r.target) && summed[Number(r.target[5])])
+    if (shared && !list.includes(r.target)) list.push(r.target)
+  }
+  return list
 }
 
 /** Where a route goes, as the processor numbers it: 1 pitch, 2 volume, 3 … 5 lane levels, 10 + layer × 10 + knob. */
@@ -415,6 +443,7 @@ export const AUDIO_PARAMS = [
  *               through its effects outside)], and `laneOrder`, the order to mix them in
  *   modulators  { lfo: 1, mode, polarity, sync, bars, points: [[x, y, c, s]] } or { lfo: 0 }
  *   routes      [modulator slot, destination, amount]
+ *   shared      [modulator slot, place in globalTargets, amount]
  */
 export function patchMessage(patch) {
   return {
@@ -432,6 +461,13 @@ export function patchMessage(patch) {
     routes: patch.routes
       .map((r) => [patch.modulators.findIndex((m) => m.id === r.src), destIndex(patch, r.target), r.amt])
       .filter(([src, dest]) => src >= 0 && dest > 0),
+    // routes to destinations outside the voices: [modulator slot, place in globalTargets, amount]
+    shared: (() => {
+      const targets = globalTargets(patch)
+      return patch.routes
+        .map((r) => [patch.modulators.findIndex((m) => m.id === r.src), targets.indexOf(r.target), r.amt])
+        .filter(([src, at]) => src >= 0 && at >= 0)
+    })(),
     mono: patch.mono ? 1 : 0,
   }
 }

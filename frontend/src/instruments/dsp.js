@@ -11,6 +11,9 @@
  *   v<n>_vel    how hard, 0 … 1 (Strudel already turns the note's level by it: use it
  *               for anything else velocity should move)
  *   v<n>_gate   1 while the note is held, 0 once it's let go
+ *   v<n>_gain   the note's level and v<n>_pan its pan (0 … 1), as Strudel has them: Strudel
+ *               applies these itself to what a voice's output carries; an engine applies them
+ *               to anything it mixes across voices itself
  *   p_<key>     the engine's knobs (k-rate: they move once per block)
  *
  * While an instrument's window is open the processor reports what it's doing, about 38
@@ -22,7 +25,7 @@
  *
  * A subclass says how many voices it has and which knobs, and implements
  *   newVoice()                       fresh state for one voice
- *   noteOn(voice, note, vel)         a note starts on this voice
+ *   noteOn(voice, note, vel, gain, pan) a note starts on this voice
  *   noteOff(voice)                   the gate closed (optional)
  *   render(voice, L, R, from, to)    add this voice's sound for samples [from, to)
  *   busy(voice)                      whether it's making sound (default: voice.active)
@@ -42,6 +45,8 @@ class LatticeInstrument extends AudioWorkletProcessor {
         { name: 'v' + v + '_trig', defaultValue: 0, automationRate: 'a-rate' },
         { name: 'v' + v + '_note', defaultValue: -1, minValue: -1, maxValue: 127, automationRate: 'a-rate' },
         { name: 'v' + v + '_vel', defaultValue: 1, minValue: 0, maxValue: 1, automationRate: 'a-rate' },
+        { name: 'v' + v + '_gain', defaultValue: 1, minValue: 0, maxValue: 16, automationRate: 'a-rate' },
+        { name: 'v' + v + '_pan', defaultValue: 0.5, minValue: 0, maxValue: 1, automationRate: 'a-rate' },
         { name: 'v' + v + '_gate', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'a-rate' },
       )
     }
@@ -61,7 +66,7 @@ class LatticeInstrument extends AudioWorkletProcessor {
     this.voices = Array.from({ length: cls.voiceCount }, () => ({ trig: 0, gate: 0, ...this.newVoice() }))
     // param names, worked out once rather than every block
     this.knobNames = cls.knobs.map((k) => [k.key, 'p_' + k.key])
-    this.voiceNames = this.voices.map((_, v) => ['v' + v + '_trig', 'v' + v + '_gate', 'v' + v + '_note', 'v' + v + '_vel'])
+    this.voiceNames = this.voices.map((_, v) => ['v' + v + '_trig', 'v' + v + '_gate', 'v' + v + '_note', 'v' + v + '_vel', 'v' + v + '_gain', 'v' + v + '_pan'])
     this.alive = true
     this.watching = false
     this.ticks = 0
@@ -100,6 +105,8 @@ class LatticeInstrument extends AudioWorkletProcessor {
       const gate = params[names[1]]
       const note = params[names[2]]
       const vel = params[names[3]]
+      const ngain = params[names[4]]
+      const npan = params[names[5]]
       const at = (arr, i) => (arr.length > 1 ? arr[i] : arr[0])
       // nothing changes this block: one go
       if (trig.length === 1 && gate.length === 1 && trig[0] === voice.trig && gate[0] === voice.gate) {
@@ -116,7 +123,7 @@ class LatticeInstrument extends AudioWorkletProcessor {
         from = i
         if (t !== voice.trig) {
           voice.trig = t
-          this.noteOn(voice, at(note, i), at(vel, i))
+          this.noteOn(voice, at(note, i), at(vel, i), at(ngain, i), at(npan, i))
         }
         if (g !== voice.gate) {
           voice.gate = g

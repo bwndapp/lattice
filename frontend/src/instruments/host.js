@@ -13,7 +13,7 @@
  * settings here, and live instances follow them at once (no re-evaluating), which is also
  * how automation moves them.
  */
-import { getAudioContext, registerSound } from '@strudel/webaudio'
+import { applyGainCurve, getAudioContext, registerSound } from '@strudel/webaudio'
 import { noteToMidi } from '@strudel/core'
 import { DSP_BASE } from './dsp.js'
 import { ENGINES, engineAudio, engineAudioParams, engineData, engineSound, withKnobs } from './index.js'
@@ -56,6 +56,12 @@ export function declareEngines(project) {
       for (const inst of live(ch.id, ch.engine.type)) inst.apply(found)
     }
   }
+}
+
+/** Whether any instrument needs the export render to pause often (its rig follows modulators). */
+export function enginesNeedTicks() {
+  for (const found of declared.values()) if (ENGINES[found.type]?.needsTicks?.(found.data)) return true
+  return false
 }
 
 /** Move some of one instrument's knobs while it plays (automation). */
@@ -124,18 +130,20 @@ function createInstance(ac, channelId, type) {
     parameterData: Object.fromEntries(params.filter((p) => Number.isFinite(first[p.key])).map((p) => [`p_${p.key}`, first[p.key]])),
     processorOptions: spec.message ? { data: spec.message(settings.data) } : {},
   })
+  // whatever the engine plays through outside the processor (see index.js `rig`)
+  const rig = spec.rig ? spec.rig(ac, node, spec.voices) : null
+  rig?.update(settings)
   let said = spec.message ? JSON.stringify(spec.message(settings.data)) : ''
   const key = `${channelId}:${type}`
   node.port.onmessage = (e) => {
+    // what the engine's modulators make of its outside audio (see rig), live or rendering
+    if (e.data?.mods) { rig?.modulate?.(e.data.mods); return }
     if (!e.data?.report || ac !== getAudioContext()) return // an offline render's reports aren't the live sound
     for (const fn of watchers.get(key) ?? []) fn(e.data.report)
   }
   if (watchers.has(key)) node.port.postMessage({ watch: true })
   const param = (name) => node.parameters.get(name)
   const voices = Array.from({ length: spec.voices }, () => ({ until: 0, started: 0, note: null }))
-  // whatever the engine plays through outside the processor (see index.js `rig`)
-  const rig = spec.rig ? spec.rig(ac, node, spec.voices) : null
-  rig?.update(settings)
   let trig = 0
   let current = settings.data
   let sent = first
@@ -165,7 +173,7 @@ function createInstance(ac, channelId, type) {
       }
     },
     /** Start a note: which voice, and the note's handle. */
-    play(t, { midi, vel, duration }) {
+    play(t, { midi, vel, duration, gain = 1, pan = 0.5 }) {
       // a free voice, else the one that started longest ago (a mono engine has one to use)
       const usable = voices.slice(0, Math.max(1, Math.min(voices.length, spec.voicesFor?.(current) ?? voices.length)))
       let slot = usable.findIndex((v) => v.until <= t)
@@ -177,6 +185,8 @@ function createInstance(ac, channelId, type) {
       trig = (trig % 1e6) + 1
       param(`v${slot}_note`).setValueAtTime(midi ?? -1, t)
       param(`v${slot}_vel`).setValueAtTime(vel, t)
+      param(`v${slot}_gain`).setValueAtTime(gain, t)
+      param(`v${slot}_pan`).setValueAtTime(pan, t)
       param(`v${slot}_gate`).setValueAtTime(1, t)
       param(`v${slot}_trig`).setValueAtTime(trig, t)
       const gateOff = t + Math.max(0.001, duration)
@@ -284,6 +294,9 @@ export function registerEngineSounds() {
       const note = inst.play(t, {
         midi: midi == null ? null : Math.min(127, Math.max(0, midi)),
         vel: Math.min(1, Math.max(0, Number(value.velocity ?? 1))),
+        // the note's own level and pan, for what the engine mixes across voices itself
+        gain: Math.max(0, applyGainCurve(Number.isFinite(Number(value.gain)) ? Number(value.gain) : 0.8)),
+        pan: Number.isFinite(Number(value.pan)) ? Math.min(1, Math.max(0, Number(value.pan))) : 0.5,
         duration: Number(value.duration) || 0.1,
       })
       note.onEnded(onended)
