@@ -478,7 +478,7 @@ function Envelope({ ui, which }) {
 
 const LFO_BUTTONS = [['sine', 'sin'], ['tri', 'tri'], ['saw', 'saw'], ['ramp', 'ramp'], ['square', 'sq'], ['pluck', 'pluck'], ['swell', 'swell'], ['stairs', 'steps']]
 const GRIDS = [[0, 'free'], [4, '1/4'], [8, '1/8'], [16, '1/16'], [32, '1/32']]
-const sameShape = (a, b) => a.length === b.length && a.every((p, i) => Math.abs(p.x - b[i].x) < 1e-6 && Math.abs(p.y - b[i].y) < 1e-6 && Math.abs((p.c ?? 0) - (b[i].c ?? 0)) < 0.011)
+const sameShape = (a, b) => a.length === b.length && a.every((p, i) => Math.abs(p.x - b[i].x) < 1e-6 && Math.abs(p.y - b[i].y) < 1e-6 && Math.abs((p.c ?? 0) - (b[i].c ?? 0)) < 0.011 && !p.s === !b[i].s)
 
 /** An LFO: a shape you draw, how it runs, how fast, and where it goes. */
 function Lfo({ ui, index }) {

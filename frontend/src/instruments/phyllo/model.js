@@ -8,6 +8,8 @@
  * sample.
  */
 
+import { curveAt } from '../curve.js'
+
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 const num = (v, def, lo, hi) => (Number.isFinite(Number(v)) ? clamp(Number(v), lo, hi) : def)
 const pick = (v, options, def) => (options.includes(v) ? v : def)
@@ -58,12 +60,13 @@ export const MAX_LFO_POINTS = 24
 
 /**
  * An LFO is a shape you draw: points { x 0…1 across one cycle, y 0…1 bottom to top, c the
- * bend of the line to the next point, -1…1 } — the same curve as automation (automation.js).
+ * bend of the line to the next point, -1…1, s 1 when that line is sine-shaped } (curve.js).
  * The first point sits at x 0 and the last at x 1; two points at the same x make a jump.
  * These are the shapes the buttons start you from.
  */
 export const LFO_PRESETS = {
-  sine: [{ x: 0, y: 0.5, c: -0.25 }, { x: 0.25, y: 1, c: 0.33 }, { x: 0.5, y: 0.5, c: -0.25 }, { x: 0.75, y: 0, c: 0.33 }, { x: 1, y: 0.5 }],
+  // a true sine: a quarter out to the top, a half-cosine down to the bottom, a quarter back
+  sine: [{ x: 0, y: 0.5, c: -1, s: 1 }, { x: 0.25, y: 1, s: 1 }, { x: 0.75, y: 0, c: 1, s: 1 }, { x: 1, y: 0.5 }],
   tri: [{ x: 0, y: 0.5 }, { x: 0.25, y: 1 }, { x: 0.75, y: 0 }, { x: 1, y: 0.5 }],
   saw: [{ x: 0, y: 1 }, { x: 1, y: 0 }],
   ramp: [{ x: 0, y: 0 }, { x: 1, y: 1 }],
@@ -74,20 +77,7 @@ export const LFO_PRESETS = {
 }
 const presetPoints = (name) => (LFO_PRESETS[name] ?? LFO_PRESETS.sine).map((p) => ({ ...p }))
 
-/** Where a drawn shape is at x (0 … 1): 0 … 1. */
-export function curveValue(points, x) {
-  if (!points.length) return 0.5
-  if (x <= points[0].x) return points[0].y
-  for (let i = 0; i < points.length - 1; i++) {
-    const a = points[i]
-    const b = points[i + 1]
-    if (x < b.x) {
-      const u = b.x > a.x ? (x - a.x) / (b.x - a.x) : 1
-      return a.y + (b.y - a.y) * (a.c ? u ** (2 ** (a.c * 3)) : u)
-    }
-  }
-  return points[points.length - 1].y
-}
+export { curveAt as curveValue }
 
 /** A drawn shape, cleaned: in order, inside the box, pinned to both ends. */
 export function normalizePoints(raw, fallback = 'sine') {
@@ -97,6 +87,7 @@ export function normalizePoints(raw, fallback = 'sine') {
       const point = { x: Math.round(num(p.x, 0, 0, 1) * 10000) / 10000, y: Math.round(num(p.y, 0.5, 0, 1) * 10000) / 10000 }
       const c = Math.round(num(p.c, 0, -1, 1) * 100) / 100
       if (c) point.c = c
+      if (p.s) point.s = 1 // a sine-shaped stretch to the next point
       return point
     })
     .sort((a, b) => a.x - b.x)
@@ -326,7 +317,7 @@ export const AUDIO_PARAMS = [
 ]
 
 /** What the processor gets as a message: the LFOs' drawn shapes, as [x, y, c] rows. */
-export const patchMessage = (patch) => ({ lfos: patch.lfos.map((o) => o.points.map((p) => [p.x, p.y, p.c ?? 0])) })
+export const patchMessage = (patch) => ({ lfos: patch.lfos.map((o) => o.points.map((p) => [p.x, p.y, p.c ?? 0, p.s ?? 0])) })
 
 /** The patch as the processor's numbers. `cps`: the track's tempo, for synced LFOs. */
 export function encodePatch(patch, { cps = 0.5 } = {}) {

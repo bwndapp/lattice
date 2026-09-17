@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { curveAt } from './curve.js'
 import './CurveEditor.css'
 
 /**
@@ -13,25 +14,13 @@ import './CurveEditor.css'
  *   dot      optional ref: the editor puts a dot at `dot.current()` → x (0…1), every frame
  *
  * Click adds a point, drag moves it, right-click or double-click removes it, and the
- * diamond between two points bends the line: drag it up or down.
+ * diamond between two points bends the line: drag it up or down. Double-click the diamond
+ * to make that stretch sine-shaped (a round handle) or back to a plain curve (see curve.js).
  */
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 const MAX_POINTS = 24
 
-/** Where the curve is at x. */
-export function curveAt(points, x) {
-  if (!points.length) return 0.5
-  if (x <= points[0].x) return points[0].y
-  for (let i = 0; i < points.length - 1; i++) {
-    const a = points[i]
-    const b = points[i + 1]
-    if (x < b.x) {
-      const u = b.x > a.x ? (x - a.x) / (b.x - a.x) : 1
-      return a.y + (b.y - a.y) * (a.c ? u ** (2 ** (a.c * 3)) : u)
-    }
-  }
-  return points[points.length - 1].y
-}
+export { curveAt }
 
 export default function CurveEditor({ points, onChange, grid = 8, zero = 'middle', pinEnds = true, height = 120, dot = null, className = '' }) {
   const box = useRef(null)
@@ -171,9 +160,14 @@ export default function CurveEditor({ points, onChange, grid = 8, zero = 'middle
       onPointerUp={up}
       onPointerCancel={up}
       onPointerLeave={() => { if (!drag.current) setHover(null) }}
-      onDoubleClick={(e) => { const hit = e.target.closest?.('[data-point]'); if (hit) remove(Number(hit.dataset.point)) }}
+      onDoubleClick={(e) => {
+        const hit = e.target.closest?.('[data-point], [data-bend]')
+        if (hit?.dataset.point !== undefined) remove(Number(hit.dataset.point))
+        // a diamond: that stretch turns sine-shaped, or back
+        else if (hit?.dataset.bend !== undefined) edit((list) => { const p = list[Number(hit.dataset.bend)]; if (p.s) delete p.s; else p.s = 1 })
+      }}
       onContextMenu={(e) => e.preventDefault()}
-      title="Click to add a point · drag to move · right-click or double-click to remove · drag a diamond to bend · alt: off the grid"
+      title="Click to add a point · drag to move · right-click or double-click to remove · drag a diamond to bend, double-click it for a sine-shaped stretch · alt: off the grid"
     >
       <svg width={width} height={height} aria-hidden>
         {Array.from({ length: cols + 1 }, (_, i) => (
@@ -190,9 +184,11 @@ export default function CurveEditor({ points, onChange, grid = 8, zero = 'middle
           const mx = (p.x + q.x) / 2
           const my = curveAt(points, mx)
           return (
-            <g key={`b${i}`} data-bend={i} className={`ce-bend ${p.c ? 'bent' : ''} ${hover === `b${i}` || drag.current?.bend === i ? 'hot' : ''}`}>
+            <g key={`b${i}`} data-bend={i} className={`ce-bend ${p.c || p.s ? 'bent' : ''} ${hover === `b${i}` || drag.current?.bend === i ? 'hot' : ''}`}>
               <circle cx={sx(mx)} cy={sy(my)} r="9" className="ce-hit" />
-              <rect x={sx(mx) - 3.5} y={sy(my) - 3.5} width="7" height="7" transform={`rotate(45 ${sx(mx)} ${sy(my)})`} />
+              {p.s
+                ? <circle cx={sx(mx)} cy={sy(my)} r="3.6" className="ce-bend-mark" />
+                : <rect x={sx(mx) - 3.5} y={sy(my) - 3.5} width="7" height="7" transform={`rotate(45 ${sx(mx)} ${sy(my)})`} className="ce-bend-mark" />}
             </g>
           )
         })}

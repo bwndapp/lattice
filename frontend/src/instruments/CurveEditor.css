@@ -26,9 +26,9 @@
 .ce-point.active { cursor: grabbing; }
 .ce-point.active .ce-knob { fill: var(--ce-ink); filter: drop-shadow(0 0 5px var(--ce-ink)); }
 .ce-bend { cursor: ns-resize; }
-.ce-bend rect { fill: #0a0a09; stroke: color-mix(in srgb, var(--ce-ink) 55%, transparent); stroke-width: 1.2; }
-.ce-bend.bent rect { stroke: var(--ce-ink); }
-.ce-bend.hot rect { fill: var(--ce-ink); stroke: var(--ce-ink); }
+.ce-bend .ce-bend-mark { fill: #0a0a09; stroke: color-mix(in srgb, var(--ce-ink) 55%, transparent); stroke-width: 1.2; }
+.ce-bend.bent .ce-bend-mark { stroke: var(--ce-ink); }
+.ce-bend.hot .ce-bend-mark { fill: var(--ce-ink); stroke: var(--ce-ink); }
 .ce-dot {
   position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border-radius: 50%;
   background: #fff; box-shadow: 0 0 0 2px var(--ce-ink), 0 0 12px var(--ce-ink);

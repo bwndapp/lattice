@@ -1,6 +1,7 @@
 import { knobsSource } from '../dsp.js'
 import { AUDIO_PARAMS, K, LAYER_KNOBS, LFO_PRESETS } from './model.js'
 import { TABLES_SOURCE } from './tables.js'
+import { SHAPE_SOURCE } from '../curve.js'
 
 /**
  * Phyllo on the audio thread: eight voices, each up to four layers into a filter and an
@@ -27,7 +28,8 @@ const PH_LN = [0, 1, 2, 3].map((i) => {
   return n
 })
 const PH_LFO_TABLE = 1024
-const PH_LFO_START = ${JSON.stringify(['sine', 'tri'].map((n) => LFO_PRESETS[n].map((p) => [p.x, p.y, p.c ?? 0])))}
+const PH_LFO_START = ${JSON.stringify(['sine', 'tri'].map((n) => LFO_PRESETS[n].map((p) => [p.x, p.y, p.c ?? 0, p.s ?? 0])))}
+const phShape = ${SHAPE_SOURCE}
 const PH_ON = [0, 1].map((i) => ({ mode: 'o' + i + '_mode', pol: 'o' + i + '_pol', sync: 'o' + i + '_sync', bars: 'o' + i + '_bars', hz: 'o' + i + '_hz' }))
 const PH_MN = Array.from({ length: 12 }, (_, s) => ['m' + s + '_dest', 'm' + s + '_amt'])
 const phPos = (v, s) => (s.log ? Math.log(v / s.min) / Math.log(s.max / s.min) : (v - s.min) / (s.max - s.min))
@@ -114,10 +116,10 @@ class PhylloProcessor extends LatticeInstrument {
     for (let j = 0; j <= PH_LFO_TABLE; j++) {
       const x = j / PH_LFO_TABLE
       while (seg < n - 2 && x >= pts[seg + 1][0]) seg++
-      const [x0, y0, c] = pts[seg]
+      const [x0, y0, c, sh] = pts[seg]
       const [x1, y1] = pts[seg + 1]
       const u = x1 > x0 ? Math.min(1, Math.max(0, (x - x0) / (x1 - x0))) : 1
-      t[j] = (y0 + (y1 - y0) * (c ? u ** (2 ** (c * 3)) : u)) * 2 - 1
+      t[j] = (y0 + (y1 - y0) * phShape(u, c || 0, sh || 0)) * 2 - 1
     }
   }
   lfoAt(i, p) {
