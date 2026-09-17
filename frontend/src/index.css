@@ -827,30 +827,35 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
 /* signal flow: a hit lights its source and every wire that carries it onward (flow.js) */
 @property --lit { syntax: '<number>'; inherits: true; initial-value: 0; }
 /*
- * A wire at rest wears a dimmed version of whatever colour runs through it, so you can
- * read the patch without playing it. Round ends, and a dark line under each one so wires
- * stay legible where they cross.
+ * A wire is drawn three times over: a dark casing, a coloured body, and a thin bright
+ * thread down the middle, which together read as something round with light in it rather
+ * than a line. The body is the one React Flow hit-tests, so only it takes the pointer.
  */
+.graph-canvas .wire-casing, .graph-canvas .wire-sheen { fill: none; pointer-events: none; stroke-linecap: round; }
+.graph-canvas .wire-casing {
+  stroke: #0d0d0c;
+  stroke-width: 6;
+  opacity: 0.85;
+}
 .graph-canvas .react-flow__edge-path {
-  stroke: color-mix(in srgb, var(--wire, #6f6f66) 34%, #1c1c19);
+  stroke: color-mix(in srgb, var(--wire, #6f6f66) 42%, #1f1f1c);
   stroke-linecap: round;
-  stroke-width: 1.8;
-  paint-order: stroke;
+  stroke-width: 3.4;
 }
-.graph-canvas .react-flow__edge:hover .react-flow__edge-path {
-  stroke: color-mix(in srgb, var(--wire, #8f8f86) 62%, #1c1c19);
-  stroke-width: 2.4;
+.graph-canvas .wire-sheen {
+  stroke: color-mix(in srgb, var(--wire, #a8a89e) 55%, #fff);
+  stroke-width: 1;
+  opacity: calc(0.22 + var(--lit, 0) * 0.7);
 }
-.graph-canvas .react-flow__edge.selected .react-flow__edge-path {
-  stroke: color-mix(in srgb, var(--wire, var(--paper)) 78%, var(--paper));
-  stroke-width: 2.6;
-}
-.graph-canvas .react-flow__edge.animated .react-flow__edge-path { stroke: color-mix(in srgb, var(--wire, #6f6f66) 40%, #1c1c19); }
+.graph-canvas .react-flow__edge:hover .react-flow__edge-path { stroke: color-mix(in srgb, var(--wire, #8f8f86) 70%, #1f1f1c); }
+.graph-canvas .react-flow__edge:hover .wire-sheen { opacity: 0.55; }
+.graph-canvas .react-flow__edge.selected .react-flow__edge-path { stroke: color-mix(in srgb, var(--wire, var(--paper)) 80%, var(--paper)); }
+.graph-canvas .react-flow__edge.animated .react-flow__edge-path { stroke: color-mix(in srgb, var(--wire, #6f6f66) 46%, #1f1f1c); }
 /* with the lighting off, a playing patch looks as it used to: every wire live */
 .graph-canvas.flow-off .react-flow__edge.animated .react-flow__edge-path { stroke: var(--acid); }
 .graph-canvas .react-flow__edge[style*="--lit"] .react-flow__edge-path {
-  stroke: color-mix(in srgb, var(--glow, var(--acid)) calc(var(--lit) * 100%), #4a4a42);
-  stroke-width: calc(1.5px + var(--lit) * 1.8px);
+  stroke: color-mix(in srgb, var(--glow, var(--acid)) calc(var(--lit) * 100%), #3a3a34);
+  stroke-width: calc(3.4px + var(--lit) * 1.6px);
   filter: drop-shadow(0 0 calc(var(--lit) * 6px) color-mix(in srgb, var(--glow, var(--acid)) calc(var(--lit) * 65%), transparent));
 }
 .react-flow__node[style*="--lit"] .gnode {

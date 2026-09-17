@@ -80,7 +80,11 @@ export function WireEdge({ id, sourceX, sourceY, targetX, targetY, data, style, 
   const lift = length < 36 ? 17 : 0 // no room between the dots: sit just above the wire instead
   return (
     <>
+      {/* a wire is three strokes of the same line: a dark casing, the coloured body that
+          carries the click, and a thin bright thread down the middle of it */}
+      <path className="wire-casing" d={path} style={style} />
       <BaseEdge id={id} path={path} style={style} markerEnd={markerEnd} interactionWidth={interactionWidth} />
+      <path className="wire-sheen" d={path} style={style} />
       <EdgeLabelRenderer>
         <button
           type="button"
