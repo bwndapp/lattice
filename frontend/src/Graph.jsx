@@ -610,6 +610,7 @@ function StudioNode({ id, selected }) {
               return (
                 <li key={w.targetHandle} className={`slot ${node.type === 'output' && (muted || (node.data.solo && !solo)) ? 'off' : ''}`}>
                   <Handle type="target" position={Position.Left} id={w.targetHandle} className="port in" />
+                  <span className="slot-meter" data-meter={w.id} aria-hidden><i /><i /></span>
                   <span className="slot-name">
                     {originLabel(ctx.project, w)}
                     {(() => {

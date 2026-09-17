@@ -840,19 +840,11 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
  * thread down the middle, which together read as something round with light in it rather
  * than a line. The body is the one React Flow hit-tests, so only it takes the pointer.
  */
-/* what the wire is carrying, sitting just above it while the track plays */
-.wire-db {
-  position: absolute; z-index: 3; pointer-events: none;
-  font-size: 10.5px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: 0.02em;
-  color: color-mix(in srgb, var(--wire, var(--paper)) 55%, var(--paper));
-  text-shadow: 0 1px 2px #000, 0 0 3px #000;
-  opacity: 0.9;
-  transition: opacity 0.35s ease, color 0.35s ease;
-}
-.wire-db.quiet { opacity: 0.3; color: var(--muted); }
+
+
 /* close to the ceiling, then at it: the colours a mixer's meter uses */
-.wire-db.hot { color: #ffd23f; }
-.wire-db.over { color: #ff5a43; text-shadow: 0 1px 2px #000, 0 0 7px rgb(255 90 67 / 0.65); }
+
+
 .graph-canvas .wire-casing, .graph-canvas .wire-sheen { fill: none; pointer-events: none; stroke-linecap: round; }
 .graph-canvas .wire-casing {
   stroke: #0d0d0c;
@@ -998,6 +990,27 @@ button.chan-synth:hover span { color: var(--acid); }
 .slot:last-child { border-bottom: 0; }
 .slot-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .slot-via { font-style: normal; font-size: 10px; color: var(--muted); }
+/*
+ * What each thing coming into a mixer is putting in, left over right. Driven frame by
+ * frame from flow.js; the bar turns as it approaches the ceiling and reddens past it, so
+ * you can see which input is pushing a bus too hard rather than only that it is.
+ */
+.slot-meter {
+  flex: none; display: grid; gap: 2px; width: 40px;
+}
+.slot-meter i { position: relative; display: block; height: 3px; border-radius: 2px; background: #1b1b18; overflow: hidden; }
+.slot-meter i::after {
+  content: ''; position: absolute; inset: 0 auto 0 0; width: var(--w, 0%);
+  background: linear-gradient(to right,
+    color-mix(in srgb, var(--acid) 75%, #4ade80) 0%,
+    var(--acid) 58%,
+    #ffd23f 80%,
+    #ff5a43 100%);
+  background-size: 40px 100%; /* the colours belong to the scale, not to how far it's filled */
+}
+.slot-meter i:first-child { --w: calc(var(--l, 0) * 100%); }
+.slot-meter i:last-child { --w: calc(var(--r, 0) * 100%); }
+.slot-meter.over i::after { box-shadow: 0 0 7px rgb(255 90 67 / 0.9); }
 .slot.off .slot-name { opacity: 0.4; text-decoration: line-through; }
 .slot.free .slot-name { color: var(--muted); }
 .slot-ctl { display: inline-flex; gap: 0.2rem; }
