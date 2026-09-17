@@ -1,5 +1,5 @@
 import { authFetch } from './bwnd'
-import { BASE, HOME } from './base'
+import { BASE } from './base'
 
 /** JSON call to this app's API. Throws Error(message) on a non-2xx answer. */
 export async function api(path, { method = 'GET', body } = {}) {
@@ -56,5 +56,5 @@ export function timeAgo(seconds) {
 
 /** Public link for a track (live: /t/id, draft: /preview/#/t/id). */
 export function trackUrl(id) {
-  return BASE ? `${window.location.origin}${HOME}#/t/${id}` : `${window.location.origin}/t/${id}`
+  return BASE ? `${window.location.origin}${BASE}/#/t/${id}` : `${window.location.origin}/t/${id}`
 }

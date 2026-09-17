@@ -9,8 +9,9 @@ import react from '@vitejs/plugin-react'
 //   npm run draft → BUILD_TARGET=webapp → outDir ../webapp
 // bwnd-publish copies webapp/ to public/ unchanged, so the build can't bake in its
 // path: assets are relative ('./') and index.html sets <base href> at load time.
-//   npm run room   → BUILD_TARGET=room   → outDir ../public/multiplayer (a branch to try)
-const target = { webapp: 'webapp', room: 'public/multiplayer' }[process.env.BUILD_TARGET] ?? 'public'
+//   npm run room   → BUILD_TARGET=room   → outDir ../multiplayer  (served at /multiplayer/
+//                                            by src/api/multiplayer.py, to try a branch)
+const target = { webapp: 'webapp', room: 'multiplayer' }[process.env.BUILD_TARGET] ?? 'public'
 
 export default defineConfig({
   base: './',
