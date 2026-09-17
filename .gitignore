@@ -1,5 +1,6 @@
 # data: users' tracks live here, never in git
 data.db
+data.db.before-*
 data-draft.db
 *.db-wal
 *.db-shm
