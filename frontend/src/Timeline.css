@@ -232,7 +232,7 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 1px 3px rgba(0, 0, 0, 0.6);
   cursor: var(--ring);
   touch-action: none;
-  transition: box-shadow 0.15s ease, filter 0.15s ease;
+  transition: box-shadow 0.13s ease, filter 0.13s ease, border-color 0.13s ease;
 }
 /* tall rows: a solid name strip over a lighter body, as FL */
 .clip.roomy {
@@ -240,7 +240,13 @@
     linear-gradient(to bottom, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 15px),
     linear-gradient(to bottom, var(--clip) 0 15px, color-mix(in srgb, var(--rim) 22%, transparent) 15px 16px, color-mix(in srgb, var(--clip) 78%, transparent) 16px);
 }
-.clip:hover { filter: brightness(1.07); }
+/* hovering picks a clip out by its own colour rather than moving it: the physics belong to
+   dragging, and a clip springing about under the pointer reads as a glitch */
+.clip:hover {
+  filter: brightness(1.09);
+  --rim: color-mix(in srgb, var(--clip) 72%, #fff);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 2px 7px rgba(0, 0, 0, 0.6);
+}
 .clip::before, .clip::after { content: ''; position: absolute; top: 50%; height: 12px; margin-top: -6px; width: 3px; border-radius: 2px; background: color-mix(in srgb, var(--clip-ink) 35%, transparent); opacity: 0; transition: opacity 0.15s ease; }
 .clip.roomy::before, .clip.roomy::after { top: calc(50% + 7px); }
 .clip::before { left: 3px; }
@@ -264,7 +270,6 @@
   .clip { animation: clip-land 300ms var(--spring); }
   .clip.gone { animation: clip-gone 130ms cubic-bezier(0.4, 0, 0.75, 0.2) forwards; pointer-events: none; }
   .clip.preview { animation: none; } /* the one under the pointer is already where you put it */
-  .clip:hover { transform: translateY(-1px); }
   .clip { transition: box-shadow 0.15s ease, filter 0.15s ease, transform 280ms var(--spring); }
   .song-lanes.dragging .clip { transition: box-shadow 0.15s ease, filter 0.15s ease; }
   /*
