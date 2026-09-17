@@ -22,6 +22,7 @@
  * Code pasted somewhere without this app plays dry.
  */
 import { getAudioContext, getSuperdoughAudioController } from '@strudel/webaudio'
+import { hasGesture } from './activation.js'
 
 /** Reverb and delay settings the knobs start from. */
 export const REVERB_DEFAULTS = { size: 2.2, predelay: 0.015, tone: 0.55, lowcut: 160, width: 1 }
@@ -101,7 +102,7 @@ export function routeVoice(value) {
 function install() {
   const ctl = safeController()
   if (controller && controller === ctl) return true
-  if (!navigator.userActivation?.hasBeenActive) {
+  if (!hasGesture()) {
     if (!armed) {
       armed = true
       const go = () => { window.removeEventListener('pointerdown', go, true); window.removeEventListener('keydown', go, true); install() }

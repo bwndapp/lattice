@@ -93,8 +93,19 @@ function buildMaps(w, h, radius) {
   return { mapUrl, specUrl, scale: max }
 }
 
-const refracts = () => typeof navigator !== 'undefined'
-  && !!navigator.userAgentData?.brands?.some((b) => /Chrom/.test(b.brand))
+/**
+ * Can this browser bend what's behind the glass? Only Chromium's own engine takes an SVG
+ * filter as a backdrop-filter — and on iOS every browser is WebKit underneath, Chrome and
+ * Edge included, while still wearing Chromium's badge. Asking what it calls itself isn't
+ * enough; anything on iOS gets the frosted fallback instead of a filter it can't draw.
+ */
+const refracts = () => {
+  if (typeof navigator === 'undefined') return false
+  if (/iPhone|iPad|iPod/.test(navigator.userAgent)) return false
+  // iPadOS says it's a Mac: a Mac with a touchscreen is an iPad
+  if (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) return false
+  return !!navigator.userAgentData?.brands?.some((b) => /Chrom/.test(b.brand))
+}
 
 /** A glass element: pass the className and it bends whatever sits behind it. */
 export function Glass({ className = '', radius = 999, ...rest }) {

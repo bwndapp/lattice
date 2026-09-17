@@ -11,6 +11,7 @@
  * code plays as written.
  */
 import { getAudioContext, getSuperdoughAudioController } from '@strudel/webaudio'
+import { hasGesture } from './activation.js'
 
 const buses = new Map() // bus id → { key, base, scale, at }
 const knobs = new Map() // `${nodeId}|${param}` → the knob's value now
@@ -57,7 +58,7 @@ function sync(key) {
 function install() {
   const ctl = controller
   if (ctl && ctl === safeController()) return true
-  if (!navigator.userActivation?.hasBeenActive) {
+  if (!hasGesture()) {
     if (!armed) {
       armed = true
       const go = () => {

@@ -8,6 +8,7 @@
  * Code pasted somewhere without this app plays normally, just not widened.
  */
 import { getAudioContext, getSuperdoughAudioController } from '@strudel/webaudio'
+import { hasGesture } from './activation.js'
 
 /**
  * The inserts that need to see the sound sample by sample, which only a worklet can do, so
@@ -196,7 +197,7 @@ function apply() {
 /** Hook into the audio controller once the page may make sound. */
 function install() {
   if (controller && controller === safeController()) return true
-  if (!navigator.userActivation?.hasBeenActive) {
+  if (!hasGesture()) {
     if (!armed) {
       armed = true
       const go = () => {
