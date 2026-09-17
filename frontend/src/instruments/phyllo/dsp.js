@@ -28,8 +28,8 @@ const PH_LN = [0, 1, 2, 3].map((i) => {
 })
 const PH_LFO_TABLE = 1024
 const PH_LFO_START = ${JSON.stringify(['sine', 'tri'].map((n) => LFO_PRESETS[n].map((p) => [p.x, p.y, p.c ?? 0])))}
-const PH_ON = [0, 1].map((i) => ({ mode: 'o' + i + '_mode', sync: 'o' + i + '_sync', bars: 'o' + i + '_bars', hz: 'o' + i + '_hz' }))
-const PH_MN = Array.from({ length: 12 }, (_, s) => ['m' + s + '_dest', 'm' + s + '_amt', 'm' + s + '_bi'])
+const PH_ON = [0, 1].map((i) => ({ mode: 'o' + i + '_mode', pol: 'o' + i + '_pol', sync: 'o' + i + '_sync', bars: 'o' + i + '_bars', hz: 'o' + i + '_hz' }))
+const PH_MN = Array.from({ length: 12 }, (_, s) => ['m' + s + '_dest', 'm' + s + '_amt'])
 const phPos = (v, s) => (s.log ? Math.log(v / s.min) / Math.log(s.max / s.min) : (v - s.min) / (s.max - s.min))
 const phVal = (t, s) => { t = t < 0 ? 0 : t > 1 ? 1 : t; return s.log ? s.min * (s.max / s.min) ** t : s.min + t * (s.max - s.min) }
 // a layer knob moved by its routes, on the knob's travel
@@ -185,12 +185,14 @@ class PhylloProcessor extends LatticeInstrument {
       const dest = Math.round(k[PH_MN[s][0]])
       const amt = k[PH_MN[s][1]]
       if (!dest || !amt) continue
-      // every source as 0 … 1 (the envelope) or -1 … 1 (an lfo), then as the route wants it:
-      // bipolar swings half the amount each way, unipolar moves all of it one way
-      const bi = k[PH_MN[s][2]] > 0.5
-      const src = s < 4
-        ? (bi ? (voice.env.v * 2 - 1) * 0.5 : voice.env.v)
-        : (bi ? lv[s < 8 ? 0 : 1] * 0.5 : (lv[s < 8 ? 0 : 1] + 1) * 0.5)
+      // the envelope moves a knob up; an lfo moves it up from zero at its bottom (0 … 1),
+      // both ways around its middle (half each way), or down from zero at its top (-1 … 0)
+      let src = voice.env.v
+      if (s >= 4) {
+        const o = s < 8 ? 0 : 1
+        const pol = Math.round(k[PH_ON[o].pol])
+        src = pol === 1 ? lv[o] * 0.5 : pol === 0 ? (lv[o] + 1) * 0.5 : (lv[o] - 1) * 0.5
+      }
       m[dest] += amt * src
     }
     const c = voice.ctl || (voice.ctl = { layers: [0, 1, 2, 3].map(() => ({})), s1: new Float64Array(4), s2: new Float64Array(4) })

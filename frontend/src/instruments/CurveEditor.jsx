@@ -8,7 +8,7 @@ import './CurveEditor.css'
  *   points   [{ x 0…1, y 0…1, c? -1…1 }] in order; c bends the line to the next point
  *   onChange(points) with the new list
  *   grid     columns to snap to (0: none); alt places a point off the grid
- *   bipolar  draw the middle line as zero
+ *   zero     where zero sits: 'middle' (the curve swings both ways), 'bottom' or 'top'
  *   pinEnds  the first and last points stay at x 0 and x 1
  *   dot      optional ref: the editor puts a dot at `dot.current()` → x (0…1), every frame
  *
@@ -33,7 +33,7 @@ export function curveAt(points, x) {
   return points[points.length - 1].y
 }
 
-export default function CurveEditor({ points, onChange, grid = 8, bipolar = true, pinEnds = true, height = 120, dot = null, className = '' }) {
+export default function CurveEditor({ points, onChange, grid = 8, zero = 'middle', pinEnds = true, height = 120, dot = null, className = '' }) {
   const box = useRef(null)
   const drag = useRef(null)
   const dotEl = useRef(null)
@@ -50,6 +50,9 @@ export default function CurveEditor({ points, onChange, grid = 8, bipolar = true
   }, [])
 
   const PAD = 7
+  const zeroY = zero === 'top' ? 1 : zero === 'bottom' ? 0 : 0.5
+  // a point's value as it acts: -100 … +100 around the middle, 0 … 100 up, -100 … 0 down
+  const valueOf = (y) => Math.round((zero === 'middle' ? y * 2 - 1 : zero === 'top' ? y - 1 : y) * 100)
   const sx = (x) => PAD + x * (width - 2 * PAD)
   const sy = (y) => PAD + (1 - y) * (height - 2 * PAD)
   const toX = (px) => clamp((px - PAD) / (width - 2 * PAD), 0, 1)
@@ -78,9 +81,9 @@ export default function CurveEditor({ points, onChange, grid = 8, bipolar = true
     for (const p of points) { xs.add(p.x); xs.add(Math.max(0, p.x - 1e-6)) }
     const ordered = [...xs].sort((a, b) => a - b)
     const line = ordered.map((x, i) => `${i ? 'L' : 'M'}${sx(x).toFixed(1)},${sy(curveAt(points, x)).toFixed(1)}`).join('')
-    const base = sy(bipolar ? 0.5 : 0)
+    const base = sy(zeroY)
     return { line, area: `${line}L${sx(1)},${base}L${sx(0)},${base}Z` }
-  }, [points, width, height, bipolar]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [points, width, height, zeroY]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const snap = (x, free) => (free || !grid ? Math.round(x * 1000) / 1000 : Math.round(x * grid) / grid)
   const local = (e) => {
@@ -177,7 +180,7 @@ export default function CurveEditor({ points, onChange, grid = 8, bipolar = true
           <line key={`v${i}`} x1={sx(i / cols)} x2={sx(i / cols)} y1={PAD} y2={height - PAD} className={`ce-grid ${i === 0 || i === cols ? 'edge' : i % 2 === 0 ? 'major' : ''}`} />
         ))}
         {[0, 0.25, 0.5, 0.75, 1].map((y) => (
-          <line key={`h${y}`} x1={PAD} x2={width - PAD} y1={sy(y)} y2={sy(y)} className={`ce-grid ${y === 0 || y === 1 ? 'edge' : bipolar && y === 0.5 ? 'zero' : ''}`} />
+          <line key={`h${y}`} x1={PAD} x2={width - PAD} y1={sy(y)} y2={sy(y)} className={`ce-grid ${y === zeroY ? 'zero' : y === 0 || y === 1 ? 'edge' : ''}`} />
         ))}
         <path d={path.area} className="ce-area" />
         <path d={path.line} className="ce-line" />
@@ -202,7 +205,7 @@ export default function CurveEditor({ points, onChange, grid = 8, bipolar = true
       </svg>
       {dot && <span className="ce-dot" ref={dotEl} aria-hidden />}
       {active !== null && points[active] && (
-        <span className="ce-readout">{Math.round(points[active].x * 100)}% · {bipolar ? `${points[active].y >= 0.5 ? '+' : ''}${Math.round((points[active].y * 2 - 1) * 100)}` : Math.round(points[active].y * 100)}</span>
+        <span className="ce-readout">{Math.round(points[active].x * 100)}% · {valueOf(points[active].y) > 0 ? '+' : ''}{valueOf(points[active].y)}</span>
       )}
     </div>
   )

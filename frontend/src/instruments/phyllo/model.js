@@ -47,6 +47,11 @@ export const WARP_MODES = ['none', 'bend+', 'bend-', 'sync', 'mirror', 'pwm', 'a
 export const FILTER_TYPES = ['lowpass', 'highpass', 'bandpass']
 export const FILTER_SLOPES = ['12db', '24db', 'ladder']
 export const LFO_SHAPES = ['sine', 'tri', 'saw', 'ramp', 'square']
+/**
+ * Which way an LFO pushes: 'up' from zero at its bottom, 'bi' both ways around zero in its
+ * middle, 'down' from zero at its top.
+ */
+export const LFO_POLARITIES = ['up', 'bi', 'down']
 /** How an LFO runs: on its own clock, from the start of each note, or once per note. */
 export const LFO_MODES = ['free', 'retrig', 'env']
 export const MAX_LFO_POINTS = 24
@@ -109,10 +114,10 @@ export const MAX_ROUTES = 4 // per modulator
 export const SOURCES = ['env', 'lfo1', 'lfo2']
 export const SOURCE_LABELS = { env: 'mod env', lfo1: 'lfo 1', lfo2: 'lfo 2' }
 /*
- * A route is { id, src, target, amt -1…1, bi }. Bipolar (bi) swings the knob both ways
- * around where it's set, half of amt each way; unipolar moves it one way only, all of
- * amt: up for a positive amount, down for a negative one. LFOs start bipolar, the
- * envelope unipolar.
+ * A route is { id, src, target, amt -1…1 }. What it does depends on its source's polarity:
+ * a bipolar LFO swings the knob both ways around where it's set, half of amt each way; an
+ * up or down one (and the envelope, always up) moves it one way only, all of amt. A
+ * negative amount turns any of them over.
  */
 export const TABLES = {
   basic: 'sine → triangle → saw → square',
@@ -150,8 +155,8 @@ export function initPatch() {
     amp: { attack: 0.005, decay: 0.3, sustain: 0.8, release: 0.2 },
     env: { attack: 0.005, decay: 0.4, sustain: 0, release: 0.3 },
     lfos: [
-      { points: presetPoints('sine'), mode: 'free', sync: true, bars: 1 / 4, hz: 2, grid: 8 },
-      { points: presetPoints('tri'), mode: 'free', sync: true, bars: 1, hz: 0.5, grid: 8 },
+      { points: presetPoints('sine'), mode: 'free', polarity: 'bi', sync: true, bars: 1 / 4, hz: 2, grid: 8 },
+      { points: presetPoints('tri'), mode: 'free', polarity: 'bi', sync: true, bars: 1, hz: 0.5, grid: 8 },
     ],
     mods: [],
     mono: false,
@@ -223,6 +228,7 @@ export function normalizePatch(raw) {
         // older patches name a shape instead of drawing one
         points: normalizePoints(l.points ?? (LFO_SHAPES.includes(l.shape) ? presetPoints(l.shape) : d.points), i ? 'tri' : 'sine'),
         mode: pick(l.mode, LFO_MODES, 'free'),
+        polarity: pick(l.polarity, LFO_POLARITIES, l.bi === false ? 'up' : 'bi'),
         grid: [0, 4, 8, 16, 32].includes(l.grid) ? l.grid : 8,
         sync: l.sync !== false,
         bars: LFO_BARS.includes(l.bars) ? l.bars : d.bars,
@@ -240,7 +246,7 @@ export function normalizePatch(raw) {
     const key = `${m.src}>${m.target}`
     if (routes.has(key) || patch.mods.filter((x) => x.src === m.src).length >= MAX_ROUTES) continue
     routes.add(key)
-    patch.mods.push({ id: typeof m.id === 'string' && /^\w{1,12}$/.test(m.id) ? m.id : newPartId(), src: m.src, target: m.target, amt: num(m.amt, 0.5, -1, 1), bi: typeof m.bi === 'boolean' ? m.bi : m.src !== 'env' })
+    patch.mods.push({ id: typeof m.id === 'string' && /^\w{1,12}$/.test(m.id) ? m.id : newPartId(), src: m.src, target: m.target, amt: num(m.amt, 0.5, -1, 1) })
   }
   return patch
 }
@@ -303,6 +309,7 @@ export const AUDIO_PARAMS = [
   ]),
   ...[0, 1].flatMap((i) => [
     { key: `o${i}_mode`, min: 0, max: 2, def: 0 },
+    { key: `o${i}_pol`, min: 0, max: 2, def: 1 },
     { key: `o${i}_sync`, min: 0, max: 1, def: 1 },
     { key: `o${i}_bars`, min: 1 / 64, max: 64, def: 1 },
     { key: `o${i}_hz`, min: K.hz.min, max: K.hz.max, def: K.hz.def },
@@ -311,7 +318,6 @@ export const AUDIO_PARAMS = [
   ...Array.from({ length: SOURCES.length * MAX_ROUTES }, (_, i) => [
     { key: `m${i}_dest`, min: 0, max: 60, def: 0 },
     { key: `m${i}_amt`, min: -1, max: 1, def: 0 },
-    { key: `m${i}_bi`, min: 0, max: 1, def: 1 },
   ]).flat(),
   { key: 'mono', min: 0, max: 1, def: 0 },
   { key: 'glide', min: 0, max: 1, def: 0 },
@@ -358,6 +364,7 @@ export function encodePatch(patch, { cps = 0.5 } = {}) {
   }
   patch.lfos.forEach((o, i) => {
     out[`o${i}_mode`] = LFO_MODES.indexOf(o.mode)
+    out[`o${i}_pol`] = LFO_POLARITIES.indexOf(o.polarity)
     out[`o${i}_sync`] = o.sync ? 1 : 0
     out[`o${i}_bars`] = o.bars
     out[`o${i}_hz`] = o.hz
@@ -368,7 +375,6 @@ export function encodePatch(patch, { cps = 0.5 } = {}) {
       const m = routes[r]
       out[`m${s * MAX_ROUTES + r}_dest`] = m ? destIndex(patch, m.target) : 0
       out[`m${s * MAX_ROUTES + r}_amt`] = m ? m.amt : 0
-      out[`m${s * MAX_ROUTES + r}_bi`] = m?.bi ? 1 : 0
     }
   })
   out.mono = patch.mono ? 1 : 0

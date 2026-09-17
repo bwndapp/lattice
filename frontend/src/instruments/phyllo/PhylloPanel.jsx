@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Knob from '../../Knob.jsx'
 import { drawCurve, drawWave, fitCanvas } from '../scope.js'
 import {
-  FILTER_SLOPES, FILTER_TYPES, FM_WAVES, K, LFO_BARS, LFO_MODES, LFO_PRESETS, MAX_LAYERS, MAX_ROUTES, NOISES, PRESETS, SOURCE_LABELS,
+  FILTER_SLOPES, FILTER_TYPES, FM_WAVES, K, LFO_BARS, LFO_MODES, LFO_POLARITIES, LFO_PRESETS, MAX_LAYERS, MAX_ROUTES, NOISES, PRESETS, SOURCE_LABELS,
   TABLES, TABLE_NAMES, WARP_MODES, barsLabel, layerKnobKey, makeLayer, newPartId, normalizePatch, targetSpec,
 } from './model.js'
 import { tableFrame } from './tables.js'
@@ -254,7 +254,9 @@ function ModKnob({ ui, route, auto, def, value, onChange }) {
         <svg className="ph-rings" width="44" height="44" viewBox="0 0 44 44" aria-hidden>
           {routes.map((m, i) => {
             // an envelope sweeps one way from the knob; an lfo swings either side
-            const [a0, a1] = m.bi ? [at - Math.abs(m.amt) / 2, at + Math.abs(m.amt) / 2] : [at, at + m.amt]
+            // a bipolar lfo swings either side of the knob; the envelope and an up or down lfo push one way
+            const pol = m.src === 'env' ? 'up' : ui.patch.lfos[Number(m.src.slice(3)) - 1]?.polarity
+            const [a0, a1] = pol === 'bi' ? [at - Math.abs(m.amt) / 2, at + Math.abs(m.amt) / 2] : [at, at + (pol === 'down' ? -m.amt : m.amt)]
             return <path key={m.id} d={arc(clamp(a0, 0, 1), clamp(a1, 0, 1), 20 - i * 3)} className={`ph-ring src-${m.src}`} />
           })}
         </svg>
@@ -324,13 +326,6 @@ function Destinations({ ui, src }) {
             {!options.some(([t]) => t === m.target) && <option value={m.target}>{targetSpec(patch, m.target)?.label ?? 'gone'}</option>}
             {options.map(([t, label]) => <option key={t} value={t} disabled={t !== m.target && routes.some((x) => x.target === t)}>{label}</option>)}
           </select>
-          <button
-            type="button"
-            className={`ph-pol ${m.bi ? 'bi' : m.amt < 0 ? 'down' : 'up'}`}
-            onClick={() => edit((p) => { const r = p.mods.find((x) => x.id === m.id); if (r) r.bi = !r.bi })}
-            title={m.bi ? 'Bipolar: swings both ways around the knob · click for one way only' : `Unipolar: moves the knob ${m.amt < 0 ? 'down' : 'up'} only (the amount's sign picks which) · click for both ways`}
-            aria-label={m.bi ? 'Bipolar' : 'Unipolar'}
-          >{m.bi ? '±' : m.amt < 0 ? '−' : '+'}</button>
           <div className="ph-dest-amt">
             <Knob def={AMOUNT} value={m.amt} onChange={(v) => edit((p) => { const r = p.mods.find((x) => x.id === m.id); if (r) r.amt = v })} />
           </div>
@@ -338,7 +333,7 @@ function Destinations({ ui, src }) {
         </div>
       ))}
       {free.length > 0 && routes.length < MAX_ROUTES && (
-        <button type="button" className="ph-add" onClick={() => edit((p) => { p.mods.push({ id: newPartId(), src, target: free[0][0], amt: 0.5, bi: src !== 'env' }) })}>+ destination</button>
+        <button type="button" className="ph-add" onClick={() => edit((p) => { p.mods.push({ id: newPartId(), src, target: free[0][0], amt: 0.5 }) })}>+ destination</button>
       )}
     </div>
   )
@@ -515,6 +510,7 @@ function Lfo({ ui, index }) {
         <CurveEditor
           points={lfo.points}
           grid={lfo.grid}
+          zero={({ up: 'bottom', bi: 'middle', down: 'top' })[lfo.polarity]}
           height={112}
           dot={dot}
           onChange={(points) => set((l) => { l.points = points })}
@@ -526,6 +522,10 @@ function Lfo({ ui, index }) {
           {lfo.sync
             ? <select className="ph-rate-select" aria-label="Every" value={String(lfo.bars)} onChange={(e) => set((l) => { l.bars = Number(e.target.value) })}>{LFO_BARS.map((b) => <option key={b} value={String(b)}>{barsLabel(b)}</option>)}</select>
             : <Knob def={K.hz} value={lfo.hz} onChange={(v) => set((l) => { l.hz = v })} target={ui.target(`lfo${index + 1}_hz`)} />}
+        </div>
+        <div className="ph-grid-pick" title="+ pushes up from zero at the bottom · ± swings both ways around zero in the middle · − pushes down from zero at the top">
+          <span className="ph-small-label">polarity</span>
+          <Segmented label="Polarity" value={lfo.polarity} options={LFO_POLARITIES} format={(v) => ({ up: '+', bi: '±', down: '−' })[v]} onChange={(v) => set((l) => { l.polarity = v })} />
         </div>
         <label className="ph-grid-pick" title="Where new and dragged points snap to (alt: anywhere)">
           <span className="ph-small-label">grid</span>
