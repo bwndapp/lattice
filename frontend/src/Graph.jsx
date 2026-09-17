@@ -466,6 +466,11 @@ function StudioNode({ id, selected }) {
     <div
       className={`gnode g-${spec.group} t-${node.type} ${selected ? 'selected' : ''} ${soloing ? 'soloing' : ''} ${node.type !== 'output' && !ctx.heard.has(id) ? 'unheard' : ''}`}
       style={tint ? { '--tint': tint, '--tint-ink': inkFor(tint) } : undefined}
+      onClick={(e) => {
+        if (node.type !== 'pattern' || !ctx.dockOpen) return
+        if (e.target.closest('button, select, input, .nodrag')) return // a control, not the card
+        ctx.showInDock(node.data.patternId)
+      }}
     >
       {spec.inputs === 1 && <Handle type="target" position={Position.Left} id="in" className="port in" />}
       <div className="node-head">
@@ -1232,6 +1237,10 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
     updateNode,
     removeNode: (id) => removeNodes([id]),
     editPattern: (patternId) => dock?.open(patternId, null, 'rack'),
+    // with the dock already open, one click on another pattern moves it there: opening it
+    // is the thing that takes two, changing which one you're looking at shouldn't
+    dockOpen: !!dock?.at,
+    showInDock: (patternId) => { if (dock?.at && patternId) dock.open(patternId, null, 'rack') },
     showTimeline: () => automation?.showTimeline(),
     // the song is on and this part has no clip: give it one at the start and show it there
     addToSong: ({ src, bars }) => {

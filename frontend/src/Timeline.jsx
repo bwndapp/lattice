@@ -452,6 +452,12 @@ export default function Timeline({ project, onUpdateProject, transport, started 
         openPart(clip.src, e)
         return
       }
+      // the dock is already open on some pattern: one press moves it to this one, since
+      // opening it was the thing that took two presses
+      if (dock?.at && clip.src.startsWith('pattern:') && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        const to = clip.src.slice(8)
+        if (to !== dock.at.patternId) dock.open(to, null, 'rack')
+      }
       let sel = selected
       const wasSelected = selected.has(id)
       if (e.ctrlKey || e.metaKey) {
