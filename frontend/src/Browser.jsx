@@ -95,27 +95,6 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
     return () => eye.disconnect()
   }, [more, fill])
 
-  /**
-   * The cards lean toward the pointer: where it is over the card sets two angles, and the
-   * card is drawn in perspective from them. While the pointer is on it the lean follows
-   * closely; when it leaves, it eases back level on its own.
-   */
-  const lean = (e) => {
-    const card = e.currentTarget
-    const r = card.getBoundingClientRect()
-    const x = (e.clientX - r.left) / r.width - 0.5
-    const y = (e.clientY - r.top) / r.height - 0.5
-    card.style.setProperty('--ry', `${(x * 7).toFixed(2)}deg`)
-    card.style.setProperty('--rx', `${(-y * 7).toFixed(2)}deg`)
-    card.dataset.live = '1'
-  }
-  const level = (e) => {
-    const card = e.currentTarget
-    delete card.dataset.live
-    card.style.setProperty('--rx', '0deg')
-    card.style.setProperty('--ry', '0deg')
-  }
-
   // going back to the whole list, or into one person's, resets where paging is
   const narrow = (to) => { next.current = 0; setOnly(to) }
   // opened already narrowed (a track's copies, say)
@@ -209,12 +188,7 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
         ) : (
           <ul className="b-grid">
             {tracks.map((t) => (
-              <li
-                key={t.id}
-                className={`b-card ${t.id === activeId ? 'active' : ''}`}
-                onPointerMove={lean}
-                onPointerLeave={level}
-              >
+              <li key={t.id} className={`b-card ${t.id === activeId ? 'active' : ''}`}>
                 <button type="button" className="b-play" aria-label={`Play ${t.title}`} title="Play" onClick={() => onPlay(t.id)}>
                   <svg viewBox="0 0 16 16" aria-hidden><path d="M5 3.5v9l8-4.5z" /></svg>
                 </button>

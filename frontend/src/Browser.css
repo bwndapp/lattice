@@ -267,23 +267,3 @@ button.b-card-about {
   transition: background 0.12s ease, color 0.12s ease;
 }
 button.b-card-about:hover { background: var(--acid); color: var(--ink); }
-
-/*
- * The cards lean toward the pointer (as on jameskemp.cc): the grid holds the perspective,
- * each card turns by two angles JS sets from where the pointer is over it, and the pieces
- * inside stand off the face while it's there. It eases back level by itself on the way out.
- */
-@media (pointer: fine) and (prefers-reduced-motion: no-preference) {
-  .b-grid { perspective: 900px; }
-  .b-card {
-    transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
-    transform-style: preserve-3d;
-    transition: transform 0.55s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.18s ease;
-  }
-  .b-card:hover { transform: translateY(-2px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)); }
-  .b-card[data-live] { transition: transform 0.1s linear, box-shadow 0.18s ease; }
-  .b-card[data-live] .b-play { transform: translateZ(26px); }
-  .b-card[data-live] .b-card-meta { transform: translateZ(10px); }
-  .b-card[data-live] .b-card-author { transform: translateZ(14px); }
-  .b-play, .b-card-meta, .b-card-author { transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
-}
