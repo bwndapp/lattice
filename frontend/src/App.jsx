@@ -845,6 +845,7 @@ export default function App() {
   const keysRef = useRef({})
   keysRef.current = {
     play, save, stop, pause, toStart, undo, redo, isProject: !!project,
+    history: () => { if (isOwner) setShowVersions(true) },
     saveAsNew: () => (isNew || !isOwner ? save() : saveAsNew()),
     swapCanvas: () => switchCanvas(view === 'song' ? 'graph' : 'song'),
   }
@@ -897,6 +898,7 @@ export default function App() {
       else if (mod && e.shiftKey && e.key.toLowerCase() === 's') keysRef.current.saveAsNew()
       else if (mod && e.key.toLowerCase() === 's') keysRef.current.save()
       else if (mod && e.key.toLowerCase() === 'j') setView((v) => (v === 'code' ? lastViewRef.current : 'code'))
+      else if (mod && e.key.toLowerCase() === 'h') keysRef.current.history()
       else return
       e.preventDefault()
       e.stopPropagation()
@@ -965,7 +967,7 @@ export default function App() {
         canEdit && { label: isNew ? 'save as a track' : 'save', shortcut: 'ctrl/cmd S', onSelect: () => save(), disabled: busy || (!!user && !dirty) },
         isOwner && { label: 'save as a new track', shortcut: 'ctrl/cmd shift S', onSelect: () => saveAsNew(), disabled: busy, hint: 'This track stays as it was saved' },
         !canEdit && track && { label: 'save a copy', onSelect: () => remix(), disabled: busy, hint: 'Yours to change · it still credits the original' },
-        isOwner && { label: 'earlier saves…', onSelect: () => setShowVersions(true), hint: 'Each time you save, the one before is kept here' },
+        isOwner && { label: 'history…', shortcut: 'ctrl/cmd H', onSelect: () => setShowVersions(true), hint: 'Every save, and what changed at each one' },
         project && { label: 'export…', onSelect: () => { stop(); setShowExport(true) }, hint: 'Bounce it to a WAV or MP3' },
         codeChanged && track && !isOwner && { label: 'undo my changes', onSelect: () => revert() },
         track && 'line',
@@ -1240,7 +1242,7 @@ export default function App() {
               {askSave.kind === 'renamed'
                 ? <p>You renamed it to <strong>“{title.trim() || 'untitled'}”</strong> and changed the patch, so this looks like a new track.</p>
                 : <p>This would replace “{track.title}” with a much smaller patch: <strong>{countText(askSave.after)}</strong> instead of <strong>{countText(askSave.before)}</strong>.</p>}
-              <p><strong>Save as a new track</strong> keeps “{track.title}” exactly as it was saved. <strong>Replace</strong> saves over it (what's there now stays in <em>earlier saves</em>).</p>
+              <p><strong>Save as a new track</strong> keeps “{track.title}” exactly as it was saved. <strong>Replace</strong> saves over it (what's there now stays in <em>history</em>).</p>
             </ConfirmDialog>
           )}
           {askNew && (
