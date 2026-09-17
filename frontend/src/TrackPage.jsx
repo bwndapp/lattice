@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api, timeAgo } from './api'
 import { parseProject } from './project'
 import { changesBetween, summarise } from './history.js'
+import { previewTrack, stopPreview } from './audio'
 import './TrackPage.css'
 
 const when = (s) => new Date(s * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -32,7 +33,7 @@ export default function TrackPage({ id, user, onOpen, onClose, onAuthor }) {
   const [saves, setSaves] = useState(null)
   const [changes, setChanges] = useState({})
   const [shown, setShown] = useState(() => new Set())
-  const [copying, setCopying] = useState(false)
+  const [hearing, setHearing] = useState(false)
   const projects = useRef(new Map())
 
   useEffect(() => {
@@ -78,25 +79,12 @@ export default function TrackPage({ id, user, onOpen, onClose, onAuthor }) {
     }
   }
 
-  /** Take it and go your own way: a copy of your own, still crediting this one. */
-  const branch = async () => {
-    setCopying(true)
-    try {
-      const full = await api(`/tracks/${id}`)
-      const made = await api('/tracks', {
-        method: 'POST',
-        body: {
-          title: `${full.title} (copy)`.slice(0, 80),
-          code: full.code,
-          visibility: 'public',
-          forked_from: id,
-        },
-      })
-      onOpen(made.id, false, made.title)
-    } catch (e) {
-      setError(e.message)
-      setCopying(false)
-    }
+  // hearing it costs nothing: no loading, and whatever you have open stays where it is
+  useEffect(() => () => stopPreview(), [id])
+  const hear = () => {
+    if (hearing) { stopPreview(); return setHearing(false) }
+    setHearing(true)
+    previewTrack(parseProject(track?.code || ''), { cycles: 16 }).catch(() => setHearing(false))
   }
 
   if (error) return <section className="tp"><p className="tp-error">Couldn’t open that track: {error}</p><button type="button" className="b-button" onClick={onClose}>back</button></section>
@@ -119,8 +107,8 @@ export default function TrackPage({ id, user, onOpen, onClose, onAuthor }) {
         <p className="tp-shape">{shape(project) ?? 'hand-written code'}</p>
         <div className="tp-actions">
           <button type="button" className="b-button primary" onClick={() => onOpen(track.id, false, track.title)}>open in the studio</button>
-          <button type="button" className="b-button" onClick={branch} disabled={copying || !user}>
-            {copying ? 'copying…' : 'save a copy'}
+          <button type="button" className={`b-button ${hearing ? 'on' : ''}`} onClick={hear}>
+            {hearing ? 'stop' : 'preview'}
           </button>
           <button
             type="button"
@@ -128,7 +116,7 @@ export default function TrackPage({ id, user, onOpen, onClose, onAuthor }) {
             onClick={() => navigator.clipboard?.writeText(`${window.location.origin}/t/${track.id}`)}
           >copy link</button>
         </div>
-        {!user && <p className="tp-quiet">Sign in to take a copy of this.</p>}
+        {!user && <p className="tp-quiet">Sign in to keep your own copy of this — open it and press save.</p>}
       </div>
 
       <div className="tp-stats">

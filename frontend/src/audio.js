@@ -1,7 +1,8 @@
 import { getAudioContext, getSampleBuffer, getSampleInfo, getSound, getSuperdoughAudioController, initAudio, resetGlobalEffects, soundMap, superdough } from '@strudel/webaudio'
 import { getFontBufferSource } from '@strudel/soundfonts'
 import { getSoundIndex } from '@strudel/core'
-import { auditionCode, paramValue, paramsFor } from './project'
+import { auditionCode, generateCode, paramValue, paramsFor } from './project'
+import { stackLanes } from './exportAudio.js'
 import { GLOBAL_DELAY, GLOBAL_REVERB, routeVoice, silenceFx } from './fxbus.js'
 import { evaluate } from '@strudel/core'
 import { transpiler } from '@strudel/transpiler'
@@ -198,6 +199,48 @@ export async function preloadPattern(pattern, { from = 0, cycles = 16, timeout =
  * quick fade (no click), then the audio buses are rebuilt empty; the next notes make new
  * ones (stereo inserts re-mount themselves on the fresh buses).
  */
+let previewRun = 0
+let previewTimer = 0
+
+/** Stop a track preview. Voices already started ring out; nothing new is scheduled. */
+export function stopPreview() {
+  previewRun += 1
+  clearTimeout(previewTimer)
+}
+
+/**
+ * Play a track without loading it: its notes go straight to the engine, a cycle at a time,
+ * the way auditioning a single hit does. Nothing touches the editor, the transport or what
+ * you have open — so listening to someone else's track costs you nothing you were working
+ * on. Its effects are added alongside yours rather than replacing them.
+ */
+export async function previewTrack(project, { cycles = 8 } = {}) {
+  stopPreview()
+  const run = previewRun
+  if (!project) return
+  ensureAudio()
+  const code = generateCode(project, { audition: true }).replace(/^setcpm\(.*$/gm, '')
+  const { pattern } = await evaluate(stackLanes(code), transpiler)
+  if (run !== previewRun || !pattern?.queryArc) return
+  const cps = (Number(project.bpm) || 120) / (Number(project.beats) || 4) / 60
+  const ac = getAudioContext()
+  const start = ac.currentTime + 0.12
+  let cycle = 0
+  const push = () => {
+    if (run !== previewRun || cycle >= cycles) return
+    for (const hap of pattern.queryArc(cycle, cycle + 1)) {
+      if (!hap.hasOnset()) continue
+      const begin = hap.whole.begin.valueOf()
+      const length = hap.whole.end.valueOf() - begin
+      Promise.resolve(superdough(routeVoice(hap.value), start + begin / cps, length / cps, cps, begin)).catch(() => {})
+    }
+    cycle += 1
+    // kept a cycle ahead: enough to stay smooth, little enough that stopping is quick
+    previewTimer = setTimeout(push, (0.8 / cps) * 1000)
+  }
+  push()
+}
+
 export function silenceNow() {
   try {
     const ac = getAudioContext()
