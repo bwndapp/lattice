@@ -1,4 +1,4 @@
-import { applyOps, diffOps, docHash, keyed } from '../src/docsync.js'
+import { applyOps, diffOps, docHash, invertOps, keyed } from '../src/docsync.js'
 
 let fails = 0
 const clone = (v) => JSON.parse(JSON.stringify(v))
@@ -94,6 +94,63 @@ else console.log('ok   an op can never replace the whole document')
 
 if (!keyed([{ id: 'a' }, { id: 'a' }]) && !keyed([{ s: 0 }]) && keyed([{ id: 'a' }, { id: 'b' }])) console.log('ok   keyed() knows which arrays have ids')
 else { fails++; console.log('FAIL keyed()') }
+
+
+// ── taking back your own edit, with someone else still working ──
+function undoCheck(name, edit, otherEdit, expect) {
+  const mine = clone(project)
+  edit(mine)
+  const ops = diffOps(project, mine)
+  const back = invertOps(project, ops)
+  const now = clone(mine)
+  otherEdit(now) // meanwhile the other person did something of their own
+  applyOps(now, clone(back))
+  const wrong = expect(now)
+  if (wrong) { fails++; console.log(`FAIL ${name} — ${wrong}\n  ${JSON.stringify(now)}`) }
+  else console.log(`ok   ${name}`)
+}
+
+undoCheck('undoing my knob leaves their tempo alone',
+  (p) => { p.patterns[0].channels[0].gain = 0.2 },
+  (p) => { p.bpm = 90 },
+  (p) => (p.patterns[0].channels[0].gain !== 0.8 ? 'my knob did not go back' : p.bpm !== 90 ? 'their tempo was reverted' : null))
+
+undoCheck('undoing my clip leaves theirs',
+  (p) => { p.song.clips.push({ id: 'k2', src: 'pattern:p2', lane: 1, start: 4, len: 4 }) },
+  (p) => { p.song.clips.push({ id: 'k3', src: 'pattern:p1', lane: 2, start: 8, len: 2 }) },
+  (p) => (p.song.clips.some((c) => c.id === 'k2') ? 'my clip is still there' : p.song.clips.some((c) => c.id === 'k3') ? null : 'their clip was taken away'))
+
+undoCheck('undoing a delete puts it back where it was',
+  (p) => { p.song.clips = [] },
+  (p) => { p.bpm = 128 },
+  (p) => (p.song.clips.length !== 1 || p.song.clips[0].id !== 'k1' ? 'the clip did not come back' : p.bpm !== 128 ? 'their tempo was reverted' : null))
+
+undoCheck('undoing one rename leaves the other renamed',
+  (p) => { p.patterns[0].name = 'beat' },
+  (p) => { p.patterns[1].name = 'sub' },
+  (p) => (p.patterns[0].name !== 'drums' ? 'my rename stuck' : p.patterns[1].name !== 'sub' ? 'their rename was undone' : null))
+
+undoCheck('undoing a reorder puts the order back',
+  (p) => { p.nodes.reverse() },
+  (p) => { p.nodes[0].y = 500 },
+  (p) => (p.nodes.map((n) => n.id).join() !== 'n1,out' ? 'the order did not go back' : null))
+
+// on your own, an undo is exactly the state you were in
+const alone = clone(project)
+alone.patterns[0].channels[0].gain = 0.1
+alone.song.clips.push({ id: 'k7', src: 'pattern:p2', lane: 3, start: 2, len: 1 })
+const forward = diffOps(project, alone)
+const backwards = invertOps(project, forward)
+const restored = clone(alone)
+applyOps(restored, clone(backwards))
+if (!eq(restored, project)) { fails++; console.log('FAIL undoing alone does not restore exactly\n  ' + JSON.stringify(restored)) }
+else console.log('ok   undoing alone restores exactly what was there')
+
+// redoing after undoing gets back to the edit
+const redone = clone(restored)
+applyOps(redone, clone(forward))
+if (!eq(redone, alone)) { fails++; console.log('FAIL redo does not put the edit back') }
+else console.log('ok   redoing puts the edit back')
 
 console.log(fails ? `\n${fails} failing` : '\nall good')
 process.exit(fails ? 1 : 0)

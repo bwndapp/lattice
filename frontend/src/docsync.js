@@ -160,6 +160,45 @@ export function applyOps(doc, ops) {
 }
 
 /**
+ * The changes that put things back: given the document as it was and what was done to it,
+ * the ops that undo it. Apply them in the order returned.
+ *
+ * This is what lets undo mean "take back what I did" rather than "put the whole track back
+ * as it was" — because the ops only name the places the edit touched, an undo leaves
+ * everything the other person has done since exactly where they left it.
+ */
+export function invertOps(before, ops) {
+  const back = []
+  for (const op of Array.isArray(ops) ? ops : []) {
+    if (!op || !Array.isArray(op.path)) continue
+    if (op.op === 'ins') {
+      if (isObj(op.value)) back.push({ op: 'del', path: [...op.path, { id: op.value.id }] })
+      continue
+    }
+    if (op.op === 'ord') {
+      const list = walk(before, op.path)
+      if (Array.isArray(list)) back.push({ op: 'ord', path: op.path, ids: list.map((x) => x?.id) })
+      continue
+    }
+    const parent = op.path.length > 1 ? walk(before, op.path.slice(0, -1)) : before
+    const last = op.path.at(-1)
+    if (parent == null || typeof parent !== 'object') continue
+    if (Array.isArray(parent)) {
+      const i = index(parent, last)
+      if (i < 0) continue
+      // something deleted goes back where it was; something changed is simply put back
+      if (op.op === 'del') back.push({ op: 'ins', path: op.path.slice(0, -1), at: i, value: parent[i] })
+      else back.push({ op: 'set', path: op.path, value: parent[i] })
+    } else if (!isObj(last)) {
+      if (last in parent) back.push({ op: 'set', path: op.path, value: parent[last] })
+      else back.push({ op: 'del', path: op.path }) // it wasn't there before, so take it away again
+    }
+  }
+  // undone in the reverse of the order they were done, so inserts and deletes line up
+  return back.reverse()
+}
+
+/**
  * A short fingerprint of a document. Two people whose hashes match are looking at the
  * same track; when they don't, the one who is behind asks for the whole thing again
  * rather than trying to work out which op it missed.

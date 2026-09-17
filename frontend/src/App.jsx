@@ -35,7 +35,7 @@ import { PROJECT_MARK, blankProject, demoProject, generateCode, newId, normalize
 import { createTransport, formatBarBeat, parseBarBeat } from './transport'
 import { songLength } from './song'
 import { canEdit as roomTakesEdits, join as joinRoom, leave as leaveRoom, onDoc, sendOps } from './collab.js'
-import { applyOps, diffOps, docHash } from './docsync.js'
+import { applyOps, diffOps, docHash, invertOps } from './docsync.js'
 import PeerList from './PeerList.jsx'
 
 function readPref(key, fallback) {
@@ -407,14 +407,31 @@ export default function App() {
     sendOps(ops, docHash(project))
   }, [code])
 
-  // Undo history of project snapshots. Edits within half a second (a knob turn, a paint
-  // stroke) count as one step.
+  // Undo history. Edits within half a second (a knob turn, a paint stroke) count as one
+  // step. An entry keeps the project as it was AND the ops that changed it, because in a
+  // room those two mean different things: on your own, undo puts the whole project back;
+  // with someone else here, it takes back what you did and leaves their work alone.
   const historyRef = useRef({ past: [], future: [], lastAt: 0 })
   const [historyTick, setHistoryTick] = useState(0)
+  const step = (json, ops = null) => ({ json, ops })
   const applySnapshot = useCallback((json) => {
     replaceCode(generateCode(normalizeProject(JSON.parse(json)), genRef.current))
     liveUpdate()
   }, [replaceCode, liveUpdate])
+  /** Put a history step into effect: its ops when we're sharing, the whole thing when not. */
+  const applyStep = useCallback((entry, backwards) => {
+    const editor = editorRef.current
+    const current = editor && parseProject(editor.code)
+    const ops = entry.ops && current && shared.current
+      ? (backwards ? invertOps(JSON.parse(entry.json), entry.ops) : entry.ops)
+      : null
+    // `json` is the state this step goes to, whichever way we're travelling
+    if (!ops?.length) { applySnapshot(entry.json); return }
+    const next = JSON.parse(JSON.stringify(current))
+    applyOps(next, ops)
+    replaceCode(generateCode(normalizeProject(next), genRef.current))
+    liveUpdate()
+  }, [applySnapshot, replaceCode, liveUpdate])
 
   /** Swap in another version of the project (saved, or from history) as one undoable change. */
   const openVersion = useCallback((text) => {
@@ -424,7 +441,7 @@ export default function App() {
     const current = parseProject(editor.code)
     if (current) {
       const h = historyRef.current
-      h.past.push(JSON.stringify(current))
+      h.past.push(step(JSON.stringify(current)))
       if (h.past.length > 200) h.past.shift()
       h.future = []
       h.lastAt = 0
@@ -450,12 +467,15 @@ export default function App() {
     if (loadedIdRef.current == null && JSON.stringify(next) !== before) rememberScratchWork()
     const h = historyRef.current
     const now = Date.now()
-    if (JSON.stringify(next) !== before && now - h.lastAt > 500) {
-      h.past.push(before)
+    const real = JSON.stringify(next) !== before
+    if (real && now - h.lastAt > 500) {
+      h.past.push(step(before, []))
       if (h.past.length > 200) h.past.shift()
       h.future = []
       setHistoryTick((n) => n + 1)
     }
+    // everything in this burst belongs to the step it started
+    if (real && h.past.at(-1)?.ops) h.past.at(-1).ops.push(...diffOps(base, next))
     h.lastAt = now
     replaceCode(text)
     liveUpdate()
@@ -610,22 +630,24 @@ export default function App() {
     const h = historyRef.current
     const current = editor && parseProject(editor.code)
     if (!current || !h.past.length) return
-    h.future.push(JSON.stringify(current))
-    applySnapshot(h.past.pop())
+    const entry = h.past.pop()
+    h.future.push(step(JSON.stringify(current), entry.ops))
+    applyStep(entry, true)
     h.lastAt = 0
     setHistoryTick((n) => n + 1)
-  }, [applySnapshot])
+  }, [applyStep])
   undoRef.current = undo
   const redo = useCallback(() => {
     const editor = editorRef.current
     const h = historyRef.current
     const current = editor && parseProject(editor.code)
     if (!current || !h.future.length) return
-    h.past.push(JSON.stringify(current))
-    applySnapshot(h.future.pop())
+    const entry = h.future.pop()
+    h.past.push(step(JSON.stringify(current), entry.ops))
+    applyStep(entry, false)
     h.lastAt = 0
     setHistoryTick((n) => n + 1)
-  }, [applySnapshot])
+  }, [applyStep])
 
   // pattern/song mode and the selected pattern change what the code plays
   useEffect(() => { updateProject((p) => p) }, [solo, updateProject])
@@ -702,7 +724,7 @@ export default function App() {
       }
       // starting over is one undo away from the patch that was there
       const before = startOver && previous && parseProject(previous)
-      if (before) { historyRef.current.past.push(JSON.stringify(before)); setHistoryTick((n) => n + 1) }
+      if (before) { historyRef.current.past.push(step(JSON.stringify(before))); setHistoryTick((n) => n + 1) }
       return
     }
     setTrack((t) => (t?.id === trackId ? t : null))
