@@ -16,6 +16,8 @@ import { copyNodes, pasteNodes, readClipboard, writeClipboard } from './nodeClip
 import { onSoundsChange, previewSound, soundCatalog } from './audio'
 import { flowPaths, setFlowPaths, startFlow, stopFlow } from './flow.js'
 import { colorFor, inkFor, nodeSrc, rgbOf } from './clipColors.js'
+import { useTypingKeys } from './typingKeys.js'
+import { readOctave, writeOctave } from './keyboard.js'
 
 const NODE_MIME = 'application/x-strudel-node'
 const Ctx = createContext(null)
@@ -1139,6 +1141,23 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
   }, [onUpdateProject])
 
   const selected = project.nodes.find((n) => nodes.find((r) => r.id === n.id && r.selected))
+
+  // Select a pattern node holding one instrument and the keyboard plays it, without having
+  // to open the dock first. With more than one there's nothing to say which you meant, and
+  // the dock's own keyboard wins whenever it's open, so a key can never play twice.
+  const lone = selected?.type === 'pattern' && !dock?.at
+    ? project.patterns.find((p) => p.id === selected.data.patternId)
+    : null
+  const loneChannel = lone?.channels.length === 1 && lone.channels[0].kind !== 'code' ? lone.channels[0] : null
+  const [octave, setOctave] = useState(() => readOctave())
+  useTypingKeys({
+    enabled: !!loneChannel,
+    project,
+    pattern: lone,
+    channel: loneChannel,
+    octave,
+    onOctave: (next) => { setOctave(next); writeOctave(next) },
+  })
   const soundNode = picking && project.nodes.find((n) => n.id === picking.nodeId)
 
   return (
