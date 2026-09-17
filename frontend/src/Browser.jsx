@@ -197,18 +197,18 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
                   <Link to={`/t/${t.id}`} className="b-card-title" onClick={onPick} title={t.title}>{t.title}</Link>
                   <button
                     type="button"
-                    className="b-card-about"
-                    onClick={() => setPage(t.id)}
-                    data-tip="What this track is, where it came from, and what came out of it"
-                  >about</button>
-                  <button
-                    type="button"
                     className="b-card-author"
                     onClick={() => narrow({ author: t.author_id, name: t.author })}
                     data-tip={`Everything ${t.author} has shared`}
                   >{t.author}</button>
                 </div>
                 <div className="b-card-meta">
+                  <button
+                    type="button"
+                    className="b-card-about"
+                    onClick={() => setPage(t.id)}
+                    data-tip="Its page: what it's made of, where it came from, what came out of it, and its saves"
+                  >about ›</button>
                   <span className={t.liked ? 'liked' : ''}>♥ {t.likes}</span>
                   <span>{t.plays} play{t.plays === 1 ? '' : 's'}</span>
                   <span className="b-card-time">{timeAgo(t.updated_at)}</span>
