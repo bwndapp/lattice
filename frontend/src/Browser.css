@@ -228,3 +228,26 @@
   .b-grid { grid-template-columns: minmax(0, 1fr); }
   .b-new { order: 3; width: 100%; margin-left: 0; display: grid; grid-template-columns: 1fr 1fr; }
 }
+
+/* narrowed to one person, or to what came out of one track */
+.b-narrowed {
+  display: grid; gap: 1px; text-align: left; width: 100%;
+  font: inherit; font-size: 11px; color: var(--paper);
+  background: rgb(228 255 26 / 0.07); border: 1px solid color-mix(in srgb, var(--acid) 35%, var(--line));
+  border-radius: 4px; padding: 0.35rem 0.5rem; cursor: var(--ring);
+}
+.b-narrowed:hover { background: rgb(228 255 26 / 0.13); }
+.b-narrowed-what { font-weight: 700; }
+.b-narrowed-out { font-size: 10px; color: var(--muted); }
+
+/* an author's name is a way into everything they've shared */
+button.b-card-author {
+  font: inherit; font-size: inherit; color: inherit; background: none; border: 0; padding: 0;
+  text-align: left; cursor: var(--ring); text-decoration: underline; text-decoration-color: transparent;
+  transition: text-decoration-color 0.12s ease, color 0.12s ease;
+}
+button.b-card-author:hover { color: var(--paper); text-decoration-color: currentColor; }
+
+.b-end { display: flex; justify-content: center; padding: 1rem 0 2rem; }
+.b-end-note { font-size: 11px; color: var(--muted); }
+.b-tag.quiet { opacity: 0.6; }

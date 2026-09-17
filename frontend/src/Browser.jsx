@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, timeAgo } from './api'
 import { Glass } from './Glass.jsx'
@@ -26,30 +26,85 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
   const [q, setQ] = useState('')
   const [tracks, setTracks] = useState(null)
   const [error, setError] = useState('')
+  const [more, setMore] = useState(false)
+  const [filling, setFilling] = useState(false)
+  const next = useRef(0)
+  // narrowing the list to one person, or to what came out of one track
+  const [only, setOnly] = useState(null) // { author, name } | { remixesOf, name }
 
   const needsUser = view !== 'explore' && !user
+  const PAGE = 24
+
+  const query = useCallback((offset) => {
+    const params = new URLSearchParams({ view, sort, q, limit: String(PAGE), offset: String(offset) })
+    if (only?.author) params.set('author', only.author)
+    if (only?.remixesOf) params.set('remixes_of', only.remixesOf)
+    return api(`/tracks?${params}`)
+  }, [view, sort, q, only])
 
   useEffect(() => {
-    if (needsUser) { setTracks([]); setError(''); return }
+    if (needsUser) { setTracks([]); setError(''); setMore(false); return undefined }
     let alive = true
     setTracks(null)
     const timer = setTimeout(() => {
-      const params = new URLSearchParams({ view, sort, q })
-      api(`/tracks?${params}`)
-        .then((d) => { if (alive) { setTracks(d.tracks); setError('') } })
+      query(0)
+        .then((d) => {
+          if (!alive) return
+          setTracks(d.tracks)
+          setMore(!!d.more)
+          next.current = d.offset ?? d.tracks.length
+          setError('')
+        })
         .catch((e) => { if (alive) setError(e.message) })
     }, q ? 250 : 0)
     return () => { alive = false; clearTimeout(timer) }
-  }, [view, sort, q, needsUser, refreshKey, user?.id])
+  }, [query, needsUser, refreshKey, user?.id])
 
-  const heading = view === 'mine' ? 'Your tracks' : view === 'liked' ? 'Tracks you liked' : 'Shared tracks'
+  /** The next page, once you've scrolled to the end of this one. */
+  const fill = useCallback(() => {
+    if (filling || !more) return
+    setFilling(true)
+    query(next.current)
+      .then((d) => {
+        setTracks((was) => {
+          const seen = new Set((was ?? []).map((t) => t.id))
+          return [...(was ?? []), ...d.tracks.filter((t) => !seen.has(t.id))]
+        })
+        setMore(!!d.more)
+        next.current = d.offset ?? next.current + d.tracks.length
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setFilling(false))
+  }, [filling, more, query])
+
+  const endRef = useRef(null)
+  useEffect(() => {
+    const el = endRef.current
+    if (!el || !more) return undefined
+    const eye = new IntersectionObserver((entries) => { if (entries.some((x) => x.isIntersecting)) fill() }, { rootMargin: '400px' })
+    eye.observe(el)
+    return () => eye.disconnect()
+  }, [more, fill])
+
+  // going back to the whole list, or into one person's, resets where paging is
+  const narrow = (to) => { next.current = 0; setOnly(to) }
+
+  const heading = only?.name ? only.name
+    : view === 'mine' ? 'Your tracks' : view === 'liked' ? 'Tracks you liked' : 'Shared tracks'
 
   return (
     <section className="browser" aria-label="Browse tracks">
       <aside className="b-side">
         <h2 className="b-title">Browse</h2>
 
-        <Switch label="Which tracks" options={VIEWS} value={view} onChange={setView} />
+        <Switch label="Which tracks" options={VIEWS} value={view} onChange={(v) => { narrow(null); setView(v) }} />
+
+        {only && (
+          <button type="button" className="b-narrowed" onClick={() => narrow(null)}>
+            <span className="b-narrowed-what">{only.name}</span>
+            <span className="b-narrowed-out">show everything</span>
+          </button>
+        )}
 
         <label className="b-search">
           <svg viewBox="0 0 16 16" aria-hidden><circle cx="7" cy="7" r="4.6" /><path d="M10.4 10.4 14 14" /></svg>
@@ -99,7 +154,12 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
                 </button>
                 <div className="b-card-body">
                   <Link to={`/t/${t.id}`} className="b-card-title" onClick={onPick} title={t.title}>{t.title}</Link>
-                  <span className="b-card-author">{t.author}</span>
+                  <button
+                    type="button"
+                    className="b-card-author"
+                    onClick={() => narrow({ author: t.author_id, name: t.author })}
+                    data-tip={`Everything ${t.author} has shared`}
+                  >{t.author}</button>
                 </div>
                 <div className="b-card-meta">
                   <span className={t.liked ? 'liked' : ''}>♥ {t.likes}</span>
@@ -107,10 +167,18 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
                   <span className="b-card-time">{timeAgo(t.updated_at)}</span>
                   {view === 'mine' && t.visibility !== 'public' && <span className="b-tag">{t.visibility}</span>}
                   {t.id === activeId && <span className="b-tag on">open</span>}
+                  {t.forked_from && <span className="b-tag quiet" data-tip="Made by remixing another track">remix</span>}
                 </div>
               </li>
             ))}
           </ul>
+        )}
+        {tracks?.length > 0 && (
+          <div className="b-end" ref={endRef}>
+            {more
+              ? <button type="button" className="b-button" onClick={fill} disabled={filling}>{filling ? 'loading…' : 'load more'}</button>
+              : <span className="b-end-note">that’s everything</span>}
+          </div>
         )}
       </div>
     </section>
