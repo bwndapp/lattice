@@ -18,6 +18,8 @@ import { copyNodes, pasteNodes, readClipboard, writeClipboard } from './nodeClip
 import { onSoundsChange, previewSound, soundCatalog } from './audio'
 import { flowPaths, setFlowPaths, startFlow, stopFlow } from './flow.js'
 import { colorFor, inkFor, nodeSrc, rgbOf } from './clipColors.js'
+import { addSongClip, songSilence } from './song.js'
+import { useAutomation } from './autoLive.js'
 import { useTypingKeys } from './typingKeys.js'
 import { readOctave, writeOctave } from './keyboard.js'
 
@@ -429,6 +431,8 @@ function StudioNode({ id, selected }) {
 
   // a part wears the same colour here as its clips do on the timeline
   const tint = spec.group === 'source' ? colorFor(nodeSrc(node, ctx.project), ctx.project.song?.colors) : null
+  // wired up but still silent: the song is on and this part has no clip to play in
+  const silence = songSilence(ctx.project, node)
 
   return (
     <div
@@ -459,6 +463,18 @@ function StudioNode({ id, selected }) {
             {spec.inputs && wires.length === 0
               ? 'not heard · drop it on a wire, or wire it between a sound and the output'
               : 'not heard · wire its right dot on toward the output'}
+          </p>
+        )}
+        {silence && (
+          <p className="node-warn">
+            {silence.muted
+              ? 'not heard · the song is on and every row this is on is muted'
+              : 'not heard · the song is on and this isn’t on the timeline'}
+            <button
+              className="warn-btn nodrag"
+              onClick={() => (silence.muted ? ctx.showTimeline() : ctx.addToSong(silence))}
+              title={silence.muted ? 'Open the timeline to unmute its row' : 'Put a clip of this at the start of the song'}
+            >{silence.muted ? 'show the timeline' : 'add a clip'}</button>
           </p>
         )}
         {node.type === 'pattern' && (
@@ -860,6 +876,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
   const flow = useReactFlow()
   const wrapRef = useRef(null)
   const dock = useRollDock() // the pattern's rack and notes live along the bottom
+  const automation = useAutomation() // its showTimeline swaps the canvas to the song
   // frame the whole patch once the nodes have been measured (fitting earlier zooms to max)
   const initialized = useNodesInitialized()
   // what feeds what, so a hit anywhere lights its way to the output (flow.js)
@@ -1179,6 +1196,12 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
     updateNode,
     removeNode: (id) => removeNodes([id]),
     editPattern: (patternId) => dock?.open(patternId, null, 'rack'),
+    showTimeline: () => automation?.showTimeline(),
+    // the song is on and this part has no clip: give it one at the start and show it there
+    addToSong: ({ src, bars }) => {
+      onUpdateProject((p) => { addSongClip(p, src, bars) })
+      automation?.showTimeline()
+    },
     pickSound: (nodeId, key, at) => setPicking({ nodeId, key, ...at }),
     newPatternFor: (nodeId) => {
       const patternId = newId()
@@ -1189,7 +1212,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
       })
       dock?.open(patternId, null, 'rack')
     },
-  }), [project, heard, solo, onSolo, updateNode, removeNodes, onUpdateProject])
+  }), [project, heard, solo, onSolo, updateNode, removeNodes, onUpdateProject, automation, dock])
 
   const isValidConnection = useCallback((c) => {
     if (c.source === c.target) return false

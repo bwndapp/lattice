@@ -1146,3 +1146,5 @@ button.chan-synth:hover span { color: var(--acid); }
 /* nodes nobody hears */
 .gnode.unheard { border-style: dashed; }
 .node-warn { margin: 0; padding: 0.35rem 0.45rem; font-size: 10px; line-height: 1.4; color: var(--danger); border: 1px dashed var(--danger); border-radius: 4px; }
+.node-warn .warn-btn { display: block; margin-top: 0.3rem; padding: 0.15rem 0.4rem; font: inherit; color: var(--danger); background: color-mix(in srgb, var(--danger) 16%, transparent); border: 1px solid var(--danger); border-radius: 3px; cursor: pointer; }
+.node-warn .warn-btn:hover { color: var(--bg); background: var(--danger); }

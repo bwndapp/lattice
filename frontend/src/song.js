@@ -162,3 +162,47 @@ export function songExpr(project, src, expr) {
   if (layers.length === 1) return `(${expr})${layers[0].slice(6)}`
   return `(${expr}).layer(${layers.join(', ')})`
 }
+
+/**
+ * Why the song leaves a node in the patch silent, or null when it plays. Wiring isn't the
+ * whole story: while the song is on, a part with no clip on the timeline plays `silence`
+ * however well it's wired (see songExpr), which looks like a broken patch.
+ *
+ *   { src, bars, muted }   muted: it does have clips, but every row they sit on is muted
+ */
+export function songSilence(project, node) {
+  if (!node || !songActive(project)) return null
+  const song = project.song
+  let srcs
+  let bars
+  if (node.type === 'pattern') {
+    // a variation plays through its original's node, so a clip of either is heard here
+    const rootId = project.patterns.find((p) => p.id === node.data?.patternId)?.parent ?? node.data?.patternId
+    const root = project.patterns.find((p) => p.id === rootId)
+    if (!root) return null
+    srcs = [root, ...project.patterns.filter((v) => v.parent === rootId)].map((p) => `pattern:${p.id}`)
+    bars = root.bars
+  } else {
+    if (NODE_TYPES[node.type]?.group !== 'source') return null
+    if (project.edges.some((e) => e.target === node.id)) return null // fed by something else: not a part
+    if (triggerOnly(project, node.id)) return null
+    srcs = [`node:${node.id}`]
+    bars = node.type === 'sound' ? 1 : 4
+  }
+  const clips = song.clips.filter((c) => srcs.includes(c.src))
+  if (clips.some((c) => !laneMuted(song, c.lane))) return null
+  return { src: srcs[0], bars: Math.max(1, Math.round(bars || 4)), muted: clips.length > 0 }
+}
+
+/** Put a part on the timeline at the song's start, on the first row with room for it. */
+export function addSongClip(project, src, bars = 4) {
+  const song = project.song
+  if (!song || song.clips.length >= MAX_CLIPS) return null
+  const len = Math.min(MAX_BARS, Math.max(1 / 16, bars || 4))
+  let lane = 0
+  while (lane < 63 && (laneMuted(song, lane) || song.clips.some((c) => c.lane === lane && c.start < len - 1e-9 && c.start + c.len > 1e-9))) lane++
+  const id = `c${Date.now().toString(36).slice(-4)}${Math.random().toString(36).slice(2, 6)}`
+  song.clips.push({ id, src, lane, start: 0, len })
+  song.on = true
+  return id
+}

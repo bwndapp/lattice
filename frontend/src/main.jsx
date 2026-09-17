@@ -7,6 +7,15 @@ import { handleCallback } from './bwnd'
 import { BASE } from './base'
 import './index.css'
 
+/*
+ * Sign-in may only come back to an https address, so a page opened over http can't start
+ * one — the sign-in page turns it away with "bad redirect" before you ever see it. Move
+ * to https first, before anything reads the address it's on.
+ */
+if (window.location.protocol === 'http:' && !/^(localhost$|127\.|0\.0\.0\.0$|\[)/.test(window.location.hostname)) {
+  window.location.replace(window.location.href.replace(/^http:/, 'https:'))
+}
+
 // Where bwnd sign-in lands after the user authenticates. Keep this route.
 function AuthCallback() {
   const navigate = useNavigate()
