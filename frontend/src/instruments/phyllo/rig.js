@@ -1,8 +1,9 @@
 /**
  * Phyllo's lanes outside the processor: for each summed lane (see dsp.js), its effects in
  * order, its level, and where it goes — another lane, or out. Out is the same place a note
- * of this instrument goes: its bus (orbit), at the instrument's level and pan, and into the
- * sends it has, so the patch around it (inserts, sidechains, reverb and delay knobs) still
+ * of this instrument goes: its bus (orbit), after its post-gain, and into the sends it has
+ * (each note's own level and pan are already on it, from the processor, before the lane's
+ * effects), so the patch around it (inserts, sidechains, reverb and delay knobs) still
  * applies.
  *
  * Modulators reach in here too: the processor reports where each outside destination is
@@ -33,10 +34,9 @@ export function makeRig(ac, node, voices) {
   })
   // out: as a note would leave
   const out = stereo(ac)
-  const pan = new StereoPannerNode(ac)
   const gain = stereo(ac)
   const send = stereo(ac)
-  out.connect(pan).connect(gain)
+  out.connect(gain)
   gain.connect(send)
   let orbit = null
   let bus = null
@@ -155,7 +155,7 @@ export function makeRig(ac, node, voices) {
       offsets = values
       apply(true)
     },
-    /** A note is starting: out goes where it goes, at its level and pan. */
+    /** A note is starting: out goes where it goes. */
     target(value) {
       let controller
       try { controller = getSuperdoughAudioController() } catch { return }
@@ -173,15 +173,16 @@ export function makeRig(ac, node, voices) {
         bus = busId
       }
       glide(send.gain, applyGainCurve(num(value.busgain, 1)), ac)
-      glide(gain.gain, applyGainCurve(num(value.gain, 0.8)) * applyGainCurve(num(value.postgain, 1)), ac)
-      glide(pan.pan, value.pan == null ? 0 : Math.max(-1, Math.min(1, num(value.pan, 0.5) * 2 - 1)), ac)
+      // each note's own level and pan are applied in the processor, voice by voice; what's
+      // left here is what Strudel applies after them
+      glide(gain.gain, applyGainCurve(num(value.postgain, 1)), ac)
     },
     dispose() {
       for (const l of lanes) {
         for (const unit of l.units.values()) unit.dispose()
         for (const n of [l.input, l.level]) { try { n.disconnect() } catch { /* gone */ } }
       }
-      for (const n of [out, pan, gain, send]) { try { n.disconnect() } catch { /* gone */ } }
+      for (const n of [out, gain, send]) { try { n.disconnect() } catch { /* gone */ } }
     },
   }
 }
