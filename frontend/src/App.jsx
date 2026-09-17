@@ -454,6 +454,9 @@ export default function App() {
     setView('browse')
   }, [])
   const [roll, setRoll] = useState(null) // { patternId, channelId, tab }
+  // the rack belongs to the track you're working on: browsing isn't that, and a dock
+  // sitting over the list is in the way of the one thing that view is for
+  useEffect(() => { if (view === 'browse') setRoll(null) }, [view])
   const [rollHeight, setRollHeight] = useState(readDockHeight)
   const rollDock = useMemo(() => ({
     at: roll,
