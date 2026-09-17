@@ -159,13 +159,18 @@ export default function TrackPage({ id, user, onOpen, onClose, onAuthor, onPick 
           <h3 className="tp-h">History {saves?.length ? <span className="tp-count">{saves.length}</span> : null}</h3>
           {!saves && <p className="tp-quiet">Reading the saves…</p>}
           {saves?.length === 0 && <p className="tp-quiet">No saves kept yet.</p>}
+          {/* oldest at the top: the line reads down the way the track was made */}
           <ol className="tp-saves">
-            {(saves ?? []).map((v, i) => (
+            {[...(saves ?? [])].reverse().map((v, i, all) => (
               <li key={v.id} className="tp-save">
                 <span className="tp-dot" aria-hidden />
                 <div className="tp-save-what">
-                  <span className="tp-save-when">{when(v.saved_at)}{i === 0 ? ' · latest' : ''}</span>
-                  <button type="button" className="tp-link tp-save-more" onClick={() => reveal(v, (saves ?? [])[i + 1])}>
+                  <span className="tp-save-when">
+                    {when(v.saved_at)}
+                    {i === all.length - 1 ? ' · latest' : ''}
+                    {i === 0 && all.length > 1 ? ' · where the history starts' : ''}
+                  </span>
+                  <button type="button" className="tp-link tp-save-more" onClick={() => reveal(v, all[i - 1])}>
                     {shown.has(v.id)
                       ? 'hide'
                       : Array.isArray(changes[v.id]) ? summarise(changes[v.id]) : 'what changed'}
