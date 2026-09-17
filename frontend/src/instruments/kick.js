@@ -31,7 +31,7 @@ const PARAMS = [
 
 const DSP = `
 class KickProcessor extends LatticeInstrument {
-  static voiceCount = 1
+  static voiceCount = 4
   static knobs = ${knobsSource(PARAMS)}
   busy(voice) { return voice.active || !!voice.fade }
   newVoice() { return { active: false, t: 0, phase: 0, vel: 1, ratio: 1, noise: 0, fade: null } }
@@ -113,7 +113,11 @@ export default {
   blurb: 'A kick built from scratch: a falling sine, a click, shape and drive',
   kinds: ['drum', 'synth'],
   processor: 'lattice-kick',
-  voices: 1,
+  // A kick is one sound at a time musically, but it gets played more than once at the same
+  // moment often enough: a roll whose tails overlap, or the same part sent down two paths
+  // at once (dry to the mixer, and again into a reverb for rumble). With one voice the
+  // second play cut the first off, and whichever landed last was the only one you heard.
+  voices: 4,
   keyOctave: 2, // the typing keyboard starts where C2, the kick as tuned, is on z
   oneShot: true, // it plays its whole shape whatever the note's length
   params: PARAMS,
