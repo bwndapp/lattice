@@ -11,16 +11,15 @@ import './phyllo.css'
 
 /**
  * Phyllo's face, inside its instrument window: oscillators across the top,
- * envelopes and LFOs below, each modulator listing where it goes, and a keyboard.
+ * envelopes and LFOs below, each modulator listing where it goes. (Typing plays it: the
+ * window's keyboard, see SynthWindow.jsx.)
  *
  * Props from the window: `data` (the patch), `change(fn)` (edit a copy of it),
- * `target(key)` (a knob's automation target) and `hold(note)` (play until the returned
- * function is called).
+ * `target(key)` (a knob's automation target), `watch(fn)` (the processor's reports) and
+ * `cps` (the track's tempo).
  */
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 const PRESET_KEY = 'phyllo:presets'
-const NOTE_NAMES = ['c', 'c#', 'd', 'd#', 'e', 'f', 'f#', 'g', 'g#', 'a', 'a#', 'b']
-const noteName = (m) => `${NOTE_NAMES[m % 12]}${Math.floor(m / 12) - 1}`
 const letter = (i) => String.fromCharCode(65 + i)
 
 function readJson(key, fallback) {
@@ -455,54 +454,11 @@ function Lfo({ ui, index }) {
   )
 }
 
-/** Two octaves to play, from `base`: a key sounds for as long as it's pressed. */
-function Keys({ hold, base, setBase }) {
-  const [down, setDown] = useState(null)
-  const release = useRef(null)
-  const up = () => { release.current?.(); release.current = null; setDown(null) }
-  useEffect(() => () => release.current?.(), [])
-  const press = (m) => (e) => {
-    if (e.button !== 0) return
-    e.currentTarget.releasePointerCapture?.(e.pointerId) // so sliding onto the next key plays it
-    up()
-    release.current = hold(m)
-    setDown(m)
-  }
-  // sliding across the keys plays each one in turn
-  const slide = (m) => (e) => { if (e.buttons & 1 && down !== m) press(m)({ ...e, button: 0, currentTarget: e.currentTarget }) }
-  useEffect(() => {
-    if (down === null) return
-    window.addEventListener('pointerup', up)
-    window.addEventListener('blur', up)
-    return () => { window.removeEventListener('pointerup', up); window.removeEventListener('blur', up) }
-  }, [down]) // eslint-disable-line react-hooks/exhaustive-deps
-  const keys = []
-  for (let m = base; m < base + 25; m++) keys.push(m)
-  const black = (m) => [1, 3, 6, 8, 10].includes(m % 12)
-  const whites = keys.filter((m) => !black(m))
-  return (
-    <footer className="ph-keys">
-      <Stepper label="octave" value={Math.floor(base / 12) - 1} min={0} max={7} onChange={(v) => setBase((v + 1) * 12)} />
-      <div className="ph-piano" role="group" aria-label="Keyboard: click to hear the patch">
-        {whites.map((m) => (
-          <div key={m} className="ph-white-wrap">
-            <button type="button" tabIndex={-1} className={`ph-white ${down === m ? 'down' : ''}`} onPointerDown={press(m)} onPointerEnter={slide(m)} aria-label={noteName(m)}>
-              {m % 12 === 0 && <span>{noteName(m)}</span>}
-            </button>
-            {keys.includes(m + 1) && black(m + 1) && <button type="button" tabIndex={-1} className={`ph-black ${down === m + 1 ? 'down' : ''}`} onPointerDown={press(m + 1)} onPointerEnter={slide(m + 1)} aria-label={noteName(m + 1)} />}
-          </div>
-        ))}
-      </div>
-    </footer>
-  )
-}
-
 // ── the panel ────────────────────────────────────────────────────────────────
 
-export default function PhylloPanel({ data, change, target, hold, watch, cps = 0.5 }) {
+export default function PhylloPanel({ data, change, target, watch, cps = 0.5 }) {
   const patch = data
   const [userPresets, setUserPresets] = useState(() => readJson(PRESET_KEY, []))
-  const [base, setBase] = useState(48)
   // what the processor last said about its LFOs, and when (see dsp.js report)
   const live = useRef({ t: -Infinity, lfo: [0, 0], voices: [] })
   useEffect(() => watch?.((report) => { live.current = { ...report, t: performance.now() } }), []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -571,7 +527,6 @@ export default function PhylloPanel({ data, change, target, hold, watch, cps = 0
         <Lfo ui={ui} index={1} />
       </div>
 
-      <Keys hold={hold} base={base} setBase={setBase} />
     </div>
   )
 }
