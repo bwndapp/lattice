@@ -21,6 +21,7 @@ VISIBILITIES = ("public", "unlisted", "private")
 SORTS = {
     "new": "t.updated_at DESC",
     "top": "t.likes DESC, t.plays DESC, t.updated_at DESC",
+    "opened": "t.plays DESC, t.updated_at DESC",
     "played": "t.plays DESC, t.updated_at DESC",
 }
 
@@ -407,12 +408,24 @@ def toggle_like(track_id: str, request: Request):
     return {"liked": liked, "likes": likes}
 
 
-@router.post("/{track_id}/play")
-def count_play(track_id: str):
+@router.post("/{track_id}/open")
+def count_open(track_id: str, request: Request):
+    """Someone took this track into their own hands. Not the owner opening their own work,
+    which would only count how much they'd worked on it."""
+    user = sso_user(request)
     conn = _conn()
     try:
-        conn.execute("UPDATE tracks SET plays = plays + 1 WHERE id = ? AND visibility != 'private'", (track_id,))
+        conn.execute(
+            "UPDATE tracks SET plays = plays + 1 WHERE id = ? AND visibility != 'private' AND owner_sub IS NOT ?",
+            (track_id, user["sub"] if user else None),
+        )
         conn.commit()
     finally:
         conn.close()
     return {"ok": True}
+
+
+@router.post("/{track_id}/play")
+def count_play(track_id: str, request: Request):
+    """What opening used to be called; kept so an older page still counts."""
+    return count_open(track_id, request)

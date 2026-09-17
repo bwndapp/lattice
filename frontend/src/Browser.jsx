@@ -6,7 +6,7 @@ import { Glass } from './Glass.jsx'
 import './Browser.css'
 
 const VIEWS = [['explore', 'explore'], ['mine', 'mine'], ['liked', 'liked']]
-const SORTS = [['new', 'new'], ['top', 'top'], ['played', 'played']]
+const SORTS = [['new', 'new'], ['top', 'top'], ['opened', 'opened']]
 
 /** A soft sliding switch between a few options (same family as the canvas switch). */
 function Switch({ options, value, onChange, label, small = false }) {
@@ -210,7 +210,7 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
                     data-tip="Its page: what it's made of, where it came from, what came out of it, and its saves"
                   >about ›</button>
                   <span className={t.liked ? 'liked' : ''}>♥ {t.likes}</span>
-                  <span>{t.plays} play{t.plays === 1 ? '' : 's'}</span>
+                  <span>{t.plays} open{t.plays === 1 ? '' : 's'}</span>
                   <span className="b-card-time">{timeAgo(t.updated_at)}</span>
                   {view === 'mine' && t.visibility !== 'public' && <span className="b-tag">{t.visibility}</span>}
                   {t.id === activeId && <span className="b-tag on">open</span>}

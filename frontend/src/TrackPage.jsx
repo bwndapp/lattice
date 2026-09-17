@@ -134,7 +134,7 @@ export default function TrackPage({ id, user, onOpen, onClose, onAuthor, onPick 
 
       <div className="tp-stats">
         <span><b>{track.likes}</b> like{track.likes === 1 ? '' : 's'}</span>
-        <span><b>{track.plays}</b> play{track.plays === 1 ? '' : 's'}</span>
+        <span><b>{track.plays}</b> time{track.plays === 1 ? '' : 's'} opened by someone else</span>
         {track.parent && (
           <span>copy of <button type="button" className="tp-link" onClick={() => onOpen(track.parent.id, true)}>{track.parent.title}</button></span>
         )}

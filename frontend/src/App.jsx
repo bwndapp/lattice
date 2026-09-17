@@ -143,6 +143,7 @@ export default function App() {
   const loadedIdRef = useRef(undefined) // which track's code is in the editor right now
   const pendingPlayRef = useRef(null)
   const countedRef = useRef(new Set())
+  const openedRef = useRef(new Set()) // tracks counted as opened this visit
 
   const [code, setCode] = useState('')
   const [track, setTrack] = useState(null)
@@ -303,6 +304,17 @@ export default function App() {
     const anchor = Math.min(pos, view.state.doc.length)
     view.dispatch({ selection: { anchor }, scrollIntoView: true })
     requestAnimationFrame(() => view.focus())
+  }, [])
+
+  /**
+   * Someone opening a track that isn't theirs is the thing worth counting: it's them
+   * taking it into their own hands, which is what the number is for. Not the owner
+   * playing their own work back, and not once per press of play.
+   */
+  const countOpen = useCallback((id, owner) => {
+    if (!id || owner || openedRef.current.has(id)) return
+    openedRef.current.add(id)
+    api(`/tracks/${id}/open`, { method: 'POST' }).catch(() => {})
   }, [])
 
   const putCode = useCallback((id, text) => {
@@ -603,11 +615,7 @@ export default function App() {
     if (!editor || preparingRef.current) return // already starting: sounds are loading
     if (!editor.repl.scheduler.started) transport.cue() // start from the cue, not bar 1
     editor.evaluate()
-    const id = loadedIdRef.current
-    if (id && !countedRef.current.has(id)) {
-      countedRef.current.add(id)
-      api(`/tracks/${id}/play`, { method: 'POST' }).catch(() => {})
-    }
+    countedRef.current.add(loadedIdRef.current) // played it deliberately: its code may run quietly now
   }, [transport])
 
   /** Stop: back to where playback started (the cue). */
@@ -662,6 +670,7 @@ export default function App() {
         setTitle(t.title)
         setVisibility(t.visibility)
         rememberTrack(trackId)
+        countOpen(trackId, t.is_owner)
         const draft = readDraft(trackId, t.updated_at)
         putCode(trackId, draft ?? t.code)
         if (pendingPlayRef.current === trackId) {
@@ -698,8 +707,11 @@ export default function App() {
   }, [code, activeCode, started, shownId, previewAllowed, evaluated.forId])
 
   const save = useCallback(async ({ replace = false } = {}) => {
-    if (!canEdit || busy) return
+    if (busy) return
     if (!user) return login()
+    // someone else's track: saving it means taking your own copy, not asking permission
+    if (track && !isOwner) return remixRef.current()
+    if (!canEdit) return
     // replacing the saved track with what looks like a different or emptied one: ask first
     if (!isNew && !replace && track) {
       const reason = replaceRisk()
@@ -776,6 +788,7 @@ export default function App() {
     }
   }
 
+  const remixRef = useRef(null)
   const remix = async () => {
     if (!user) return login()
     setBusy(true)
@@ -787,13 +800,15 @@ export default function App() {
       clearDraft(track.id)
       navigate(`/t/${t.id}`)
       setRefreshKey((k) => k + 1)
-      flash('Remixed into your tracks')
+      flash('Saved as your copy · the original is untouched')
     } catch (e) {
       flash(`Couldn’t save a copy: ${e.message}`)
     } finally {
       setBusy(false)
     }
   }
+
+  remixRef.current = remix
 
   const like = async () => {
     if (!user) return login()
@@ -1128,6 +1143,12 @@ export default function App() {
                 <span className="track-title">{track.title}</span>
                 <span className="meta">by {track.author}</span>
               </span>
+              <button
+                className={`btn save ${dirty ? 'primary' : ''}`}
+                onClick={() => save()}
+                disabled={busy}
+                title={user ? 'Keep your own copy of this · the original is untouched' : 'Sign in to keep your own copy'}
+              >{busy ? 'saving…' : 'save a copy'}</button>
               <button className={`btn ${track.liked ? 'on' : ''}`} onClick={like} title="Like">♥{track.likes}</button>
             </>
           ) : null}
