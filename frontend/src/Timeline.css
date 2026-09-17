@@ -259,7 +259,7 @@
   .clip.gone { animation: clip-gone 130ms cubic-bezier(0.4, 0, 0.75, 0.2) forwards; pointer-events: none; }
   .clip.preview { animation: none; } /* the one under the pointer is already where you put it */
   .clip:hover { transform: translateY(-1px); }
-  .clip { transition: box-shadow 0.15s ease, filter 0.15s ease, transform 0.12s cubic-bezier(0.2, 0.8, 0.3, 1); }
+  .clip { transition: box-shadow 0.15s ease, filter 0.15s ease, transform 0.19s cubic-bezier(0.22, 1.12, 0.35, 1); }
   .song-lanes.dragging .clip { transition: box-shadow 0.15s ease, filter 0.15s ease; }
   /*
    * Carrying a clip: it comes off the canvas — a little bigger, a little brighter, a
@@ -278,7 +278,7 @@
       box-shadow 0.15s ease, filter 0.15s ease;
   }
   /* let go and it drops the last of the way rather than stopping dead */
-  .clip.settling { animation: clip-settle 300ms cubic-bezier(0.22, 1, 0.3, 1); z-index: 5; }
+  .clip.settling, .clip.settling:hover { z-index: 5; transform: translateY(-2px) scale(1.014); }
 }
 @keyframes clip-land {
   from { opacity: 0; transform: scale(0.94); }
@@ -288,12 +288,7 @@
 @keyframes clip-gone {
   to { opacity: 0; transform: scale(0.82); }
 }
-@keyframes clip-settle {
-  0% { transform: scale(1.018) translateY(-2px); }
-  45% { transform: scale(0.995) translateY(0.5px); }
-  75% { transform: scale(1.003); }
-  100% { transform: none; }
-}
+
 .clip.off { filter: saturate(0.25) brightness(0.7); }
 .clip-sketch { position: absolute; left: 0; right: 0; top: 3px; bottom: 3px; background-repeat: repeat-x; opacity: 0.5; pointer-events: none; }
 .clip-sketch.roomy { top: 18px; bottom: 4px; opacity: 1; }
