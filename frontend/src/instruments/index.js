@@ -32,6 +32,9 @@ import phyllo from './phyllo/index.js'
  *   voicesFor(data)       (optional) how many voices notes may use (1 for mono)
  *   message(data)         (optional) settings that aren't knobs, sent to the processor as a
  *                         message when they change (see dsp.js onData)
+ *   extraOutputs          (optional) outputs past the voices, the engine's own mixes
+ *   rig(ac, node, voices) (optional) audio outside the processor for those outputs:
+ *                         { update({ data, cps, beats }), target(noteValue), dispose() }
  */
 export const ENGINES = Object.fromEntries([kick, phyllo].map((e) => [e.type, e]))
 

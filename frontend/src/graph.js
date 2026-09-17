@@ -541,7 +541,7 @@ export const NODE_TYPES = {
  * processes that bus.
  */
 function stereoCode(kind, params) {
-  return (d, [x], ctx) => {
+  const code = (d, [x], ctx) => {
     if (!ctx?.route) return x
     let tail = ''
     if (ctx.route.orbit == null) {
@@ -551,6 +551,9 @@ function stereoCode(kind, params) {
     ctx.declare(ctx.route.orbit, ctx.nodeId, kind, params(d))
     return `${x}${tail}`
   }
+  // what it is on the bus, for anything that makes these units itself (instrument lanes)
+  code.insert = { kind, params }
+  return code
 }
 const STEREO_TYPES = new Set(['haas', 'widener', 'utility', 'bus', 'eq3', 'saturator', 'clipper', 'softclip', 'compressor', 'limiter',
   'filter', 'djfilter', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi'])
@@ -565,11 +568,24 @@ export const BUS_NODES = new Set([...STEREO_TYPES, 'reverb', 'delay'])
 /** Effects that can sit inside an fx rack: every plain effect node. */
 export const FX_UNITS = ['eq3', 'compressor', 'limiter', 'saturator', 'clipper', 'softclip', 'punch', 'haas', 'widener', 'utility', 'filter', 'djfilter', 'reverb', 'delay', 'space', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi']
 
+/**
+ * Effects an instrument's lane can stack: the ones that are real audio on a bus. Reverb and
+ * delay are sends here, so a lane wraps them with a dry path (instruments/laneFx.js).
+ */
+export const LANE_FX = FX_UNITS.filter((t) => t === 'reverb' || t === 'delay' || NODE_TYPES[t]?.code?.insert)
+
+/** A lane effect's settings for its unit (reverb and delay need the tempo: `beatSeconds`). */
+export function laneFxParams(type, d, { beatSeconds: beat = 0.5 } = {}) {
+  if (type === 'reverb') return { mix: d.mix, size: d.size, predelay: d.predelay, tone: d.tone, lowcut: d.lowcut, width: d.width }
+  if (type === 'delay') return { mix: d.mix, seconds: (DELAY_DIVISIONS[d.time] ?? 0.75) * beat, feedback: d.feedback, tone: d.tone, mode: d.mode }
+  return NODE_TYPES[type]?.code?.insert?.params(d) ?? {}
+}
+
 /** Saturator characters → Strudel's waveshaping curves. */
 const SATURATION = { warm: 'scurve', tape: 'soft', tube: 'diode', asym: 'asym', harmonics: 'chebyshev', fold: 'fold' }
 
 /** Clean one node type's data against its params. */
-function cleanData(type, raw) {
+export function cleanData(type, raw) {
   const spec = NODE_TYPES[type]
   const data = { ...defaultData(type) }
   for (const p of spec.params) {

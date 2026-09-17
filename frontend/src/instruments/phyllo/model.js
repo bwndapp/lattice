@@ -5,8 +5,9 @@
  *   layers      generators stacked top to bottom (analog, supersaw, wavetable, noise), up to 8,
  *               each playing into one of the three lanes
  *   amp         the envelope every voice goes out through
- *   lanes       three effect lanes, as Phase Plant has: { out, gain, mute } — out is 'master'
- *               or another lane's number (0 … 2), never round in a loop
+ *   lanes       three effect lanes, as Phase Plant has: { out, gain, mute, effects } — out is
+ *               'master' or another lane's number (0 … 2), never round in a loop; effects are
+ *               the app's bus effects, top to bottom: { id, type, on, data } (as an fx rack's)
  *   modulators  as many LFOs and envelopes as you add (up to 16), each with its own id
  *   routes      { id, src: a modulator's id, target, amt -1…1 }
  *
@@ -50,8 +51,34 @@ export const K = {
 }
 
 export const LANES = 3
+export const MAX_LANE_FX = 8
 export const laneName = (i) => `${i + 1}`
-const makeLanes = () => Array.from({ length: LANES }, () => ({ out: 'master', gain: 1, mute: false }))
+const makeLanes = () => Array.from({ length: LANES }, () => ({ out: 'master', gain: 1, mute: false, effects: [] }))
+
+/**
+ * The effects a lane can hold, told to us by the app (instruments/laneFx.js), which knows
+ * the effect nodes: { types, spec(type), clean(type, data), defaults(type) }. Without it
+ * (a test, say) effects are kept as they are.
+ */
+let fxCatalog = null
+export function registerLaneFx(catalog) { fxCatalog = catalog }
+export const laneFxCatalog = () => fxCatalog
+
+export function makeLaneFx(type) {
+  return { id: newPartId(), type, on: true, data: fxCatalog ? fxCatalog.defaults(type) : {} }
+}
+
+/**
+ * Lanes whose sound is mixed across all the voices before it plays on: those with effects,
+ * and whatever they feed. The rest mix inside each voice.
+ */
+export function lanesSummed(lanes) {
+  const summed = lanes.map((l) => l.effects.length > 0)
+  for (let pass = 0; pass < LANES; pass++) {
+    lanes.forEach((l, i) => { if (summed[i] && l.out !== 'master') summed[l.out] = true })
+  }
+  return summed
+}
 
 /** Would lane `from` sending to `to` make a loop (to reaches back to from)? */
 export function laneLoops(lanes, from, to) {
@@ -309,6 +336,16 @@ export function normalizePatch(raw) {
     const lane = patch.lanes[i]
     lane.gain = num(l?.gain, 1, K.gain.min, K.gain.max)
     lane.mute = l?.mute === true
+    for (const fx of Array.isArray(l?.effects) ? l.effects : []) {
+      if (!fx || typeof fx.type !== 'string' || lane.effects.length >= MAX_LANE_FX) continue
+      if (fxCatalog && !fxCatalog.types.includes(fx.type)) continue
+      let id = cleanId(fx.id)
+      while (ids.has(id)) id = newPartId()
+      ids.add(id)
+      const clean = { id, type: fx.type, on: fx.on !== false, data: fxCatalog ? fxCatalog.clean(fx.type, fx.data) : { ...(fx.data ?? {}) } }
+      if (fx.collapsed) clean.collapsed = true
+      lane.effects.push(clean)
+    }
     if ([0, 1, 2].includes(l?.out) && l.out !== i && !laneLoops(patch.lanes, i, l.out)) lane.out = l.out
   }
   const seen = new Set()
@@ -374,7 +411,8 @@ export const AUDIO_PARAMS = [
 /**
  * What the processor gets as a message: what each slot is, and where routes go.
  *   layers      [on, type, wave, table, noise, warp mode, fm wave, semitones, unison, lane]
- *   lanes       [out (-1 master, or a lane), muted], and `laneOrder`, the order to mix them in
+ *   lanes       [out (-1 master, or a lane), muted, summed (mixed across voices, then played
+ *               through its effects outside)], and `laneOrder`, the order to mix them in
  *   modulators  { lfo: 1, mode, polarity, sync, bars, points: [[x, y, c, s]] } or { lfo: 0 }
  *   routes      [modulator slot, destination, amount]
  */
@@ -386,7 +424,7 @@ export function patchMessage(patch) {
       l.type === 'analog' || l.type === 'noise' ? 1 : l.unison, // analog layers are one voice; the others stack
       l.lane,
     ]),
-    lanes: patch.lanes.map((n) => [n.out === 'master' ? -1 : n.out, n.mute ? 1 : 0]),
+    lanes: (() => { const summed = lanesSummed(patch.lanes); return patch.lanes.map((n, i) => [n.out === 'master' ? -1 : n.out, n.mute ? 1 : 0, summed[i] ? 1 : 0]) })(),
     laneOrder: laneOrder(patch.lanes),
     modulators: patch.modulators.map((m) => (m.kind === 'lfo'
       ? { lfo: 1, mode: LFO_MODES.indexOf(m.mode), polarity: LFO_POLARITIES.indexOf(m.polarity), sync: m.sync ? 1 : 0, bars: m.bars, points: m.points.map((p) => [p.x, p.y, p.c ?? 0, p.s ?? 0]) }
@@ -426,6 +464,22 @@ export function knobAt(patch, key) {
   let k = String(key)
   const legacy = /^(env)_(attack|decay|sustain|release)$|^(lfo[12])_hz$/.exec(k)
   if (legacy) k = legacy[1] ? `Menv_${legacy[2]}` : `M${legacy[3]}_hz`
+  const fx = /^F(\w+?)_(\w+)$/.exec(k)
+  if (fx) {
+    for (const [li, l] of patch.lanes.entries()) {
+      const unit = l.effects.find((e) => e.id === fx[1])
+      if (!unit) continue
+      const def = fxCatalog?.spec(unit.type)?.params.find((p) => p.key === fx[2] && p.type === 'knob')
+      if (!def) return null
+      return {
+        def,
+        value: unit.data[def.key] ?? def.def,
+        label: `lane ${laneName(li)} ${fxCatalog.spec(unit.type).label} ${def.label}`,
+        set: (p, v) => { for (const x of p.lanes) { const e = x.effects.find((y) => y.id === fx[1]); if (e) e.data[def.key] = v } },
+      }
+    }
+    return null
+  }
   const lane = /^lane([123])_gain$/.exec(k)
   if (lane) {
     const i = Number(lane[1]) - 1
@@ -456,6 +510,7 @@ export function knobAt(patch, key) {
 }
 export const layerKnobKey = (layerId, knob) => `L${layerId}_${knob}`
 export const modKnobKey = (modId, knob) => `M${modId}_${knob}`
+export const fxKnobKey = (fxId, key) => `F${fxId}_${key}`
 
 // ── presets ──────────────────────────────────────────────────────────────────
 

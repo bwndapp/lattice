@@ -4,7 +4,7 @@ import { drawCurve, drawWave, fitCanvas } from '../scope.js'
 import {
   FM_WAVES, K, LANES, LFO_BARS, LFO_MODES, LFO_POLARITIES, LFO_PRESETS, MAX_LAYERS, MAX_MODULATORS, MAX_ROUTES, MAX_ROUTES_EACH,
   NOISES, PRESETS, TABLES, TABLE_NAMES, WARP_MODES, barsLabel, layerKnobKey, layerLetter, makeEnv, makeLayer, makeLfo,
-  laneLoops, laneName, modColor, modKnobKey, modName, newPartId, normalizePatch, targetSpec,
+  MAX_LANE_FX, fxKnobKey, laneFxCatalog, laneLoops, laneName, lanesSummed, makeLaneFx, modColor, modKnobKey, modName, newPartId, normalizePatch, targetSpec,
 } from './model.js'
 import { tableFrame } from './tables.js'
 import CurveEditor from '../CurveEditor.jsx'
@@ -12,8 +12,8 @@ import './phyllo.css'
 
 /**
  * Phyllo's face, inside its instrument window, laid out as Phase Plant is: generators
- * stacked down the left, each playing into one of three lanes beside them (each lane out to
- * master or into another lane, its effects to come), and a bar of modulators along the bottom — as many LFOs and envelopes as you add, each
+ * stacked down the left, each playing into one of three lanes beside them (each a stack of
+ * the app's effects, out to master or into another lane), and a bar of modulators along the bottom — as many LFOs and envelopes as you add, each
  * listing where it goes. (Typing plays it: the window's keyboard, see SynthWindow.jsx.)
  *
  * Props from the window: `data` (the patch), `change(fn)` (edit a copy of it),
@@ -422,12 +422,52 @@ const LFO_BUTTONS = [['sine', 'sin'], ['tri', 'tri'], ['saw', 'saw'], ['ramp', '
 const GRIDS = [[0, 'free'], [4, '1/4'], [8, '1/8'], [16, '1/16'], [32, '1/32']]
 const sameShape = (a, b) => a.length === b.length && a.every((p, i) => Math.abs(p.x - b[i].x) < 1e-6 && Math.abs(p.y - b[i].y) < 1e-6 && Math.abs((p.c ?? 0) - (b[i].c ?? 0)) < 0.011 && !p.s === !b[i].s)
 
-/** One lane: what plays into it, its level, its effects (to come), and where it goes. */
+/** One effect in a lane: its name, on or bypassed, its place in the stack, its knobs. */
+function LaneEffect({ ui, laneIndex, fx, index, count }) {
+  const catalog = laneFxCatalog()
+  const spec = catalog?.spec(fx.type)
+  if (!spec) return null
+  const edit = (fn) => ui.edit((p) => { const list = p.lanes[laneIndex].effects; const i = list.findIndex((e) => e.id === fx.id); if (i >= 0) fn(list, i) })
+  const open = !fx.collapsed
+  return (
+    <li className={`ph-fx ${fx.on ? '' : 'bypassed'}`}>
+      <div className="ph-fx-head">
+        <button type="button" className="ph-fold" aria-expanded={open} title={open ? 'Fold it away' : 'Open it'} onClick={() => edit((l, i) => { if (l[i].collapsed) delete l[i].collapsed; else l[i].collapsed = true })}><Chevron open={open} /></button>
+        <button type="button" className={`ph-led ${fx.on ? 'on' : ''}`} aria-pressed={fx.on} title={fx.on ? 'Bypass it' : 'Turn it back on'} aria-label={`${spec.label} ${fx.on ? 'on' : 'bypassed'}`} onClick={() => edit((l, i) => { l[i].on = !l[i].on })} />
+        <span className="ph-fx-name" title={spec.blurb}>{spec.label}</span>
+        <span className="spacer" />
+        <button type="button" className="ph-icon" disabled={index === 0} title="Earlier" aria-label={`Move ${spec.label} up`} onClick={() => edit((l, i) => { if (i > 0) l.splice(i - 1, 0, ...l.splice(i, 1)) })}>↑</button>
+        <button type="button" className="ph-icon" disabled={index === count - 1} title="Later" aria-label={`Move ${spec.label} down`} onClick={() => edit((l, i) => { if (i < l.length - 1) l.splice(i + 1, 0, ...l.splice(i, 1)) })}>↓</button>
+        <button type="button" className="ph-icon" title="Remove" aria-label={`Remove ${spec.label}`} onClick={() => edit((l, i) => { l.splice(i, 1) })}>×</button>
+      </div>
+      {open && (
+        <div className="ph-fx-params">
+          {spec.params.map((def) => (def.type === 'select'
+            ? (
+              <label key={def.key} className="ph-field">
+                <span className="ph-small-label">{def.label}</span>
+                <select value={fx.data[def.key] ?? def.def} onChange={(e) => { const v = e.target.value; edit((l, i) => { l[i].data[def.key] = v }) }}>
+                  {def.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </label>
+            )
+            : def.type === 'knob'
+              ? <Knob key={def.key} def={def} value={fx.data[def.key] ?? def.def} onChange={(v) => edit((l, i) => { l[i].data[def.key] = v })} target={ui.target(fxKnobKey(fx.id, def.key))} />
+              : null))}
+        </div>
+      )}
+    </li>
+  )
+}
+
+/** One lane: what plays into it, its effects top to bottom, its level, and where it goes. */
 function Lane({ ui, index }) {
   const { patch, edit } = ui
   const lane = patch.lanes[index]
   const set = (fn) => edit((p) => fn(p.lanes[index]))
   const from = patch.layers.map((l, i) => [l, i]).filter(([l]) => l.lane === index)
+  const summed = lanesSummed(patch.lanes)[index]
+  const catalog = laneFxCatalog()
   const feeds = patch.lanes.map((l, i) => i).filter((i) => patch.lanes[i].out === index)
   return (
     <section className={`ph-lane ${lane.mute ? 'muted' : ''}`} aria-label={`Lane ${laneName(index)}`}>
@@ -439,13 +479,25 @@ function Lane({ ui, index }) {
           {!from.length && !feeds.length && <span className="ph-small-label">empty</span>}
         </div>
         <span className="spacer" />
+        {summed && <span className="ph-lane-sum" title="Mixed across every voice, then through its effects">Σ</span>}
         <button type="button" className={`ph-toggle ${lane.mute ? 'mute' : ''}`} aria-pressed={lane.mute} title={lane.mute ? 'Unmute this lane' : 'Mute this lane'} onClick={() => set((l) => { l.mute = !l.mute })}>m</button>
       </header>
       <div className="ph-lane-body">
-        <div className="ph-fx-slot">
-          <span className="ph-fx-mark" aria-hidden>fx</span>
-          <span className="ph-small-label">effects · next</span>
-        </div>
+        <ol className="ph-fx-list">
+          {lane.effects.map((fx, i) => <LaneEffect key={fx.id} ui={ui} laneIndex={index} fx={fx} index={i} count={lane.effects.length} />)}
+        </ol>
+        {lane.effects.length < MAX_LANE_FX && catalog && (
+          <select
+            className={`ph-fx-add ${lane.effects.length ? '' : 'first'}`}
+            value=""
+            aria-label={`Add an effect to lane ${laneName(index)}`}
+            onChange={(e) => { const type = e.target.value; if (type) edit((p) => { if (p.lanes[index].effects.length < MAX_LANE_FX) p.lanes[index].effects.push(makeLaneFx(type)) }) }}
+          >
+            <option value="">+ effect</option>
+            {catalog.types.map((t) => <option key={t} value={t}>{catalog.spec(t).label}</option>)}
+          </select>
+        )}
+        {!lane.effects.length && <span className="ph-fx-hint">{from.length || feeds.length ? 'plays straight through' : 'nothing plays in yet'}</span>}
       </div>
       <footer className="ph-lane-foot">
         <ModKnob ui={ui} route={`lane:${index}.gain`} auto={`lane${index + 1}_gain`} def={K.gain} value={lane.gain} onChange={(v) => set((l) => { l.gain = v })} />

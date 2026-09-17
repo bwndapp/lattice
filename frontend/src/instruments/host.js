@@ -46,11 +46,12 @@ const declared = new Map() // instrument (channel) id → { type, data, cps }
 
 /** Every instrument's engine settings, from a project (called as its code is generated). */
 export function declareEngines(project) {
-  const cps = (Number(project?.bpm) || 120) / (Number(project?.beats) || 4) / 60
+  const beats = Number(project?.beats) || 4
+  const cps = (Number(project?.bpm) || 120) / beats / 60
   for (const pattern of project?.patterns ?? []) {
     for (const ch of pattern.channels) {
       if (!ch.engine || !ENGINES[ch.engine.type]) continue
-      const found = { type: ch.engine.type, data: engineData(ch.engine), cps }
+      const found = { type: ch.engine.type, data: engineData(ch.engine), cps, beats }
       declared.set(ch.id, found)
       for (const inst of live(ch.id, ch.engine.type)) inst.apply(found)
     }
@@ -112,13 +113,14 @@ function instanceFor(ac, channelId, type) {
 
 function createInstance(ac, channelId, type) {
   const spec = ENGINES[type]
-  const settings = declared.get(channelId)?.type === type ? declared.get(channelId) : { data: engineData({ type }), cps: 0.5 }
+  const settings = declared.get(channelId)?.type === type ? declared.get(channelId) : { data: engineData({ type }), cps: 0.5, beats: 4 }
   const params = engineAudioParams(spec)
   const first = engineAudio(spec, settings.data, settings)
   const node = new AudioWorkletNode(ac, spec.processor, {
     numberOfInputs: 0,
-    numberOfOutputs: spec.voices,
-    outputChannelCount: Array.from({ length: spec.voices }, () => 2),
+    // one output a voice, and any more the engine mixes itself (a synth's summed lanes)
+    numberOfOutputs: spec.voices + (spec.extraOutputs ?? 0),
+    outputChannelCount: Array.from({ length: spec.voices + (spec.extraOutputs ?? 0) }, () => 2),
     parameterData: Object.fromEntries(params.filter((p) => Number.isFinite(first[p.key])).map((p) => [`p_${p.key}`, first[p.key]])),
     processorOptions: spec.message ? { data: spec.message(settings.data) } : {},
   })
@@ -131,6 +133,9 @@ function createInstance(ac, channelId, type) {
   if (watchers.has(key)) node.port.postMessage({ watch: true })
   const param = (name) => node.parameters.get(name)
   const voices = Array.from({ length: spec.voices }, () => ({ until: 0, started: 0, note: null }))
+  // whatever the engine plays through outside the processor (see index.js `rig`)
+  const rig = spec.rig ? spec.rig(ac, node, spec.voices) : null
+  rig?.update(settings)
   let trig = 0
   let current = settings.data
   let sent = first
@@ -139,9 +144,11 @@ function createInstance(ac, channelId, type) {
     channelId,
     type,
     get data() { return current },
+    rig,
     watch(on) { node.port.postMessage({ watch: on }) },
-    apply({ data, cps }) {
+    apply({ data, cps, beats }) {
       current = data
+      rig?.update({ data, cps, beats })
       const next = engineAudio(spec, data, { cps })
       for (const p of params) {
         const v = next[p.key]
@@ -271,6 +278,7 @@ export function registerEngineSounds() {
       // written by hand gets one shared instance per engine, at the engine's defaults
       const channelId = typeof value._c === 'string' ? value._c : '_'
       const inst = instanceFor(ac, channelId, spec.type)
+      inst.rig?.target(value) // what the engine mixes itself goes where this note goes
       let midi = toMidi(value.note)
       if (midi == null && value.freq > 0) midi = 69 + 12 * Math.log2(value.freq / 440)
       const note = inst.play(t, {

@@ -27,6 +27,8 @@
  *   render(voice, L, R, from, to)    add this voice's sound for samples [from, to)
  *   busy(voice)                      whether it's making sound (default: voice.active)
  *   beginBlock(frames)               once per block, before the voices (optional)
+ *   endBlock(outputs)                once per block, after them: an engine with outputs past
+ *                                    its voices fills those here (optional)
  * reading its knobs from `this.k`.
  */
 export const DSP_BASE = `
@@ -78,6 +80,7 @@ class LatticeInstrument extends AudioWorkletProcessor {
   render() {}
   busy(voice) { return voice.active }
   beginBlock() {}
+  endBlock() {}
   process(inputs, outputs, params) {
     if (!this.alive) return false
     if (this.initial) { this.onData(this.initial); this.initial = null }
@@ -122,6 +125,7 @@ class LatticeInstrument extends AudioWorkletProcessor {
       }
       if (from < L.length && this.busy(voice)) this.render(voice, L, R, from, L.length)
     }
+    this.endBlock(outputs)
     if (this.watching && ++this.ticks >= 10) {
       this.ticks = 0
       const report = this.report()

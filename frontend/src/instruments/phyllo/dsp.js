@@ -4,9 +4,13 @@ import { TABLES_SOURCE } from './tables.js'
 import { SHAPE_SOURCE } from '../curve.js'
 
 /**
- * Phyllo on the audio thread: eight voices, each a stack of up to eight layers playing into
- * three lanes, which mix into one another or out, then through the amp envelope; moved by
- * up to sixteen modulators (LFOs and envelopes) through routes.
+ * Phyllo on the audio thread: eight voices, each a stack of up to eight layers through the
+ * amp envelope into three lanes, which mix into one another or out; moved by up to sixteen
+ * modulators (LFOs and envelopes) through routes.
+ *
+ * A lane with effects is summed: every voice adds into it, and it leaves by one of the
+ * three outputs after the voices' (8, 9, 10), for the effects outside (phyllo/rig.js), which
+ * also give it its level. Other lanes mix inside each voice and leave by the voice's output.
  *
  * What each layer and modulator is, and where routes go, arrives as a message (onData);
  * their knobs are AudioParams in fixed slots: l<layer>_<knob>, d<modulator>_<knob>.
@@ -83,6 +87,10 @@ class PhylloProcessor extends LatticeInstrument {
     this.mods = new Float32Array(100)
     this.bufL = new Float32Array(PH_CONTROL) // the voice's mix, out of the lanes
     this.bufR = new Float32Array(PH_CONTROL)
+    // the summed lanes, this block, across every voice
+    this.busL = Array.from({ length: PH_LANES }, () => new Float32Array(128))
+    this.busR = Array.from({ length: PH_LANES }, () => new Float32Array(128))
+    this.ampBuf = new Float32Array(PH_CONTROL)
     this.laneL = Array.from({ length: PH_LANES }, () => new Float32Array(PH_CONTROL))
     this.laneR = Array.from({ length: PH_LANES }, () => new Float32Array(PH_CONTROL))
     this.fmBuf = new Float32Array(PH_CONTROL)
@@ -123,6 +131,11 @@ class PhylloProcessor extends LatticeInstrument {
   // the lfos' clocks, once a block
   beginBlock(frames) {
     const k = this.k
+    if (this.busL[0].length !== frames) {
+      this.busL = this.busL.map(() => new Float32Array(frames))
+      this.busR = this.busR.map(() => new Float32Array(frames))
+    }
+    for (let q = 0; q < PH_LANES; q++) { this.busL[q].fill(0); this.busR[q].fill(0) }
     const mods = this.cfg.modulators
     for (let j = 0; j < mods.length; j++) {
       const m = mods[j]
@@ -268,6 +281,16 @@ class PhylloProcessor extends LatticeInstrument {
       }
     }
   }
+  // the summed lanes out, after the voices' outputs
+  endBlock(outputs) {
+    const base = this.voices.length
+    for (let q = 0; q < PH_LANES; q++) {
+      const out = outputs[base + q]
+      if (!out || !out.length) continue
+      out[0].set(this.busL[q])
+      if (out[1]) out[1].set(this.busR[q])
+    }
+  }
   busy(voice) { return voice.active }
   render(voice, OL, OR, from, to) {
     const k = this.k
@@ -294,35 +317,56 @@ class PhylloProcessor extends LatticeInstrument {
         if (!L.on || L.level <= 0) continue
         this.layer(voice.layers[li], L, laneL[L.lane], laneR[L.lane], n)
       }
-      // the lanes, in order: each at its level into the lane it feeds, or into the mix
+      // the amp envelope and the voice's level, on everything, before the lanes
+      const a0 = c.ampFrom === null ? c.amp : c.ampFrom
+      const aStep = (c.amp - a0) / PH_CONTROL
+      const aStart = a0 + aStep * (PH_CONTROL - voice.counter)
+      const amp = this.ampBuf
+      let ended = n
+      for (let j = 0; j < n; j++) {
+        amp[j] = this.step(voice.amp, 1, k.a_attack, c.ad, k.a_sustain, c.ar) * (aStart + aStep * j)
+        if (voice.amp.stage === 0) { ended = j + 1; break }
+      }
+      for (let q = 0; q < PH_LANES; q++) {
+        const inL = laneL[q]
+        const inR = laneR[q]
+        for (let j = 0; j < ended; j++) { inL[j] *= amp[j]; inR[j] *= amp[j] }
+      }
+      // the lanes, in order: a summed one adds this voice into the shared mix (its level is
+      // applied outside); the others go at their level into the lane they feed, or out
       const done = PH_CONTROL - voice.counter
+      const lanes = this.cfg.lanes
       for (const q of this.cfg.laneOrder) {
-        const to = this.cfg.lanes[q] ? this.cfg.lanes[q][0] : -1
-        const outL = to >= 0 && to !== q ? laneL[to] : bufL
-        const outR = to >= 0 && to !== q ? laneR[to] : bufR
+        const conf = lanes[q] || [-1, 0, 0]
+        const inL = laneL[q]
+        const inR = laneR[q]
+        if (conf[2]) {
+          const bL = this.busL[q]
+          const bR = this.busR[q]
+          for (let j = 0; j < ended; j++) { bL[i + j] += inL[j] * voice.vel; bR[i + j] += inR[j] * voice.vel }
+          continue
+        }
+        const to = conf[0] >= 0 && conf[0] !== q ? conf[0] : -1
+        const summedTo = to >= 0 && lanes[to] && lanes[to][2]
+        const outL = to < 0 ? bufL : summedTo ? this.busL[to] : laneL[to]
+        const outR = to < 0 ? bufR : summedTo ? this.busR[to] : laneR[to]
+        const at = summedTo ? i : 0 // the shared mix is laid out by the block, a voice's by the step
+        const vel = summedTo ? voice.vel : 1
         const g1 = c.lane[q]
         const g0 = c.laneFrom ? c.laneFrom[q] : g1
         if (g0 === 0 && g1 === 0) continue
         const gs = (g1 - g0) / PH_CONTROL
-        const inL = laneL[q]
-        const inR = laneR[q]
-        for (let j = 0; j < n; j++) {
-          const g = g0 + gs * (done + j)
-          outL[j] += inL[j] * g
-          outR[j] += inR[j] * g
+        for (let j = 0; j < ended; j++) {
+          const g = (g0 + gs * (done + j)) * vel
+          outL[at + j] += inL[j] * g
+          outR[at + j] += inR[j] * g
         }
       }
-      // the level glides from where the last few samples left it
-      const a0 = c.ampFrom === null ? c.amp : c.ampFrom
-      const aStep = (c.amp - a0) / PH_CONTROL
-      const aStart = a0 + aStep * (PH_CONTROL - voice.counter)
-      for (let j = 0; j < n; j++) {
-        const amp = this.step(voice.amp, 1, k.a_attack, c.ad, k.a_sustain, c.ar)
-        const g = amp * (aStart + aStep * j)
-        OL[i + j] += bufL[j] * g
-        if (OR !== OL) OR[i + j] += bufR[j] * g
-        if (voice.amp.stage === 0) { voice.active = false; voice.ctl = null; return }
+      for (let j = 0; j < ended; j++) {
+        OL[i + j] += bufL[j]
+        if (OR !== OL) OR[i + j] += bufR[j]
       }
+      if (voice.amp.stage === 0) { voice.active = false; voice.ctl = null; return }
       voice.counter -= n
       i += n
     }

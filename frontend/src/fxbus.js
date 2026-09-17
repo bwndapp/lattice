@@ -409,3 +409,11 @@ function makeDelay(ac, initial) {
   fx.set(initial)
   return fx
 }
+
+/**
+ * A reverb or delay on its own (for an instrument's lanes): wet only, like the shared ones
+ * — its input level is the amount. { input, output, set(params), destroy() }.
+ */
+export function makeSendEffect(kind, ac, params) {
+  return kind === 'delay' ? makeDelay(ac, params) : makeReverb(ac, params)
+}

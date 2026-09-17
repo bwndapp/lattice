@@ -882,3 +882,15 @@ const UNITS = {
     }
   },
 }
+
+/**
+ * One insert of `kind`, on its own, for something other than an orbit's rack to use (an
+ * instrument's lanes): { input, output, set(params), dispose() }, or null for an unknown kind.
+ */
+export function makeInsert(kind, ac = getAudioContext()) {
+  const make = UNITS[kind]
+  if (!make) return null
+  const unit = make(ac)
+  unit.kind = kind
+  return unit
+}
