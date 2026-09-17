@@ -8,12 +8,11 @@ const STIFF = 0.16 // how hard the wire pulls back to where it wants to hang
 const DAMP = 0.78 // how quickly the swing dies down
 const REST = 0.15 // below this it's near enough still to stop drawing
 
-/** How far a wire hangs when it's at rest: more slack over a short run, and more doubling back. */
+/** How far a wire hangs at rest: the longer the span, the more rope there is in it. */
 function slackOf(sourceX, sourceY, targetX, targetY) {
   const run = Math.abs(targetX - sourceX)
-  const drop = Math.abs(targetY - sourceY)
-  const back = Math.max(0, sourceX - targetX) // a wire going backwards has rope to spare
-  return Math.min(56, 10 + back * 0.16 + Math.max(0, 260 - run) * 0.09 + drop * 0.02)
+  const back = Math.max(0, sourceX - targetX) // one doubling back has further to hang
+  return Math.min(130, 12 + run * 0.17 + back * 0.4)
 }
 
 /**
@@ -68,17 +67,14 @@ function useSag(sourceX, sourceY, targetX, targetY) {
 export function WireEdge({ id, sourceX, sourceY, targetX, targetY, data, style, markerEnd, interactionWidth }) {
   const pull = data?.tension ?? 1
   const sag = useSag(sourceX, sourceY, targetX, targetY) * pull
-  // Its own bezier, not React Flow's: the ends have to stay on their ports, so the weight
-  // goes into the control points and the middle is what drops.
-  const reach = Math.max(40, Math.abs(targetX - sourceX) * 0.45 + Math.max(0, sourceX - targetX) * 0.55)
-  const c1x = sourceX + reach
-  const c2x = targetX - reach
-  const c1y = sourceY + sag
-  const c2y = targetY + sag
-  const path = `M${sourceX},${sourceY} C${c1x},${c1y} ${c2x},${c2y} ${targetX},${targetY}`
-  // where the curve actually is halfway along, for the + button
-  const midX = (sourceX + 3 * c1x + 3 * c2x + targetX) / 8
-  const midY = (sourceY + 3 * c1y + 3 * c2y + targetY) / 8
+  // Two curves through a low middle, rather than one bowed line. A wire has to leave its
+  // port sideways and arrive at the next one sideways — the dip belongs in between, which
+  // one curve can't do: bending it enough to hang tips both ends off at an angle.
+  const midX = (sourceX + targetX) / 2
+  const midY = (sourceY + targetY) / 2 + sag
+  const reach = Math.max(34, Math.abs(targetX - sourceX) * 0.28 + Math.max(0, sourceX - targetX) * 0.5)
+  const path = `M${sourceX},${sourceY} C${sourceX + reach},${sourceY} ${midX - reach},${midY} ${midX},${midY}`
+    + ` C${midX + reach},${midY} ${targetX - reach},${targetY} ${targetX},${targetY}`
   const length = Math.hypot(targetX - sourceX, targetY - sourceY)
   const small = length < 90
   const lift = length < 36 ? 17 : 0 // no room between the dots: sit just above the wire instead
