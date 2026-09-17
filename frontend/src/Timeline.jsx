@@ -955,7 +955,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
           {inPatch.map(partRow)}
         </ul>
         <div className="song-parts-sub">
-          <span>automation</span>
+          <span data-tip="Right-click any knob in the patch or on an instrument and pick automate: its curve lands here and on the timeline">automation</span>
           {autoParts.length > 0 && <span className="song-unused-count">{autoParts.length}</span>}
         </div>
         {autoParts.length ? (
@@ -963,14 +963,13 @@ export default function Timeline({ project, onUpdateProject, transport, started 
             {autoParts.map(partRow)}
           </ul>
         ) : (
-          <p className="song-parts-hint auto-empty">Right-click any knob in the patch or an instrument and pick <b>automate</b>: its curve lands here and on the timeline.</p>
+          <p className="song-parts-hint auto-empty">none yet</p>
         )}
         {unused.length > 0 && (
           <details className="song-unused">
-            <summary>
+            <summary data-tip="Patterns no node plays, left over after deleting or pasting nodes. Drop one on the timeline and it gets a pattern node in the patch.">
               not in the patch <span className="song-unused-count">{unused.length}</span>
             </summary>
-            <p className="song-parts-hint">Patterns no node plays (left over after deleting or pasting nodes). Dropping one on the timeline adds a pattern node for it to the patch.</p>
             <ul className="song-part-list">
               {unused.map(partRow)}
             </ul>
