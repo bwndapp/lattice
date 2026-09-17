@@ -99,6 +99,14 @@ export function WireEdge({ id, sourceX, sourceY, targetX, targetY, data, style, 
             window.dispatchEvent(new CustomEvent(ADD_INTO_WIRE, { detail: { edgeId: id, x: r.left + r.width / 2, y: r.top + r.height / 2 } }))
           }}
         >+</button>
+        {/* what's going through, in dB, written here frame by frame by flow.js */}
+        <span
+          className="wire-db"
+          data-db={id}
+          hidden
+          aria-hidden
+          style={{ transform: `translate(-50%, -50%) translate(${midX}px, ${midY - 15}px)` }}
+        />
       </EdgeLabelRenderer>
     </>
   )

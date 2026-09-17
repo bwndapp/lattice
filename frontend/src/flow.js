@@ -21,6 +21,7 @@ let cycle = null
 let frame = 0
 const els = new Map() // element id → the element, while it's on screen
 const lit = new Map() // element id → the light we last wrote there
+const dbs = new Map() // wire id → the reading we last wrote above it
 let colors = new Map() // source key → its colour as [r, g, b]
 
 const key = (nodeId, chanId) => (chanId ? `${nodeId}|${chanId}` : nodeId)
@@ -99,15 +100,20 @@ export function stopFlow() {
   source = null
   hits = []
   cycle = null
-  for (const [id, el] of els) write(el, id, 0)
+  for (const [id, el] of els) {
+    if (id.startsWith('db:')) { el.textContent = ''; el.hidden = true } else write(el, id, 0)
+  }
   els.clear()
   lit.clear()
+  dbs.clear()
 }
 
 const elementFor = (id, kind) => {
   const held = els.get(id)
   if (held?.isConnected) return held
-  const where = kind === 'flow' ? `[data-flow="${CSS.escape(id)}"]` : `.react-flow__${kind}[data-id="${CSS.escape(id)}"]`
+  const where = kind === 'flow' ? `[data-flow="${CSS.escape(id)}"]`
+    : kind === 'db' ? `[data-db="${CSS.escape(id.slice(3))}"]`
+      : `.react-flow__${kind}[data-id="${CSS.escape(id)}"]`
   const found = document.querySelector(`.graph-canvas ${where}`)
   if (found) els.set(id, found)
   else els.delete(id)
@@ -192,9 +198,11 @@ function tick() {
     let g = 0
     let b = 0
     let weight = 0
+    let carried = 0 // everything sounding in it at once, which is what the readout shows
     for (const k of keys) {
       const on = level.get(k)
       if (!on) continue
+      carried += on.v * on.loud
       // how loud it is sets how much of the glow it gets and how much colour is left in it
       const v = on.v * (FLOOR + (1 - FLOOR) * on.loud)
       if (v > best) best = v
@@ -211,6 +219,19 @@ function tick() {
     const value = Math.round(Math.sqrt(best) / STEP) * STEP
     const tone = (x) => Math.round(x / weight / 8) * 8 // in steps, so small shifts don't churn
     write(el, id, value, weight ? `rgb(${tone(r)} ${tone(g)} ${tone(b)})` : '')
+    return carried
+  }
+
+  /** What the wire is carrying, in decibels, for the readout above it. */
+  const meter = (id, carried) => {
+    const el = elementFor(`db:${id}`, 'db')
+    if (!el) return
+    const db = carried > 0.0001 ? 20 * Math.log10(Math.min(4, carried)) : null
+    const text = db === null ? '' : `${db > -0.05 ? '' : ''}${db.toFixed(1)}`
+    if (dbs.get(id) === text) return
+    dbs.set(id, text)
+    el.textContent = text
+    el.hidden = !text
   }
   for (const [id, keys] of paths.nodes) {
     const el = keys.length && elementFor(id, 'node')
@@ -218,7 +239,7 @@ function tick() {
   }
   for (const [id, keys] of paths.edges) {
     const el = keys.length && elementFor(id, 'edge')
-    if (el) paint(el, id, keys)
+    if (el) meter(id, paint(el, id, keys))
   }
   for (const [id, keys] of paths.chans) {
     const el = elementFor(id, 'flow')

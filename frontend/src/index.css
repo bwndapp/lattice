@@ -831,6 +831,13 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
  * thread down the middle, which together read as something round with light in it rather
  * than a line. The body is the one React Flow hit-tests, so only it takes the pointer.
  */
+/* what the wire is carrying, sitting just above it while the track plays */
+.wire-db {
+  position: absolute; z-index: 3; pointer-events: none;
+  font-size: 9px; font-variant-numeric: tabular-nums; letter-spacing: 0.02em;
+  color: color-mix(in srgb, var(--wire, var(--paper)) 55%, var(--paper));
+  text-shadow: 0 1px 2px #000, 0 0 3px #000;
+}
 .graph-canvas .wire-casing, .graph-canvas .wire-sheen { fill: none; pointer-events: none; stroke-linecap: round; }
 .graph-canvas .wire-casing {
   stroke: #0d0d0c;
