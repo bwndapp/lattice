@@ -107,8 +107,8 @@ body {
   overflow: hidden;
 }
 .logo {
-  align-self: flex-end;
-  margin: 0 0.75rem 0.12em 0;
+  align-self: center;
+  margin: 0 0.85rem 0 0.1rem;
   font-family: var(--display);
   font-weight: 900;
   font-stretch: 125%;
