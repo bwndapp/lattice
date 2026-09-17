@@ -616,6 +616,8 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       return
     }
     if (d.mode === 'erase') {
+      // a right-click that swept nothing away is a click on bare canvas: let the selection go
+      if (!d.gone.size) setSelected(new Set())
       if (d.gone.size) {
         // still marked while the song is being rewritten, or they blink back for a frame
         vanish([...d.gone])
