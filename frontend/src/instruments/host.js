@@ -98,7 +98,9 @@ function createInstance(ac, channelId, type) {
     numberOfOutputs: spec.voices,
     outputChannelCount: Array.from({ length: spec.voices }, () => 2),
     parameterData: Object.fromEntries(params.filter((p) => Number.isFinite(first[p.key])).map((p) => [`p_${p.key}`, first[p.key]])),
+    processorOptions: spec.message ? { data: spec.message(settings.data) } : {},
   })
+  let said = spec.message ? JSON.stringify(spec.message(settings.data)) : ''
   const param = (name) => node.parameters.get(name)
   const voices = Array.from({ length: spec.voices }, () => ({ until: 0, started: 0, note: null }))
   let trig = 0
@@ -120,6 +122,11 @@ function createInstance(ac, channelId, type) {
         else param(`p_${p.key}`).setTargetAtTime(v, ac.currentTime, 0.005)
       }
       sent = next
+      if (spec.message) {
+        const data = spec.message(current)
+        const text = JSON.stringify(data)
+        if (text !== said) { said = text; node.port.postMessage({ data }) }
+      }
     },
     /** Start a note: which voice, and the note's handle. */
     play(t, { midi, vel, duration }) {

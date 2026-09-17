@@ -1,10 +1,12 @@
 import { knobsSource } from '../dsp.js'
-import { AUDIO_PARAMS, K, LAYER_KNOBS } from './model.js'
+import { AUDIO_PARAMS, K, LAYER_KNOBS, LFO_PRESETS } from './model.js'
 import { TABLES_SOURCE } from './tables.js'
 
 /**
  * Phyllo on the audio thread: eight voices, each up to four layers into a filter and an
- * amp envelope, with a mod envelope per voice and two LFOs for the whole synth.
+ * amp envelope, with a mod envelope per voice and two LFOs. An LFO is a drawn shape, read
+ * from a table rebuilt whenever its points move; in free mode every voice shares one
+ * clock, in retrig and env mode each voice starts its own at the note.
  *
  * Modulation works on a knob's travel (0 … 1 of it, log knobs in octaves), so a route's
  * amount means the same on every knob: 1 on an envelope sweeps the whole knob; 1 on an
@@ -24,6 +26,9 @@ const PH_LN = [0, 1, 2, 3].map((i) => {
   for (const f of ['on', 'type', 'wave', 'table', 'noise', 'warpmode', 'fmwave', 'level', 'pan', 'pitch', 'fine', 'pw', 'pos', 'warp', 'unison', 'detune', 'spread', 'fm', 'ratio']) n[f] = 'l' + i + '_' + f
   return n
 })
+const PH_LFO_TABLE = 1024
+const PH_LFO_START = ${JSON.stringify(['sine', 'tri'].map((n) => LFO_PRESETS[n].map((p) => [p.x, p.y, p.c ?? 0])))}
+const PH_ON = [0, 1].map((i) => ({ mode: 'o' + i + '_mode', sync: 'o' + i + '_sync', bars: 'o' + i + '_bars', hz: 'o' + i + '_hz' }))
 const PH_MN = Array.from({ length: 12 }, (_, s) => ['m' + s + '_dest', 'm' + s + '_amt'])
 const phPos = (v, s) => (s.log ? Math.log(v / s.min) / Math.log(s.max / s.min) : (v - s.min) / (s.max - s.min))
 const phVal = (t, s) => { t = t < 0 ? 0 : t > 1 ? 1 : t; return s.log ? s.min * (s.max / s.min) ** t : s.min + t * (s.max - s.min) }
@@ -60,10 +65,14 @@ function phWarp(mode, p, w) {
 class PhylloProcessor extends LatticeInstrument {
   static voiceCount = 8
   static knobs = ${knobsSource(AUDIO_PARAMS)}
-  constructor() {
-    super()
+  constructor(options) {
+    super(options)
     this.lfoPhase = [0, 0]
-    this.lfo = [0, 0]
+    this.lfoRate = [0, 0]
+    this.lfoMode = [0, 0]
+    this.lfoTable = [new Float32Array(PH_LFO_TABLE + 1), new Float32Array(PH_LFO_TABLE + 1)]
+    this.buildLfo(0, PH_LFO_START[0])
+    this.buildLfo(1, PH_LFO_START[1])
     this.mods = new Float32Array(64)
     this.bufL = new Float32Array(PH_CONTROL)
     this.bufR = new Float32Array(PH_CONTROL)
@@ -77,17 +86,43 @@ class PhylloProcessor extends LatticeInstrument {
       svf: new Float64Array(8), // two stages × two sides × two states
       ladder: new Float64Array(8), // four poles × two sides
       counter: 0, ctl: null,
+      lfoPh: new Float64Array(2), // each voice's own place in the LFOs (retrig and env modes)
     }
   }
-  // the two LFOs, once a block, the same for every voice
+  // the drawn shapes, when they change
+  onData(data) {
+    if (data.lfos) data.lfos.forEach((points, i) => { if (i < 2 && Array.isArray(points) && points.length >= 2) this.buildLfo(i, points) })
+  }
+  // the two LFOs, once a block: their rates and the shared clock
   beginBlock(frames) {
     const k = this.k
     for (let i = 0; i < 2; i++) {
-      const rate = k['o' + i + '_sync'] > 0.5 ? k.cps / Math.max(1 / 64, k['o' + i + '_bars']) : k['o' + i + '_hz']
-      const p = (this.lfoPhase[i] = phWrap(this.lfoPhase[i] + (rate * frames) / sampleRate))
-      const shape = Math.round(k['o' + i + '_shape'])
-      this.lfo[i] = shape === 0 ? Math.sin(2 * Math.PI * p) : shape === 1 ? 1 - 4 * Math.abs(p - 0.5) : shape === 2 ? 1 - 2 * p : shape === 3 ? 2 * p - 1 : p < 0.5 ? 1 : -1
+      const N = PH_ON[i]
+      const rate = k[N.sync] > 0.5 ? k.cps / Math.max(1 / 64, k[N.bars]) : k[N.hz]
+      this.lfoRate[i] = rate
+      this.lfoMode[i] = Math.round(k[N.mode])
+      this.lfoPhase[i] = phWrap(this.lfoPhase[i] + (rate * frames) / sampleRate)
     }
+  }
+  // the drawn shape as a table: the same curve as automation, point to point
+  buildLfo(i, pts) {
+    const t = this.lfoTable[i]
+    const n = pts.length
+    let seg = 0
+    for (let j = 0; j <= PH_LFO_TABLE; j++) {
+      const x = j / PH_LFO_TABLE
+      while (seg < n - 2 && x >= pts[seg + 1][0]) seg++
+      const [x0, y0, c] = pts[seg]
+      const [x1, y1] = pts[seg + 1]
+      const u = x1 > x0 ? Math.min(1, Math.max(0, (x - x0) / (x1 - x0))) : 1
+      t[j] = (y0 + (y1 - y0) * (c ? u ** (2 ** (c * 3)) : u)) * 2 - 1
+    }
+  }
+  lfoAt(i, p) {
+    const x = p * PH_LFO_TABLE
+    const j = x | 0
+    const t = this.lfoTable[i]
+    return j >= PH_LFO_TABLE ? t[PH_LFO_TABLE] : t[j] + (t[j + 1] - t[j]) * (x - j)
   }
   noteOn(voice, note, vel) {
     const k = this.k
@@ -104,6 +139,8 @@ class PhylloProcessor extends LatticeInstrument {
       for (const l of voice.layers) { for (let u = 0; u < 16; u++) l.ph[u] = u ? Math.random() : 0; l.fm = 0 }
     }
     voice.active = true
+    voice.lfoPh[0] = 0 // retrig and env LFOs start over with the note
+    voice.lfoPh[1] = 0
     voice.amp.stage = 1 // envelopes restart from wherever they are, so a stolen voice doesn't click
     voice.env.stage = 1
     voice.counter = 0
@@ -127,11 +164,24 @@ class PhylloProcessor extends LatticeInstrument {
     const k = this.k
     const m = this.mods
     m.fill(0)
+    // this voice's view of the LFOs: the shared clock, or its own from the note
+    const lv = this.lfoVoice || (this.lfoVoice = [0, 0])
+    for (let i = 0; i < 2; i++) {
+      const mode = this.lfoMode[i]
+      let p
+      if (mode === 0) p = this.lfoPhase[i]
+      else {
+        p = voice.lfoPh[i]
+        const next = p + (this.lfoRate[i] * PH_CONTROL) / sampleRate
+        voice.lfoPh[i] = mode === 1 ? phWrap(next) : Math.min(1, next) // env: once, then hold
+      }
+      lv[i] = this.lfoAt(i, p)
+    }
     for (let s = 0; s < 12; s++) {
       const dest = Math.round(k[PH_MN[s][0]])
       const amt = k[PH_MN[s][1]]
       if (!dest || !amt) continue
-      const src = s < 4 ? voice.env.v : this.lfo[s < 8 ? 0 : 1] * 0.5
+      const src = s < 4 ? voice.env.v : lv[s < 8 ? 0 : 1] * 0.5
       m[dest] += amt * src
     }
     const c = voice.ctl || (voice.ctl = { layers: [0, 1, 2, 3].map(() => ({})), s1: new Float64Array(4), s2: new Float64Array(4) })

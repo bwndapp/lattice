@@ -30,6 +30,8 @@ import phyllo from './phyllo/index.js'
  *   audioParams           the processor's params, { key, min, max, def } (instead of `params`)
  *   knobAt(data, key)     a knob by automation key → { def, value, label, set(data, v) }
  *   voicesFor(data)       (optional) how many voices notes may use (1 for mono)
+ *   message(data)         (optional) settings that aren't knobs, sent to the processor as a
+ *                         message when they change (see dsp.js onData)
  */
 export const ENGINES = Object.fromEntries([kick, phyllo].map((e) => [e.type, e]))
 

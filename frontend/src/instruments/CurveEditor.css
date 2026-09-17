@@ -1,0 +1,42 @@
+/* a drawn shape with handles (see CurveEditor.jsx); --ph-ink sets its colour */
+.curve-editor {
+  --ce-ink: var(--ph-ink, var(--acid));
+  position: relative;
+  width: 100%;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+  background: var(--ph-well, #050504);
+  border: 1px solid var(--ph-line, #25251f);
+  border-radius: 2px;
+  box-shadow: inset 0 1px 8px rgba(0, 0, 0, 0.9);
+  overflow: hidden;
+}
+.curve-editor svg { display: block; overflow: visible; }
+.ce-grid { stroke: rgba(255, 255, 255, 0.035); stroke-width: 1; shape-rendering: crispEdges; }
+.ce-grid.major { stroke: rgba(255, 255, 255, 0.06); }
+.ce-grid.edge { stroke: rgba(255, 255, 255, 0.08); }
+.ce-grid.zero { stroke: rgba(255, 255, 255, 0.12); stroke-dasharray: 2 3; }
+.ce-area { fill: var(--ce-ink); opacity: 0.12; }
+.ce-line { fill: none; stroke: var(--ce-ink); stroke-width: 1.8; stroke-linejoin: round; filter: drop-shadow(0 0 3px color-mix(in srgb, var(--ce-ink) 55%, transparent)); }
+.ce-hit { fill: transparent; }
+.ce-point { cursor: grab; }
+.ce-point .ce-knob { fill: #0a0a09; stroke: var(--ce-ink); stroke-width: 1.6; transition: r 0.08s; }
+.ce-point.hot .ce-knob { fill: color-mix(in srgb, var(--ce-ink) 35%, #0a0a09); }
+.ce-point.active { cursor: grabbing; }
+.ce-point.active .ce-knob { fill: var(--ce-ink); filter: drop-shadow(0 0 5px var(--ce-ink)); }
+.ce-bend { cursor: ns-resize; }
+.ce-bend rect { fill: #0a0a09; stroke: color-mix(in srgb, var(--ce-ink) 55%, transparent); stroke-width: 1.2; }
+.ce-bend.bent rect { stroke: var(--ce-ink); }
+.ce-bend.hot rect { fill: var(--ce-ink); stroke: var(--ce-ink); }
+.ce-dot {
+  position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border-radius: 50%;
+  background: #fff; box-shadow: 0 0 0 2px var(--ce-ink), 0 0 12px var(--ce-ink);
+  pointer-events: none; will-change: transform; opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) { .ce-dot { display: none; } }
+.ce-readout {
+  position: absolute; right: 5px; top: 4px; padding: 1px 5px; border-radius: 2px;
+  font-size: 9px; font-variant-numeric: tabular-nums; color: var(--ce-ink); background: rgba(0, 0, 0, 0.75);
+  pointer-events: none;
+}

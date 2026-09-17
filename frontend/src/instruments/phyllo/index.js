@@ -1,5 +1,5 @@
 import { PHYLLO_DSP } from './dsp.js'
-import { AUDIO_PARAMS, encodePatch, knobAt, normalizePatch } from './model.js'
+import { AUDIO_PARAMS, encodePatch, knobAt, normalizePatch, patchMessage } from './model.js'
 
 /**
  * Phyllo: a layered polysynth (see model.js for the patch, dsp.js for the sound,
@@ -21,6 +21,7 @@ export default {
   audioParams: AUDIO_PARAMS,
   normalize: normalizePatch,
   encode: encodePatch,
+  message: patchMessage,
   knobAt,
   // the release falls to silence in a little under twice its time
   tail: (patch) => patch.amp.release * 2 + 0.05,

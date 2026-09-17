@@ -13,6 +13,10 @@
  *   v<n>_gate   1 while the note is held, 0 once it's let go
  *   p_<key>     the engine's knobs (k-rate: they move once per block)
  *
+ * Settings that aren't knobs (a drawn shape, say) come as a message, `onData(data)`: once
+ * with the processor (processorOptions.data, so an offline render has them from the
+ * start) and again whenever they change.
+ *
  * A subclass says how many voices it has and which knobs, and implements
  *   newVoice()                       fresh state for one voice
  *   noteOn(voice, note, vel)         a note starts on this voice
@@ -38,7 +42,7 @@ class LatticeInstrument extends AudioWorkletProcessor {
     }
     return out
   }
-  constructor() {
+  constructor(options) {
     super()
     const cls = this.constructor
     // the knobs as an object with every key from the start: filled in one at a time, a
@@ -54,8 +58,13 @@ class LatticeInstrument extends AudioWorkletProcessor {
     this.knobNames = cls.knobs.map((k) => [k.key, 'p_' + k.key])
     this.voiceNames = this.voices.map((_, v) => ['v' + v + '_trig', 'v' + v + '_gate', 'v' + v + '_note', 'v' + v + '_vel'])
     this.alive = true
-    this.port.onmessage = (e) => { if (e.data === 'dispose') this.alive = false }
+    this.port.onmessage = (e) => {
+      if (e.data === 'dispose') this.alive = false
+      else if (e.data && e.data.data) this.onData(e.data.data)
+    }
+    this.initial = options && options.processorOptions && options.processorOptions.data
   }
+  onData() {}
   newVoice() { return {} }
   noteOn() {}
   noteOff() {}
@@ -64,6 +73,7 @@ class LatticeInstrument extends AudioWorkletProcessor {
   beginBlock() {}
   process(inputs, outputs, params) {
     if (!this.alive) return false
+    if (this.initial) { this.onData(this.initial); this.initial = null }
     const knobNames = this.knobNames
     for (let i = 0; i < knobNames.length; i++) this.k[knobNames[i][0]] = params[knobNames[i][1]][0]
     this.beginBlock(outputs[0] && outputs[0][0] ? outputs[0][0].length : 128)

@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Knob from '../../Knob.jsx'
 import { drawCurve, drawWave, fitCanvas } from '../scope.js'
 import {
-  FILTER_SLOPES, FILTER_TYPES, FM_WAVES, K, LFO_BARS, LFO_SHAPES, MAX_LAYERS, MAX_ROUTES, NOISES, PRESETS, SOURCE_LABELS,
+  FILTER_SLOPES, FILTER_TYPES, FM_WAVES, K, LFO_BARS, LFO_MODES, LFO_PRESETS, MAX_LAYERS, MAX_ROUTES, NOISES, PRESETS, SOURCE_LABELS,
   TABLES, TABLE_NAMES, WARP_MODES, barsLabel, layerKnobKey, makeLayer, newPartId, normalizePatch, targetSpec,
 } from './model.js'
 import { tableFrame } from './tables.js'
+import CurveEditor from '../CurveEditor.jsx'
 import './phyllo.css'
 
 /**
@@ -203,54 +204,6 @@ function EnvScope({ env }) {
         drawCurve(ctx, values, { width: w, map: yOf, color: ink, lineWidth: 1.6 * dpr, fill: base, glow: 5 * dpr })
       }}
     />
-  )
-}
-
-const LFO_FN = {
-  sine: (p) => Math.sin(2 * Math.PI * p),
-  tri: (p) => 1 - 4 * Math.abs(wrap(p) - 0.5),
-  saw: (p) => 1 - 2 * wrap(p),
-  ramp: (p) => 2 * wrap(p) - 1,
-  square: (p) => (wrap(p) < 0.5 ? 1 : -1),
-}
-function LfoScope({ lfo, cps }) {
-  const dot = useRef(null)
-  const box = useRef(null)
-  // a dot riding the wave at the lfo's rate (its phase is the window's, not the voice's)
-  useEffect(() => {
-    let raf = 0
-    const rate = lfo.sync ? cps / lfo.bars : lfo.hz
-    const fn = LFO_FN[lfo.shape]
-    const tick = (now) => {
-      raf = requestAnimationFrame(tick)
-      const el = dot.current
-      const frame = box.current
-      if (!el || !frame) return
-      const p = ((now / 1000) * rate) % 2 // two cycles are drawn
-      const w = frame.clientWidth
-      const h = frame.clientHeight
-      const y = h / 2 - fn(p) * (h / 2 - 4)
-      el.style.transform = `translate(${(p / 2) * w}px, ${y}px)`
-    }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
-  }, [lfo.shape, lfo.sync, lfo.bars, lfo.hz, cps])
-  return (
-    <div className="ph-scope-box" ref={box}>
-      <Scope
-        className="lfo"
-        deps={[lfo.shape]}
-        draw={(ctx, w, h, dpr, { ink, grid }) => {
-          midline(ctx, w, h, grid)
-          ctx.strokeStyle = grid
-          ctx.lineWidth = 1
-          ctx.beginPath(); ctx.moveTo(Math.round(w / 2) + 0.5, 0); ctx.lineTo(Math.round(w / 2) + 0.5, h); ctx.stroke()
-          const values = Float32Array.from({ length: 800 }, (_, i) => LFO_FN[lfo.shape]((i / 800) * 2))
-          drawWave(ctx, values, { width: w, height: h, color: ink, pad: 4 * dpr, lineWidth: 1.6 * dpr })
-        }}
-      />
-      <span className="ph-lfo-dot" ref={dot} aria-hidden />
-    </div>
   )
 }
 
@@ -521,21 +474,58 @@ function Envelope({ ui, which }) {
   )
 }
 
+const LFO_BUTTONS = [['sine', 'sin'], ['tri', 'tri'], ['saw', 'saw'], ['ramp', 'ramp'], ['square', 'sq'], ['pluck', 'pluck'], ['swell', 'swell'], ['stairs', 'steps']]
+const GRIDS = [[0, 'free'], [4, '1/4'], [8, '1/8'], [16, '1/16'], [32, '1/32']]
+const sameShape = (a, b) => a.length === b.length && a.every((p, i) => Math.abs(p.x - b[i].x) < 1e-6 && Math.abs(p.y - b[i].y) < 1e-6 && Math.abs((p.c ?? 0) - (b[i].c ?? 0)) < 0.011)
+
+/** An LFO: a shape you draw, how it runs, how fast, and where it goes. */
 function Lfo({ ui, index }) {
   const src = `lfo${index + 1}`
   const lfo = ui.patch.lfos[index]
   const set = (fn) => ui.edit((p) => fn(p.lfos[index]))
+  // the dot: where the lfo is on the window's clock (a voice's own run starts at its note)
+  const rate = lfo.sync ? ui.cps / lfo.bars : lfo.hz
+  const dot = useRef(null)
+  dot.current = () => {
+    const t = performance.now() / 1000
+    if (lfo.mode === 'env') { const period = 1 / rate; const loop = period + 0.6; return Math.min(1, (t % loop) / period) }
+    return (t * rate) % 1
+  }
+  const preset = LFO_BUTTONS.find(([name]) => sameShape(lfo.points, LFO_PRESETS[name]))?.[0]
   return (
-    <Section title={`lfo ${index + 1}`} index={5 + index} className={`ph-src src-${src}`}>
-      <LfoScope lfo={lfo} cps={ui.cps} />
+    <Section
+      title={`lfo ${index + 1}`}
+      index={5 + index}
+      className={`ph-src src-${src} ph-lfo`}
+      aside={<Segmented label="Mode" value={lfo.mode} options={LFO_MODES} onChange={(v) => set((l) => { l.mode = v })} format={(m) => ({ free: 'free', retrig: 'trig', env: 'env' })[m]} />}
+    >
+      <div className="ph-lfo-shapes" role="group" aria-label="Start from a shape">
+        {LFO_BUTTONS.map(([name, label]) => (
+          <button key={name} type="button" className={preset === name ? 'on' : ''} onClick={() => set((l) => { l.points = LFO_PRESETS[name].map((p) => ({ ...p })) })} title={`Start from a ${name} shape`}>{label}</button>
+        ))}
+      </div>
+      <div className="ph-lfo-draw">
+        <CurveEditor
+          points={lfo.points}
+          grid={lfo.grid}
+          height={112}
+          dot={dot}
+          onChange={(points) => set((l) => { l.points = points })}
+        />
+      </div>
       <div className="ph-lfo-controls">
-        <Segmented label="Shape" value={lfo.shape} options={LFO_SHAPES} format={(s) => ({ sine: 'sin', tri: 'tri', saw: 'saw', ramp: 'ramp', square: 'sq' })[s]} onChange={(v) => set((l) => { l.shape = v })} />
         <div className="ph-rate">
           <Segmented label="Rate mode" value={lfo.sync ? 'bars' : 'hz'} options={['bars', 'hz']} onChange={(v) => set((l) => { l.sync = v === 'bars' })} />
           {lfo.sync
             ? <select className="ph-rate-select" aria-label="Every" value={String(lfo.bars)} onChange={(e) => set((l) => { l.bars = Number(e.target.value) })}>{LFO_BARS.map((b) => <option key={b} value={String(b)}>{barsLabel(b)}</option>)}</select>
             : <Knob def={K.hz} value={lfo.hz} onChange={(v) => set((l) => { l.hz = v })} target={ui.target(`lfo${index + 1}_hz`)} />}
         </div>
+        <label className="ph-grid-pick" title="Where new and dragged points snap to (alt: anywhere)">
+          <span className="ph-small-label">grid</span>
+          <select value={lfo.grid} onChange={(e) => set((l) => { l.grid = Number(e.target.value) })}>
+            {GRIDS.map(([g, label]) => <option key={g} value={g}>{label}</option>)}
+          </select>
+        </label>
       </div>
       <Destinations ui={ui} src={src} />
     </Section>

@@ -119,14 +119,6 @@
   background-position: 0 -1px, -1px 0;
   box-shadow: inset 0 1px 8px rgba(0, 0, 0, 0.9);
 }
-.ph-card > .ph-scope-box { margin: 0.6rem 0.7rem 0; }
-.ph-scope-box { position: relative; }
-.ph-lfo-dot {
-  position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border-radius: 50%;
-  background: var(--ph-ink); box-shadow: 0 0 10px var(--ph-ink), 0 0 2px #fff inset;
-  pointer-events: none; will-change: transform;
-}
-@media (prefers-reduced-motion: reduce) { .ph-lfo-dot { display: none; } }
 
 .ph-knobs { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.4rem 0.6rem; padding: 0.6rem 0.7rem 0.7rem; }
 .ph-knobs.tight { justify-content: space-between; }
@@ -212,6 +204,20 @@
 .ph-modknob { position: relative; display: inline-flex; }
 .ph-rings { position: absolute; left: 0; top: -4px; pointer-events: none; }
 .ph-ring { fill: none; stroke-width: 2.5; }
+
+/* ── drawn lfos ─────────────────────────────────── */
+.ph-lfo .ph-card-head .ph-seg { height: 20px; }
+.ph-lfo-shapes { display: grid; grid-template-columns: repeat(auto-fit, minmax(42px, 1fr)); gap: 3px; padding: 0.55rem 0.7rem 0; }
+.ph-lfo-shapes button {
+  min-width: 0; height: 20px; padding: 0 0.2rem; font: inherit; font-size: 9.5px; color: var(--muted);
+  background: var(--ph-well); border: 1px solid var(--ph-line); border-radius: 2px; cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background-color 0.12s;
+}
+.ph-lfo-shapes button:hover { color: var(--paper); border-color: var(--ph-line-strong); }
+.ph-lfo-shapes button.on { color: var(--ph-ink); border-color: color-mix(in srgb, var(--ph-ink) 60%, transparent); background: color-mix(in srgb, var(--ph-ink) 10%, var(--ph-well)); }
+.ph-lfo-draw { padding: 0.45rem 0.7rem 0; }
+.ph-lfo-controls { justify-content: space-between; }
+.ph-grid-pick { display: flex; flex-direction: column; gap: 3px; }
 
 /* ── knobs, dressed for the panel ──────────────── */
 .ph-panel .knob { position: relative; }

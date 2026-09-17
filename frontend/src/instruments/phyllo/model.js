@@ -47,6 +47,60 @@ export const WARP_MODES = ['none', 'bend+', 'bend-', 'sync', 'mirror', 'pwm', 'a
 export const FILTER_TYPES = ['lowpass', 'highpass', 'bandpass']
 export const FILTER_SLOPES = ['12db', '24db', 'ladder']
 export const LFO_SHAPES = ['sine', 'tri', 'saw', 'ramp', 'square']
+/** How an LFO runs: on its own clock, from the start of each note, or once per note. */
+export const LFO_MODES = ['free', 'retrig', 'env']
+export const MAX_LFO_POINTS = 24
+
+/**
+ * An LFO is a shape you draw: points { x 0…1 across one cycle, y 0…1 bottom to top, c the
+ * bend of the line to the next point, -1…1 } — the same curve as automation (automation.js).
+ * The first point sits at x 0 and the last at x 1; two points at the same x make a jump.
+ * These are the shapes the buttons start you from.
+ */
+export const LFO_PRESETS = {
+  sine: [{ x: 0, y: 0.5, c: -0.25 }, { x: 0.25, y: 1, c: 0.33 }, { x: 0.5, y: 0.5, c: -0.25 }, { x: 0.75, y: 0, c: 0.33 }, { x: 1, y: 0.5 }],
+  tri: [{ x: 0, y: 0.5 }, { x: 0.25, y: 1 }, { x: 0.75, y: 0 }, { x: 1, y: 0.5 }],
+  saw: [{ x: 0, y: 1 }, { x: 1, y: 0 }],
+  ramp: [{ x: 0, y: 0 }, { x: 1, y: 1 }],
+  square: [{ x: 0, y: 1 }, { x: 0.5, y: 1 }, { x: 0.5, y: 0 }, { x: 1, y: 0 }],
+  pluck: [{ x: 0, y: 1, c: -0.6 }, { x: 1, y: 0 }],
+  swell: [{ x: 0, y: 0, c: 0.6 }, { x: 1, y: 1 }],
+  stairs: [{ x: 0, y: 0 }, { x: 0.25, y: 0 }, { x: 0.25, y: 0.33 }, { x: 0.5, y: 0.33 }, { x: 0.5, y: 0.67 }, { x: 0.75, y: 0.67 }, { x: 0.75, y: 1 }, { x: 1, y: 1 }],
+}
+const presetPoints = (name) => (LFO_PRESETS[name] ?? LFO_PRESETS.sine).map((p) => ({ ...p }))
+
+/** Where a drawn shape is at x (0 … 1): 0 … 1. */
+export function curveValue(points, x) {
+  if (!points.length) return 0.5
+  if (x <= points[0].x) return points[0].y
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i]
+    const b = points[i + 1]
+    if (x < b.x) {
+      const u = b.x > a.x ? (x - a.x) / (b.x - a.x) : 1
+      return a.y + (b.y - a.y) * (a.c ? u ** (2 ** (a.c * 3)) : u)
+    }
+  }
+  return points[points.length - 1].y
+}
+
+/** A drawn shape, cleaned: in order, inside the box, pinned to both ends. */
+export function normalizePoints(raw, fallback = 'sine') {
+  const list = (Array.isArray(raw) ? raw : [])
+    .filter((p) => p && Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y)))
+    .map((p) => {
+      const point = { x: Math.round(num(p.x, 0, 0, 1) * 10000) / 10000, y: Math.round(num(p.y, 0.5, 0, 1) * 10000) / 10000 }
+      const c = Math.round(num(p.c, 0, -1, 1) * 100) / 100
+      if (c) point.c = c
+      return point
+    })
+    .sort((a, b) => a.x - b.x)
+    .slice(0, MAX_LFO_POINTS)
+  if (list.length < 2) return presetPoints(fallback)
+  list[0].x = 0
+  list[list.length - 1].x = 1
+  return list
+}
 /** LFO lengths when synced, in bars. */
 export const LFO_BARS = [8, 4, 2, 1, 1 / 2, 1 / 4, 1 / 8, 1 / 16, 1 / 32]
 export const barsLabel = (b) => (b >= 1 ? `${b} bar${b === 1 ? '' : 's'}` : `1/${Math.round(1 / b)}`)
@@ -89,7 +143,10 @@ export function initPatch() {
     filter: { on: false, type: 'lowpass', slope: '24db', cutoff: 2400, reso: 0.2, drive: 0 },
     amp: { attack: 0.005, decay: 0.3, sustain: 0.8, release: 0.2 },
     env: { attack: 0.005, decay: 0.4, sustain: 0, release: 0.3 },
-    lfos: [{ shape: 'sine', sync: true, bars: 1 / 4, hz: 2 }, { shape: 'tri', sync: true, bars: 1, hz: 0.5 }],
+    lfos: [
+      { points: presetPoints('sine'), mode: 'free', sync: true, bars: 1 / 4, hz: 2, grid: 8 },
+      { points: presetPoints('tri'), mode: 'free', sync: true, bars: 1, hz: 0.5, grid: 8 },
+    ],
     mods: [],
     mono: false,
     glide: 0,
@@ -157,7 +214,10 @@ export function normalizePatch(raw) {
       const l = raw.lfos?.[i] ?? {}
       const d = base.lfos[i]
       return {
-        shape: pick(l.shape, LFO_SHAPES, d.shape),
+        // older patches name a shape instead of drawing one
+        points: normalizePoints(l.points ?? (LFO_SHAPES.includes(l.shape) ? presetPoints(l.shape) : d.points), i ? 'tri' : 'sine'),
+        mode: pick(l.mode, LFO_MODES, 'free'),
+        grid: [0, 4, 8, 16, 32].includes(l.grid) ? l.grid : 8,
         sync: l.sync !== false,
         bars: LFO_BARS.includes(l.bars) ? l.bars : d.bars,
         hz: num(l.hz, d.hz, K.hz.min, K.hz.max),
@@ -236,7 +296,7 @@ export const AUDIO_PARAMS = [
     { key: `${p}_release`, min: K.release.min, max: K.release.max, def: K.release.def },
   ]),
   ...[0, 1].flatMap((i) => [
-    { key: `o${i}_shape`, min: 0, max: 4, def: 0 },
+    { key: `o${i}_mode`, min: 0, max: 2, def: 0 },
     { key: `o${i}_sync`, min: 0, max: 1, def: 1 },
     { key: `o${i}_bars`, min: 1 / 64, max: 64, def: 1 },
     { key: `o${i}_hz`, min: K.hz.min, max: K.hz.max, def: K.hz.def },
@@ -251,6 +311,9 @@ export const AUDIO_PARAMS = [
   { key: 'volume', min: 0, max: 1.5, def: 0.8 },
   { key: 'cps', min: 0.01, max: 10, def: 0.5 },
 ]
+
+/** What the processor gets as a message: the LFOs' drawn shapes, as [x, y, c] rows. */
+export const patchMessage = (patch) => ({ lfos: patch.lfos.map((o) => o.points.map((p) => [p.x, p.y, p.c ?? 0])) })
 
 /** The patch as the processor's numbers. `cps`: the track's tempo, for synced LFOs. */
 export function encodePatch(patch, { cps = 0.5 } = {}) {
@@ -287,7 +350,7 @@ export function encodePatch(patch, { cps = 0.5 } = {}) {
     out[`${p}_release`] = e.release
   }
   patch.lfos.forEach((o, i) => {
-    out[`o${i}_shape`] = LFO_SHAPES.indexOf(o.shape)
+    out[`o${i}_mode`] = LFO_MODES.indexOf(o.mode)
     out[`o${i}_sync`] = o.sync ? 1 : 0
     out[`o${i}_bars`] = o.bars
     out[`o${i}_hz`] = o.hz
@@ -353,7 +416,7 @@ export const PRESETS = [
     p.layers = [makeLayer('supersaw', { unison: 7, detune: 0.32, spread: 0.3, level: 0.7 }), makeLayer('analog', { wave: 'sine', oct: -1, level: 0.6 })]
     p.filter = { ...p.filter, on: true, slope: 'ladder', cutoff: 520, reso: 0.35, drive: 0.35 }
     p.amp = { attack: 0.01, decay: 0.3, sustain: 1, release: 0.15 }
-    p.lfos[0] = { shape: 'sine', sync: true, bars: 1 / 2, hz: 2 }
+    p.lfos[0] = { ...p.lfos[0], points: presetPoints('sine'), sync: true, bars: 1 / 2 }
     p.mods = [{ src: 'lfo1', target: 'filter.cutoff', amt: 0.4 }]
   }),
   preset('pluck', (p) => {
@@ -368,7 +431,7 @@ export const PRESETS = [
     p.filter = { ...p.filter, on: true, cutoff: 3200, reso: 0.25 }
     p.env = { attack: 0.08, decay: 0.3, sustain: 0, release: 0.1 }
     p.mods = [{ src: 'env', target: 'pitch', amt: -0.1 }, { src: 'lfo1', target: 'pitch', amt: 0.02 }]
-    p.lfos[0] = { shape: 'sine', sync: false, bars: 1, hz: 5.5 }
+    p.lfos[0] = { ...p.lfos[0], points: presetPoints('sine'), sync: false, hz: 5.5 }
     p.mono = true
     p.glide = 0.12
   }),
@@ -376,8 +439,8 @@ export const PRESETS = [
     p.layers = [makeLayer('wavetable', { table: 'bright', pos: 0.3, unison: 4, detune: 0.12 }), makeLayer('wavetable', { table: 'vowel', pos: 0.2, oct: 1, level: 0.4 })]
     p.filter = { ...p.filter, on: true, cutoff: 4200, reso: 0.15 }
     p.amp = { attack: 0.6, decay: 1, sustain: 0.8, release: 1.8 }
-    p.lfos[0] = { shape: 'tri', sync: true, bars: 4, hz: 0.3 }
-    p.lfos[1] = { shape: 'sine', sync: true, bars: 2, hz: 0.5 }
+    p.lfos[0] = { ...p.lfos[0], points: presetPoints('tri'), sync: true, bars: 4 }
+    p.lfos[1] = { ...p.lfos[1], points: presetPoints('sine'), sync: true, bars: 2 }
     p.volume = 0.6
   }),
   preset('fm bell', (p) => {
@@ -388,7 +451,7 @@ export const PRESETS = [
   preset('talking wobble', (p) => {
     p.layers = [makeLayer('wavetable', { table: 'vowel', pos: 0.5 }), makeLayer('analog', { wave: 'sine', oct: -1, level: 0.5 })]
     p.filter = { ...p.filter, on: true, slope: '24db', cutoff: 1400, reso: 0.5 }
-    p.lfos[0] = { shape: 'sine', sync: true, bars: 1 / 8, hz: 4 }
+    p.lfos[0] = { ...p.lfos[0], points: presetPoints('sine'), sync: true, bars: 1 / 8 }
   }),
 ]
 
