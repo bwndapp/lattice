@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Knob from '../Knob.jsx'
 import { engineTarget } from '../automation.js'
-import { previewInPatch } from '../audio'
+import { holdInPatch, previewInPatch } from '../audio'
 import { ENGINES, engineData } from './index.js'
 import { closeSynth, raiseSynth } from './windows.js'
 import { keyNote, readOctave, writeOctave } from '../keyboard.js'
@@ -59,6 +59,14 @@ export default function SynthWindow({ project, patternId, channelId, order, fron
   const [octave, setOctave] = useState(() => readOctave(octaveKey, spec?.keyOctave ?? 4))
   const shiftOctave = (by) => setOctave((o) => { const next = clamp(o + by, 0, 8); writeOctave(next, octaveKey); return next })
   const [lit, setLit] = useState(false) // a key is playing, for the header's light
+  const down = useRef(new Map()) // key → let go of its note
+  const letGo = (key) => {
+    const release = down.current.get(key)
+    if (release) { release(); down.current.delete(key) }
+    if (!down.current.size) setLit(false)
+  }
+  const letGoAll = () => { for (const key of [...down.current.keys()]) letGo(key) }
+  useEffect(() => () => { for (const release of down.current.values()) release() }, [])
   // the instrument went away (deleted, undone, another sound picked)
   useEffect(() => { if (!spec) closeSynth(channelId) }, [spec, channelId])
   if (!spec) return null
@@ -78,6 +86,8 @@ export default function SynthWindow({ project, patternId, channelId, order, fron
   const target = (key) => engineTarget(patternId, channelId, key)
   const reset = () => edit((c) => { c.engine = { ...c.engine, data: {} } })
   const play = (note) => previewInPatch(project, patternId, ch, note == null ? {} : { note, pitched: true })
+  // a note that lasts until `release()` (the on-screen keys and the computer keyboard)
+  const hold = (note) => holdInPatch(project, patternId, ch, { note, pitched: true })
   const knob = (def) => (
     <Knob key={def.key} def={def} value={data[def.key]} onChange={(v) => set(def.key, v)} target={engineTarget(patternId, channelId, def.key)} />
   )
@@ -124,12 +134,12 @@ export default function SynthWindow({ project, patternId, channelId, order, fron
         if (!hit) return
         e.preventDefault()
         if (hit.octave) return shiftOctave(hit.octave)
-        if (e.repeat) return
-        play(hit.note)
+        if (e.repeat || down.current.has(e.code)) return
+        down.current.set(e.code, hold(hit.note))
         setLit(true)
       }}
-      onKeyUp={() => setLit(false)}
-      onBlur={() => setLit(false)}
+      onKeyUp={(e) => letGo(e.code)}
+      onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) letGoAll() }}
     >
       <header
         className="sw-head"
@@ -156,7 +166,7 @@ export default function SynthWindow({ project, patternId, channelId, order, fron
       </header>
       <div className="sw-body">
         {Panel
-          ? <Panel data={data} groups={groups} knob={knob} change={change} target={target} play={play} />
+          ? <Panel data={data} groups={groups} knob={knob} change={change} target={target} play={play} hold={hold} />
           : (
             <div className="sw-groups">
               {groups.map((g) => (

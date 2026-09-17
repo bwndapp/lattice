@@ -145,6 +145,17 @@ function createInstance(ac, channelId, type) {
       voice.started = t
       voice.until = end
       note.gateOff = (at) => { param(`v${slot}_gate`).cancelScheduledValues(at); param(`v${slot}_gate`).setValueAtTime(0, at) }
+      /** Let go of the key at `at`: the release plays out, then the voice is free. */
+      note.release = (at) => {
+        const from = Math.max(at, t + 0.02, ac.currentTime)
+        note.gateOff(from)
+        if (spec.oneShot) return // a one-shot plays its whole shape anyway
+        const done = from + Math.max(0.01, spec.tail(current))
+        if (done < end) {
+          note.cut(done)
+          if (voice.note === note) voice.until = done
+        }
+      }
       return note
     },
   }
@@ -192,6 +203,18 @@ function tapNote(ac, node, slot, t, end, release) {
   }
 }
 
+// ── held notes (a key down on the computer keyboard) ─────────────────────────
+const RELEASED = Symbol('released')
+const held = new Map() // hold id → the note, or RELEASED if the key came up before it started
+
+/** A key came up: let go of the note it started. */
+export function releaseHeld(id) {
+  const note = held.get(id)
+  if (note && note !== RELEASED) { note.release(getAudioContext().currentTime); held.delete(id) } else held.set(id, RELEASED)
+  // a key-up that never finds its note is forgotten after a while
+  if (held.size > 256) held.delete(held.keys().next().value)
+}
+
 // ── Strudel sounds ────────────────────────────────────────────────────────────
 const toMidi = (v) => {
   if (typeof v === 'number' && Number.isFinite(v)) return v
@@ -220,6 +243,10 @@ export function registerEngineSounds() {
         duration: Number(value.duration) || 0.1,
       })
       note.onEnded(onended)
+      // played from a key that's still down: it lasts until the key comes up
+      if (value._hold != null) {
+        if (held.get(value._hold) === RELEASED) { held.delete(value._hold); note.release(t) } else held.set(value._hold, note)
+      }
       return {
         node: note.tap,
         stop: (when) => { note.gateOff(when); if (spec.oneShot) note.cut(when) },

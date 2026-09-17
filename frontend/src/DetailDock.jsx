@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import PianoRoll from './PianoRoll.jsx'
 import { PatternChannels, exactStepAt } from './Rack.jsx'
 import { NameInput } from './NameInput.jsx'
-import { previewInPatch } from './audio'
+import { holdInPatch, previewInPatch } from './audio'
 import { STEPS_PER_BAR, midiToNote, reshapePattern, stepDivision } from './project'
 import { KEYBOARD, KEY_HIGH as HIGH, KEY_LOW as LOW, OCTAVE_KEY } from './keyboard.js'
 import './DetailDock.css'
@@ -60,11 +60,23 @@ export default function DetailDock({ project, at, transport, started, height, on
       if (semitone === undefined) return
       e.preventDefault()
       e.stopPropagation() // the letters belong to the keyboard while it's on
-      if (!e.repeat) previewInPatch(at.project, at.pattern.id, at.channel, { note: clamp((at.octave + 1) * 12 + semitone, LOW, HIGH) })
+      // a note lasts while its key is down (an engine instrument holds it; others play a hit)
+      if (e.repeat || down.has(e.code)) return
+      down.set(e.code, holdInPatch(at.project, at.pattern.id, at.channel, { note: clamp((at.octave + 1) * 12 + semitone, LOW, HIGH) }))
     }
+    const down = new Map() // key → let go of its note
+    const onUp = (e) => { const release = down.get(e.code); if (release) { release(); down.delete(e.code) } }
+    const letGo = () => { for (const release of down.values()) release(); down.clear() }
     window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
-  }, [tab, keysOn, channel]) // eslint-disable-line react-hooks/exhaustive-deps
+    window.addEventListener('keyup', onUp, true)
+    window.addEventListener('blur', letGo)
+    return () => {
+      window.removeEventListener('keydown', onKey, true)
+      window.removeEventListener('keyup', onUp, true)
+      window.removeEventListener('blur', letGo)
+      letGo()
+    }
+  }, [tab, keysOn, channel?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Esc closes the dock wherever you are, as long as nothing in front of it used the key
   // first: a menu, a dialog, a text field, or the roll clearing its selection.

@@ -5,7 +5,7 @@ import { auditionCode, paramValue, paramsFor } from './project'
 import { GLOBAL_DELAY, GLOBAL_REVERB, routeVoice, silenceFx } from './fxbus.js'
 import { evaluate } from '@strudel/core'
 import { transpiler } from '@strudel/transpiler'
-import { prepareInstruments, registerEngineSounds } from './instruments/host.js'
+import { prepareInstruments, registerEngineSounds, releaseHeld } from './instruments/host.js'
 
 // the app's own instruments are sounds like any other (instruments/)
 registerEngineSounds()
@@ -61,7 +61,7 @@ export function onSoundsChange(fn) {
 const PREVIEW_KEYS = { lpf: 'cutoff', lpq: 'resonance', hpf: 'hcutoff' }
 
 /** Play one hit of a channel's sound right now, with its knob settings. */
-export function previewChannel(ch, { note, n } = {}) {
+export function previewChannel(ch, { note, n, hold = null } = {}) {
   if (!ch || ch.kind === 'code') return
   const value = { s: ch.sound, _c: ch.id } // _c: an engine instrument plays with its own settings
   if (ch.kind === 'drum' && ch.bank) value.bank = ch.bank
@@ -77,7 +77,28 @@ export function previewChannel(ch, { note, n } = {}) {
     else if (def.key === 'room' || def.key === 'delay') (value.fxsends ??= []).push([def.key === 'room' ? GLOBAL_REVERB : GLOBAL_DELAY, v])
     else value[PREVIEW_KEYS[def.key] ?? def.key] = v
   }
-  play(value, ch.kind === 'synth' ? 0.4 : 0.25)
+  if (hold != null) value._hold = hold
+  play(value, hold != null ? HOLD_MAX : ch.kind === 'synth' ? 0.4 : 0.25)
+}
+
+/** The longest a held note lasts if its key-up never comes. */
+const HOLD_MAX = 30
+let holds = 0
+
+/**
+ * Play a note for as long as a key is down: returns the function to call when it comes up.
+ * An instrument engine holds the note and then plays its release; any other sound plays
+ * its usual short hit.
+ */
+export function holdInPatch(project, patternId, ch, { note, pitched = false } = {}) {
+  if (!ch?.engine) {
+    previewInPatch(project, patternId, ch, { note, pitched })
+    return () => {}
+  }
+  const id = ++holds
+  previewInPatch(project, patternId, ch, { note, pitched, hold: id })
+  let done = false
+  return () => { if (!done) { done = true; releaseHeld(id) } }
 }
 
 /** Play a raw sound (for the sound browser). */
@@ -198,14 +219,15 @@ export function silenceNow() {
  * raw sound when the channel isn't in the patch yet, or the patch code can't run.
  */
 let auditionRun = 0
-export async function previewInPatch(project, patternId, ch, { note, n, pitched = false } = {}) {
+export async function previewInPatch(project, patternId, ch, { note, n, pitched = false, hold = null } = {}) {
   const code = project && patternId && auditionCode(project, patternId, ch?.id, { midi: note ?? 48, pitched })
-  if (!code) return previewChannel(ch, { note, n })
-  const run = ++auditionRun
+  if (!code) return previewChannel(ch, { note, n, hold })
+  // held notes each play (a chord is several keys); a plain hit gives way to a newer one
+  const run = hold != null ? auditionRun : ++auditionRun
   try {
     ensureAudio()
     const { pattern } = await evaluate(code, transpiler)
-    if (run !== auditionRun || !pattern?.queryArc) return // a newer audition took over
+    if ((hold == null && run !== auditionRun) || !pattern?.queryArc) return // a newer audition took over
     const cps = (Number(project.bpm) || 120) / (Number(project.beats) || 4) / 60
     const ac = getAudioContext()
     const t0 = ac.currentTime + 0.03
@@ -213,9 +235,10 @@ export async function previewInPatch(project, patternId, ch, { note, n, pitched 
       if (!hap.hasOnset()) continue
       const begin = hap.whole.begin.valueOf()
       const length = hap.whole.end.valueOf() - begin
-      Promise.resolve(superdough(routeVoice(hap.value), t0 + begin / cps, length / cps, cps, begin)).catch(() => {})
+      const value = hold != null ? { ...hap.value, _hold: hold } : hap.value
+      Promise.resolve(superdough(routeVoice(value), t0 + begin / cps, hold != null ? HOLD_MAX : length / cps, cps, begin)).catch(() => {})
     }
   } catch {
-    previewChannel(ch, { note, n })
+    previewChannel(ch, { note, n, hold })
   }
 }

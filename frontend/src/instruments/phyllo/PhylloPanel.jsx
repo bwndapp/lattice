@@ -13,7 +13,8 @@ import './phyllo.css'
  * envelopes and LFOs below, each modulator listing where it goes, and a keyboard.
  *
  * Props from the window: `data` (the patch), `change(fn)` (edit a copy of it),
- * `target(key)` (a knob's automation target) and `play(note)`.
+ * `target(key)` (a knob's automation target) and `hold(note)` (play until the returned
+ * function is called).
  */
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 const PRESET_KEY = 'phyllo:presets'
@@ -445,15 +446,27 @@ function Lfo({ ui, index }) {
   )
 }
 
-/** Two octaves to click, from `base`. */
-function Keys({ play, base, setBase }) {
+/** Two octaves to play, from `base`: a key sounds for as long as it's pressed. */
+function Keys({ hold, base, setBase }) {
   const [down, setDown] = useState(null)
+  const release = useRef(null)
+  const up = () => { release.current?.(); release.current = null; setDown(null) }
+  useEffect(() => () => release.current?.(), [])
+  const press = (m) => (e) => {
+    if (e.button !== 0) return
+    e.currentTarget.releasePointerCapture?.(e.pointerId) // so sliding onto the next key plays it
+    up()
+    release.current = hold(m)
+    setDown(m)
+  }
+  // sliding across the keys plays each one in turn
+  const slide = (m) => (e) => { if (e.buttons & 1 && down !== m) press(m)({ ...e, button: 0, currentTarget: e.currentTarget }) }
   useEffect(() => {
     if (down === null) return
-    const t = setTimeout(() => setDown(null), 180)
-    return () => clearTimeout(t)
-  }, [down])
-  const hit = (m) => { setDown(m); play(m) }
+    window.addEventListener('pointerup', up)
+    window.addEventListener('blur', up)
+    return () => { window.removeEventListener('pointerup', up); window.removeEventListener('blur', up) }
+  }, [down]) // eslint-disable-line react-hooks/exhaustive-deps
   const keys = []
   for (let m = base; m < base + 25; m++) keys.push(m)
   const black = (m) => [1, 3, 6, 8, 10].includes(m % 12)
@@ -464,10 +477,10 @@ function Keys({ play, base, setBase }) {
       <div className="ph-piano" role="group" aria-label="Keyboard: click to hear the patch">
         {whites.map((m) => (
           <div key={m} className="ph-white-wrap">
-            <button type="button" tabIndex={-1} className={`ph-white ${down === m ? 'down' : ''}`} onPointerDown={() => hit(m)} aria-label={noteName(m)}>
+            <button type="button" tabIndex={-1} className={`ph-white ${down === m ? 'down' : ''}`} onPointerDown={press(m)} onPointerEnter={slide(m)} aria-label={noteName(m)}>
               {m % 12 === 0 && <span>{noteName(m)}</span>}
             </button>
-            {keys.includes(m + 1) && black(m + 1) && <button type="button" tabIndex={-1} className={`ph-black ${down === m + 1 ? 'down' : ''}`} onPointerDown={() => hit(m + 1)} aria-label={noteName(m + 1)} />}
+            {keys.includes(m + 1) && black(m + 1) && <button type="button" tabIndex={-1} className={`ph-black ${down === m + 1 ? 'down' : ''}`} onPointerDown={press(m + 1)} onPointerEnter={slide(m + 1)} aria-label={noteName(m + 1)} />}
           </div>
         ))}
       </div>
@@ -477,7 +490,7 @@ function Keys({ play, base, setBase }) {
 
 // ── the panel ────────────────────────────────────────────────────────────────
 
-export default function PhylloPanel({ data, change, target, play }) {
+export default function PhylloPanel({ data, change, target, hold }) {
   const patch = data
   const [openLayer, setOpenLayer] = useState(null)
   const [userPresets, setUserPresets] = useState(() => readJson(PRESET_KEY, []))
@@ -561,7 +574,7 @@ export default function PhylloPanel({ data, change, target, play }) {
         </div>
       </div>
 
-      <Keys play={play} base={base} setBase={setBase} />
+      <Keys hold={hold} base={base} setBase={setBase} />
     </div>
   )
 }
