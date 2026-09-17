@@ -9,12 +9,14 @@
     repeating-linear-gradient(45deg, rgba(242, 240, 230, 0.03) 0 1px, transparent 1px 7px),
     linear-gradient(150deg, #14140f, #0a0a09 60%);
   border: 1px solid #3a3a33;
-  border-radius: 14px;
+  border-radius: 6px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   outline: none;
 }
 .synth-window.front { border-color: #5a5a4f; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.07); }
 .synth-window:not(.front) .sw-title { color: var(--muted); }
+/* a big synth's window can be pulled larger from its corner */
+.synth-window.wide { resize: both; min-width: min(760px, calc(100vw - 32px)); min-height: 320px; }
 
 /* the title bar: what you drag */
 .sw-head {
@@ -23,16 +25,16 @@
   padding: 0.55rem 0.6rem 0.55rem 1.1rem;
   background: rgba(10, 10, 9, 0.92);
   border-bottom: 1px solid var(--line);
-  border-radius: 14px 14px 0 0;
+  border-radius: 6px 6px 0 0;
   cursor: grab; touch-action: none; user-select: none;
 }
 .sw-head:active { cursor: grabbing; }
-.sw-title { margin: 0; font-family: var(--display); font-weight: 900; font-stretch: 125%; font-size: 24px; line-height: 1; letter-spacing: -0.03em; }
+.sw-title { margin: 0; font-family: var(--display); font-weight: 900; font-stretch: 125%; font-size: 20px; line-height: 1; letter-spacing: -0.03em; }
 .sw-where { font-size: 11px; color: var(--acid); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .sw-spacer { flex: 1; }
-.sw-head .btn { border-radius: 999px; padding: 0.2rem 0.75rem; }
+.sw-head .btn { border-radius: 2px; height: 26px; padding: 0 0.75rem; }
 .sw-close {
-  width: 28px; height: 28px; padding: 0; border-radius: 50%;
+  width: 26px; height: 26px; padding: 0; border-radius: 2px;
   font: inherit; font-size: 18px; line-height: 1; color: var(--muted);
   background: none; border: 1px solid var(--line); cursor: var(--ring);
 }
@@ -41,7 +43,7 @@
 .sw-keys {
   display: inline-flex; align-items: center; gap: 0.3rem;
   font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
-  padding: 0.15rem 0.35rem 0.15rem 0.5rem; border: 1px solid var(--line); border-radius: 999px;
+  height: 26px; padding: 0 0.35rem 0 0.5rem; border: 1px solid var(--line); border-radius: 2px;
   cursor: default;
 }
 .synth-window:focus-within .sw-keys { color: var(--paper); border-color: #4a4a40; }
@@ -49,7 +51,7 @@
 .synth-window:focus-within .sw-keys-led { background: #6f7a18; }
 .sw-keys.lit .sw-keys-led { background: var(--acid); box-shadow: 0 0 6px var(--acid); }
 .sw-oct {
-  width: 18px; height: 18px; padding: 0; border-radius: 50%;
+  width: 18px; height: 18px; padding: 0; border-radius: 2px;
   font: inherit; font-size: 12px; line-height: 1; color: inherit;
   background: none; border: 1px solid var(--line); cursor: var(--ring);
 }
@@ -64,7 +66,7 @@
   padding: 0.5rem 0.6rem 0.55rem;
   background: rgba(0, 0, 0, 0.45);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 3px;
 }
 .sw-group-title { margin: 0 0 0.35rem; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
 .sw-knobs { display: flex; flex-wrap: wrap; gap: 0.25rem 0.35rem; }
@@ -77,7 +79,7 @@
   height: 150px;
   background: #050504;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 3px;
 }
 
 /* an engine instrument's row in a rack: its name opens the window, the caret picks a sound */

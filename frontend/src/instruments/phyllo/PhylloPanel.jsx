@@ -324,53 +324,73 @@ function Section({ title, className = '', aside, children }) {
   )
 }
 
-function LayerStrip({ ui, layer, index, open, onToggle }) {
+/** One oscillator slot: its sound, a look at it, and every control it has, all in view. */
+function LayerSlot({ ui, layer, index }) {
   const set = (fn) => ui.edit((p) => { const l = p.layers.find((x) => x.id === layer.id); if (l) fn(l) })
   const knob = (k) => (
     <ModKnob key={k} ui={ui} route={`layer:${layer.id}.${k}`} auto={layerKnobKey(layer.id, k)} def={K[k]} value={layer[k]} onChange={(v) => set((l) => { l[k] = v })} />
   )
   const tone = toneKnob(layer)
-  const count = ui.patch.layers.length
+  const full = ui.patch.layers.length >= MAX_LAYERS
   const stacked = layer.type === 'supersaw' || layer.type === 'wavetable'
+  const pitched = layer.type !== 'noise'
   return (
-    <div className={`ph-layer ${layer.on ? '' : 'off'} ${open ? 'open' : ''}`}>
-      <div className="ph-layer-row">
-        <button type="button" className={`ph-power ${layer.on ? 'on' : ''}`} aria-pressed={layer.on} aria-label={`Layer ${letter(index)} ${layer.on ? 'on' : 'off'}`} onClick={() => set((l) => { l.on = !l.on })}>{letter(index)}</button>
+    <div className={`ph-slot ${layer.on ? '' : 'off'}`}>
+      <div className="ph-slot-head">
+        <button type="button" className={`ph-power ${layer.on ? 'on' : ''}`} aria-pressed={layer.on} title={layer.on ? 'Turn this layer off' : 'Turn this layer on'} aria-label={`Layer ${letter(index)} ${layer.on ? 'on' : 'off'}`} onClick={() => set((l) => { l.on = !l.on })}>{letter(index)}</button>
         <select className="ph-sound" value={soundOf(layer)} aria-label={`Layer ${letter(index)} sound`} title={layer.type === 'wavetable' ? TABLES[layer.table] : undefined} onChange={(e) => set((l) => applySound(l, e.target.value))}>
           {SOUND_GROUPS.map(([group, items]) => (
             <optgroup key={group} label={group}>{items.map(([k, label]) => <option key={k} value={k}>{label}</option>)}</optgroup>
           ))}
         </select>
-        <LayerScope layer={layer} />
-        <Stepper label="octave" value={layer.oct} min={-3} max={3} onChange={(v) => set((l) => { l.oct = v })} format={(v) => (v > 0 ? `+${v}` : v)} />
-        <div className="ph-layer-knobs">
-          {tone ? knob(tone) : <span className="ph-knob-space" />}
-          {knob('level')}
-        </div>
-        <button type="button" className={`ph-more ${open ? 'on' : ''}`} aria-expanded={open} onClick={onToggle} title="More controls for this layer">{open ? 'less' : 'more'}</button>
-        <button type="button" className="ph-x" aria-label={`Remove layer ${letter(index)}`} onClick={() => ui.edit((p) => { p.layers = p.layers.filter((x) => x.id !== layer.id); p.mods = p.mods.filter((m) => !m.target.startsWith(`layer:${layer.id}.`)) })}>×</button>
+        <button type="button" className="ph-icon" disabled={full} title="Duplicate this layer" aria-label={`Duplicate layer ${letter(index)}`} onClick={() => ui.edit((p) => { const i = p.layers.findIndex((x) => x.id === layer.id); if (i >= 0 && p.layers.length < MAX_LAYERS) p.layers.splice(i + 1, 0, { ...JSON.parse(JSON.stringify(layer)), id: newPartId() }) })}><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden><rect x="0.5" y="3.5" width="8" height="8" fill="none" stroke="currentColor" /><path d="M3.5 3.5V0.5h8v8h-3" fill="none" stroke="currentColor" /></svg></button>
+        <button type="button" className="ph-icon" title="Remove this layer" aria-label={`Remove layer ${letter(index)}`} onClick={() => ui.edit((p) => { p.layers = p.layers.filter((x) => x.id !== layer.id); p.mods = p.mods.filter((m) => !m.target.startsWith(`layer:${layer.id}.`)) })}>×</button>
       </div>
-      {open && (
-        <div className="ph-layer-more">
-          <Stepper label="semitones" value={layer.semi} min={-12} max={12} onChange={(v) => set((l) => { l.semi = v })} format={(v) => (v > 0 ? `+${v}` : v)} />
-          {layer.type !== 'noise' && knob('fine')}
-          {knob('pan')}
-          {stacked && <Stepper label="voices" value={layer.unison} min={1} max={16} onChange={(v) => set((l) => { l.unison = v })} />}
-          {layer.type === 'wavetable' && layer.unison > 1 && knob('detune')}
-          {stacked && (layer.type === 'supersaw' || layer.unison > 1) && knob('spread')}
-          {layer.type === 'wavetable' && knob('warp')}
+      <LayerScope layer={layer} />
+      <div className="ph-slot-steps">
+        {pitched && <Stepper label="octave" value={layer.oct} min={-3} max={3} onChange={(v) => set((l) => { l.oct = v })} format={(v) => (v > 0 ? `+${v}` : v)} />}
+        {pitched && <Stepper label="semi" value={layer.semi} min={-12} max={12} onChange={(v) => set((l) => { l.semi = v })} format={(v) => (v > 0 ? `+${v}` : v)} />}
+        {stacked && <Stepper label="voices" value={layer.unison} min={1} max={16} onChange={(v) => set((l) => { l.unison = v })} />}
+      </div>
+      <div className="ph-slot-knobs">
+        {knob('level')}
+        {knob('pan')}
+        {tone && knob(tone)}
+        {pitched && knob('fine')}
+        {layer.type === 'wavetable' && layer.unison > 1 && knob('detune')}
+        {stacked && (layer.type === 'supersaw' || layer.unison > 1) && knob('spread')}
+        {layer.type === 'wavetable' && knob('warp')}
+        {pitched && knob('fm')}
+        {pitched && layer.fm > 0 && knob('ratio')}
+      </div>
+      {(layer.type === 'wavetable' || (pitched && layer.fm > 0)) && (
+        <div className="ph-slot-opts">
           {layer.type === 'wavetable' && (
-            <label className="ph-field"><select value={layer.warpmode} onChange={(e) => set((l) => { l.warpmode = e.target.value })}>{WARP_MODES.map((w) => <option key={w}>{w}</option>)}</select><span className="ph-small-label">warp mode</span></label>
+            <label className="ph-field"><span className="ph-small-label">warp</span><select value={layer.warpmode} onChange={(e) => set((l) => { l.warpmode = e.target.value })}>{WARP_MODES.map((w) => <option key={w}>{w}</option>)}</select></label>
           )}
-          {layer.type !== 'noise' && knob('fm')}
-          {layer.type !== 'noise' && layer.fm > 0 && knob('ratio')}
-          {layer.type !== 'noise' && layer.fm > 0 && (
-            <label className="ph-field"><select value={layer.fmwave} onChange={(e) => set((l) => { l.fmwave = e.target.value })}>{FM_WAVES.map((w) => <option key={w}>{w}</option>)}</select><span className="ph-small-label">fm wave</span></label>
+          {pitched && layer.fm > 0 && (
+            <label className="ph-field"><span className="ph-small-label">fm wave</span><select value={layer.fmwave} onChange={(e) => set((l) => { l.fmwave = e.target.value })}>{FM_WAVES.map((w) => <option key={w}>{w}</option>)}</select></label>
           )}
-          <span className="spacer" />
-          <button type="button" className="ph-link" disabled={count >= MAX_LAYERS} onClick={() => ui.edit((p) => { const i = p.layers.findIndex((x) => x.id === layer.id); if (i >= 0 && p.layers.length < MAX_LAYERS) p.layers.splice(i + 1, 0, { ...JSON.parse(JSON.stringify(layer)), id: newPartId() }) })}>duplicate</button>
         </div>
       )}
+    </div>
+  )
+}
+
+/** A slot with no layer: the first one offers to add one. */
+function EmptySlot({ ui, index, first }) {
+  if (!first) return <div className="ph-slot empty" aria-hidden><span className="ph-slot-letter">{letter(index)}</span></div>
+  const add = (type, over = {}) => ui.edit((p) => { if (p.layers.length < MAX_LAYERS) p.layers.push(makeLayer(type, over)) })
+  return (
+    <div className="ph-slot empty first">
+      <span className="ph-slot-letter">{letter(index)}</span>
+      <span className="ph-small-label">{index === 0 ? 'no sound yet · add a layer' : 'add a layer'}</span>
+      <div className="ph-add-list">
+        <button type="button" onClick={() => add('analog', { wave: 'sawtooth' })}>analog</button>
+        <button type="button" onClick={() => add('supersaw')}>supersaw</button>
+        <button type="button" onClick={() => add('wavetable')}>wavetable</button>
+        <button type="button" onClick={() => add('noise')}>noise</button>
+      </div>
     </div>
   )
 }
@@ -492,7 +512,6 @@ function Keys({ hold, base, setBase }) {
 
 export default function PhylloPanel({ data, change, target, hold }) {
   const patch = data
-  const [openLayer, setOpenLayer] = useState(null)
   const [userPresets, setUserPresets] = useState(() => readJson(PRESET_KEY, []))
   const [base, setBase] = useState(48)
   const ui = { patch, edit: change, target }
@@ -534,7 +553,7 @@ export default function PhylloPanel({ data, change, target, hold }) {
           </select>
           <button type="button" className="ph-arrow" onClick={() => stepPreset(1)} aria-label="Next preset">›</button>
         </div>
-        <button type="button" className="ph-link" onClick={savePreset} title="Keep this patch in this browser's presets">save preset</button>
+        <button type="button" className="ph-btn" onClick={savePreset} title="Keep this patch in this browser's presets">save</button>
         <span className="spacer" />
         <div className="ph-voicing">
           <Segmented label="Voicing" value={patch.mono ? 'mono' : 'poly'} options={['poly', 'mono']} onChange={(v) => change((p) => { p.mono = v === 'mono' })} />
@@ -543,35 +562,22 @@ export default function PhylloPanel({ data, change, target, hold }) {
         <div className="ph-volume"><ModKnob ui={ui} auto="volume" def={K.volume} value={patch.volume} onChange={(v) => change((p) => { p.volume = v })} /></div>
       </div>
 
-      <div className="ph-body">
-        <Section
-          title="oscillators"
-          className="ph-oscs"
-          aside={patch.layers.length > 0 && patch.layers.length < MAX_LAYERS && (
-            <button type="button" className="ph-link" onClick={() => change((p) => { if (p.layers.length < MAX_LAYERS) p.layers.push(makeLayer('analog', { wave: 'sawtooth' })) })}>+ layer</button>
-          )}
-        >
-          <div className="ph-layers">
-            {patch.layers.length === 0 && (
-              <div className="ph-empty">
-                <span>No sound yet. Start with a layer:</span>
-                {[['analog', 'analog', { wave: 'sawtooth' }], ['supersaw', 'supersaw', {}], ['wavetable', 'wavetable', {}], ['noise', 'noise', {}]].map(([type, label, over]) => (
-                  <button key={type} type="button" className="ph-add" onClick={() => change((p) => { if (p.layers.length < MAX_LAYERS) p.layers.push(makeLayer(type, over)) })}>+ {label}</button>
-                ))}
-              </div>
-            )}
-            {patch.layers.map((l, i) => (
-              <LayerStrip key={l.id} ui={ui} layer={l} index={i} open={openLayer === l.id} onToggle={() => setOpenLayer((o) => (o === l.id ? null : l.id))} />
+      <div className="ph-main">
+        <Section title="oscillators" className="ph-oscs" aside={<span className="ph-count">{patch.layers.length} / {MAX_LAYERS}</span>}>
+          <div className="ph-slots">
+            {patch.layers.map((l, i) => <LayerSlot key={l.id} ui={ui} layer={l} index={i} />)}
+            {Array.from({ length: MAX_LAYERS - patch.layers.length }, (_, i) => (
+              <EmptySlot key={`empty${i}`} ui={ui} index={patch.layers.length + i} first={i === 0} />
             ))}
           </div>
         </Section>
         <Filter ui={ui} />
-        <div className="ph-row">
-          <Envelope ui={ui} which="amp" />
-          <Envelope ui={ui} which="env" />
-          <Lfo ui={ui} index={0} />
-          <Lfo ui={ui} index={1} />
-        </div>
+      </div>
+      <div className="ph-mods">
+        <Envelope ui={ui} which="amp" />
+        <Envelope ui={ui} which="env" />
+        <Lfo ui={ui} index={0} />
+        <Lfo ui={ui} index={1} />
       </div>
 
       <Keys hold={hold} base={base} setBase={setBase} />

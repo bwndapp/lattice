@@ -118,7 +118,7 @@ export default function SynthWindow({ project, patternId, channelId, order, fron
   return (
     <div
       ref={ref}
-      className={`synth-window ${front ? 'front' : ''}`}
+      className={`synth-window ${front ? 'front' : ''} ${spec.width ? 'wide' : ''}`}
       role="dialog"
       aria-labelledby={`sw-title-${channelId}`}
       tabIndex={-1}
