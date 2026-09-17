@@ -454,6 +454,19 @@ export const NODE_TYPES = {
     ],
     code: stereoCode('widener', (d) => ({ width: d.width, spread: d.spread, mono: d.mono })),
   },
+  utility: {
+    group: 'mixing', label: 'utility', blurb: 'The plain jobs: gain, mono or width, balance, swap or pick a side, flip the phase',
+    inputs: 1,
+    params: [
+      { key: 'gain', type: 'knob', label: 'gain', min: -36, max: 24, def: 0, unit: 'db', origin: 0 },
+      { key: 'width', type: 'knob', label: 'width', min: 0, max: 2, def: 1, unit: 'x', origin: 1 },
+      { key: 'pan', type: 'knob', label: 'balance', min: 0, max: 1, def: 0.5 },
+      { key: 'channels', type: 'select', label: 'channels', options: ['stereo', 'mono', 'left only', 'right only', 'swap'], def: 'stereo' },
+      { key: 'phase', type: 'select', label: 'phase', options: ['normal', 'flip left', 'flip right', 'flip both'], def: 'normal' },
+    ],
+    // on the summed bus, like a mixer channel's utility (see stereo.js)
+    code: stereoCode('utility', (d) => ({ gain: d.gain, width: d.width, pan: d.pan, channels: d.channels, phase: d.phase })),
+  },
 
   fxrack: {
     group: 'effect', label: 'fx rack', blurb: 'Several effects in one box, applied top to bottom',
@@ -539,7 +552,7 @@ function stereoCode(kind, params) {
     return `${x}${tail}`
   }
 }
-const STEREO_TYPES = new Set(['haas', 'widener', 'bus', 'eq3', 'saturator', 'clipper', 'softclip', 'compressor', 'limiter',
+const STEREO_TYPES = new Set(['haas', 'widener', 'utility', 'bus', 'eq3', 'saturator', 'clipper', 'softclip', 'compressor', 'limiter',
   'filter', 'djfilter', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi'])
 
 /**
@@ -550,7 +563,7 @@ const STEREO_TYPES = new Set(['haas', 'widener', 'bus', 'eq3', 'saturator', 'cli
 export const BUS_NODES = new Set([...STEREO_TYPES, 'reverb', 'delay'])
 
 /** Effects that can sit inside an fx rack: every plain effect node. */
-export const FX_UNITS = ['eq3', 'compressor', 'limiter', 'saturator', 'clipper', 'softclip', 'punch', 'haas', 'widener', 'filter', 'djfilter', 'reverb', 'delay', 'space', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi']
+export const FX_UNITS = ['eq3', 'compressor', 'limiter', 'saturator', 'clipper', 'softclip', 'punch', 'haas', 'widener', 'utility', 'filter', 'djfilter', 'reverb', 'delay', 'space', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi']
 
 /** Saturator characters → Strudel's waveshaping curves. */
 const SATURATION = { warm: 'scurve', tape: 'soft', tube: 'diode', asym: 'asym', harmonics: 'chebyshev', fold: 'fold' }

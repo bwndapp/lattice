@@ -49,6 +49,7 @@ const APP_PARAMS = {
   eq3: { prefix: '', where: 'insert', keys: { low: 'low', mid: 'mid', high: 'high', lowf: 'lowf', highf: 'highf' } },
   haas: { prefix: '', where: 'insert', keys: { time: 'time', mix: 'mix' } },
   widener: { prefix: '', where: 'insert', keys: { width: 'width', spread: 'spread', mono: 'mono' } },
+  utility: { prefix: '', where: 'insert', keys: { gain: 'gain', width: 'width', pan: 'pan' } },
   saturator: { prefix: '', where: 'insert', keys: { drive: 'drive', out: 'out' } },
   clipper: { prefix: '', where: 'insert', keys: { push: 'drive', ceiling: 'out' } },
   softclip: { prefix: '', where: 'insert', keys: { push: 'drive', ceiling: 'out' } },

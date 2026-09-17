@@ -607,6 +607,7 @@ const SEARCH_WORDS = {
   bus: 'mixer bus track insert group submix route send null merge combine channel fader sum',
   haas: 'stereo wide width delay precedence double doubler spread left right ms',
   widener: 'stereo wide width imager spread mid side ms mono bass imaging',
+  utility: 'utility tool gain trim volume db mono width balance pan swap left right channel phase polarity invert flip mixing',
   fxrack: 'effects chain multiple fx rack bus insert',
   reverb: 'reverb verb room hall plate space tail ambience wet size',
   delay: 'delay echo ping pong repeat feedback tape dotted eighth sync',

@@ -788,6 +788,50 @@ const UNITS = {
   },
 
   /**
+   * The plain jobs a mixer channel does, as one 2 × 2 mix of left and right: pick or swap
+   * the sides (or fold them to mono), set the width, flip a side's phase, then balance and
+   * gain. Every step is a matrix, so together they're four gains.
+   */
+  utility(ac) {
+    const input = new GainNode(ac, { channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' })
+    const split = new ChannelSplitterNode(ac, { numberOfOutputs: 2 })
+    const merge = new ChannelMergerNode(ac, { numberOfInputs: 2 })
+    const cells = [[new GainNode(ac, { gain: 1 }), new GainNode(ac, { gain: 0 })], [new GainNode(ac, { gain: 0 }), new GainNode(ac, { gain: 1 })]]
+    input.connect(split)
+    for (let out = 0; out < 2; out++) {
+      for (let from = 0; from < 2; from++) {
+        split.connect(cells[out][from], from)
+        cells[out][from].connect(merge, 0, out)
+      }
+    }
+    const SOURCES = {
+      stereo: [[1, 0], [0, 1]],
+      mono: [[0.5, 0.5], [0.5, 0.5]],
+      'left only': [[1, 0], [1, 0]],
+      'right only': [[0, 1], [0, 1]],
+      swap: [[0, 1], [1, 0]],
+    }
+    const times = (a, b) => [0, 1].map((r) => [0, 1].map((c) => a[r][0] * b[0][c] + a[r][1] * b[1][c]))
+    return {
+      input,
+      output: merge,
+      set({ gain, width, pan, channels, phase }) {
+        const w = Math.min(2, Math.max(0, Number.isFinite(width) ? width : 1))
+        const widthM = [[(1 + w) / 2, (1 - w) / 2], [(1 - w) / 2, (1 + w) / 2]]
+        const flipL = phase === 'flip left' || phase === 'flip both' ? -1 : 1
+        const flipR = phase === 'flip right' || phase === 'flip both' ? -1 : 1
+        const b = Math.min(1, Math.max(0, Number.isFinite(pan) ? pan : 0.5))
+        const g = 10 ** (dbGain(gain) / 20)
+        // balance turns the far side down; the near side stays where it is
+        const out = [flipL * g * Math.min(1, 2 - 2 * b), flipR * g * Math.min(1, 2 * b)]
+        const m = times(widthM, SOURCES[channels] ?? SOURCES.stereo)
+        for (let r = 0; r < 2; r++) for (let c = 0; c < 2; c++) smooth(cells[r][c].gain, out[r] * m[r][c])
+      },
+      dispose() { for (const node of [input, split, merge, ...cells.flat()]) node.disconnect() },
+    }
+  },
+
+  /**
    * Mid/side width, plus a little decorrelated side made from a delayed copy of the mid so
    * mono sounds widen too (it cancels when summed to mono). Below "mono below" the side is
    * cut, which keeps the low end centred.
