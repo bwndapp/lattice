@@ -248,8 +248,25 @@ function destinations(patch) {
     if (l.type !== 'noise') knobs.push('fm', 'ratio', 'fine')
     for (const k of new Set(knobs)) list.push([`layer:${l.id}.${k}`, `${layerLetter(i)} ${K[k].label}`])
   })
+  // every knob on every lane effect
+  const catalog = laneFxCatalog()
+  patch.lanes.forEach((lane, li) => {
+    for (const fx of lane.effects) {
+      const spec = catalog?.spec(fx.type)
+      for (const def of spec?.params ?? []) {
+        if (def.type === 'knob') list.push([`fx:${fx.id}.${def.key}`, `${laneName(li)} · ${spec.label} ${def.label}`])
+      }
+    }
+  })
   return list
 }
+
+const DEST_GROUPS = [
+  ['voice', (t) => t === 'pitch' || t === 'amp.level'],
+  ['generators', (t) => t.startsWith('layer:')],
+  ['lanes', (t) => t.startsWith('lane:')],
+  ['lane effects', (t) => t.startsWith('fx:')],
+]
 
 const AMOUNT = { key: 'amt', label: 'amount', min: -1, max: 1, def: 0.5, unit: 'bi', origin: 0 }
 
@@ -272,7 +289,14 @@ function Destinations({ ui, src }) {
             onChange={(e) => edit((p) => { const x = p.routes.find((y) => y.id === r.id); if (x && !p.routes.some((y) => y.src === src && y.target === e.target.value)) x.target = e.target.value })}
           >
             {!options.some(([t]) => t === r.target) && <option value={r.target}>{targetSpec(patch, r.target)?.label ?? 'gone'}</option>}
-            {options.map(([t, label]) => <option key={t} value={t} disabled={t !== r.target && routes.some((x) => x.target === t)}>{label}</option>)}
+            {DEST_GROUPS.map(([name, test]) => {
+              const items = options.filter(([t]) => test(t))
+              return items.length ? (
+                <optgroup key={name} label={name}>
+                  {items.map(([t, label]) => <option key={t} value={t} disabled={t !== r.target && routes.some((x) => x.target === t)}>{label}</option>)}
+                </optgroup>
+              ) : null
+            })}
           </select>
           <div className="ph-dest-amt">
             <Knob def={AMOUNT} value={r.amt} onChange={(v) => edit((p) => { const x = p.routes.find((y) => y.id === r.id); if (x) x.amt = v })} />
@@ -452,7 +476,7 @@ function LaneEffect({ ui, laneIndex, fx, index, count }) {
               </label>
             )
             : def.type === 'knob'
-              ? <Knob key={def.key} def={def} value={fx.data[def.key] ?? def.def} onChange={(v) => edit((l, i) => { l[i].data[def.key] = v })} target={ui.target(fxKnobKey(fx.id, def.key))} />
+              ? <ModKnob key={def.key} ui={ui} route={`fx:${fx.id}.${def.key}`} auto={fxKnobKey(fx.id, def.key)} def={def} value={fx.data[def.key] ?? def.def} onChange={(v) => edit((l, i) => { l[i].data[def.key] = v })} />
               : null))}
         </div>
       )}

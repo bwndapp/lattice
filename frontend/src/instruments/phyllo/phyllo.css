@@ -294,3 +294,4 @@
 .ph-panel .knob-hand { stroke-width: 1.75; stroke-linecap: round; }
 .ph-panel .knob:hover .knob-label { color: var(--paper); }
 .ph-panel .knob:hover .knob-track { stroke: #2a2a24; }
+.ph-fx-params .ph-rings { left: 4px; }
