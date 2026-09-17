@@ -164,7 +164,8 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   // clips as shown: the project's, with a drag's changes laid over them
   const clips = useMemo(() => {
     if (!drag) return song.clips
-    if (drag.erased) return song.clips.filter((c) => !drag.erased.has(c.id))
+    // kept in the list a moment longer, marked, so they can shrink away rather than vanish
+    if (drag.erased) return song.clips.map((c) => (drag.erased.has(c.id) ? { ...c, gone: true } : c))
     const moved = song.clips.map((c) => (drag.changes[c.id] ? { ...c, ...drag.changes[c.id] } : c))
     return drag.copy ? [...song.clips, ...drag.added] : [...moved, ...(drag.added ?? [])]
   }, [song.clips, drag])
@@ -1054,7 +1055,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
                   <div
                     key={c.id}
                     data-id={c.id}
-                    className={`clip ${LANE_H >= 30 && part.kind !== 'auto' ? 'roomy' : ''} ${part.kind === 'auto' ? 'automation' : ''} ${selected.has(c.id) ? 'selected' : ''} ${c.id.startsWith('__') ? 'preview' : ''} ${!song.on ? 'off' : ''}`}
+                    className={`clip ${LANE_H >= 30 && part.kind !== 'auto' ? 'roomy' : ''} ${part.kind === 'auto' ? 'automation' : ''} ${selected.has(c.id) ? 'selected' : ''} ${c.id.startsWith('__') ? 'preview' : ''} ${c.gone ? 'gone' : ''} ${!song.on ? 'off' : ''}`}
                     style={{ left: c.start * ppb, top: c.lane * LANE_H + 3, width: Math.max(4, c.len * ppb - 1), height: LANE_H - 6, '--clip': colorFor(c.src, song.colors), '--clip-ink': inkFor(colorFor(c.src, song.colors)) }}
                     title={`${part.name} · bar ${Math.floor(c.start) + 1}${c.start % 1 ? `.${Math.round((c.start % 1) * beats) + 1}` : ''} · ${Math.round(c.len * beats) / beats} bar${c.len === 1 ? '' : 's'}`}
                   >
