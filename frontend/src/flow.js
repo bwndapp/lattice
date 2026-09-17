@@ -25,6 +25,8 @@ const dbs = new Map() // wire id → the reading we last wrote above it
 const meters = new Map() // wire id → where its needle is now, in dB
 const FALL = 26 // dB a second the reading drops: it jumps to a peak and eases back down
 const FLOOR_DB = -60 // quieter than this and it may as well say nothing
+const HOT_DB = -6 // getting close to the ceiling
+const OVER_DB = 0 // at it, or past it
 let painted = 0 // when the last frame was, for the fall
 let colors = new Map() // source key → its colour as [r, g, b]
 
@@ -106,7 +108,7 @@ export function stopFlow() {
   cycle = null
   // nothing playing reads as nothing, not as a number that vanished
   for (const [id, el] of els) {
-    if (id.startsWith('db:')) { el.textContent = '-∞'; el.classList.add('quiet') } else write(el, id, 0)
+    if (id.startsWith('db:')) { el.textContent = '-∞'; el.classList.add('quiet'); el.classList.remove('hot', 'over') } else write(el, id, 0)
   }
   els.clear()
   lit.clear()
@@ -249,7 +251,10 @@ function tick() {
     if (dbs.get(id) === text) return
     dbs.set(id, text)
     el.textContent = text
+    // green, amber, red, as a mixer's meter reads
     el.classList.toggle('quiet', text === '-∞')
+    el.classList.toggle('hot', now >= HOT_DB && now < OVER_DB)
+    el.classList.toggle('over', now >= OVER_DB)
   }
   for (const [id, keys] of paths.nodes) {
     const el = keys.length && elementFor(id, 'node')

@@ -841,6 +841,9 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
   transition: opacity 0.35s ease, color 0.35s ease;
 }
 .wire-db.quiet { opacity: 0.3; color: var(--muted); }
+/* close to the ceiling, then at it: the colours a mixer's meter uses */
+.wire-db.hot { color: #ffd23f; }
+.wire-db.over { color: #ff5a43; text-shadow: 0 1px 2px #000, 0 0 7px rgb(255 90 67 / 0.65); }
 .graph-canvas .wire-casing, .graph-canvas .wire-sheen { fill: none; pointer-events: none; stroke-linecap: round; }
 .graph-canvas .wire-casing {
   stroke: #0d0d0c;
