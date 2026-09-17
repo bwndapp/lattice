@@ -470,8 +470,9 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       if (!db && !dl && !d.moved) return
       d.moved = true
       const place = (c) => ({ start: c.start + db, lane: c.lane + dl })
-      if (d.copy) setDrag({ copy: true, changes: {}, added: d.group.map((c) => ({ ...c, ...place(c), id: `__copy${c.id}` })) })
-      else setDrag({ changes: Object.fromEntries(d.group.map((c) => [c.id, place(c)])) })
+      // `lift` is what the clips being carried are drawn by: off the canvas, above the rest
+      if (d.copy) setDrag({ copy: true, lift: true, changes: {}, added: d.group.map((c) => ({ ...c, ...place(c), id: `__copy${c.id}` })) })
+      else setDrag({ lift: true, changes: Object.fromEntries(d.group.map((c) => [c.id, place(c)])) })
     } else if (d.mode === 'start' || d.mode === 'end') {
       // every selected clip stretches by as much as the one under the pointer
       const c = d.anchor
@@ -1055,7 +1056,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
                   <div
                     key={c.id}
                     data-id={c.id}
-                    className={`clip ${LANE_H >= 30 && part.kind !== 'auto' ? 'roomy' : ''} ${part.kind === 'auto' ? 'automation' : ''} ${selected.has(c.id) ? 'selected' : ''} ${c.id.startsWith('__') ? 'preview' : ''} ${c.gone ? 'gone' : ''} ${!song.on ? 'off' : ''}`}
+                    className={`clip ${LANE_H >= 30 && part.kind !== 'auto' ? 'roomy' : ''} ${part.kind === 'auto' ? 'automation' : ''} ${selected.has(c.id) ? 'selected' : ''} ${c.id.startsWith('__') ? 'preview' : ''} ${c.gone ? 'gone' : ''} ${drag?.lift && (drag.changes?.[c.id] || c.id.startsWith('__copy')) ? 'lifted' : ''} ${!song.on ? 'off' : ''}`}
                     style={{ left: c.start * ppb, top: c.lane * LANE_H + 3, width: Math.max(4, c.len * ppb - 1), height: LANE_H - 6, '--clip': colorFor(c.src, song.colors), '--clip-ink': inkFor(colorFor(c.src, song.colors)) }}
                     title={`${part.name} · bar ${Math.floor(c.start) + 1}${c.start % 1 ? `.${Math.round((c.start % 1) * beats) + 1}` : ''} · ${Math.round(c.len * beats) / beats} bar${c.len === 1 ? '' : 's'}`}
                   >
