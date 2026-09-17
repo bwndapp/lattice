@@ -178,6 +178,8 @@
 .b-play:hover svg { fill: var(--acid); }
 .b-play:active { box-shadow: inset 2px 2px 6px rgba(0, 0, 0, 0.8); }
 .b-card-body { display: grid; gap: 0.2rem; min-width: 0; }
+/* the title is a button now: the whole card opens the track's page */
+.b-card-title { font: inherit; text-align: left; background: none; border: 0; padding: 0; cursor: var(--ring); }
 .b-card-title {
   font-family: var(--display);
   font-weight: 800;
@@ -190,7 +192,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.b-card-title::after { content: ''; position: absolute; inset: 0; border-radius: inherit; } /* the whole card opens the track */
+.b-card-title::after { content: ''; position: absolute; inset: 0; border-radius: inherit; } /* the whole card opens its page */
 .b-card-title:hover { color: #fff; }
 .b-card-title:focus-visible { outline: none; }
 .b-card:has(.b-card-title:focus-visible) { box-shadow: 0 0 0 1px var(--paper); }

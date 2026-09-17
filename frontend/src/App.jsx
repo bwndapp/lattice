@@ -208,6 +208,9 @@ export default function App() {
   }, [track, savedCode, code])
   const metaChanged = isOwner && (title !== track.title || visibility !== track.visibility)
   const dirty = isNew || codeChanged || metaChanged
+  // worth stopping for: edits to a saved track, or a scratch pad with something in it
+  const unsavedRef = useRef(false)
+  unsavedRef.current = codeChanged || metaChanged || (isNew && !!parseProject(code)?.nodes?.some((n) => n.type !== 'output'))
 
   const [preparing, setPreparing] = useState(false) // loading sounds before the first beat
   const preparingRef = useRef(false)
@@ -460,6 +463,13 @@ export default function App() {
   }), [roll, rollHeight])
   const [askSave, setAskSave] = useState(null) // why a save should ask first
   const [askNew, setAskNew] = useState(null) // the template a new track would start from
+  const [askOpen, setAskOpen] = useState(null) // a track to open, once the open one is settled
+
+  /** Open a track from the browser, pausing first if what's open has edits that aren't saved. */
+  const openTrack = useCallback((id, title) => {
+    if (unsavedRef.current && loadedIdRef.current !== id) return setAskOpen({ id, title })
+    navigate(`/t/${id}`)
+  }, [navigate])
   const closeAutoEditor = useCallback(() => setAutoEditing(null), [])
   const closeRoll = useCallback(() => setRoll(null), [])
   const automation = useMemo(() => {
@@ -1228,11 +1238,29 @@ export default function App() {
               refreshKey={refreshKey}
               view={browseView}
               narrowTo={browseNarrow}
+              onOpenTrack={openTrack}
               onView={setBrowseView}
               onPlay={playFromList}
               onPick={() => setView('graph')}
               onNew={(template) => newTrack(template)}
             />
+          )}
+          {askOpen && (
+            <ConfirmDialog
+              title={`Open “${askOpen.title}”?`}
+              confirmLabel="open it"
+              altLabel={canEdit ? 'save first' : null}
+              onAlt={async () => { const to = askOpen; setAskOpen(null); await save(); navigate(`/t/${to.id}`) }}
+              onCancel={() => setAskOpen(null)}
+              onConfirm={() => { const to = askOpen; setAskOpen(null); navigate(`/t/${to.id}`) }}
+            >
+              <p>
+                {isNew
+                  ? 'This scratch pad has something in it and has never been saved.'
+                  : `“${track?.title}” has changes you haven’t saved.`}
+                {' '}They’re kept in this browser, so coming back brings them with you — but the saved track won’t have them until you save.
+              </p>
+            </ConfirmDialog>
           )}
           {confirmClear && project && (
             <ConfirmDialog

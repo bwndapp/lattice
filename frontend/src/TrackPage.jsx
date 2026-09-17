@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { api, timeAgo } from './api'
 import { parseProject } from './project'
 import { changesBetween, summarise } from './history.js'
@@ -26,7 +25,7 @@ function shape(project) {
  * yours — every save with what changed at it. The place you decide whether to open it,
  * take a copy and go your own way, or just see what someone did.
  */
-export default function TrackPage({ id, user, onOpen, onClose, onAuthor, onPick }) {
+export default function TrackPage({ id, user, onOpen, onClose, onAuthor }) {
   const [track, setTrack] = useState(null)
   const [error, setError] = useState('')
   const [copies, setCopies] = useState([])
@@ -93,7 +92,7 @@ export default function TrackPage({ id, user, onOpen, onClose, onAuthor, onPick 
           forked_from: id,
         },
       })
-      onOpen(made.id)
+      onOpen(made.id, false, made.title)
     } catch (e) {
       setError(e.message)
       setCopying(false)
@@ -119,7 +118,7 @@ export default function TrackPage({ id, user, onOpen, onClose, onAuthor, onPick 
         </p>
         <p className="tp-shape">{shape(project) ?? 'hand-written code'}</p>
         <div className="tp-actions">
-          <Link to={`/t/${track.id}`} className="b-button primary" onClick={onPick}>open</Link>
+          <button type="button" className="b-button primary" onClick={() => onOpen(track.id, false, track.title)}>open in the studio</button>
           <button type="button" className="b-button" onClick={branch} disabled={copying || !user}>
             {copying ? 'copying…' : 'save a copy'}
           </button>

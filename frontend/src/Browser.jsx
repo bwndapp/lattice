@@ -21,7 +21,7 @@ function Switch({ options, value, onChange, label, small = false }) {
   )
 }
 
-export default function Browser({ user, login, activeId, refreshKey, onPlay, onPick, onNew, view = 'explore', onView, narrowTo = null }) {
+export default function Browser({ user, login, activeId, refreshKey, onPlay, onPick, onNew, view = 'explore', onView, narrowTo = null, onOpenTrack }) {
   const setView = onView
   // Where you are in the browser lives in the address, so reloading keeps it, the back
   // button walks out of it, and "everything by this person" is a link you can send.
@@ -124,9 +124,8 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
         <TrackPage
           id={page}
           user={user}
-          onPick={onPick}
           onClose={() => setPage(null)}
-          onOpen={(id, asPage) => (asPage ? setPage(id) : window.location.assign(`/t/${id}`))}
+          onOpen={(id, asPage, title) => (asPage ? setPage(id) : onOpenTrack?.(id, title))}
           onAuthor={(author, name) => { setPage(null); narrow({ author, name }) }}
         />
       </section>
@@ -194,7 +193,7 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
                   <svg viewBox="0 0 16 16" aria-hidden><path d="M5 3.5v9l8-4.5z" /></svg>
                 </button>
                 <div className="b-card-body">
-                  <Link to={`/t/${t.id}`} className="b-card-title" onClick={onPick} title={t.title}>{t.title}</Link>
+                  <button type="button" className="b-card-title" onClick={() => setPage(t.id)} title={t.title}>{t.title}</button>
                   <button
                     type="button"
                     className="b-card-author"
@@ -203,12 +202,6 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
                   >{t.author}</button>
                 </div>
                 <div className="b-card-meta">
-                  <button
-                    type="button"
-                    className="b-card-about"
-                    onClick={() => setPage(t.id)}
-                    data-tip="Its page: what it's made of, where it came from, what came out of it, and its saves"
-                  >about ›</button>
                   <span className={t.liked ? 'liked' : ''}>♥ {t.likes}</span>
                   <span>{t.plays} open{t.plays === 1 ? '' : 's'}</span>
                   <span className="b-card-time">{timeAgo(t.updated_at)}</span>
