@@ -1,6 +1,6 @@
 /**
  * Phyllo's patch: what the window edits and the track saves. A patch is up to four stacked
- * layers (analog, supersaw, wavetable, noise), one filter, an amp envelope, a mod envelope,
+ * layers (none at all is fine: a new patch starts blank, as Phase Plant's does) (analog, supersaw, wavetable, noise), one filter, an amp envelope, a mod envelope,
  * two LFOs and the routes from those modulators to knobs.
  *
  * The processor (dsp.js) hears a patch as a flat list of numbers (`encode`), one
@@ -85,7 +85,7 @@ export function initPatch() {
   return {
     v: 2,
     name: 'init',
-    layers: [makeLayer('analog')],
+    layers: [], // blank: you add the sounds you want
     filter: { on: false, type: 'lowpass', slope: '24db', cutoff: 2400, reso: 0.2, drive: 0 },
     amp: { attack: 0.005, decay: 0.3, sustain: 0.8, release: 0.2 },
     env: { attack: 0.005, decay: 0.4, sustain: 0, release: 0.3 },
@@ -142,7 +142,7 @@ export function normalizePatch(raw) {
   const patch = {
     v: 2,
     name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.slice(0, 40) : base.name,
-    layers: layers.length ? layers : base.layers,
+    layers,
     filter: {
       on: f.on === true,
       type: pick(f.type, FILTER_TYPES, 'lowpass'),

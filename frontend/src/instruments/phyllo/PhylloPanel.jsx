@@ -347,7 +347,7 @@ function LayerStrip({ ui, layer, index, open, onToggle }) {
           {knob('level')}
         </div>
         <button type="button" className={`ph-more ${open ? 'on' : ''}`} aria-expanded={open} onClick={onToggle} title="More controls for this layer">{open ? 'less' : 'more'}</button>
-        <button type="button" className="ph-x" disabled={count <= 1} aria-label={`Remove layer ${letter(index)}`} onClick={() => ui.edit((p) => { p.layers = p.layers.filter((x) => x.id !== layer.id); p.mods = p.mods.filter((m) => !m.target.startsWith(`layer:${layer.id}.`)) })}>×</button>
+        <button type="button" className="ph-x" aria-label={`Remove layer ${letter(index)}`} onClick={() => ui.edit((p) => { p.layers = p.layers.filter((x) => x.id !== layer.id); p.mods = p.mods.filter((m) => !m.target.startsWith(`layer:${layer.id}.`)) })}>×</button>
       </div>
       {open && (
         <div className="ph-layer-more">
@@ -534,11 +534,19 @@ export default function PhylloPanel({ data, change, target, play }) {
         <Section
           title="oscillators"
           className="ph-oscs"
-          aside={patch.layers.length < MAX_LAYERS && (
+          aside={patch.layers.length > 0 && patch.layers.length < MAX_LAYERS && (
             <button type="button" className="ph-link" onClick={() => change((p) => { if (p.layers.length < MAX_LAYERS) p.layers.push(makeLayer('analog', { wave: 'sawtooth' })) })}>+ layer</button>
           )}
         >
           <div className="ph-layers">
+            {patch.layers.length === 0 && (
+              <div className="ph-empty">
+                <span>No sound yet. Start with a layer:</span>
+                {[['analog', 'analog', { wave: 'sawtooth' }], ['supersaw', 'supersaw', {}], ['wavetable', 'wavetable', {}], ['noise', 'noise', {}]].map(([type, label, over]) => (
+                  <button key={type} type="button" className="ph-add" onClick={() => change((p) => { if (p.layers.length < MAX_LAYERS) p.layers.push(makeLayer(type, over)) })}>+ {label}</button>
+                ))}
+              </div>
+            )}
             {patch.layers.map((l, i) => (
               <LayerStrip key={l.id} ui={ui} layer={l} index={i} open={openLayer === l.id} onToggle={() => setOpenLayer((o) => (o === l.id ? null : l.id))} />
             ))}

@@ -175,3 +175,9 @@
 
 .ph-panel .ph-layer-more .knob, .ph-panel .ph-layer-knobs .knob { width: 44px; }
 .synth-window:has(.ph-panel) { container-type: inline-size; }
+.ph-empty {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.5rem;
+  padding: 0.9rem 0.8rem; border: 1px dashed var(--ph-edge-strong); background: #000;
+  font-size: 11px; color: var(--muted);
+}
+.ph-empty span { margin-right: 0.3rem; }
