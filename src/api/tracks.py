@@ -3,6 +3,7 @@
 Anyone can browse public tracks and open unlisted ones by link; saving, liking
 and forking need a blue wind sign-in. Ownership is keyed on the SSO `sub`.
 """
+import hashlib
 import json
 import secrets
 import time
@@ -47,6 +48,7 @@ def _conn():
               updated_at INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS tracks_owner ON tracks(owner_sub);
+            CREATE INDEX IF NOT EXISTS tracks_forked ON tracks(forked_from);
             CREATE INDEX IF NOT EXISTS tracks_vis_updated ON tracks(visibility, updated_at);
             -- every saved version of a track, so a bad save (or a cleared patch) can be undone
             CREATE TABLE IF NOT EXISTS track_versions (
@@ -65,6 +67,15 @@ def _conn():
             );
             """
         )
+        # a public handle for whoever made a track, so "everything by this person" can be
+        # asked for without their account id ever leaving the server
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(tracks)")}
+        if "author_id" not in cols:
+            conn.execute("ALTER TABLE tracks ADD COLUMN author_id TEXT")
+            for row in conn.execute("SELECT DISTINCT owner_sub FROM tracks").fetchall():
+                conn.execute("UPDATE tracks SET author_id = ? WHERE owner_sub = ?",
+                             (_author_id(row["owner_sub"]), row["owner_sub"]))
+            conn.execute("CREATE INDEX IF NOT EXISTS tracks_author ON tracks(author_id)")
         conn.commit()
         _ready.add(path)
     return conn
@@ -123,10 +134,16 @@ def _author(user):
     return (user.get("name") or user.get("given_name") or "anon").strip()[:60] or "anon"
 
 
+def _author_id(sub):
+    """A stable public handle for whoever made a track, without showing who they are."""
+    return hashlib.sha256(f"lattice:{sub}".encode()).hexdigest()[:12] if sub else ""
+
+
 def _public(row, user=None, liked=False, with_code=True):
     t = dict(row)
     t["is_owner"] = bool(user and user.get("sub") == t["owner_sub"])
     t["liked"] = bool(liked)
+    t["author_id"] = _author_id(t.get("owner_sub"))
     t.pop("owner_sub", None)
     if not with_code:
         t.pop("code", None)
@@ -155,8 +172,12 @@ def _validate(body, partial=False):
 
 @router.get("")
 def list_tracks(request: Request, q: str = "", sort: str = "new", view: str = "explore",
-                limit: int = 50, offset: int = 0):
-    """view: explore (public), mine (all of yours), liked (tracks you liked)."""
+                limit: int = 50, offset: int = 0, author: str = "", remixes_of: str = ""):
+    """view: explore (public), mine (all of yours), liked (tracks you liked).
+
+    `author` narrows to one person's public tracks (their handle from _author_id), and
+    `remixes_of` to what came out of one track. Both work with any view and sort.
+    """
     user = sso_user(request)
     limit = max(1, min(limit, 100))
     offset = max(0, offset)
@@ -176,6 +197,12 @@ def list_tracks(request: Request, q: str = "", sort: str = "new", view: str = "e
         params.append(user["sub"])
     else:
         where.append("t.visibility = 'public'")
+    if author.strip():
+        where.append("t.author_id = ?")
+        params.append(author.strip()[:32])
+    if remixes_of.strip():
+        where.append("t.forked_from = ?")
+        params.append(remixes_of.strip()[:40])
     if q.strip():
         where.append("(t.title LIKE ? OR t.author LIKE ?)")
         like = f"%{q.strip()[:80]}%"
@@ -187,11 +214,16 @@ def list_tracks(request: Request, q: str = "", sort: str = "new", view: str = "e
     )
     conn = _conn()
     try:
-        rows = conn.execute(sql, [user["sub"] if user else ""] + params + [limit, offset]).fetchall()
+        rows = conn.execute(sql, [user["sub"] if user else ""] + params + [limit + 1, offset]).fetchall()
     finally:
         conn.close()
-    return {"tracks": [_public({k: r[k] for k in r.keys() if k != "my_like"}, user, r["my_like"], with_code=False)
-                       for r in rows]}
+    more = len(rows) > limit
+    return {
+        "tracks": [_public({k: r[k] for k in r.keys() if k != "my_like"}, user, r["my_like"], with_code=False)
+                   for r in rows[:limit]],
+        "more": more,
+        "offset": offset + min(len(rows), limit),
+    }
 
 
 @router.get("/{track_id}")
@@ -210,9 +242,13 @@ def get_track(track_id: str, request: Request):
                              (row["forked_from"],)).fetchone()
             if p and p["visibility"] != "private":
                 parent = {"id": p["id"], "title": p["title"], "author": p["author"]}
+        # what came out of it, so a track can point forward as well as back
+        remixes = conn.execute(
+            "SELECT COUNT(*) AS n FROM tracks WHERE forked_from = ? AND visibility = 'public'",
+            (track_id,)).fetchone()["n"]
     finally:
         conn.close()
-    return {**_public(row, user, liked), "parent": parent}
+    return {**_public(row, user, liked), "parent": parent, "remixes": remixes}
 
 
 @router.post("")
@@ -232,10 +268,10 @@ async def create_track(request: Request):
         if forked_from and not conn.execute("SELECT 1 FROM tracks WHERE id = ?", (forked_from,)).fetchone():
             forked_from = None
         conn.execute(
-            "INSERT INTO tracks (id, owner_sub, author, title, code, visibility, forked_from, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
-            (track_id, user["sub"], _author(user), data["title"], data["code"], data["visibility"],
-             forked_from, now, now),
+            "INSERT INTO tracks (id, owner_sub, author, author_id, title, code, visibility, forked_from, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (track_id, user["sub"], _author(user), _author_id(user["sub"]), data["title"], data["code"],
+             data["visibility"], forked_from, now, now),
         )
         _keep_version(conn, track_id)
         conn.commit()
