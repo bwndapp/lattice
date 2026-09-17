@@ -1,12 +1,18 @@
 /**
- * Phyllo's patch: what the window edits and the track saves. A patch is up to four stacked
- * layers (analog, supersaw, wavetable, noise; none at all is fine, a new patch starts blank
- * as Phase Plant's does), an amp envelope, a mod envelope, two LFOs and the routes from
- * those modulators to knobs.
+ * Phyllo's patch: what the window edits and the track saves, laid out the way Phase Plant
+ * is. A patch is
  *
- * The processor (dsp.js) hears a patch as a flat list of numbers (`encode`), one
- * AudioParam each, so a knob moves the notes already ringing and automation lands on the
- * sample.
+ *   layers      generators stacked top to bottom (analog, supersaw, wavetable, noise), up to 8
+ *   amp         the envelope every voice goes out through
+ *   modulators  as many LFOs and envelopes as you add (up to 16), each with its own id
+ *   routes      { id, src: a modulator's id, target, amt -1…1 }
+ *
+ * and a new patch is blank: no layers, no modulators.
+ *
+ * The processor (dsp.js) hears it two ways. Knobs (anything automation or a route can move)
+ * are AudioParams, in fixed slots, so they move ringing notes and land on the sample
+ * (`encode`). The rest — what each slot is, drawn shapes, where routes go — is a message
+ * (`patchMessage`), sent when it changes.
  */
 
 import { curveAt } from '../curve.js'
@@ -96,16 +102,26 @@ export function normalizePoints(raw, fallback = 'sine') {
 /** LFO lengths when synced, in bars. */
 export const LFO_BARS = [8, 4, 2, 1, 1 / 2, 1 / 4, 1 / 8, 1 / 16, 1 / 32]
 export const barsLabel = (b) => (b >= 1 ? `${b} bar${b === 1 ? '' : 's'}` : `1/${Math.round(1 / b)}`)
-export const MAX_LAYERS = 4
-export const MAX_ROUTES = 4 // per modulator
-export const SOURCES = ['env', 'lfo1', 'lfo2']
-export const SOURCE_LABELS = { env: 'mod env', lfo1: 'lfo 1', lfo2: 'lfo 2' }
+export const MAX_LAYERS = 8
+export const MAX_MODULATORS = 16
+export const MAX_ROUTES = 64 // in all
+export const MAX_ROUTES_EACH = 8 // from one modulator
 /*
- * A route is { id, src, target, amt -1…1 }. What it does depends on its source's polarity:
- * a bipolar LFO swings the knob both ways around where it's set, half of amt each way; an
- * up or down one (and the envelope, always up) moves it one way only, all of amt. A
- * negative amount turns any of them over.
+ * What a route does depends on its source: a bipolar LFO swings the knob both ways around
+ * where it's set, half of amt each way; an up or down LFO, or an envelope (always up),
+ * moves it one way only, all of amt. A negative amount turns any of them over.
  */
+/** Each modulator's colour, by its place in the bar. */
+export const MOD_COLORS = ['#6ff3ff', '#c38bff', '#ff9f43', '#ff6fae', '#7dff8a', '#6f9bff', '#ffd24a', '#ff7a6f']
+export const modColor = (patch, id) => MOD_COLORS[Math.max(0, patch.modulators.findIndex((m) => m.id === id)) % MOD_COLORS.length]
+/** A modulator's name: its own, or its kind and its number among that kind. */
+export function modName(patch, id) {
+  const m = patch.modulators.find((x) => x.id === id)
+  if (!m) return 'gone'
+  if (m.name) return m.name
+  const n = patch.modulators.filter((x) => x.kind === m.kind).indexOf(m) + 1
+  return `${m.kind === 'lfo' ? 'lfo' : 'env'} ${n}`
+}
 export const TABLES = {
   basic: 'sine → triangle → saw → square',
   bright: 'one harmonic → all of them',
@@ -117,7 +133,7 @@ export const TABLES = {
 export const TABLE_NAMES = Object.keys(TABLES)
 
 /** Layer knobs a modulator can move, in the order the processor numbers them. */
-export const LAYER_KNOBS = ['level', 'pan', 'fine', 'pw', 'pos', 'warp', 'detune', 'spread', 'fm']
+export const LAYER_KNOBS = ['level', 'pan', 'fine', 'pw', 'pos', 'warp', 'detune', 'spread', 'fm', 'ratio']
 /** Patch-wide destinations, numbered from 1 (0 is "nowhere"). */
 export const GLOBAL_DESTS = ['pitch', 'amp.level']
 
@@ -133,25 +149,61 @@ export function makeLayer(type = 'analog', over = {}) {
   }
 }
 
+export function makeLfo(over = {}) {
+  return { id: newPartId(), kind: 'lfo', points: presetPoints('sine'), mode: 'free', polarity: 'bi', sync: true, bars: 1 / 4, hz: 2, grid: 8, ...over }
+}
+export function makeEnv(over = {}) {
+  return { id: newPartId(), kind: 'env', attack: 0.005, decay: 0.4, sustain: 0, release: 0.3, ...over }
+}
+
 export function initPatch() {
   return {
-    v: 2,
+    v: 3,
     name: 'init',
     layers: [], // blank: you add the sounds you want
     amp: { attack: 0.005, decay: 0.3, sustain: 0.8, release: 0.2 },
-    env: { attack: 0.005, decay: 0.4, sustain: 0, release: 0.3 },
-    lfos: [
-      { points: presetPoints('sine'), mode: 'free', polarity: 'bi', sync: true, bars: 1 / 4, hz: 2, grid: 8 },
-      { points: presetPoints('tri'), mode: 'free', polarity: 'bi', sync: true, bars: 1, hz: 0.5, grid: 8 },
-    ],
-    mods: [],
+    modulators: [], // and the modulators
+    routes: [],
     mono: false,
     glide: 0,
     volume: 0.8,
   }
 }
 
-/** Anything → a valid patch (saved tracks, presets, hand-edited JSON). */
+const cleanId = (v) => (typeof v === 'string' && /^\w{1,12}$/.test(v) ? v : newPartId())
+const cleanEnv = (e, d) => ({
+  attack: num(e?.attack, d.attack, K.attack.min, K.attack.max),
+  decay: num(e?.decay, d.decay, K.decay.min, K.decay.max),
+  sustain: num(e?.sustain, d.sustain, 0, 1),
+  release: num(e?.release, d.release, K.release.min, K.release.max),
+})
+
+function cleanModulator(m) {
+  if (m?.kind === 'env') {
+    const d = makeEnv()
+    const out = { id: cleanId(m.id), kind: 'env', ...cleanEnv(m, d) }
+    if (typeof m.name === 'string' && m.name.trim()) out.name = m.name.trim().slice(0, 24)
+    return out
+  }
+  if (m?.kind !== 'lfo') return null
+  const d = makeLfo()
+  const out = {
+    id: cleanId(m.id),
+    kind: 'lfo',
+    // older patches name a shape instead of drawing one
+    points: normalizePoints(m.points ?? (LFO_SHAPES.includes(m.shape) ? presetPoints(m.shape) : null)),
+    mode: pick(m.mode, LFO_MODES, 'free'),
+    polarity: pick(m.polarity, LFO_POLARITIES, m.bi === false ? 'up' : 'bi'),
+    grid: [0, 4, 8, 16, 32].includes(m.grid) ? m.grid : 8,
+    sync: m.sync !== false,
+    bars: LFO_BARS.includes(m.bars) ? m.bars : d.bars,
+    hz: num(m.hz, d.hz, K.hz.min, K.hz.max),
+  }
+  if (typeof m.name === 'string' && m.name.trim()) out.name = m.name.trim().slice(0, 24)
+  return out
+}
+
+/** Anything → a valid patch (saved tracks, presets, hand-edited JSON, older versions). */
 export function normalizePatch(raw) {
   const base = initPatch()
   if (!raw || typeof raw !== 'object') return base
@@ -160,8 +212,8 @@ export function normalizePatch(raw) {
     .slice(0, MAX_LAYERS)
     .map((l) => {
       const d = makeLayer(l.type)
-      return {
-        id: typeof l.id === 'string' && /^\w{1,12}$/.test(l.id) ? l.id : d.id,
+      const out = {
+        id: cleanId(l.id),
         type: l.type,
         on: l.on !== false,
         level: num(l.level, d.level, 0, 1),
@@ -183,55 +235,59 @@ export function normalizePatch(raw) {
         fmwave: pick(l.fmwave, FM_WAVES, 'sine'),
         color: pick(l.color, NOISES, 'pink'),
       }
+      if (l.collapsed) out.collapsed = true
+      return out
     })
-  const seen = new Set()
-  for (const l of layers) { while (seen.has(l.id)) l.id = newPartId(); seen.add(l.id) }
-  const env = (e, d) => ({
-    attack: num(e?.attack, d.attack, K.attack.min, K.attack.max),
-    decay: num(e?.decay, d.decay, K.decay.min, K.decay.max),
-    sustain: num(e?.sustain, d.sustain, 0, 1),
-    release: num(e?.release, d.release, K.release.min, K.release.max),
-  })
+
+  // modulators: a version 2 patch had one mod envelope and two lfos, under fixed names;
+  // they become modulators with those names as ids, so their routes and automation hold
+  let rawMods = raw.modulators
+  if (!Array.isArray(rawMods) && (raw.env || raw.lfos)) {
+    rawMods = [
+      { ...(raw.env ?? {}), id: 'env', kind: 'env' },
+      ...[0, 1].map((i) => ({ sync: true, bars: i ? 1 : 1 / 4, hz: i ? 0.5 : 2, ...(raw.lfos?.[i] ?? {}), shape: raw.lfos?.[i]?.shape ?? (i ? 'tri' : 'sine'), id: `lfo${i + 1}`, kind: 'lfo' })),
+    ]
+  }
+  const modulators = []
+  const ids = new Set(layers.map((l) => l.id))
+  for (const m of Array.isArray(rawMods) ? rawMods : []) {
+    const clean = cleanModulator(m)
+    if (!clean || modulators.length >= MAX_MODULATORS) continue
+    while (ids.has(clean.id)) clean.id = newPartId()
+    ids.add(clean.id)
+    modulators.push(clean)
+  }
+
   const patch = {
-    v: 2,
+    v: 3,
     name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.slice(0, 40) : base.name,
     layers,
-    amp: env(raw.amp, base.amp),
-    env: env(raw.env, base.env),
-    lfos: [0, 1].map((i) => {
-      const l = raw.lfos?.[i] ?? {}
-      const d = base.lfos[i]
-      return {
-        // older patches name a shape instead of drawing one
-        points: normalizePoints(l.points ?? (LFO_SHAPES.includes(l.shape) ? presetPoints(l.shape) : d.points), i ? 'tri' : 'sine'),
-        mode: pick(l.mode, LFO_MODES, 'free'),
-        polarity: pick(l.polarity, LFO_POLARITIES, l.bi === false ? 'up' : 'bi'),
-        grid: [0, 4, 8, 16, 32].includes(l.grid) ? l.grid : 8,
-        sync: l.sync !== false,
-        bars: LFO_BARS.includes(l.bars) ? l.bars : d.bars,
-        hz: num(l.hz, d.hz, K.hz.min, K.hz.max),
-      }
-    }),
-    mods: [],
+    amp: cleanEnv(raw.amp, base.amp),
+    modulators,
+    routes: [],
     mono: raw.mono === true,
     glide: num(raw.glide, 0, K.glide.min, K.glide.max),
     volume: num(raw.volume, K.volume.def, K.volume.min, K.volume.max),
   }
-  const routes = new Set()
-  for (const m of Array.isArray(raw.mods) ? raw.mods : []) {
-    if (!m || !SOURCES.includes(m.src) || !targetSpec(patch, m.target)) continue
-    const key = `${m.src}>${m.target}`
-    if (routes.has(key) || patch.mods.filter((x) => x.src === m.src).length >= MAX_ROUTES) continue
-    routes.add(key)
-    patch.mods.push({ id: typeof m.id === 'string' && /^\w{1,12}$/.test(m.id) ? m.id : newPartId(), src: m.src, target: m.target, amt: num(m.amt, 0.5, -1, 1) })
+  const seen = new Set()
+  for (const r of Array.isArray(raw.routes) ? raw.routes : Array.isArray(raw.mods) ? raw.mods : []) {
+    if (!r || !modulators.some((m) => m.id === r.src) || !targetSpec(patch, r.target)) continue
+    const key = `${r.src}>${r.target}`
+    if (seen.has(key) || patch.routes.length >= MAX_ROUTES || patch.routes.filter((x) => x.src === r.src).length >= MAX_ROUTES_EACH) continue
+    seen.add(key)
+    patch.routes.push({ id: cleanId(r.id), src: r.src, target: r.target, amt: num(r.amt, 0.5, -1, 1) })
   }
   return patch
 }
 
 // ── modulation targets ───────────────────────────────────────────────────────
 
+/** A generator's letter, by its place in the stack. */
+export const layerLetter = (i) => String.fromCharCode(65 + i)
+
 /**
- * Targets are strings: "pitch", "amp.level", or "layer:<id>.<knob>". The knob spec and a name, or null.
+ * Targets are strings: "pitch", "amp.level", or "layer:<id>.<knob>". The knob spec and a
+ * name, or null.
  */
 export function targetSpec(patch, target) {
   if (typeof target !== 'string') return null
@@ -241,12 +297,12 @@ export function targetSpec(patch, target) {
   if (l && LAYER_KNOBS.includes(l[2])) {
     const index = patch.layers.findIndex((x) => x.id === l[1])
     if (index < 0) return null
-    return { label: `${String.fromCharCode(65 + index)} ${K[l[2]].label}`, spec: K[l[2]], layerId: l[1], knob: l[2], index, get: (p) => p.layers.find((x) => x.id === l[1])?.[l[2]] }
+    return { label: `${layerLetter(index)} ${K[l[2]].label}`, spec: K[l[2]], layerId: l[1], knob: l[2], index, get: (p) => p.layers.find((x) => x.id === l[1])?.[l[2]] }
   }
   return null
 }
 
-/** Where a route goes, as the processor numbers it (0: nowhere). */
+/** Where a route goes, as the processor numbers it: 1 pitch, 2 volume, 10 + layer × 10 + knob. */
 function destIndex(patch, target) {
   const g = GLOBAL_DESTS.indexOf(target)
   if (g >= 0) return g + 1
@@ -257,86 +313,51 @@ function destIndex(patch, target) {
 
 // ── the processor's view ─────────────────────────────────────────────────────
 
-const LAYER_FIELDS = [
-  // [name, min, max, def]
-  ['on', 0, 1, 0], ['type', 0, 3, 0], ['wave', 0, 4, 2], ['table', 0, 5, 0], ['noise', 0, 2, 1],
-  ['warpmode', 0, 8, 0], ['fmwave', 0, 3, 0], ['level', 0, 1, 0.8], ['pan', 0, 1, 0.5],
-  ['pitch', -48, 48, 0], ['fine', -100, 100, 0], ['pw', 0.02, 0.98, 0.5], ['pos', 0, 1, 0],
-  ['warp', 0, 1, 0], ['unison', 1, 16, 1], ['detune', 0, 1, 0.1], ['spread', 0, 1, 0.6],
-  ['fm', 0, 8, 0], ['ratio', 0.25, 8, 1],
-]
+const ENV_STAGES = ['attack', 'decay', 'sustain', 'release']
+const envParams = (prefix) => ENV_STAGES.map((k) => ({ key: `${prefix}_${k}`, min: K[k].min, max: K[k].max, def: K[k].def }))
 
-/** Every number the processor reads, with its range: one AudioParam each. */
+/** The knobs the processor reads, in fixed slots: one AudioParam each. */
 export const AUDIO_PARAMS = [
-  ...[0, 1, 2, 3].flatMap((i) => LAYER_FIELDS.map(([name, min, max, def]) => ({ key: `l${i}_${name}`, min, max, def }))),
-  ...['a', 'e'].flatMap((p) => [
-    { key: `${p}_attack`, min: K.attack.min, max: K.attack.max, def: K.attack.def },
-    { key: `${p}_decay`, min: K.decay.min, max: K.decay.max, def: K.decay.def },
-    { key: `${p}_sustain`, min: 0, max: 1, def: 0.8 },
-    { key: `${p}_release`, min: K.release.min, max: K.release.max, def: K.release.def },
-  ]),
-  ...[0, 1].flatMap((i) => [
-    { key: `o${i}_mode`, min: 0, max: 2, def: 0 },
-    { key: `o${i}_pol`, min: 0, max: 2, def: 1 },
-    { key: `o${i}_sync`, min: 0, max: 1, def: 1 },
-    { key: `o${i}_bars`, min: 1 / 64, max: 64, def: 1 },
-    { key: `o${i}_hz`, min: K.hz.min, max: K.hz.max, def: K.hz.def },
-  ]),
-  // routes: four per modulator (env, lfo 1, lfo 2), each a destination and an amount
-  ...Array.from({ length: SOURCES.length * MAX_ROUTES }, (_, i) => [
-    { key: `m${i}_dest`, min: 0, max: 60, def: 0 },
-    { key: `m${i}_amt`, min: -1, max: 1, def: 0 },
-  ]).flat(),
-  { key: 'mono', min: 0, max: 1, def: 0 },
+  ...Array.from({ length: MAX_LAYERS }, (_, i) => LAYER_KNOBS.map((k) => ({ key: `l${i}_${k}`, min: K[k].min, max: K[k].max, def: K[k].def }))).flat(),
+  ...Array.from({ length: MAX_MODULATORS }, (_, j) => [{ key: `d${j}_hz`, min: K.hz.min, max: K.hz.max, def: K.hz.def }, ...envParams(`d${j}`)]).flat(),
+  ...envParams('a'),
   { key: 'glide', min: 0, max: 1, def: 0 },
   { key: 'volume', min: 0, max: 1.5, def: 0.8 },
   { key: 'cps', min: 0.01, max: 10, def: 0.5 },
 ]
 
-/** What the processor gets as a message: the LFOs' drawn shapes, as [x, y, c] rows. */
-export const patchMessage = (patch) => ({ lfos: patch.lfos.map((o) => o.points.map((p) => [p.x, p.y, p.c ?? 0, p.s ?? 0])) })
+/**
+ * What the processor gets as a message: what each slot is, and where routes go.
+ *   layers      [on, type, wave, table, noise, warp mode, fm wave, semitones, unison]
+ *   modulators  { lfo: 1, mode, polarity, sync, bars, points: [[x, y, c, s]] } or { lfo: 0 }
+ *   routes      [modulator slot, destination, amount]
+ */
+export function patchMessage(patch) {
+  return {
+    layers: patch.layers.map((l) => [
+      l.on ? 1 : 0, LAYER_TYPES.indexOf(l.type), WAVES.indexOf(l.wave), TABLE_NAMES.indexOf(l.table), NOISES.indexOf(l.color),
+      WARP_MODES.indexOf(l.warpmode), FM_WAVES.indexOf(l.fmwave), l.oct * 12 + l.semi,
+      l.type === 'analog' || l.type === 'noise' ? 1 : l.unison, // analog layers are one voice; the others stack
+    ]),
+    modulators: patch.modulators.map((m) => (m.kind === 'lfo'
+      ? { lfo: 1, mode: LFO_MODES.indexOf(m.mode), polarity: LFO_POLARITIES.indexOf(m.polarity), sync: m.sync ? 1 : 0, bars: m.bars, points: m.points.map((p) => [p.x, p.y, p.c ?? 0, p.s ?? 0]) }
+      : { lfo: 0 })),
+    routes: patch.routes
+      .map((r) => [patch.modulators.findIndex((m) => m.id === r.src), destIndex(patch, r.target), r.amt])
+      .filter(([src, dest]) => src >= 0 && dest > 0),
+    mono: patch.mono ? 1 : 0,
+  }
+}
 
-/** The patch as the processor's numbers. `cps`: the track's tempo, for synced LFOs. */
+/** The patch's knobs as the processor's numbers. `cps`: the track's tempo, for synced LFOs. */
 export function encodePatch(patch, { cps = 0.5 } = {}) {
   const out = {}
-  for (let i = 0; i < MAX_LAYERS; i++) {
-    const l = patch.layers[i]
-    const set = (name, v) => { out[`l${i}_${name}`] = v }
-    if (!l) { set('on', 0); continue }
-    set('on', l.on ? 1 : 0)
-    set('type', LAYER_TYPES.indexOf(l.type))
-    set('wave', WAVES.indexOf(l.wave))
-    set('table', TABLE_NAMES.indexOf(l.table))
-    set('noise', NOISES.indexOf(l.color))
-    set('warpmode', WARP_MODES.indexOf(l.warpmode))
-    set('fmwave', FM_WAVES.indexOf(l.fmwave))
-    for (const k of ['level', 'pan', 'fine', 'pw', 'pos', 'warp', 'detune', 'spread', 'fm', 'ratio']) set(k, l[k])
-    set('pitch', l.oct * 12 + l.semi)
-    // analog layers are one voice; the others stack
-    set('unison', l.type === 'analog' || l.type === 'noise' ? 1 : l.unison)
-  }
-  for (const [p, e] of [['a', patch.amp], ['e', patch.env]]) {
-    out[`${p}_attack`] = e.attack
-    out[`${p}_decay`] = e.decay
-    out[`${p}_sustain`] = e.sustain
-    out[`${p}_release`] = e.release
-  }
-  patch.lfos.forEach((o, i) => {
-    out[`o${i}_mode`] = LFO_MODES.indexOf(o.mode)
-    out[`o${i}_pol`] = LFO_POLARITIES.indexOf(o.polarity)
-    out[`o${i}_sync`] = o.sync ? 1 : 0
-    out[`o${i}_bars`] = o.bars
-    out[`o${i}_hz`] = o.hz
+  patch.layers.forEach((l, i) => { for (const k of LAYER_KNOBS) out[`l${i}_${k}`] = l[k] })
+  patch.modulators.forEach((m, j) => {
+    if (m.kind === 'lfo') out[`d${j}_hz`] = m.hz
+    else for (const k of ENV_STAGES) out[`d${j}_${k}`] = m[k]
   })
-  SOURCES.forEach((src, s) => {
-    const routes = patch.mods.filter((m) => m.src === src)
-    for (let r = 0; r < MAX_ROUTES; r++) {
-      const m = routes[r]
-      out[`m${s * MAX_ROUTES + r}_dest`] = m ? destIndex(patch, m.target) : 0
-      out[`m${s * MAX_ROUTES + r}_amt`] = m ? m.amt : 0
-    }
-  })
-  out.mono = patch.mono ? 1 : 0
+  for (const k of ENV_STAGES) out[`a_${k}`] = patch.amp[k]
   out.glide = patch.glide
   out.volume = patch.volume
   out.cps = clamp(cps, 0.01, 10)
@@ -347,31 +368,53 @@ export function encodePatch(patch, { cps = 0.5 } = {}) {
 
 /**
  * Automation names a knob by a key made of word characters: "volume", "glide",
- * "amp_attack", "env_decay", "lfo1_hz", "L<layer id>_<knob>".
+ * "amp_attack", "M<modulator id>_hz" or "_attack" (and so on), "L<layer id>_<knob>".
+ * Version 2's "env_decay" and "lfo1_hz" still work: those modulators kept their names.
  */
 export function knobAt(patch, key) {
-  const m = /^(?:(volume|glide)|(amp|env)_(attack|decay|sustain|release)|lfo([12])_hz|L(\w+?)_(level|pan|fine|pw|pos|warp|detune|spread|fm|ratio))$/.exec(String(key))
+  let k = String(key)
+  const legacy = /^(env)_(attack|decay|sustain|release)$|^(lfo[12])_hz$/.exec(k)
+  if (legacy) k = legacy[1] ? `Menv_${legacy[2]}` : `M${legacy[3]}_hz`
+  const m = /^(?:(volume|glide)|amp_(attack|decay|sustain|release)|M(\w+?)_(hz|attack|decay|sustain|release)|L(\w+?)_(level|pan|fine|pw|pos|warp|detune|spread|fm|ratio))$/.exec(k)
   if (!m) return null
   if (m[1]) return { def: K[m[1]], value: patch[m[1]], label: m[1], set: (p, v) => { p[m[1]] = v } }
-  if (m[2]) return { def: K[m[3]], value: patch[m[2]][m[3]], label: `${m[2] === 'amp' ? 'amp' : 'mod env'} ${m[3]}`, set: (p, v) => { p[m[2]][m[3]] = v } }
-  if (m[4]) return { def: K.hz, value: patch.lfos[m[4] - 1].hz, label: `lfo ${m[4]} rate`, set: (p, v) => { p.lfos[m[4] - 1].hz = v } }
+  if (m[2]) return { def: K[m[2]], value: patch.amp[m[2]], label: `amp ${m[2]}`, set: (p, v) => { p.amp[m[2]] = v } }
+  if (m[3]) {
+    const mod = patch.modulators.find((x) => x.id === m[3])
+    if (!mod || (mod.kind === 'lfo') !== (m[4] === 'hz')) return null
+    return {
+      def: K[m[4]],
+      value: mod[m[4]],
+      label: `${modName(patch, mod.id)} ${m[4] === 'hz' ? 'rate' : m[4]}`,
+      set: (p, v) => { const x = p.modulators.find((y) => y.id === m[3]); if (x) x[m[4]] = v },
+    }
+  }
   const index = patch.layers.findIndex((l) => l.id === m[5])
   if (index < 0) return null
   return {
     def: K[m[6]],
     value: patch.layers[index][m[6]],
-    label: `${String.fromCharCode(65 + index)} ${K[m[6]].label}`,
+    label: `${layerLetter(index)} ${K[m[6]].label}`,
     set: (p, v) => { const l = p.layers.find((x) => x.id === m[5]); if (l) l[m[6]] = v },
   }
 }
 export const layerKnobKey = (layerId, knob) => `L${layerId}_${knob}`
+export const modKnobKey = (modId, knob) => `M${modId}_${knob}`
 
 // ── presets ──────────────────────────────────────────────────────────────────
 
+/**
+ * A preset: `build(p, route)` sets it up; `route(modulator, layer index or null, knob or
+ * target, amount)` adds a route once the layers exist.
+ */
 const preset = (name, build) => {
   const p = initPatch()
   p.name = name
-  build(p)
+  const pending = []
+  build(p, (mod, layer, knob, amt) => pending.push([mod, layer, knob, amt]))
+  for (const [mod, layer, knob, amt] of pending) {
+    p.routes.push({ id: newPartId(), src: mod.id, target: layer == null ? knob : `layer:${p.layers[layer].id}.${knob}`, amt })
+  }
   return normalizePatch(p)
 }
 
@@ -383,50 +426,51 @@ export const PRESETS = [
     p.mono = true
     p.glide = 0.04
   }),
-  preset('reese', (p) => {
+  preset('reese', (p, route) => {
     p.layers = [makeLayer('supersaw', { unison: 7, detune: 0.32, spread: 0.3, level: 0.7 }), makeLayer('analog', { wave: 'sine', oct: -1, level: 0.6 })]
     p.amp = { attack: 0.01, decay: 0.3, sustain: 1, release: 0.15 }
-    p.lfos[0] = { ...p.lfos[0], points: presetPoints('sine'), sync: true, bars: 1 / 2 }
+    const lfo = makeLfo({ bars: 1 / 2 })
+    p.modulators = [lfo]
+    route(lfo, 0, 'detune', 0.3)
   }),
-  preset('pluck', (p) => {
+  preset('pluck', (p, route) => {
     p.layers = [makeLayer('analog', { wave: 'sawtooth' }), makeLayer('analog', { wave: 'square', oct: 1, level: 0.3 })]
     p.amp = { attack: 0.002, decay: 0.35, sustain: 0, release: 0.2 }
-    p.env = { attack: 0.001, decay: 0.25, sustain: 0, release: 0.2 }
+    const env = makeEnv({ attack: 0.001, decay: 0.25, sustain: 0, release: 0.2 })
+    p.modulators = [env]
+    route(env, 1, 'level', 0.6)
   }),
-  preset('hoover lead', (p) => {
+  preset('hoover lead', (p, route) => {
     p.layers = [makeLayer('supersaw', { unison: 9, detune: 0.45, spread: 0.8 }), makeLayer('analog', { wave: 'pulse', pw: 0.25, oct: -1, level: 0.5 })]
-    p.env = { attack: 0.08, decay: 0.3, sustain: 0, release: 0.1 }
-    p.mods = [{ src: 'env', target: 'pitch', amt: -0.1 }, { src: 'lfo1', target: 'pitch', amt: 0.02 }]
-    p.lfos[0] = { ...p.lfos[0], points: presetPoints('sine'), sync: false, hz: 5.5 }
+    const env = makeEnv({ attack: 0.08, decay: 0.3, sustain: 0, release: 0.1 })
+    const vib = makeLfo({ sync: false, hz: 5.5 })
+    p.modulators = [env, vib]
+    route(env, null, 'pitch', -0.1)
+    route(vib, null, 'pitch', 0.02)
     p.mono = true
     p.glide = 0.12
   }),
-  preset('glass pad', (p) => {
+  preset('glass pad', (p, route) => {
     p.layers = [makeLayer('wavetable', { table: 'bright', pos: 0.3, unison: 4, detune: 0.12 }), makeLayer('wavetable', { table: 'vowel', pos: 0.2, oct: 1, level: 0.4 })]
     p.amp = { attack: 0.6, decay: 1, sustain: 0.8, release: 1.8 }
-    p.lfos[0] = { ...p.lfos[0], points: presetPoints('tri'), sync: true, bars: 4 }
-    p.lfos[1] = { ...p.lfos[1], points: presetPoints('sine'), sync: true, bars: 2 }
+    const sweep = makeLfo({ points: presetPoints('tri'), bars: 4 })
+    const drift = makeLfo({ bars: 2 })
+    p.modulators = [sweep, drift]
+    route(sweep, 0, 'pos', 0.5)
+    route(drift, 1, 'pan', 0.6)
     p.volume = 0.6
   }),
-  preset('fm bell', (p) => {
+  preset('fm bell', (p, route) => {
     p.layers = [makeLayer('analog', { wave: 'sine', fm: 3, ratio: 3.5 })]
     p.amp = { attack: 0.002, decay: 1.4, sustain: 0, release: 1.2 }
-    p.env = { attack: 0.001, decay: 0.9, sustain: 0, release: 0.6 }
+    const env = makeEnv({ attack: 0.001, decay: 0.9, sustain: 0, release: 0.6 })
+    p.modulators = [env]
+    route(env, 0, 'fm', 1)
   }),
-  preset('talking wobble', (p) => {
+  preset('talking wobble', (p, route) => {
     p.layers = [makeLayer('wavetable', { table: 'vowel', pos: 0.5 }), makeLayer('analog', { wave: 'sine', oct: -1, level: 0.5 })]
-    p.lfos[0] = { ...p.lfos[0], points: presetPoints('sine'), sync: true, bars: 1 / 8 }
+    const wob = makeLfo({ bars: 1 / 8 })
+    p.modulators = [wob]
+    route(wob, 0, 'pos', 0.9)
   }),
 ]
-
-// routes that point at a layer need that layer's id, so they're added once the layers exist
-const LAYER_ROUTES = {
-  reese: [['lfo1', 0, 'detune', 0.3]],
-  pluck: [['env', 1, 'level', 0.6]],
-  'glass pad': [['lfo1', 0, 'pos', 0.5], ['lfo2', 1, 'pan', 0.6]],
-  'fm bell': [['env', 0, 'fm', 1]],
-  'talking wobble': [['lfo1', 0, 'pos', 0.9]],
-}
-for (const p of PRESETS) {
-  for (const [src, index, knob, amt] of LAYER_ROUTES[p.name] ?? []) p.mods.push({ id: newPartId(), src, target: `layer:${p.layers[index].id}.${knob}`, amt })
-}

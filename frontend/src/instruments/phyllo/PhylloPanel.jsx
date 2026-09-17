@@ -2,17 +2,19 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Knob from '../../Knob.jsx'
 import { drawCurve, drawWave, fitCanvas } from '../scope.js'
 import {
-  FM_WAVES, K, LFO_BARS, LFO_MODES, LFO_POLARITIES, LFO_PRESETS, MAX_LAYERS, MAX_ROUTES, NOISES, PRESETS, SOURCE_LABELS,
-  TABLES, TABLE_NAMES, WARP_MODES, barsLabel, layerKnobKey, makeLayer, newPartId, normalizePatch, targetSpec,
+  FM_WAVES, K, LFO_BARS, LFO_MODES, LFO_POLARITIES, LFO_PRESETS, MAX_LAYERS, MAX_MODULATORS, MAX_ROUTES, MAX_ROUTES_EACH,
+  NOISES, PRESETS, TABLES, TABLE_NAMES, WARP_MODES, barsLabel, layerKnobKey, layerLetter, makeEnv, makeLayer, makeLfo,
+  modColor, modKnobKey, modName, newPartId, normalizePatch, targetSpec,
 } from './model.js'
 import { tableFrame } from './tables.js'
 import CurveEditor from '../CurveEditor.jsx'
 import './phyllo.css'
 
 /**
- * Phyllo's face, inside its instrument window: oscillators across the top,
- * envelopes and LFOs below, each modulator listing where it goes. (Typing plays it: the
- * window's keyboard, see SynthWindow.jsx.)
+ * Phyllo's face, inside its instrument window, laid out as Phase Plant is: generators
+ * stacked down the left and out through the amp envelope, effects to their right (next),
+ * and a bar of modulators along the bottom — as many LFOs and envelopes as you add, each
+ * listing where it goes. (Typing plays it: the window's keyboard, see SynthWindow.jsx.)
  *
  * Props from the window: `data` (the patch), `change(fn)` (edit a copy of it),
  * `target(key)` (a knob's automation target), `watch(fn)` (the processor's reports) and
@@ -20,7 +22,6 @@ import './phyllo.css'
  */
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 const PRESET_KEY = 'phyllo:presets'
-const letter = (i) => String.fromCharCode(65 + i)
 
 function readJson(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback } catch { return fallback }
@@ -181,7 +182,7 @@ function Segmented({ label, value, options, onChange, format = (o) => o }) {
  * modulation destination, `auto` its automation key.
  */
 function ModKnob({ ui, route, auto, def, value, onChange }) {
-  const routes = route ? ui.patch.mods.filter((m) => m.target === route) : []
+  const routes = route ? ui.patch.routes.filter((r) => r.target === route) : []
   const pos = (v) => (def.log ? Math.log(v / def.min) / Math.log(def.max / def.min) : (v - def.min) / (def.max - def.min))
   const at = clamp(pos(value), 0, 1)
   const arc = (a0, a1, r) => {
@@ -192,16 +193,16 @@ function ModKnob({ ui, route, auto, def, value, onChange }) {
     return `M ${x0} ${y0} A ${r} ${r} 0 ${Math.abs(a1 - a0) > 2 / 3 ? 1 : 0} 1 ${x1} ${y1}`
   }
   return (
-    <div className="ph-modknob" title={routes.length ? `moved by ${routes.map((m) => SOURCE_LABELS[m.src]).join(', ')}` : undefined}>
+    <div className="ph-modknob" title={routes.length ? `moved by ${routes.map((r) => modName(ui.patch, r.src)).join(', ')}` : undefined}>
       <Knob def={def} value={value} onChange={onChange} target={auto ? ui.target(auto) : null} />
       {routes.length > 0 && (
         <svg className="ph-rings" width="44" height="44" viewBox="0 0 44 44" aria-hidden>
-          {routes.map((m, i) => {
-            // an envelope sweeps one way from the knob; an lfo swings either side
-            // a bipolar lfo swings either side of the knob; the envelope and an up or down lfo push one way
-            const pol = m.src === 'env' ? 'up' : ui.patch.lfos[Number(m.src.slice(3)) - 1]?.polarity
-            const [a0, a1] = pol === 'bi' ? [at - Math.abs(m.amt) / 2, at + Math.abs(m.amt) / 2] : [at, at + (pol === 'down' ? -m.amt : m.amt)]
-            return <path key={m.id} d={arc(clamp(a0, 0, 1), clamp(a1, 0, 1), 20 - i * 3)} className={`ph-ring src-${m.src}`} />
+          {routes.slice(0, 4).map((r, i) => {
+            // a bipolar lfo swings either side of the knob; envelopes and up or down lfos push one way
+            const mod = ui.patch.modulators.find((m) => m.id === r.src)
+            const pol = mod?.kind === 'lfo' ? mod.polarity : 'up'
+            const [a0, a1] = pol === 'bi' ? [at - Math.abs(r.amt) / 2, at + Math.abs(r.amt) / 2] : [at, at + (pol === 'down' ? -r.amt : r.amt)]
+            return <path key={r.id} d={arc(clamp(a0, 0, 1), clamp(a1, 0, 1), 20 - i * 3)} className="ph-ring" style={{ stroke: modColor(ui.patch, r.src) }} />
           })}
         </svg>
       )}
@@ -244,52 +245,55 @@ function destinations(patch) {
     if (tone) knobs.unshift(tone)
     if (l.type === 'wavetable') knobs.push('warp', 'detune', 'spread')
     if (l.type === 'supersaw') knobs.push('spread')
-    if (l.type !== 'noise') knobs.push('fm', 'fine')
-    for (const k of new Set(knobs)) list.push([`layer:${l.id}.${k}`, `${letter(i)} ${K[k].label}`])
+    if (l.type !== 'noise') knobs.push('fm', 'ratio', 'fine')
+    for (const k of new Set(knobs)) list.push([`layer:${l.id}.${k}`, `${layerLetter(i)} ${K[k].label}`])
   })
   return list
 }
 
 const AMOUNT = { key: 'amt', label: 'amount', min: -1, max: 1, def: 0.5, unit: 'bi', origin: 0 }
 
+/** Where one modulator goes: a destination and an amount each. */
 function Destinations({ ui, src }) {
   const { patch, edit } = ui
-  const routes = patch.mods.filter((m) => m.src === src)
+  const routes = patch.routes.filter((r) => r.src === src)
   const options = destinations(patch)
-  const free = options.filter(([t]) => !routes.some((m) => m.target === t))
+  const free = options.filter(([t]) => !routes.some((r) => r.target === t))
+  const color = modColor(patch, src)
+  const room = routes.length < MAX_ROUTES_EACH && patch.routes.length < MAX_ROUTES
   return (
     <div className="ph-dests">
-      {routes.map((m) => (
-        <div key={m.id} className="ph-dest">
-          <span className={`ph-dot src-${src}`} aria-hidden />
+      {routes.map((r) => (
+        <div key={r.id} className="ph-dest">
+          <span className="ph-dot" style={{ color }} aria-hidden />
           <select
-            value={m.target}
-            aria-label={`${SOURCE_LABELS[src]} destination`}
-            onChange={(e) => edit((p) => { const r = p.mods.find((x) => x.id === m.id); if (r && !p.mods.some((x) => x.src === src && x.target === e.target.value)) r.target = e.target.value })}
+            value={r.target}
+            aria-label={`${modName(patch, src)} destination`}
+            onChange={(e) => edit((p) => { const x = p.routes.find((y) => y.id === r.id); if (x && !p.routes.some((y) => y.src === src && y.target === e.target.value)) x.target = e.target.value })}
           >
-            {!options.some(([t]) => t === m.target) && <option value={m.target}>{targetSpec(patch, m.target)?.label ?? 'gone'}</option>}
-            {options.map(([t, label]) => <option key={t} value={t} disabled={t !== m.target && routes.some((x) => x.target === t)}>{label}</option>)}
+            {!options.some(([t]) => t === r.target) && <option value={r.target}>{targetSpec(patch, r.target)?.label ?? 'gone'}</option>}
+            {options.map(([t, label]) => <option key={t} value={t} disabled={t !== r.target && routes.some((x) => x.target === t)}>{label}</option>)}
           </select>
           <div className="ph-dest-amt">
-            <Knob def={AMOUNT} value={m.amt} onChange={(v) => edit((p) => { const r = p.mods.find((x) => x.id === m.id); if (r) r.amt = v })} />
+            <Knob def={AMOUNT} value={r.amt} onChange={(v) => edit((p) => { const x = p.routes.find((y) => y.id === r.id); if (x) x.amt = v })} />
           </div>
-          <button type="button" className="ph-x" aria-label="Remove destination" onClick={() => edit((p) => { p.mods = p.mods.filter((x) => x.id !== m.id) })}>×</button>
+          <button type="button" className="ph-x" aria-label="Remove destination" onClick={() => edit((p) => { p.routes = p.routes.filter((x) => x.id !== r.id) })}>×</button>
         </div>
       ))}
-      {free.length > 0 && routes.length < MAX_ROUTES && (
-        <button type="button" className="ph-add" onClick={() => edit((p) => { p.mods.push({ id: newPartId(), src, target: free[0][0], amt: 0.5 }) })}>+ destination</button>
+      {free.length > 0 && room && (
+        <button type="button" className="ph-add" onClick={() => edit((p) => { p.routes.push({ id: newPartId(), src, target: free[0][0], amt: 0.5 }) })}>+ destination</button>
       )}
+      {!routes.length && !free.length && <span className="ph-small-label">add a generator to have something to move</span>}
     </div>
   )
 }
 
 // ── sections ─────────────────────────────────────────────────────────────────
 
-function Section({ title, index, className = '', aside, children }) {
+function Section({ title, className = '', aside, children }) {
   return (
     <section className={`ph-card ${className}`} aria-label={title}>
       <header className="ph-card-head">
-        {index != null && <span className="ph-card-num" aria-hidden>{String(index).padStart(2, '0')}</span>}
         <h3>{title}</h3>
         {aside}
       </header>
@@ -298,8 +302,17 @@ function Section({ title, index, className = '', aside, children }) {
   )
 }
 
-/** One oscillator slot: its sound, a look at it, and every control it has, all in view. */
-function LayerSlot({ ui, layer, index }) {
+const Chevron = ({ open }) => (
+  <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.12s' }}>
+    <path d="M3 1.5 L7 5 L3 8.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+  </svg>
+)
+const CopyIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden><rect x="0.5" y="3.5" width="8" height="8" fill="none" stroke="currentColor" /><path d="M3.5 3.5V0.5h8v8h-3" fill="none" stroke="currentColor" /></svg>
+)
+
+/** One generator: a strip in the stack, folding down to its header. */
+function Generator({ ui, layer, index }) {
   const set = (fn) => ui.edit((p) => { const l = p.layers.find((x) => x.id === layer.id); if (l) fn(l) })
   const knob = (k) => (
     <ModKnob key={k} ui={ui} route={`layer:${layer.id}.${k}`} auto={layerKnobKey(layer.id, k)} def={K[k]} value={layer[k]} onChange={(v) => set((l) => { l[k] = v })} />
@@ -308,42 +321,52 @@ function LayerSlot({ ui, layer, index }) {
   const full = ui.patch.layers.length >= MAX_LAYERS
   const stacked = layer.type === 'supersaw' || layer.type === 'wavetable'
   const pitched = layer.type !== 'noise'
+  const open = !layer.collapsed
   return (
-    <div className={`ph-slot ${layer.on ? '' : 'off'}`}>
-      <div className="ph-slot-head">
-        <button type="button" className={`ph-power ${layer.on ? 'on' : ''}`} aria-pressed={layer.on} title={layer.on ? 'Turn this layer off' : 'Turn this layer on'} aria-label={`Layer ${letter(index)} ${layer.on ? 'on' : 'off'}`} onClick={() => set((l) => { l.on = !l.on })}>{letter(index)}</button>
-        <select className="ph-sound" value={soundOf(layer)} aria-label={`Layer ${letter(index)} sound`} title={layer.type === 'wavetable' ? TABLES[layer.table] : undefined} onChange={(e) => set((l) => applySound(l, e.target.value))}>
+    <div className={`ph-gen ${layer.on ? '' : 'off'} ${open ? 'open' : 'folded'}`}>
+      <div className="ph-gen-head">
+        <button type="button" className="ph-fold" aria-expanded={open} title={open ? 'Fold it away' : 'Open it'} onClick={() => set((l) => { if (l.collapsed) delete l.collapsed; else l.collapsed = true })}><Chevron open={open} /></button>
+        <button type="button" className={`ph-power ${layer.on ? 'on' : ''}`} aria-pressed={layer.on} title={layer.on ? 'Turn this generator off' : 'Turn this generator on'} aria-label={`Generator ${layerLetter(index)} ${layer.on ? 'on' : 'off'}`} onClick={() => set((l) => { l.on = !l.on })}>{layerLetter(index)}</button>
+        <select className="ph-sound" value={soundOf(layer)} aria-label={`Generator ${layerLetter(index)} sound`} title={layer.type === 'wavetable' ? TABLES[layer.table] : undefined} onChange={(e) => set((l) => applySound(l, e.target.value))}>
           {SOUND_GROUPS.map(([group, items]) => (
             <optgroup key={group} label={group}>{items.map(([k, label]) => <option key={k} value={k}>{label}</option>)}</optgroup>
           ))}
         </select>
-        <button type="button" className="ph-icon" disabled={full} title="Duplicate this layer" aria-label={`Duplicate layer ${letter(index)}`} onClick={() => ui.edit((p) => { const i = p.layers.findIndex((x) => x.id === layer.id); if (i >= 0 && p.layers.length < MAX_LAYERS) p.layers.splice(i + 1, 0, { ...JSON.parse(JSON.stringify(layer)), id: newPartId() }) })}><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden><rect x="0.5" y="3.5" width="8" height="8" fill="none" stroke="currentColor" /><path d="M3.5 3.5V0.5h8v8h-3" fill="none" stroke="currentColor" /></svg></button>
-        <button type="button" className="ph-icon" title="Remove this layer" aria-label={`Remove layer ${letter(index)}`} onClick={() => ui.edit((p) => { p.layers = p.layers.filter((x) => x.id !== layer.id); p.mods = p.mods.filter((m) => !m.target.startsWith(`layer:${layer.id}.`)) })}>×</button>
+        {!open && <span className="ph-gen-sum">{Math.round(layer.level * 100)}%{layer.oct ? ` · ${layer.oct > 0 ? '+' : ''}${layer.oct} oct` : ''}</span>}
+        <span className="spacer" />
+        <button type="button" className="ph-icon" title="Move up" aria-label="Move up" disabled={index === 0} onClick={() => ui.edit((p) => { const i = p.layers.findIndex((x) => x.id === layer.id); if (i > 0) p.layers.splice(i - 1, 0, ...p.layers.splice(i, 1)) })}>↑</button>
+        <button type="button" className="ph-icon" title="Move down" aria-label="Move down" disabled={index === ui.patch.layers.length - 1} onClick={() => ui.edit((p) => { const i = p.layers.findIndex((x) => x.id === layer.id); if (i >= 0 && i < p.layers.length - 1) p.layers.splice(i + 1, 0, ...p.layers.splice(i, 1)) })}>↓</button>
+        <button type="button" className="ph-icon" disabled={full} title="Duplicate" aria-label={`Duplicate generator ${layerLetter(index)}`} onClick={() => ui.edit((p) => { const i = p.layers.findIndex((x) => x.id === layer.id); if (i >= 0 && p.layers.length < MAX_LAYERS) p.layers.splice(i + 1, 0, { ...JSON.parse(JSON.stringify(layer)), id: newPartId() }) })}><CopyIcon /></button>
+        <button type="button" className="ph-icon" title="Remove" aria-label={`Remove generator ${layerLetter(index)}`} onClick={() => ui.edit((p) => { p.layers = p.layers.filter((x) => x.id !== layer.id); p.routes = p.routes.filter((r) => !r.target.startsWith(`layer:${layer.id}.`)) })}>×</button>
       </div>
-      <LayerScope layer={layer} />
-      <div className="ph-slot-steps">
-        {pitched && <Stepper label="octave" value={layer.oct} min={-3} max={3} onChange={(v) => set((l) => { l.oct = v })} format={(v) => (v > 0 ? `+${v}` : v)} />}
-        {pitched && <Stepper label="semi" value={layer.semi} min={-12} max={12} onChange={(v) => set((l) => { l.semi = v })} format={(v) => (v > 0 ? `+${v}` : v)} />}
-        {stacked && <Stepper label="voices" value={layer.unison} min={1} max={16} onChange={(v) => set((l) => { l.unison = v })} />}
-      </div>
-      <div className="ph-slot-knobs">
-        {knob('level')}
-        {knob('pan')}
-        {tone && knob(tone)}
-        {pitched && knob('fine')}
-        {layer.type === 'wavetable' && layer.unison > 1 && knob('detune')}
-        {stacked && (layer.type === 'supersaw' || layer.unison > 1) && knob('spread')}
-        {layer.type === 'wavetable' && knob('warp')}
-        {pitched && knob('fm')}
-        {pitched && layer.fm > 0 && knob('ratio')}
-      </div>
-      {(layer.type === 'wavetable' || (pitched && layer.fm > 0)) && (
-        <div className="ph-slot-opts">
-          {layer.type === 'wavetable' && (
-            <label className="ph-field"><span className="ph-small-label">warp</span><select value={layer.warpmode} onChange={(e) => set((l) => { l.warpmode = e.target.value })}>{WARP_MODES.map((w) => <option key={w}>{w}</option>)}</select></label>
-          )}
-          {pitched && layer.fm > 0 && (
-            <label className="ph-field"><span className="ph-small-label">fm wave</span><select value={layer.fmwave} onChange={(e) => set((l) => { l.fmwave = e.target.value })}>{FM_WAVES.map((w) => <option key={w}>{w}</option>)}</select></label>
+      {open && (
+        <div className="ph-gen-body">
+          <LayerScope layer={layer} />
+          <div className="ph-gen-steps">
+            {pitched && <Stepper label="octave" value={layer.oct} min={-3} max={3} onChange={(v) => set((l) => { l.oct = v })} format={(v) => (v > 0 ? `+${v}` : v)} />}
+            {pitched && <Stepper label="semi" value={layer.semi} min={-12} max={12} onChange={(v) => set((l) => { l.semi = v })} format={(v) => (v > 0 ? `+${v}` : v)} />}
+            {stacked && <Stepper label="voices" value={layer.unison} min={1} max={16} onChange={(v) => set((l) => { l.unison = v })} />}
+          </div>
+          <div className="ph-gen-knobs">
+            {knob('level')}
+            {knob('pan')}
+            {tone && knob(tone)}
+            {pitched && knob('fine')}
+            {layer.type === 'wavetable' && layer.unison > 1 && knob('detune')}
+            {stacked && (layer.type === 'supersaw' || layer.unison > 1) && knob('spread')}
+            {layer.type === 'wavetable' && knob('warp')}
+            {pitched && knob('fm')}
+            {pitched && layer.fm > 0 && knob('ratio')}
+          </div>
+          {(layer.type === 'wavetable' || (pitched && layer.fm > 0)) && (
+            <div className="ph-gen-opts">
+              {layer.type === 'wavetable' && (
+                <label className="ph-field"><span className="ph-small-label">warp</span><select value={layer.warpmode} onChange={(e) => set((l) => { l.warpmode = e.target.value })}>{WARP_MODES.map((w) => <option key={w}>{w}</option>)}</select></label>
+              )}
+              {pitched && layer.fm > 0 && (
+                <label className="ph-field"><span className="ph-small-label">fm wave</span><select value={layer.fmwave} onChange={(e) => set((l) => { l.fmwave = e.target.value })}>{FM_WAVES.map((w) => <option key={w}>{w}</option>)}</select></label>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -351,14 +374,13 @@ function LayerSlot({ ui, layer, index }) {
   )
 }
 
-/** A slot with no layer: the first one offers to add one. */
-function EmptySlot({ ui, index, first }) {
-  if (!first) return <div className="ph-slot empty" aria-hidden><span className="ph-slot-letter">{letter(index)}</span></div>
+/** Adding a generator: one button a kind. */
+function AddGenerator({ ui }) {
+  if (ui.patch.layers.length >= MAX_LAYERS) return null
   const add = (type, over = {}) => ui.edit((p) => { if (p.layers.length < MAX_LAYERS) p.layers.push(makeLayer(type, over)) })
   return (
-    <div className="ph-slot empty first">
-      <span className="ph-slot-letter">{letter(index)}</span>
-      <span className="ph-small-label">{index === 0 ? 'no sound yet · add a layer' : 'add a layer'}</span>
+    <div className={`ph-gen-add ${ui.patch.layers.length ? '' : 'first'}`}>
+      {!ui.patch.layers.length && <span className="ph-small-label">no sound yet · add a generator</span>}
       <div className="ph-add-list">
         <button type="button" onClick={() => add('analog', { wave: 'sawtooth' })}>analog</button>
         <button type="button" onClick={() => add('supersaw')}>supersaw</button>
@@ -369,19 +391,26 @@ function EmptySlot({ ui, index, first }) {
   )
 }
 
-function Envelope({ ui, which }) {
-  const env = ui.patch[which]
-  const isAmp = which === 'amp'
+const ADSR = ['attack', 'decay', 'sustain', 'release']
+
+/** The amp envelope: every generator goes out through it. */
+function AmpOut({ ui }) {
+  const amp = ui.patch.amp
   return (
-    <Section title={isAmp ? 'amp envelope' : 'mod envelope'} index={isAmp ? 2 : 3} className={isAmp ? 'ph-amp' : 'ph-src src-env'}>
-      <EnvScope env={env} />
-      <div className="ph-knobs tight">
-        {['attack', 'decay', 'sustain', 'release'].map((k) => (
-          <Knob key={k} def={K[k]} value={env[k]} onChange={(v) => ui.edit((p) => { p[which][k] = v })} target={ui.target(`${which}_${k}`)} />
-        ))}
+    <div className="ph-amp-out ph-amp">
+      <div className="ph-gen-head">
+        <span className="ph-out-mark" aria-hidden>out</span>
+        <h4>amp envelope</h4>
       </div>
-      {!isAmp && <Destinations ui={ui} src="env" />}
-    </Section>
+      <div className="ph-amp-body">
+        <EnvScope env={amp} />
+        <div className="ph-knobs tight">
+          {ADSR.map((k) => (
+            <ModKnob key={k} ui={ui} auto={`amp_${k}`} def={K[k]} value={amp[k]} onChange={(v) => ui.edit((p) => { p.amp[k] = v })} />
+          ))}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -389,68 +418,104 @@ const LFO_BUTTONS = [['sine', 'sin'], ['tri', 'tri'], ['saw', 'saw'], ['ramp', '
 const GRIDS = [[0, 'free'], [4, '1/4'], [8, '1/8'], [16, '1/16'], [32, '1/32']]
 const sameShape = (a, b) => a.length === b.length && a.every((p, i) => Math.abs(p.x - b[i].x) < 1e-6 && Math.abs(p.y - b[i].y) < 1e-6 && Math.abs((p.c ?? 0) - (b[i].c ?? 0)) < 0.011 && !p.s === !b[i].s)
 
-/** An LFO: a shape you draw, how it runs, how fast, and where it goes. */
-function Lfo({ ui, index }) {
-  const src = `lfo${index + 1}`
-  const lfo = ui.patch.lfos[index]
-  const set = (fn) => ui.edit((p) => fn(p.lfos[index]))
+/** An LFO's insides: a shape you draw, how it runs, how fast. */
+function LfoBody({ ui, mod, slot }) {
+  const set = (fn) => ui.edit((p) => { const m = p.modulators.find((x) => x.id === mod.id); if (m) fn(m) })
   // the dots: where the synth says this lfo is, carried on at its rate between reports.
   // Free: one shared place. Trig and env: one per sounding voice, none when nothing plays.
-  const rate = lfo.sync ? ui.cps / lfo.bars : lfo.hz
+  const rate = mod.sync ? ui.cps / mod.bars : mod.hz
   const dot = useRef(null)
   dot.current = () => {
     const now = performance.now()
     const r = ui.live.current
     const age = (now - r.t) / 1000
-    const fresh = age < 0.4
-    const wrap1 = (p) => p - Math.floor(p)
-    if (lfo.mode === 'free') return fresh ? wrap1(r.lfo[index] + rate * age) : wrap1((now / 1000) * rate)
+    const fresh = age < 0.4 && r.lfo?.length > slot
+    if (mod.mode === 'free') return fresh ? wrap(r.lfo[slot] + rate * age) : wrap((now / 1000) * rate)
     if (!fresh) return null
-    return r.voices.map((v) => (lfo.mode === 'env' ? Math.min(1, v[index] + rate * age) : wrap1(v[index] + rate * age)))
+    return r.voices.map((v) => (mod.mode === 'env' ? Math.min(1, v[slot] + rate * age) : wrap(v[slot] + rate * age)))
   }
-  const preset = LFO_BUTTONS.find(([name]) => sameShape(lfo.points, LFO_PRESETS[name]))?.[0]
+  const preset = LFO_BUTTONS.find(([name]) => sameShape(mod.points, LFO_PRESETS[name]))?.[0]
   return (
-    <Section
-      title={`lfo ${index + 1}`}
-      index={4 + index}
-      className={`ph-src src-${src} ph-lfo`}
-      aside={<Segmented label="Mode" value={lfo.mode} options={LFO_MODES} onChange={(v) => set((l) => { l.mode = v })} format={(m) => ({ free: 'free', retrig: 'trig', env: 'env' })[m]} />}
-    >
+    <>
       <div className="ph-lfo-shapes" role="group" aria-label="Start from a shape">
         {LFO_BUTTONS.map(([name, label]) => (
-          <button key={name} type="button" className={preset === name ? 'on' : ''} onClick={() => set((l) => { l.points = LFO_PRESETS[name].map((p) => ({ ...p })) })} title={`Start from a ${name} shape`}>{label}</button>
+          <button key={name} type="button" className={preset === name ? 'on' : ''} onClick={() => set((m) => { m.points = LFO_PRESETS[name].map((p) => ({ ...p })) })} title={`Start from a ${name} shape`}>{label}</button>
         ))}
       </div>
       <div className="ph-lfo-draw">
         <CurveEditor
-          points={lfo.points}
-          grid={lfo.grid}
-          zero={({ up: 'bottom', bi: 'middle', down: 'top' })[lfo.polarity]}
-          height={112}
+          points={mod.points}
+          grid={mod.grid}
+          zero={({ up: 'bottom', bi: 'middle', down: 'top' })[mod.polarity]}
+          height={104}
           dot={dot}
-          onChange={(points) => set((l) => { l.points = points })}
+          onChange={(points) => set((m) => { m.points = points })}
         />
       </div>
       <div className="ph-lfo-controls">
         <div className="ph-rate">
-          <Segmented label="Rate mode" value={lfo.sync ? 'bars' : 'hz'} options={['bars', 'hz']} onChange={(v) => set((l) => { l.sync = v === 'bars' })} />
-          {lfo.sync
-            ? <select className="ph-rate-select" aria-label="Every" value={String(lfo.bars)} onChange={(e) => set((l) => { l.bars = Number(e.target.value) })}>{LFO_BARS.map((b) => <option key={b} value={String(b)}>{barsLabel(b)}</option>)}</select>
-            : <Knob def={K.hz} value={lfo.hz} onChange={(v) => set((l) => { l.hz = v })} target={ui.target(`lfo${index + 1}_hz`)} />}
+          <Segmented label="Rate mode" value={mod.sync ? 'bars' : 'hz'} options={['bars', 'hz']} onChange={(v) => set((m) => { m.sync = v === 'bars' })} />
+          {mod.sync
+            ? <select className="ph-rate-select" aria-label="Every" value={String(mod.bars)} onChange={(e) => set((m) => { m.bars = Number(e.target.value) })}>{LFO_BARS.map((b) => <option key={b} value={String(b)}>{barsLabel(b)}</option>)}</select>
+            : <Knob def={K.hz} value={mod.hz} onChange={(v) => set((m) => { m.hz = v })} target={ui.target(modKnobKey(mod.id, 'hz'))} />}
         </div>
-        <div className="ph-grid-pick" title="+ pushes up from zero at the bottom · ± swings both ways around zero in the middle · − pushes down from zero at the top">
-          <span className="ph-small-label">polarity</span>
-          <Segmented label="Polarity" value={lfo.polarity} options={LFO_POLARITIES} format={(v) => ({ up: '+', bi: '±', down: '−' })[v]} onChange={(v) => set((l) => { l.polarity = v })} />
-        </div>
-        <label className="ph-grid-pick" title="Where new and dragged points snap to (alt: anywhere)">
-          <span className="ph-small-label">grid</span>
-          <select value={lfo.grid} onChange={(e) => set((l) => { l.grid = Number(e.target.value) })}>
-            {GRIDS.map(([g, label]) => <option key={g} value={g}>{label}</option>)}
-          </select>
-        </label>
+        <Segmented label="Polarity" value={mod.polarity} options={LFO_POLARITIES} format={(v) => ({ up: '+', bi: '±', down: '−' })[v]} onChange={(v) => set((m) => { m.polarity = v })} />
+        <select className="ph-grid-select" value={mod.grid} aria-label="Grid" title="Where points snap to (alt: anywhere)" onChange={(e) => set((m) => { m.grid = Number(e.target.value) })}>
+          {GRIDS.map(([g, label]) => <option key={g} value={g}>{label === 'free' ? 'no grid' : `grid ${label}`}</option>)}
+        </select>
       </div>
-      <Destinations ui={ui} src={src} />
-    </Section>
+    </>
+  )
+}
+
+/** An envelope modulator's insides. */
+function EnvBody({ ui, mod }) {
+  return (
+    <>
+      <EnvScope env={mod} />
+      <div className="ph-knobs tight">
+        {ADSR.map((k) => (
+          <Knob key={k} def={K[k]} value={mod[k]} onChange={(v) => ui.edit((p) => { const m = p.modulators.find((x) => x.id === mod.id); if (m) m[k] = v })} target={ui.target(modKnobKey(mod.id, k))} />
+        ))}
+      </div>
+    </>
+  )
+}
+
+/** One modulator in the bar: its own colour, its insides, where it goes. */
+function Modulator({ ui, mod, slot }) {
+  const color = modColor(ui.patch, mod.id)
+  const set = (fn) => ui.edit((p) => { const m = p.modulators.find((x) => x.id === mod.id); if (m) fn(m) })
+  return (
+    <section className={`ph-mod ${mod.kind}`} style={{ '--ph-ink': color }} aria-label={modName(ui.patch, mod.id)}>
+      <header className="ph-mod-head">
+        <span className="ph-mod-kind">{mod.kind === 'lfo' ? 'lfo' : 'env'}</span>
+        <h3>{modName(ui.patch, mod.id)}</h3>
+        <span className="spacer" />
+        {mod.kind === 'lfo' && (
+          <Segmented label="Mode" value={mod.mode} options={LFO_MODES} onChange={(v) => set((m) => { m.mode = v })} format={(m) => ({ free: 'free', retrig: 'trig', env: 'env' })[m]} />
+        )}
+        <button type="button" className="ph-icon" title="Duplicate" aria-label="Duplicate" disabled={ui.patch.modulators.length >= MAX_MODULATORS} onClick={() => ui.edit((p) => { const i = p.modulators.findIndex((x) => x.id === mod.id); if (i >= 0 && p.modulators.length < MAX_MODULATORS) { const copy = { ...JSON.parse(JSON.stringify(mod)), id: newPartId() }; delete copy.name; p.modulators.splice(i + 1, 0, copy) } })}><CopyIcon /></button>
+        <button type="button" className="ph-icon" title="Remove (and where it goes)" aria-label="Remove" onClick={() => ui.edit((p) => { p.modulators = p.modulators.filter((x) => x.id !== mod.id); p.routes = p.routes.filter((r) => r.src !== mod.id) })}>×</button>
+      </header>
+      <div className="ph-mod-body">
+        {mod.kind === 'lfo' ? <LfoBody ui={ui} mod={mod} slot={slot} /> : <EnvBody ui={ui} mod={mod} />}
+      </div>
+      <Destinations ui={ui} src={mod.id} />
+    </section>
+  )
+}
+
+/** Adding a modulator. */
+function AddModulator({ ui, compact = false }) {
+  const full = ui.patch.modulators.length >= MAX_MODULATORS
+  const add = (make) => ui.edit((p) => { if (p.modulators.length < MAX_MODULATORS) p.modulators.push(make()) })
+  return (
+    <div className={compact ? 'ph-mod-add-inline' : 'ph-mod-add'}>
+      {!compact && <span className="ph-small-label">{full ? `${MAX_MODULATORS} is the most` : ui.patch.modulators.length ? 'another' : 'nothing moving yet'}</span>}
+      <button type="button" className="ph-btn" disabled={full} onClick={() => add(() => makeLfo())}>+ lfo</button>
+      <button type="button" className="ph-btn" disabled={full} onClick={() => add(() => makeEnv())}>+ envelope</button>
+    </div>
   )
 }
 
@@ -460,7 +525,7 @@ export default function PhylloPanel({ data, change, target, watch, cps = 0.5 }) 
   const patch = data
   const [userPresets, setUserPresets] = useState(() => readJson(PRESET_KEY, []))
   // what the processor last said about its LFOs, and when (see dsp.js report)
-  const live = useRef({ t: -Infinity, lfo: [0, 0], voices: [] })
+  const live = useRef({ t: -Infinity, lfo: [], voices: [] })
   useEffect(() => watch?.((report) => { live.current = { ...report, t: performance.now() } }), []) // eslint-disable-line react-hooks/exhaustive-deps
   const ui = { patch, edit: change, target, cps, live }
 
@@ -471,11 +536,16 @@ export default function PhylloPanel({ data, change, target, watch, cps = 0.5 }) 
   const loadPreset = (key) => {
     const found = allPresets.find((p) => p.key === key)
     if (!found) return
-    // fresh layer and route ids, so automation on the old patch doesn't land on the new one
+    // fresh ids, so automation on the old patch doesn't land on the new one
     const next = normalizePatch(JSON.parse(JSON.stringify(found.patch)))
-    const ids = new Map(next.layers.map((l) => [l.id, newPartId()]))
+    const ids = new Map([...next.layers, ...next.modulators].map((x) => [x.id, newPartId()]))
     next.layers.forEach((l) => { l.id = ids.get(l.id) })
-    next.mods.forEach((m) => { m.id = newPartId(); m.target = m.target.replace(/^layer:(\w+)\./, (all, id) => `layer:${ids.get(id) ?? id}.`) })
+    next.modulators.forEach((m) => { m.id = ids.get(m.id) })
+    next.routes.forEach((r) => {
+      r.id = newPartId()
+      r.src = ids.get(r.src) ?? r.src
+      r.target = r.target.replace(/^layer:(\w+)\./, (all, id) => `layer:${ids.get(id) ?? id}.`)
+    })
     change((p) => { Object.keys(p).forEach((k) => delete p[k]); Object.assign(p, next) })
   }
   const stepPreset = (dir) => {
@@ -507,26 +577,38 @@ export default function PhylloPanel({ data, change, target, watch, cps = 0.5 }) 
           <Segmented label="Voicing" value={patch.mono ? 'mono' : 'poly'} options={['poly', 'mono']} onChange={(v) => change((p) => { p.mono = v === 'mono' })} />
           <Knob def={K.glide} value={patch.glide} onChange={(v) => change((p) => { p.glide = v })} target={target('glide')} />
         </div>
-        <div className="ph-volume"><ModKnob ui={ui} auto="volume" def={K.volume} value={patch.volume} onChange={(v) => change((p) => { p.volume = v })} /></div>
+        <div className="ph-volume"><ModKnob ui={ui} route="amp.level" auto="volume" def={K.volume} value={patch.volume} onChange={(v) => change((p) => { p.volume = v })} /></div>
       </div>
 
       <div className="ph-main">
-        <Section title="oscillators" index={1} className="ph-oscs" aside={<span className="ph-count">{patch.layers.length} / {MAX_LAYERS}</span>}>
-          <div className="ph-slots">
-            {patch.layers.map((l, i) => <LayerSlot key={l.id} ui={ui} layer={l} index={i} />)}
-            {Array.from({ length: MAX_LAYERS - patch.layers.length }, (_, i) => (
-              <EmptySlot key={`empty${i}`} ui={ui} index={patch.layers.length + i} first={i === 0} />
-            ))}
+        <Section title="generators" className="ph-gens" aside={<span className="ph-count">{patch.layers.length} / {MAX_LAYERS}</span>}>
+          <div className="ph-gen-list">
+            {patch.layers.map((l, i) => <Generator key={l.id} ui={ui} layer={l} index={i} />)}
+            <AddGenerator ui={ui} />
+          </div>
+          {/* where every generator goes out: always in view under the stack */}
+          <AmpOut ui={ui} />
+        </Section>
+        <Section title="effects" className="ph-fxcol" aside={<span className="ph-count">soon</span>}>
+          <div className="ph-fx-empty">
+            <span className="ph-fx-mark" aria-hidden>fx</span>
+            <span className="ph-small-label">the effects chain goes here</span>
+            <p>Next: stack effects after the generators, in order, the way the generators stack.</p>
           </div>
         </Section>
       </div>
-      <div className="ph-mods">
-        <Envelope ui={ui} which="amp" />
-        <Envelope ui={ui} which="env" />
-        <Lfo ui={ui} index={0} />
-        <Lfo ui={ui} index={1} />
-      </div>
 
+      <section className="ph-modbar" aria-label="Modulators">
+        <header className="ph-card-head">
+          <h3>modulators</h3>
+          <span className="ph-count">{patch.modulators.length} / {MAX_MODULATORS}</span>
+          <AddModulator ui={ui} compact />
+        </header>
+        <div className="ph-mod-scroll">
+          {patch.modulators.map((m, j) => <Modulator key={m.id} ui={ui} mod={m} slot={j} />)}
+          <AddModulator ui={ui} />
+        </div>
+      </section>
     </div>
   )
 }
