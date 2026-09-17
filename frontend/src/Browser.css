@@ -267,3 +267,13 @@ button.b-card-about {
   transition: background 0.12s ease, color 0.12s ease;
 }
 button.b-card-about:hover { background: var(--acid); color: var(--ink); }
+
+/* a copy points back at what it came from, and that link goes to its page */
+button.b-card-from {
+  position: relative; z-index: 2; max-width: 11rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: inherit; font-size: 10px; color: var(--muted); background: none; border: 0; padding: 0;
+  cursor: var(--ring); text-decoration: underline; text-decoration-color: transparent;
+  transition: color 0.12s ease, text-decoration-color 0.12s ease;
+}
+button.b-card-from::before { content: '⤷ '; color: color-mix(in srgb, var(--acid) 70%, var(--muted)); }
+button.b-card-from:hover { color: var(--paper); text-decoration-color: currentColor; }

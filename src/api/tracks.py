@@ -209,8 +209,11 @@ def list_tracks(request: Request, q: str = "", sort: str = "new", view: str = "e
         like = f"%{q.strip()[:80]}%"
         params += [like, like]
     my_like = "EXISTS(SELECT 1 FROM likes l WHERE l.track_id = t.id AND l.sub = ?)"
+    # what it was made from, so a copy can point back to it without a second request
+    came_from = "LEFT JOIN tracks par ON par.id = t.forked_from AND par.visibility != 'private'"
     sql = (
-        f"SELECT t.*, {my_like} AS my_like FROM tracks t {join} "
+        f"SELECT t.*, {my_like} AS my_like, par.title AS parent_title, par.author AS parent_author "
+        f"FROM tracks t {join} {came_from} "
         f"WHERE {' AND '.join(where)} ORDER BY {SORTS.get(sort, SORTS['new'])} LIMIT ? OFFSET ?"
     )
     conn = _conn()
@@ -219,9 +222,15 @@ def list_tracks(request: Request, q: str = "", sort: str = "new", view: str = "e
     finally:
         conn.close()
     more = len(rows) > limit
+    def row_out(r):
+        keep = {k: r[k] for k in r.keys() if k not in ("my_like", "parent_title", "parent_author")}
+        out = _public(keep, user, r["my_like"], with_code=False)
+        if r["forked_from"] and r["parent_title"]:
+            out["parent"] = {"id": r["forked_from"], "title": r["parent_title"], "author": r["parent_author"]}
+        return out
+
     return {
-        "tracks": [_public({k: r[k] for k in r.keys() if k != "my_like"}, user, r["my_like"], with_code=False)
-                   for r in rows[:limit]],
+        "tracks": [row_out(r) for r in rows[:limit]],
         "more": more,
         "offset": offset + min(len(rows), limit),
     }

@@ -207,7 +207,15 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
                   <span className="b-card-time">{timeAgo(t.updated_at)}</span>
                   {view === 'mine' && t.visibility !== 'public' && <span className="b-tag">{t.visibility}</span>}
                   {t.id === activeId && <span className="b-tag on">open</span>}
-                  {t.forked_from && <span className="b-tag quiet" data-tip="Started as a copy of another track">copy</span>}
+                  {t.parent && (
+                    <button
+                      type="button"
+                      className="b-card-from"
+                      onClick={() => setPage(t.parent.id)}
+                      data-tip={`Opens ${t.parent.title} by ${t.parent.author}, the track this came from`}
+                    >from {t.parent.title}</button>
+                  )}
+                  {t.forked_from && !t.parent && <span className="b-tag quiet" data-tip="Started as a copy of a track that isn't shared">copy</span>}
                 </div>
               </li>
             ))}
