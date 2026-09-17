@@ -1043,7 +1043,9 @@ export default function App() {
     <div className="studio">
       <header className="bar">
         <div className="bar-side left">
-        <Link to="/" className="logo" aria-label="lattice, home">
+        {/* a mark, not a way out: clicking it used to throw away what you had open for a
+            fresh scratch pad, which is a lot to do by accident */}
+        <span className="logo" aria-label="lattice">
           {/* the woven mark from the app icon: two strips over two, gaps cut in the header's black */}
           <svg className="logo-mark" viewBox="14 14 36 36" aria-hidden="true">
             <g strokeLinecap="square" fill="none">
@@ -1053,7 +1055,7 @@ export default function App() {
             </g>
           </svg>
           <span>lattice</span>
-        </Link>
+        </span>
         <span className="transport" role="group" aria-label="Transport">
           <button className="btn tport to-start" onClick={toStart} title="Back to the start (Home)" aria-label="Back to the start">|&lt;</button>
           <button

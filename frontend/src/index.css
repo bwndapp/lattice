@@ -108,12 +108,12 @@ body {
 }
 .logo {
   align-self: flex-end;
-  margin: 0 0.6rem 0.1em 0; /* the whole wordmark sits inside the bar, big as it is */
+  margin: 0 0.75rem 0.12em 0;
   font-family: var(--display);
   font-weight: 900;
   font-stretch: 125%;
-  font-size: 66px; /* the largest that fits whole in the 64px bar */
-  line-height: 0.78;
+  font-size: 34px; /* a mark in the corner: the bar belongs to the track, not the name */
+  line-height: 0.82;
   letter-spacing: -0.05em;
   color: var(--acid);
   text-decoration: none;
