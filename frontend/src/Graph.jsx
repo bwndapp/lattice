@@ -414,7 +414,8 @@ function StudioNode({ id, selected }) {
   if (!node || !spec) return null
 
   const multi = spec.inputs === 'many'
-  const splitOff = ctx.project.edges.filter((e) => e.source === id && String(e.sourceHandle ?? '').startsWith('out-')).length
+  const offMain = node?.data?.offMain ?? {}
+  const heldBack = Object.values(offMain).filter(Boolean).length
   const nextSlot = `in-${wires.reduce((m, w) => Math.max(m, slotNum(w.targetHandle)), -1) + 1}`
   const soloing = ctx.solo === id
   const pattern = patternOf
@@ -477,9 +478,20 @@ function StudioNode({ id, selected }) {
                 <ul className="node-chans">
                   {pattern.channels.map((c) => {
                     const wired = ctx.project.edges.some((e) => e.source === id && e.sourceHandle === `out-${c.id}`)
+                    const onMain = !offMain[c.id]
                     return (
-                      <li key={c.id} className={`chan ${c.mute ? 'muted' : ''} ${wired ? 'wired' : ''}`} data-flow={`${id}|${c.id}`}>
+                      <li key={c.id} className={`chan ${c.mute ? 'muted' : ''} ${wired ? 'wired' : ''} ${onMain ? '' : 'held'}`} data-flow={`${id}|${c.id}`}>
                         <span className="chan-name">{c.name}</span>
+                        {wired && (
+                          <button
+                            className={`chan-main nodrag ${onMain ? 'on' : ''}`}
+                            aria-pressed={onMain}
+                            title={onMain
+                              ? `${c.name} plays out the main port as well as its own wire · click to take it off the main`
+                              : `${c.name} only leaves by its own wire · click to put it back on the main`}
+                            onClick={() => ctx.updateNode(id, (d) => { d.offMain = { ...(d.offMain ?? {}), [c.id]: onMain } })}
+                          >main</button>
+                        )}
                         <Handle
                           type="source"
                           position={Position.Right}
@@ -491,13 +503,13 @@ function StudioNode({ id, selected }) {
                     )
                   })}
                   <li className="chan mix">
-                    <span className="chan-name">{splitOff > 0 ? 'rest' : 'all'}</span>
+                    <span className="chan-name">{heldBack > 0 ? 'rest' : 'all'}</span>
                     <Handle
                       type="source"
                       position={Position.Right}
                       id="out"
                       className="port out"
-                      title={splitOff > 0 ? 'Everything not wired out on its own' : 'The whole pattern'}
+                      title={heldBack > 0 ? 'Every instrument except the ones held back' : 'Every instrument in the pattern'}
                     />
                   </li>
                 </ul>
@@ -832,9 +844,9 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, transport }) 
   // what feeds what, so a hit anywhere lights its way to the output (flow.js)
   const litPaths = useMemo(() => flowPaths(project, {
     sourceTypes: SOURCE_TYPES,
-    splitOf: (nodeId) => new Set(project.edges
-      .filter((e) => e.source === nodeId && String(e.sourceHandle ?? '').startsWith('out-'))
-      .map((e) => e.sourceHandle.slice(4))),
+    splitOf: (nodeId) => new Set(Object.entries(project.nodes.find((n) => n.id === nodeId)?.data?.offMain ?? {})
+      .filter(([, v]) => v === true)
+      .map(([k]) => k)),
   }), [project])
   // what colour each source glows: the one its clips wear on the timeline
   const litColors = useMemo(() => {

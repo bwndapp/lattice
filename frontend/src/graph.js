@@ -627,7 +627,10 @@ export function normalizeGraph(raw, patterns) {
         .slice(0, 16)
         .map((u) => ({ id: u.id.replace(/\W/g, '').slice(0, 24) || 'fx', type: u.type, on: u.on !== false, data: cleanData(u.type, u.data) }))
     }
-    if (n.type === 'pattern') data.patternId = patternIds.has(n.data?.patternId) ? n.data.patternId : [...patternIds][0] ?? null
+    if (n.type === 'pattern') {
+      data.patternId = patternIds.has(n.data?.patternId) ? n.data.patternId : [...patternIds][0] ?? null
+      data.offMain = Object.fromEntries(Object.entries(n.data?.offMain ?? {}).filter(([, v]) => v === true))
+    }
     if (n.type === 'arrange') data.bars = Object.fromEntries(Object.entries(n.data?.bars ?? {}).filter(([k]) => /^in-\d+$/.test(k)).map(([k, v]) => [k, Math.round(clampNum(v, 4, 1, 64))]))
     if (n.type === 'output') {
       data.muted = Object.fromEntries(Object.entries(n.data?.muted ?? {}).filter(([, v]) => v === true))
@@ -763,10 +766,12 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     // a single input passes its bus on; mixing several inputs lands back on the main bus
     const route = { orbit: inputs.length === 1 && spec.inputs !== 'many' ? inputOrbits[0] : null }
     const autoOf = auto ? (key) => auto(`n:${id}:${key}`) : null
-    // instruments this node sends out on their own port don't also go out its main one
-    const split = new Set(edges.filter((e) => e.source === id).map((e) => outChannel(e.sourceHandle)).filter(Boolean))
-    const mixChannels = (pid) => (split.size
-      ? channelsOf(pid).filter((c) => !split.has(c.id)).map((c) => patternChanVar(pid, c.id))
+    // Wiring an instrument's own port is a copy: it still goes out the main one as well,
+    // because a wire shouldn't silently take a sound out of the mix. Taking it off the main
+    // is a separate thing you ask for, instrument by instrument.
+    const off = new Set(Object.entries(node.data?.offMain ?? {}).filter(([, v]) => v === true).map(([k]) => k))
+    const mixChannels = (pid) => (off.size
+      ? channelsOf(pid).filter((c) => !off.has(c.id)).map((c) => patternChanVar(pid, c.id))
       : null)
     let expr = spec.code(node.data, inputs, { patternIds, mixChannels, slots, nodeId: id, orbit: 2 + sidechains.indexOf(id), cps, beats, route, inputOrbits, stereoOrbit, declare, routeBus, auto, autoOf, declareFx: (key, kind, params) => declareFx(fx, key, kind, params) })
     if (!expr) { exprs.set(id, null); return null }
