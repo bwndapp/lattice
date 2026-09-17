@@ -184,7 +184,16 @@
 .ph-rate { display: flex; align-items: flex-end; gap: 0.35rem; }
 
 .ph-dests { display: grid; gap: 0.3rem; padding: 0.5rem 0.7rem 0.7rem; margin-top: auto; border-top: 1px solid var(--ph-line); }
-.ph-dest { display: grid; grid-template-columns: 6px minmax(0, 1fr) auto 24px; align-items: center; gap: 0 0.4rem; padding: 2px 0 2px 4px; margin-left: -4px; border-radius: 2px; }
+.ph-dest { display: grid; grid-template-columns: 6px minmax(0, 1fr) auto auto 24px; align-items: center; gap: 0 0.4rem; padding: 2px 0 2px 4px; margin-left: -4px; border-radius: 2px; }
+.ph-pol {
+  width: 22px; height: 22px; padding: 0; font: inherit; font-size: 12px; line-height: 1; font-weight: 700;
+  color: var(--muted); background: var(--ph-well); border: 1px solid var(--ph-line); border-radius: 2px; cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+.ph-pol:hover { color: var(--paper); border-color: var(--ph-line-strong); }
+.src-env .ph-pol.up, .src-env .ph-pol.down { color: var(--src-env); }
+.src-lfo1 .ph-pol.up, .src-lfo1 .ph-pol.down { color: var(--src-lfo1); }
+.src-lfo2 .ph-pol.up, .src-lfo2 .ph-pol.down { color: var(--src-lfo2); }
 .ph-dest:hover { background: rgba(255, 255, 255, 0.025); }
 .ph-dest select { width: 100%; }
 .ph-dest-amt .knob { width: 36px; }

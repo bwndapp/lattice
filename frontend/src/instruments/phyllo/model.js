@@ -108,6 +108,12 @@ export const MAX_LAYERS = 4
 export const MAX_ROUTES = 4 // per modulator
 export const SOURCES = ['env', 'lfo1', 'lfo2']
 export const SOURCE_LABELS = { env: 'mod env', lfo1: 'lfo 1', lfo2: 'lfo 2' }
+/*
+ * A route is { id, src, target, amt -1…1, bi }. Bipolar (bi) swings the knob both ways
+ * around where it's set, half of amt each way; unipolar moves it one way only, all of
+ * amt: up for a positive amount, down for a negative one. LFOs start bipolar, the
+ * envelope unipolar.
+ */
 export const TABLES = {
   basic: 'sine → triangle → saw → square',
   bright: 'one harmonic → all of them',
@@ -234,7 +240,7 @@ export function normalizePatch(raw) {
     const key = `${m.src}>${m.target}`
     if (routes.has(key) || patch.mods.filter((x) => x.src === m.src).length >= MAX_ROUTES) continue
     routes.add(key)
-    patch.mods.push({ id: typeof m.id === 'string' && /^\w{1,12}$/.test(m.id) ? m.id : newPartId(), src: m.src, target: m.target, amt: num(m.amt, 0.5, -1, 1) })
+    patch.mods.push({ id: typeof m.id === 'string' && /^\w{1,12}$/.test(m.id) ? m.id : newPartId(), src: m.src, target: m.target, amt: num(m.amt, 0.5, -1, 1), bi: typeof m.bi === 'boolean' ? m.bi : m.src !== 'env' })
   }
   return patch
 }
@@ -305,6 +311,7 @@ export const AUDIO_PARAMS = [
   ...Array.from({ length: SOURCES.length * MAX_ROUTES }, (_, i) => [
     { key: `m${i}_dest`, min: 0, max: 60, def: 0 },
     { key: `m${i}_amt`, min: -1, max: 1, def: 0 },
+    { key: `m${i}_bi`, min: 0, max: 1, def: 1 },
   ]).flat(),
   { key: 'mono', min: 0, max: 1, def: 0 },
   { key: 'glide', min: 0, max: 1, def: 0 },
@@ -361,6 +368,7 @@ export function encodePatch(patch, { cps = 0.5 } = {}) {
       const m = routes[r]
       out[`m${s * MAX_ROUTES + r}_dest`] = m ? destIndex(patch, m.target) : 0
       out[`m${s * MAX_ROUTES + r}_amt`] = m ? m.amt : 0
+      out[`m${s * MAX_ROUTES + r}_bi`] = m?.bi ? 1 : 0
     }
   })
   out.mono = patch.mono ? 1 : 0

@@ -254,7 +254,7 @@ function ModKnob({ ui, route, auto, def, value, onChange }) {
         <svg className="ph-rings" width="44" height="44" viewBox="0 0 44 44" aria-hidden>
           {routes.map((m, i) => {
             // an envelope sweeps one way from the knob; an lfo swings either side
-            const [a0, a1] = m.src === 'env' ? [at, at + m.amt] : [at - Math.abs(m.amt) / 2, at + Math.abs(m.amt) / 2]
+            const [a0, a1] = m.bi ? [at - Math.abs(m.amt) / 2, at + Math.abs(m.amt) / 2] : [at, at + m.amt]
             return <path key={m.id} d={arc(clamp(a0, 0, 1), clamp(a1, 0, 1), 20 - i * 3)} className={`ph-ring src-${m.src}`} />
           })}
         </svg>
@@ -324,6 +324,13 @@ function Destinations({ ui, src }) {
             {!options.some(([t]) => t === m.target) && <option value={m.target}>{targetSpec(patch, m.target)?.label ?? 'gone'}</option>}
             {options.map(([t, label]) => <option key={t} value={t} disabled={t !== m.target && routes.some((x) => x.target === t)}>{label}</option>)}
           </select>
+          <button
+            type="button"
+            className={`ph-pol ${m.bi ? 'bi' : m.amt < 0 ? 'down' : 'up'}`}
+            onClick={() => edit((p) => { const r = p.mods.find((x) => x.id === m.id); if (r) r.bi = !r.bi })}
+            title={m.bi ? 'Bipolar: swings both ways around the knob · click for one way only' : `Unipolar: moves the knob ${m.amt < 0 ? 'down' : 'up'} only (the amount's sign picks which) · click for both ways`}
+            aria-label={m.bi ? 'Bipolar' : 'Unipolar'}
+          >{m.bi ? '±' : m.amt < 0 ? '−' : '+'}</button>
           <div className="ph-dest-amt">
             <Knob def={AMOUNT} value={m.amt} onChange={(v) => edit((p) => { const r = p.mods.find((x) => x.id === m.id); if (r) r.amt = v })} />
           </div>
@@ -331,7 +338,7 @@ function Destinations({ ui, src }) {
         </div>
       ))}
       {free.length > 0 && routes.length < MAX_ROUTES && (
-        <button type="button" className="ph-add" onClick={() => edit((p) => { p.mods.push({ id: newPartId(), src, target: free[0][0], amt: 0.5 }) })}>+ destination</button>
+        <button type="button" className="ph-add" onClick={() => edit((p) => { p.mods.push({ id: newPartId(), src, target: free[0][0], amt: 0.5, bi: src !== 'env' }) })}>+ destination</button>
       )}
     </div>
   )

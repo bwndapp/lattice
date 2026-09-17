@@ -29,7 +29,7 @@ const PH_LN = [0, 1, 2, 3].map((i) => {
 const PH_LFO_TABLE = 1024
 const PH_LFO_START = ${JSON.stringify(['sine', 'tri'].map((n) => LFO_PRESETS[n].map((p) => [p.x, p.y, p.c ?? 0])))}
 const PH_ON = [0, 1].map((i) => ({ mode: 'o' + i + '_mode', sync: 'o' + i + '_sync', bars: 'o' + i + '_bars', hz: 'o' + i + '_hz' }))
-const PH_MN = Array.from({ length: 12 }, (_, s) => ['m' + s + '_dest', 'm' + s + '_amt'])
+const PH_MN = Array.from({ length: 12 }, (_, s) => ['m' + s + '_dest', 'm' + s + '_amt', 'm' + s + '_bi'])
 const phPos = (v, s) => (s.log ? Math.log(v / s.min) / Math.log(s.max / s.min) : (v - s.min) / (s.max - s.min))
 const phVal = (t, s) => { t = t < 0 ? 0 : t > 1 ? 1 : t; return s.log ? s.min * (s.max / s.min) ** t : s.min + t * (s.max - s.min) }
 // a layer knob moved by its routes, on the knob's travel
@@ -185,7 +185,12 @@ class PhylloProcessor extends LatticeInstrument {
       const dest = Math.round(k[PH_MN[s][0]])
       const amt = k[PH_MN[s][1]]
       if (!dest || !amt) continue
-      const src = s < 4 ? voice.env.v : lv[s < 8 ? 0 : 1] * 0.5
+      // every source as 0 … 1 (the envelope) or -1 … 1 (an lfo), then as the route wants it:
+      // bipolar swings half the amount each way, unipolar moves all of it one way
+      const bi = k[PH_MN[s][2]] > 0.5
+      const src = s < 4
+        ? (bi ? (voice.env.v * 2 - 1) * 0.5 : voice.env.v)
+        : (bi ? lv[s < 8 ? 0 : 1] * 0.5 : (lv[s < 8 ? 0 : 1] + 1) * 0.5)
       m[dest] += amt * src
     }
     const c = voice.ctl || (voice.ctl = { layers: [0, 1, 2, 3].map(() => ({})), s1: new Float64Array(4), s2: new Float64Array(4) })
