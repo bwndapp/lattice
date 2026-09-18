@@ -14,6 +14,7 @@
  * to something beside the grid, which there isn't.
  */
 .b-top {
+  position: relative;
   display: grid;
   justify-items: center;
   gap: 0.6rem;
@@ -112,15 +113,9 @@
 .b-search-clear:hover { color: var(--paper); background: rgba(255, 255, 255, 0.06); }
 
 /* buttons */
-/* starting a track is one small pill; the demo is a way in, not a second offer of equal
-   weight, so it's a word beside it */
-.b-new { display: flex; align-items: center; gap: 0.7rem; margin-left: auto; }
-.b-demo {
-  font: inherit; font-size: 10.5px; color: var(--muted); background: none; border: 0; padding: 0;
-  cursor: var(--ring); text-decoration: underline; text-decoration-color: transparent;
-  transition: color 0.12s ease, text-decoration-color 0.12s ease;
-}
-.b-demo:hover { color: var(--paper); text-decoration-color: currentColor; }
+/* starting a track belongs with the controls, in the corner — out of the way of the
+   results, and out of the way of the switch that's centred between them */
+.b-new { position: absolute; top: 1.2rem; right: 1.4rem; }
 .b-button.small { height: 1.75rem; padding: 0 0.7rem; font-size: 0.62rem; gap: 0.3rem; }
 .b-button.small span { font-size: 0.8rem; line-height: 1; margin-top: -0.05em; }
 .b-button {
@@ -283,6 +278,7 @@
 /* phones: the same column, tighter, one card wide */
 @media (max-width: 860px) {
   .b-top { padding: 0.9rem 1rem 0.8rem; gap: 0.5rem; }
+  .b-new { position: static; justify-self: center; }
   .b-find { flex-wrap: wrap; }
   .b-find > .b-switch { width: 100%; }
   .b-main { padding: 1rem 1rem 5rem; }

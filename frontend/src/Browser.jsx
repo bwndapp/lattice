@@ -182,16 +182,16 @@ export default function Browser({ user, login, activeId, refreshKey, onPick, onN
             <span className="b-narrowed-out">show everything ×</span>
           </button>
         )}
+
+        <button type="button" className="b-button small primary b-new" onClick={() => onNew('blank')}>
+          <span aria-hidden>+</span> new track
+        </button>
       </header>
 
       <div className="b-main">
         <div className="b-main-head">
           <h3>{heading}</h3>
           {tracks?.length > 0 && <span className="b-count">{tracks.length}{tracks.length === 50 ? '+' : ''}</span>}
-          <div className="b-new" role="group" aria-label="Start a track">
-            <button type="button" className="b-demo" onClick={() => onNew('demo')} title="Open the demo patch to pull apart">demo patch</button>
-            <button type="button" className="b-button small primary new-track" onClick={() => onNew('blank')}><span aria-hidden>+</span> new</button>
-          </div>
         </div>
 
         {needsUser ? (
