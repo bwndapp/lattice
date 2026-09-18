@@ -1,4 +1,5 @@
-"""The shared document over the wire: seeding, ops, a late arrival, resync, and who may."""
+"""The shared document over the wire: seeding, ops, a late arrival, resync, who may, and
+a change the room cannot place."""
 import asyncio
 import json
 
@@ -93,6 +94,19 @@ async def main():
                 await a.send(json.dumps({'t': 'sync'}))
                 still = await drain(a, 'doc')
                 ok("a guest's edit is ignored", still['doc']['bpm'] == 128, still['doc']['bpm'])
+
+            # an edit aimed at something already gone: an everyday collision rather than an
+            # error, but the sender is owed an answer or it waits for one for ever
+            stale = [{'op': 'set', 'path': ['song', 'clips', {'id': 'vanished'}, 'start'], 'value': 8}]
+            await a.send(json.dumps({'t': 'ops', 'ops': stale, 'h': 'zzz'}))
+            try:
+                said = await drain(a, 'nope')
+            except asyncio.TimeoutError:
+                said = None
+            ok('a change the room cannot place is answered, not dropped', said is not None and said.get('v') == 4, said)
+            await a.send(json.dumps({'t': 'sync'}))
+            untouched = await drain(a, 'doc')
+            ok('and it leaves the track as it was', untouched['v'] == 4 and len(untouched['doc']['song']['clips']) == 1, untouched)
 
     # the room forgets once everyone has gone
     await asyncio.sleep(0.3)

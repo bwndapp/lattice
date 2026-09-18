@@ -22,6 +22,7 @@
  *   seed()          we're the first one in; hand over what we have
  *   doc(project)    what the room already has — adopt it
  *   ops(ops, hash)  what someone else changed; answer false to say we've lost the plot
+ *   nope()          a change of ours the room couldn't place; we stop waiting for it
  *   hash()          a fingerprint of the track as we have it, for comparing notes
  *   reset()         the room is gone (a reconnection); we know nothing until it seeds again
  *
@@ -267,7 +268,18 @@ async function open(trackId) {
       return
     }
     if (msg.t === 'doc') { version = msg.v ?? 0; pending = 0; doc?.doc?.(msg.doc); return }
-    if (msg.t === 'ack') { version = msg.v ?? version; return }
+    // the room took our whole track: nothing of ours is in flight any more
+    if (msg.t === 'ack') { version = msg.v ?? version; pending = 0; return }
+    if (msg.t === 'nope') {
+      // a change of ours the room couldn't place — it was aimed at something already gone.
+      // Stop waiting for it: a change counted as in flight forever is what would keep us
+      // from ever comparing notes again, and comparing notes is how we'd find out we had
+      // drifted. Settling up afterwards is exactly the job the quiet check already does.
+      pending = Math.max(0, pending - 1)
+      version = msg.v ?? version
+      compareNotes()
+      return
+    }
     if (msg.t === 'behind') { askForTrack(); return } // the room dropped something of ours
     if (msg.t === 'same') {
       // someone else's copy at our own change count: if it isn't ours, one of us is wrong

@@ -22,6 +22,7 @@ Messages are JSON text frames.
     ← {"t":"doc","doc":{...},"v":12}     what the room already has, for a late arrival
     → {"t":"ops","ops":[...],"h":"5f2a"} what I just changed, and my fingerprint after it
     ← {"t":"ops","id":3,"ops":[...],"v":13,"h":"5f2a"}   to everyone, the sender included
+    ← {"t":"nope","v":13}                none of it landed here; stop waiting for it
     → {"t":"sync"}                       I'm lost, send me the whole thing
     → {"t":"same","v":13,"h":"5f2a"}     this is what I have, when it's all gone quiet
     ← {"t":"same","id":3,"v":13,"h":"5f2a"}
@@ -287,9 +288,22 @@ async def collab(ws: WebSocket, track_id: str):
                     await room.tell_editors(peer.id, {"t": "doc", "doc": room.doc, "v": room.version})
             elif kind == "ops" and peer.edit:
                 ops = msg.get("ops")
-                if room.doc is None or not isinstance(ops, list) or not ops or len(raw) > MAX_OPS:
+                if not isinstance(ops, list) or not ops or len(raw) > MAX_OPS:
+                    continue
+                if room.doc is None:
+                    # they think they're sharing and the room is holding nothing: ask for
+                    # the track rather than let the change fall down the gap between them
+                    await ws.send_text('{"t":"seed"}')
                     continue
                 if apply_ops(room.doc, ops) == 0:
+                    # Nothing of it landed: a clip someone else had already deleted, say,
+                    # which is an ordinary collision rather than an error. But the sender is
+                    # waiting to hear this change come back the way every other one does,
+                    # and one that never comes back leaves it counting a change as still in
+                    # flight for the rest of the session — which is exactly what stops it
+                    # comparing notes with the room, and so stops it ever finding out it has
+                    # drifted. A change we can't place still gets an answer.
+                    await ws.send_text(json.dumps({"t": "nope", "v": room.version}))
                     continue
                 room.version += 1
                 # Back to everyone, the sender included. Two people turning the same knob

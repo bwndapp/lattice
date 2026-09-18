@@ -102,6 +102,15 @@ ok('an older change of ours is not dropped back on top of a newer one', seen.ops
 ws.arrive({ t: 'ops', id: 1, v: 13, ops: [{ op: 'set', path: ['bpm'], value: 142 }], h: 'h142' })
 ok('the last one of ours does land', seen.ops.length === 1, seen.ops)
 
+// a change of ours the room could not place: aimed at a clip someone else had already
+// deleted. It never comes back the way one that landed does, so unless the room says so we
+// would count it as in flight for ever — and a client with something in flight stops
+// comparing notes, which is the one thing that would tell it it had drifted.
+sent.length = 0
+collab.sendOps([{ op: 'set', path: ['song', 'clips', { id: 'gone' }, 'start'], value: 8 }], 'h-stale')
+ws.arrive({ t: 'nope', v: 13 })
+ok('a change the room could not place costs no resync', !last('sync'))
+
 // the room says it dropped something of ours
 sent.length = 0
 ws.arrive({ t: 'behind' })
@@ -117,7 +126,8 @@ sent.length = 0
 ws.arrive({ t: 'same', id: 2, v: 99, h: 'theirs-differs' })
 ok('a copy from another moment is not compared', !last('sync'))
 
-// and we say what we have, once it stays quiet
+// and we say what we have, once it stays quiet — which is also the proof that the change
+// the room couldn't place is no longer counted as in flight
 sent.length = 0
 await new Promise((r) => setTimeout(r, 4400))
 ok('we say what we have after a quiet spell', last('same')?.h === 'mine', last('same'))
