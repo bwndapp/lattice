@@ -179,6 +179,7 @@ export default function App() {
   const [solo, setSolo] = useState(null)
   const [confirmClear, setConfirmClear] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const canvases = (v) => v === 'song' || v === 'graph'
   // the switch's thumb moves the moment you click, even if the canvas takes a frame to follow
   const [switching, setSwitching] = useState(null)
   /*
@@ -195,7 +196,6 @@ export default function App() {
   const switchCanvas = (to) => {
     if (to === view) return
     const from = view
-    const canvases = (v) => v === 'song' || v === 'graph'
     const slides = project && canvases(from) && canvases(to)
       && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
     setSwitching(to)
@@ -214,6 +214,33 @@ export default function App() {
   }
   useEffect(() => () => clearTimeout(swapOff.current), [])
   const slotClass = (which) => `canvas-slot ${swap ? (which === swap.to ? 'coming' : 'going') : ''}`
+
+  /*
+   * The browser isn't beside the canvas, it's over it: it comes down from the top of the
+   * window and goes back up the same way, so leaving it puts you back exactly where you
+   * were rather than somewhere new. Whatever it covers stays mounted only for the length
+   * of the movement — there's no sense in a timeline running behind an opaque sheet.
+   */
+  const [sheet, setSheet] = useState(null) // { phase: 'in' | 'out', under, run }
+  const sheetOff = useRef(null)
+  useEffect(() => () => clearTimeout(sheetOff.current), [])
+  const slideBrowse = (to) => {
+    const phase = to === 'browse' ? 'in' : 'out'
+    if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      setSheet({ phase, under: phase === 'in' ? view : to, run: false })
+      requestAnimationFrame(() => requestAnimationFrame(() => setSheet((x) => (x && !x.run ? { ...x, run: true } : x))))
+      clearTimeout(sheetOff.current)
+      sheetOff.current = setTimeout(() => setSheet(null), 500)
+    }
+    setView(to)
+  }
+  /** Go to a view the way that view arrives: the browser drops, the canvases slide. */
+  const goView = (to) => {
+    if (to === view) return
+    if (to === 'browse' || view === 'browse') slideBrowse(to)
+    else if (canvases(to) && canvases(view)) switchCanvas(to)
+    else setView(to)
+  }
   const genRef = useRef({ solo: null })
   genRef.current = { solo }
   const readOnlyRef = useRef(null)
@@ -497,7 +524,7 @@ export default function App() {
   const openBrowse = useCallback((which, narrow = null) => {
     if (which) setBrowseView(which === 'mine' && !userRef.current ? 'explore' : which)
     setBrowseNarrow(narrow)
-    setView('browse')
+    goView('browse')
   }, [])
   const [roll, setRoll] = useState(null) // { patternId, channelId, tab }
   // the rack belongs to the track you're working on: browsing isn't that, and a dock
@@ -823,7 +850,7 @@ export default function App() {
    */
   const newTrack = (template = 'blank', { force = false } = {}) => {
     if (!force && ((isNew && store.get(SCRATCH_WORK) === 'yes') || (!isNew && codeChanged))) return setAskNew(template)
-    if (view === 'browse' || view === 'code') setView('graph')
+    if (view === 'browse' || view === 'code') goView('graph')
     navigate('/', { state: { fresh: Date.now(), template } })
     flash(template === 'demo' ? 'New track from the demo patch' : 'New track · nothing else changed')
   }
@@ -1063,7 +1090,7 @@ export default function App() {
         project && { label: 'timeline', checked: view === 'song', onSelect: () => switchCanvas('song') },
         project && { label: 'patch', checked: view === 'graph', onSelect: () => switchCanvas('graph') },
         { label: evalError ? 'code (has an error)' : 'code', shortcut: 'ctrl/cmd J', checked: view === 'code', onSelect: () => setView('code') },
-        { label: 'browse tracks', checked: view === 'browse', onSelect: () => setView('browse') },
+        { label: 'browse tracks', checked: view === 'browse', onSelect: () => goView('browse') },
       ],
     },
     canEdit && {
@@ -1173,7 +1200,7 @@ export default function App() {
         <button
           className={`btn browse-btn ${view === 'browse' ? 'on' : ''}`}
           aria-pressed={view === 'browse'}
-          onClick={() => setView(view === 'browse' ? lastCanvasRef.current : 'browse')}
+          onClick={() => goView(view === 'browse' ? lastCanvasRef.current : 'browse')}
           title={view === 'browse' ? 'Back to your track' : 'Browse tracks: yours, and what people have shared'}
         >
           <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden><path d="M1.5 1.5h3.6v3.6H1.5zM6.9 1.5h3.6v3.6H6.9zM1.5 6.9h3.6v3.6H1.5zM6.9 6.9h3.6v3.6H6.9z" fill="currentColor" /></svg>
@@ -1263,9 +1290,9 @@ export default function App() {
         </div>
         {/* phones: every view in a tab bar along the bottom */}
         <span className="seg views phone-tabs" role="group" aria-label="View">
-          <button className={`btn ${view === 'browse' ? 'on' : ''}`} aria-pressed={view === 'browse'} onClick={() => setView('browse')} title="Tracks people have shared, and yours">browse</button>
-          {project && <button className={`btn ${view === 'song' ? 'on' : ''}`} aria-pressed={view === 'song'} onClick={() => setView('song')} title="The timeline: when each part plays">timeline</button>}
-          <button className={`btn ${view === 'graph' ? 'on' : ''}`} aria-pressed={view === 'graph'} onClick={() => setView('graph')} title="The patch: what each part goes through">patch</button>
+          <button className={`btn ${view === 'browse' ? 'on' : ''}`} aria-pressed={view === 'browse'} onClick={() => goView('browse')} title="Tracks people have shared, and yours">browse</button>
+          {project && <button className={`btn ${view === 'song' ? 'on' : ''}`} aria-pressed={view === 'song'} onClick={() => goView('song')} title="The timeline: when each part plays">timeline</button>}
+          <button className={`btn ${view === 'graph' ? 'on' : ''}`} aria-pressed={view === 'graph'} onClick={() => goView('graph')} title="The patch: what each part goes through">patch</button>
           <button
             className={`btn code-toggle ${view === 'code' ? 'on' : ''} ${evalError && view !== 'code' ? 'has-error' : ''}`}
             aria-pressed={view === 'code'}
@@ -1301,10 +1328,11 @@ export default function App() {
       <RollContext.Provider value={rollDock}>
       <div className="body">
         <main
-          className={`main ${swap ? `swapping ${swap.run ? 'run' : ''}` : ''}`}
+          className={`main ${swap ? `swapping ${swap.run ? 'run' : ''}` : ''} ${sheet ? `sheeting ${sheet.run ? 'run' : ''}` : ''}`}
           style={swap ? { '--dir': swap.dir } : undefined}
         >
-          {view === 'browse' && (
+          {(view === 'browse' || sheet?.phase === 'out') && (
+            <div className={`browse-sheet ${sheet ? (sheet.phase === 'in' ? 'coming' : 'going') : ''}`}>
             <Browser
               user={user}
               login={login}
@@ -1315,9 +1343,10 @@ export default function App() {
               onOpenTrack={openTrack}
               onView={setBrowseView}
               onPlay={playFromList}
-              onPick={() => setView('graph')}
+              onPick={() => goView('graph')}
               onNew={(template) => newTrack(template)}
             />
+            </div>
           )}
           {askOpen && (
             <ConfirmDialog
@@ -1394,12 +1423,12 @@ export default function App() {
               <p><strong>It can't be undone.</strong> To only empty the patch and keep the track, use <em>clear the patch</em> instead.</p>
             </ConfirmDialog>
           )}
-          {(view === 'song' || swap?.from === 'song') && project && (
+          {(view === 'song' || swap?.from === 'song' || sheet?.under === 'song') && project && (
             <div className={slotClass('song')}>
               <Timeline project={project} onUpdateProject={updateProject} transport={transport} started={started} />
             </div>
           )}
-          {(view === 'graph' || swap?.from === 'graph') && project && (
+          {(view === 'graph' || swap?.from === 'graph' || sheet?.under === 'graph') && project && (
             <div className={slotClass('graph')}>
               <Graph
                 project={project}
