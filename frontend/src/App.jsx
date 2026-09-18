@@ -937,12 +937,6 @@ export default function App() {
     flash('Back to your saved version', { label: 'undo', run: () => undoRef.current?.() })
   }
 
-  const playFromList = (id) => {
-    if (id === trackId && loadedIdRef.current === id) return play()
-    pendingPlayRef.current = id
-    navigate(`/t/${id}`)
-  }
-
   // Page-wide shortcuts (Strudel's own only fire while the editor has focus). Capture
   // phase + stopPropagation so a focused editor doesn't run them a second time.
   const keysRef = useRef({})
@@ -1345,7 +1339,6 @@ export default function App() {
               narrowTo={browseNarrow}
               onOpenTrack={openTrack}
               onView={setBrowseView}
-              onPlay={playFromList}
               onPick={() => goView('graph')}
               onNew={(template) => newTrack(template)}
             />

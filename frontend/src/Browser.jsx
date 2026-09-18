@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api, timeAgo } from './api'
+import { parseProject } from './project'
+import { previewTrack, stopPreview } from './audio'
 import TrackPage from './TrackPage.jsx'
 import TrackMap from './TrackMap.jsx'
 import BranchMark from './BranchMark.jsx'
@@ -23,7 +25,7 @@ function Switch({ options, value, onChange, label, small = false }) {
   )
 }
 
-export default function Browser({ user, login, activeId, refreshKey, onPlay, onPick, onNew, view = 'explore', onView, narrowTo = null, onOpenTrack }) {
+export default function Browser({ user, login, activeId, refreshKey, onPick, onNew, view = 'explore', onView, narrowTo = null, onOpenTrack }) {
   const setView = onView
   // Where you are in the browser lives in the address, so reloading keeps it, the back
   // button walks out of it, and "everything by this person" is a link you can send.
@@ -42,6 +44,25 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
     : params.get('copies')
       ? { remixesOf: params.get('copies'), name: params.get('who') || 'copies' }
       : null))
+
+  // hearing one from the list: the same lightweight preview the track's page uses, so it
+  // costs a click and nothing you have open changes
+  const [playing, setPlaying] = useState(null)
+  const codes = useRef(new Map())
+  useEffect(() => () => stopPreview(), [])
+  const hear = async (t) => {
+    if (playing === t.id) { stopPreview(); return setPlaying(null) }
+    setPlaying(t.id)
+    try {
+      if (!codes.current.has(t.id)) codes.current.set(t.id, (await api(`/tracks/${t.id}`)).code)
+      await previewTrack(parseProject(codes.current.get(t.id) || ''), {
+        cycles: 16,
+        onEnd: () => setPlaying((was) => (was === t.id ? null : was)),
+      })
+    } catch {
+      setPlaying((was) => (was === t.id ? null : was))
+    }
+  }
 
   const needsUser = view !== 'explore' && !user
   const PAGE = 24
@@ -194,8 +215,18 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
               <li key={t.id} className={`b-card ${t.id === activeId ? 'active' : ''}`}>
                 <div className="b-art">
                   <TrackMap shape={t.shape} />
-                  <button type="button" className="b-play" aria-label={`Play ${t.title}`} title="Play" onClick={() => onPlay(t.id)}>
-                    <svg viewBox="0 0 16 16" aria-hidden><path d="M5 3.5v9l8-4.5z" /></svg>
+                  <button
+                    type="button"
+                    className={`b-play ${playing === t.id ? 'on' : ''}`}
+                    aria-label={`${playing === t.id ? 'Stop' : 'Play'} ${t.title}`}
+                    title={playing === t.id ? 'Stop' : 'Play'}
+                    onClick={() => hear(t)}
+                  >
+                    <svg viewBox="0 0 16 16" aria-hidden>
+                      {playing === t.id
+                        ? <rect x="4.5" y="4.5" width="7" height="7" rx="1.2" />
+                        : <path d="M5 3.5v9l8-4.5z" />}
+                    </svg>
                   </button>
                   {t.shape?.bpm ? <span className="b-art-tag">{t.shape.bpm}<i>bpm</i></span> : null}
                 </div>

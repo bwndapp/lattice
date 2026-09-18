@@ -212,6 +212,10 @@
 .b-card:hover .b-play, .b-play:focus-visible { opacity: 1; transform: none; }
 .b-play svg { width: 14px; height: 14px; margin-left: 2px; fill: var(--paper); }
 .b-play:hover svg { fill: var(--acid); }
+/* while it's playing it stays up, shows a stop square, and is the acid one on the card */
+.b-play.on { opacity: 1; transform: none; background: var(--acid); box-shadow: 0 0 0 1px rgb(228 255 26 / 0.5), 0 3px 10px rgba(0, 0, 0, 0.7); }
+.b-play.on svg { margin-left: 0; fill: var(--ink); }
+.b-play.on:hover svg { fill: var(--ink); }
 .b-play:active { box-shadow: inset 2px 2px 6px rgba(0, 0, 0, 0.85); }
 @media (hover: none) { .b-play { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .b-play { transition: opacity 0.18s ease; transform: none; } }

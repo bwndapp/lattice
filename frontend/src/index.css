@@ -1012,7 +1012,10 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
 .node-btn { font: inherit; font-size: 10px; line-height: 1.5; color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 3px; padding: 0 0.32rem; cursor: var(--ring); opacity: 0.75; }
 .node-btn:hover { opacity: 1; }
 .node-btn.on { background: var(--ink); color: var(--acid); border-color: var(--ink); opacity: 1; }
-.node-body { padding: 0.5rem 0.6rem 0.6rem; display: grid; gap: 0.5rem; }
+/* minmax(0, 1fr), not the default auto: an auto column grows to fit its widest child, so
+   one long row would widen the body past the node and everything at its right edge — the
+   output's m/s buttons first — would hang outside the frame */
+.node-body { padding: 0.5rem 0.6rem 0.6rem; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.5rem; }
 /* the controls inside a card follow it: softened, not square */
 .gnode .select, .gnode input:not([type=range]), .gnode textarea { border-radius: 3px; }
 .node-params { display: flex; flex-wrap: wrap; gap: 0.45rem 0.5rem; align-items: flex-end; }
@@ -1070,7 +1073,7 @@ button.chan-synth:hover span { color: var(--acid); }
 .node-actions { display: flex; gap: 0.3rem; flex-wrap: wrap; }
 .node-actions .btn { padding: 0.25rem 0.5rem; font-size: 11px; }
 .node-inputs { list-style: none; margin: 0 -0.6rem -0.6rem; padding: 0; border-top: 1px solid var(--line); }
-.slot { position: relative; display: flex; align-items: center; gap: 0.4rem; min-height: 2rem; padding: 0.3rem 0.6rem 0.3rem 0.9rem; border-bottom: 1px solid var(--line); }
+.slot { position: relative; display: flex; align-items: center; gap: 0.4rem; min-height: 2rem; padding: 0.3rem 0.5rem 0.3rem 0.9rem; border-bottom: 1px solid var(--line); }
 .slot:last-child { border-bottom: 0; }
 .slot-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .slot-via { font-style: normal; font-size: 10px; color: var(--muted); }
@@ -1097,7 +1100,8 @@ button.chan-synth:hover span { color: var(--acid); }
 .slot-meter.over i::after { box-shadow: 0 0 7px rgb(255 90 67 / 0.9); }
 .slot.off .slot-name { opacity: 0.4; text-decoration: line-through; }
 .slot.free .slot-name { color: var(--muted); }
-.slot-ctl { display: inline-flex; gap: 0.2rem; }
+.slot-ctl { display: inline-flex; flex: none; gap: 0.2rem; margin-left: auto; }
+.slot-ctl .led { flex: none; }
 .node-inputs.named { margin: 0 -0.6rem; border-bottom: 1px solid var(--line); }
 .node-inputs.named .slot:last-child { border-bottom: 0; }
 .slot-role { font-size: 10px; color: var(--muted); width: 3.8rem; flex-shrink: 0; }
