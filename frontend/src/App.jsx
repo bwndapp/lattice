@@ -34,7 +34,7 @@ import { capturePatterns, parseLanes, tempoChange } from './lanes'
 import { PROJECT_MARK, blankProject, demoProject, generateCode, newId, normalizeProject, parseProject, projectFromCode } from './project'
 import { createTransport, formatBarBeat, parseBarBeat } from './transport'
 import { songLength } from './song'
-import { canEdit as roomTakesEdits, join as joinRoom, leave as leaveRoom, onDoc, onPlay, onRole, openToOthers, sendOps, sendPlay } from './collab.js'
+import { canEdit as roomTakesEdits, join as joinRoom, leave as leaveRoom, onDoc, onPlay, onRole, openToOthers, sendOps, sendPlay, viewIs } from './collab.js'
 import { applyOps, diffOps, docHash, invertOps } from './docsync.js'
 import PeerList from './PeerList.jsx'
 import { AppCursors, watchPointer } from './surfaces.jsx'
@@ -400,6 +400,9 @@ export default function App() {
   // Everyone's pointer, everywhere: one listener that names whichever region it's over
   // (surfaces.jsx). The three surfaces with coordinates of their own report for themselves.
   useEffect(() => watchPointer(), [])
+  // and which view we're on, because a cursor on a surface nobody else has open is a
+  // cursor nobody else can see: without this, changing view reads as having left
+  useEffect(() => { viewIs(view) }, [view])
 
   // ── working on this track with someone else (collab.js) ──
   // One place watches the code for changes and sends what changed, so every way of
@@ -1295,7 +1298,7 @@ export default function App() {
           <span className="export-word">export</span>
         </button>
         <div className="bar-side right">
-        <PeerList together={together} onTogether={setTogether} />
+        <PeerList together={together} onTogether={setTogether} view={view} />
         <span className="track" role="group" aria-label="Track">
           {loadError ? (
             <span className="meta track-status" title={loadError}>{loadError} <Link className="linkish" to="/">new track</Link></span>

@@ -62,5 +62,21 @@
   cursor: default;
 }
 .peer-dot.me { box-shadow: 0 0 0 1.5px var(--fg-dim); }
+/* somewhere else in the app: still here, still working, just not on this screen — so the
+   dot steps back rather than disappearing, which is what it used to look like */
+.peer-dot.away { opacity: 0.55; }
+.peer-dot.away::after {
+  content: '';
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 6px;
+  height: 6px;
+  background: var(--peer);
+  border: 1px solid #0b0b0f;
+  border-radius: 50%;
+}
+.peer-dot { position: relative; }
+
 /* watching, not editing: the colour outlines them instead of filling them in */
 .peer-dot.watching { color: var(--peer); background: transparent; border-color: var(--peer); }

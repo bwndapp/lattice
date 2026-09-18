@@ -15,7 +15,8 @@ what this browser plays and nothing else, while muting stays the track's own.
 **The relay** — start it on a throwaway database and port, then run the suites against it:
 
     python3 test/relay_serve.py &
-    python3 test/relay_presence_test.py   # cursors, joining, leaving, who may open a track
+    python3 test/relay_presence_test.py   # cursors, selections, which view they're on,
+                                          #   joining, leaving, who may open a track
     python3 test/relay_doc_test.py        # seeding, ops, a late arrival, who may edit,
                                           #   and a change aimed at something already gone
     python3 test/relay_play_test.py       # the clock, and where the playhead is going

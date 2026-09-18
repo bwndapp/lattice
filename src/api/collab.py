@@ -13,8 +13,9 @@ Messages are JSON text frames.
     → {"t":"hello","token":"<sso access token>","name":"..."}   first frame, always
     → {"t":"at","where":"graph","x":120,"y":40}                 the pointer moved
     → {"t":"sel","where":"graph","ids":["n1","n2"]}             what they have selected
+    → {"t":"view","v":"song"}                                   which view they're on
     ← {"t":"me","id":3,"color":"#e8b","edit":true}              who the server thinks you are
-    ← {"t":"here","peers":[...]} · {"t":"join"|"at"|"sel"|"gone", ...}
+    ← {"t":"here","peers":[...]} · {"t":"join"|"at"|"sel"|"view"|"gone", ...}
 
   the track itself (everyone present receives it; only the signed in may send — see _may_edit)
     ← {"t":"seed"}                       you're first in, and may edit: send what you have
@@ -90,7 +91,7 @@ COLORS = ["#6cc9ff", "#ff8fb1", "#8de88d", "#ffcf6b", "#c79bff", "#5ee0cf", "#ff
 
 
 class Peer:
-    __slots__ = ("id", "ws", "name", "color", "at", "sel", "sub", "edit")
+    __slots__ = ("id", "ws", "name", "color", "at", "sel", "sub", "edit", "view")
 
     def __init__(self, pid, ws, name, color, sub, edit):
         self.id = pid
@@ -101,9 +102,10 @@ class Peer:
         self.edit = edit
         self.at = None
         self.sel = None
+        self.view = None  # which of the app's views they're looking at
 
     def public(self):
-        return {"id": self.id, "name": self.name, "color": self.color, "at": self.at, "sel": self.sel, "edit": self.edit}
+        return {"id": self.id, "name": self.name, "color": self.color, "at": self.at, "sel": self.sel, "edit": self.edit, "view": self.view}
 
 
 class Room:
@@ -279,7 +281,7 @@ async def collab(ws: WebSocket, track_id: str):
             except ValueError:
                 continue
             kind = msg.get("t")
-            if kind in ("at", "sel"):
+            if kind in ("at", "sel", "view"):
                 moves += 1
                 if moves > CURSORS or len(raw) > MAX_MSG:
                     continue  # a cursor is disposable: the next one is along in a moment
@@ -295,6 +297,11 @@ async def collab(ws: WebSocket, track_id: str):
             if kind == "at":
                 peer.at = None if msg.get("where") is None else {"where": msg.get("where"), "x": msg.get("x"), "y": msg.get("y")}
                 await room.tell_others(peer.id, {"t": "at", "id": peer.id, **(peer.at or {"where": None})})
+            elif kind == "view":
+                # which view they're on, so someone working on another one reads as present
+                # rather than simply gone: their cursor lives on a surface you can't see
+                peer.view = (str(msg.get("v") or "")[:24] or None)
+                await room.tell_others(peer.id, {"t": "view", "id": peer.id, "v": peer.view})
             elif kind == "sel":
                 ids = [str(i)[:40] for i in (msg.get("ids") or [])][:60]
                 peer.sel = {"where": msg.get("where"), "ids": ids} if ids else None

@@ -7,6 +7,7 @@
  *   usePeers() / usePresence()          the others, and us, for drawing them
  *   pointerAt(where, x, y) / pointerGone()
  *   selectionIs(where, ids)
+ *   viewIs(name)                        which view we're on, for the others
  *   onDoc({ seed, doc, ops, reset })    the shared project: see below
  *   sendOps(ops, hash)                  what we just changed
  *   onPlay(fn) / sendPlay(on, pos, cps) playing in time together (the room holds the last
@@ -65,6 +66,7 @@ let bestTrip = Infinity // the quickest round trip we've measured, which is the 
 let onPlayFn = null
 let onRoleFn = null
 let heldPlay = null // heard before we had the room's clock; handed on as soon as we do
+let myView = null // which view we're on, kept so a reconnection can say so again
 let pending = 0 // our own changes the room hasn't put in order yet
 let settleTimer = 0
 let clockTimer = 0
@@ -247,6 +249,7 @@ async function open(trackId) {
       mayEdit = !!msg.edit
       version = 0
       me = { id: msg.id, color: msg.color, name: msg.name, edit: mayEdit, owner: !!msg.owner, open: msg.open !== false }
+      if (myView) ws.send(JSON.stringify({ t: 'view', v: myView })) // the room forgot us when the socket went
       doc?.reset?.()
       changed()
       onRoleFn?.({ edit: mayEdit, open: me.open })
@@ -324,6 +327,13 @@ async function open(trackId) {
     if (msg.t === 'here') { peers = new Map(msg.peers.map((p) => [p.id, p])); changed(); selChanged(); return }
     if (msg.t === 'join') { peers.set(msg.peer.id, msg.peer); changed(); selChanged(); return }
     if (msg.t === 'gone') { peers.delete(msg.id); changed(); selChanged(); return }
+    if (msg.t === 'view') {
+      const p = peers.get(msg.id)
+      if (!p) return
+      peers.set(msg.id, { ...p, view: msg.v || null })
+      changed()
+      return
+    }
     if (msg.t === 'at') {
       const p = peers.get(msg.id)
       if (!p) return
@@ -426,6 +436,17 @@ export function pointerGone() {
 }
 
 let lastSel = ''
+/**
+ * Which view we're on. Someone working on another one has no cursor you can see — it's on
+ * a surface that isn't on your screen — and without this they read as having left.
+ */
+export function viewIs(name) {
+  const next = name || null
+  if (next === myView) return
+  myView = next
+  if (sock?.readyState === WebSocket.OPEN) sock.send(JSON.stringify({ t: 'view', v: myView }))
+}
+
 /** What we have selected on a surface, so the others can see it outlined. */
 export function selectionIs(where, ids) {
   if (!room) return
