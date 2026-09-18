@@ -948,7 +948,8 @@ export default function App() {
     play, save, stop, pause, toStart, undo, redo, isProject: !!project,
     history: () => { if (isOwner) setShowVersions(true) },
     saveAsNew: () => (isNew || !isOwner ? save() : saveAsNew()),
-    swapCanvas: () => switchCanvas(view === 'song' ? 'graph' : 'song'),
+    // from the browser, tab is the way out: back where you came from, sheet and all
+    swapCanvas: () => goView(view === 'browse' ? lastCanvasRef.current : view === 'song' ? 'graph' : 'song'),
   }
   useEffect(() => {
     // only places you type text keep space and Home for themselves. A focused button, slider,
