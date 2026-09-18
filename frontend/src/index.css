@@ -472,7 +472,21 @@ button.lcd-unit:hover { color: var(--acid); }
 .main.sheeting > .browse-sheet.going { animation: sheet-up 0.34s cubic-bezier(0.45, 0, 0.75, 0.2) both; }
 @keyframes sheet-down { from { transform: translateY(-100%); } to { transform: none; } }
 @keyframes sheet-up { from { transform: none; } to { transform: translateY(-100%); } }
-@media (prefers-reduced-motion: reduce) { .main.sheeting > .browse-sheet { animation: none; } }
+/*
+ * It unfolds rather than arriving in one piece: the sheet (and with it the controls along
+ * its top) starts down, and the results follow a beat later from just above their resting
+ * place. Leaving runs the other way — the results go first and the header closes after
+ * them — which is what makes it feel hinged at the top rather than dropped and lifted.
+ */
+.main.sheeting > .browse-sheet.coming .b-main { animation: sheet-body-in 0.38s cubic-bezier(0.22, 0.9, 0.24, 1) 0.1s both; }
+.main.sheeting > .browse-sheet.going { animation-delay: 0.08s; }
+.main.sheeting > .browse-sheet.going .b-main { animation: sheet-body-out 0.26s cubic-bezier(0.45, 0, 0.75, 0.2) both; }
+@keyframes sheet-body-in { from { opacity: 0; transform: translateY(-22px); } to { opacity: 1; transform: none; } }
+@keyframes sheet-body-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-14px); } }
+@media (prefers-reduced-motion: reduce) {
+  .main.sheeting > .browse-sheet,
+  .main.sheeting > .browse-sheet .b-main { animation: none; }
+}
 .playlist { flex: 1; display: flex; flex-direction: column; min-height: 0; --head: 200px; }
 .playlist-head { display: flex; align-items: baseline; gap: 0.9rem; padding: 0.55rem 1rem 0.5rem; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
 .playlist-title {
