@@ -16,8 +16,11 @@ cd "$(dirname "$0")/.."
 ROOT=$(pwd)
 MIRROR="$ROOT/.mirror"
 REMOTE=${GITHUB_REMOTE:-https://github.com/bwndapp/lattice.git}
-# the box, not the app: everything else travels
-DROP="agent.ts mcp setup.sh requirements.txt .identity CLAUDE.md"
+# Not lattice, in any commit it ever appeared in:
+#   the box's own files (its agent, MCP server, boot scripts, identity docs, instructions),
+#   a branch's checkout that was tracked here by mistake, built bundles, and a one-off
+#   script for moving a track between databases.
+DROP="agent.ts mcp setup.sh requirements.txt .identity CLAUDE.md .claude multiplayer move-track-live.py"
 
 if [ ! -d "$MIRROR/.git" ]; then
   echo "mirror: first run — cloning into .mirror/"
