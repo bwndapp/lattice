@@ -21,3 +21,6 @@ saves/
 # Tracking it made every edit in a branch show up as a dirty file here, and put a stale
 # duplicate of the whole app in this history.
 .claude/
+
+# the filtered GitHub mirror keeps its own checkout here (tools/mirror-to-github.sh)
+.mirror/
