@@ -162,30 +162,27 @@ export default function Browser({ user, login, activeId, refreshKey, onPick, onN
 
   return (
     <section className="browser" aria-label="Browse tracks">
-      <aside className="b-side">
-        <h2 className="b-title">Browse</h2>
-
+      {/* what you're looking at, and how you're looking at it — over the results, not beside
+          them, because it's about all of them rather than any one of them */}
+      <header className="b-top">
         <Switch label="Which tracks" options={VIEWS} value={view} onChange={(v) => { narrow(null); setView(v) }} />
+
+        <div className="b-find">
+          <label className="b-search">
+            <svg viewBox="0 0 16 16" aria-hidden><circle cx="7" cy="7" r="4.6" /><path d="M10.4 10.4 14 14" /></svg>
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search tracks or people" aria-label="Search tracks or people" spellCheck={false} />
+            {q && <button type="button" className="b-search-clear" onClick={() => setQ('')} aria-label="Clear the search">×</button>}
+          </label>
+          <Switch small label="Sort" options={SORTS} value={sort} onChange={setSort} />
+        </div>
 
         {only && (
           <button type="button" className="b-narrowed" onClick={() => narrow(null)}>
             <span className="b-narrowed-what">{only.name}</span>
-            <span className="b-narrowed-out">show everything</span>
+            <span className="b-narrowed-out">show everything ×</span>
           </button>
         )}
-
-        <label className="b-search">
-          <svg viewBox="0 0 16 16" aria-hidden><circle cx="7" cy="7" r="4.6" /><path d="M10.4 10.4 14 14" /></svg>
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search tracks or people" aria-label="Search tracks or people" spellCheck={false} />
-          {q && <button type="button" className="b-search-clear" onClick={() => setQ('')} aria-label="Clear the search">×</button>}
-        </label>
-
-        <div className="b-field">
-          <span className="b-label">Sort</span>
-          <Switch small label="Sort" options={SORTS} value={sort} onChange={setSort} />
-        </div>
-
-      </aside>
+      </header>
 
       <div className="b-main">
         <div className="b-main-head">
