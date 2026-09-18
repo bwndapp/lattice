@@ -190,12 +190,12 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       // A pendulum, not a fading number: how fast you're pulling pushes it, and it's
       // pulled back toward level the further it gets — so it overshoots and settles the
       // way something hanging does, instead of easing straight back.
-      n.sv = (n.sv + n.vx * 0.9 - n.swing * 0.12) * 0.86
-      n.swing = clamp(n.swing + n.sv, -9, 9)
-      // the face turns toward where it's going, and pitches when you pull it up or down
-      n.tx = n.tx * 0.82 + clamp(-n.vy * 4.5, -10, 10) * 0.18
-      n.ty = n.ty * 0.82 + clamp(n.vx * 5, -14, 14) * 0.18
-      // held higher the faster it moves, which is where the deeper shadow comes from
+      n.sv = (n.sv + n.vx * 0.3 - n.swing * 0.12) * 0.86
+      n.swing = clamp(n.swing + n.sv, -3, 3)
+      // the face turns a little toward where it's going, and pitches a little when you pull up or down
+      n.tx = n.tx * 0.82 + clamp(-n.vy * 1.6, -3.5, 3.5) * 0.18
+      n.ty = n.ty * 0.82 + clamp(n.vx * 1.6, -4.5, 4.5) * 0.18
+      // held a touch higher the faster it moves, which is where the deeper shadow comes from
       n.speed = n.speed * 0.85 + clamp(Math.hypot(n.vx, n.vy) / 2.2, 0, 1) * 0.15
       n.vx *= 0.6
       n.vy *= 0.6
