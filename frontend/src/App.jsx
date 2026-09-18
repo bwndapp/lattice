@@ -221,16 +221,18 @@ export default function App() {
    * were rather than somewhere new. Whatever it covers stays mounted only for the length
    * of the movement — there's no sense in a timeline running behind an opaque sheet.
    */
-  const [sheet, setSheet] = useState(null) // { phase: 'in' | 'out', under, run }
+  const [sheet, setSheet] = useState(null) // { phase: 'in' | 'out', under }
   const sheetOff = useRef(null)
   useEffect(() => () => clearTimeout(sheetOff.current), [])
   const slideBrowse = (to) => {
     const phase = to === 'browse' ? 'in' : 'out'
     if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
-      setSheet({ phase, under: phase === 'in' ? view : to, run: false })
-      requestAnimationFrame(() => requestAnimationFrame(() => setSheet((x) => (x && !x.run ? { ...x, run: true } : x))))
+      // a keyframe animation, not a transition: it belongs to the class the sheet mounts
+      // with, so it can't be missed by arriving a frame late — which is what made a quick
+      // tab-out-and-back-in flash instead of move
+      setSheet({ phase, under: phase === 'in' ? view : to })
       clearTimeout(sheetOff.current)
-      sheetOff.current = setTimeout(() => setSheet(null), 500)
+      sheetOff.current = setTimeout(() => setSheet(null), 460)
     }
     setView(to)
   }
@@ -1329,7 +1331,7 @@ export default function App() {
       <RollContext.Provider value={rollDock}>
       <div className="body">
         <main
-          className={`main ${swap ? `swapping ${swap.run ? 'run' : ''}` : ''} ${sheet ? `sheeting ${sheet.run ? 'run' : ''}` : ''}`}
+          className={`main ${swap ? `swapping ${swap.run ? 'run' : ''}` : ''} ${sheet ? 'sheeting' : ''}`}
           style={swap ? { '--dir': swap.dir } : undefined}
         >
           {(view === 'browse' || sheet?.phase === 'out') && (

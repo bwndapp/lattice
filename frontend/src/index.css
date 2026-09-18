@@ -442,11 +442,11 @@ button.lcd-unit:hover { color: var(--acid); }
   position: absolute; inset: 0; z-index: 3; background: var(--ink); will-change: transform;
   box-shadow: 0 20px 44px rgba(0, 0, 0, 0.7);
 }
-.main.sheeting > .browse-sheet.coming { transform: translateY(-100%); }
-.main.sheeting.run > .browse-sheet { transition: transform 0.4s cubic-bezier(0.22, 0.9, 0.24, 1); }
-.main.sheeting.run > .browse-sheet.coming { transform: none; }
-.main.sheeting.run > .browse-sheet.going { transform: translateY(-100%); }
-@media (prefers-reduced-motion: reduce) { .main.sheeting.run > .browse-sheet { transition: none; } }
+.main.sheeting > .browse-sheet.coming { animation: sheet-down 0.4s cubic-bezier(0.22, 0.9, 0.24, 1) both; }
+.main.sheeting > .browse-sheet.going { animation: sheet-up 0.34s cubic-bezier(0.45, 0, 0.75, 0.2) both; }
+@keyframes sheet-down { from { transform: translateY(-100%); } to { transform: none; } }
+@keyframes sheet-up { from { transform: none; } to { transform: translateY(-100%); } }
+@media (prefers-reduced-motion: reduce) { .main.sheeting > .browse-sheet { animation: none; } }
 .playlist { flex: 1; display: flex; flex-direction: column; min-height: 0; --head: 200px; }
 .playlist-head { display: flex; align-items: baseline; gap: 0.9rem; padding: 0.55rem 1rem 0.5rem; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
 .playlist-title {
