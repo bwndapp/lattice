@@ -131,20 +131,9 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const [drag, setDrag] = useState(null) // live preview while moving / stretching / drawing
   const [marquee, setMarquee] = useState(null)
   const [erasing, setErasing] = useState(false) // right button held: the pointer shows it deletes
-  const [settling, setSettling] = useState(null) // clips that just landed, for a moment
-  const landed = useRef(0)
-  /**
-   * Let go of a clip and it drops the last of the way, rather than stopping dead. Held for
-   * a moment where it was, then let go of: it eases down on the transform it already has.
-   * Not a keyframe — swapping a clip's animation restarts the one that brings it in, which
-   * is a flash every time you drop something.
-   */
-  const land = (ids) => {
-    if (!ids.length) return
-    setSettling(new Set(ids))
-    clearTimeout(landed.current)
-    landed.current = setTimeout(() => setSettling(null), 90)
-  }
+  // Letting go used to leave the clip raised for a moment so it could drop the last of the
+  // way. It read as a hop: you've already put it where it goes, and the white outline has
+  // been showing you that spot the whole time. It lands where you dropped it.
   /**
    * Only clips that have just turned up play the arriving animation. Hanging it on every
    * clip meant the whole timeline popped each time you came back to it from the patch,
@@ -173,7 +162,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     clearTimeout(vanished.current)
     vanished.current = setTimeout(() => setVanishing(null), 260)
   }
-  useEffect(() => () => { clearTimeout(landed.current); clearTimeout(vanished.current) }, [])
+  useEffect(() => () => clearTimeout(vanished.current), [])
 
   /**
    * A carried clip leans the way you're throwing it and comes back level when you stop.
@@ -680,7 +669,6 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       updateSong((s) => {
         for (const c of s.clips) if (preview.changes[c.id]) Object.assign(c, preview.changes[c.id])
       })
-      land(Object.keys(preview.changes))
     }
     if (e) e.preventDefault()
   }
@@ -1177,7 +1165,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
                   <div
                     key={c.id}
                     data-id={c.id}
-                    className={`clip ${LANE_H >= 30 && part.kind !== 'auto' ? 'roomy' : ''} ${part.kind === 'auto' ? 'automation' : ''} ${selected.has(c.id) ? 'selected' : ''} ${c.id.startsWith('__') ? 'preview' : ''} ${c.gone || vanishing?.has(c.id) ? 'gone' : ''} ${drag?.lift && (drag.changes?.[c.id] || c.id.startsWith('__copy')) ? 'lifted' : ''} ${settling?.has(c.id) ? 'settling' : ''} ${arriving?.has(c.id) ? 'arriving' : ''} ${!song.on ? 'off' : ''}`}
+                    className={`clip ${LANE_H >= 30 && part.kind !== 'auto' ? 'roomy' : ''} ${part.kind === 'auto' ? 'automation' : ''} ${selected.has(c.id) ? 'selected' : ''} ${c.id.startsWith('__') ? 'preview' : ''} ${c.gone || vanishing?.has(c.id) ? 'gone' : ''} ${drag?.lift && (drag.changes?.[c.id] || c.id.startsWith('__copy')) ? 'lifted' : ''} ${arriving?.has(c.id) ? 'arriving' : ''} ${!song.on ? 'off' : ''}`}
                     style={{ left: c.start * ppb, top: c.lane * LANE_H + 3, width: Math.max(4, c.len * ppb - 1), height: LANE_H - 6, '--clip': colorFor(c.src, song.colors), '--clip-ink': inkFor(colorFor(c.src, song.colors)) }}
                     title={`${part.name} · bar ${Math.floor(c.start) + 1}${c.start % 1 ? `.${Math.round((c.start % 1) * beats) + 1}` : ''} · ${Math.round(c.len * beats) / beats} bar${c.len === 1 ? '' : 's'}`}
                   >
