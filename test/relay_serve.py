@@ -18,6 +18,7 @@ conn.execute("CREATE TABLE tracks (id TEXT, owner_sub TEXT, visibility TEXT, col
 conn.execute("INSERT INTO tracks VALUES ('pub','someone','public',1,'open',NULL)")
 conn.execute("INSERT INTO tracks VALUES ('priv','someone','private',1,'open',NULL)")
 conn.execute("INSERT INTO tracks VALUES ('shut','someone','public',1,'invite','sesame')")
+conn.execute("INSERT INTO tracks VALUES ('vault','someone','private',1,'invite','open-says-me')")
 conn.commit()
 incubator_lib.db = lambda: conn
 

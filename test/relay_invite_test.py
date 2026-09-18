@@ -1,4 +1,4 @@
-"""Who may walk in: an open session, an invite-only one, and the list browse asks for."""
+"""Who may walk in: an open session, an invite-only one, a private track, and the live list."""
 import asyncio
 import json
 import urllib.request
@@ -92,6 +92,15 @@ async def main():
             await guest.send(json.dumps({'t': 'at', 'where': 'graph', 'x': 1, 'y': 1}))
             await drain(owner, 'at')  # their cursor arrives, so the jam frame was handled first
             ok("a guest cannot open someone else's session", await turned_away('shut', 'third'))
+
+    # ── a private track: the invite link is the only door, and it works ──
+    ok('a private track turns away a stranger', await turned_away('vault', 'friend'))
+    ok('and a wrong key with it', await turned_away('vault', 'friend', 'guess'))
+    async with websockets.connect(f'{URL}/vault') as guest:
+        me_v = await hello(guest, 'friend', 'bo', 'open-says-me')
+        ok('but the invite link gets them in', me_v.get('t') == 'me', me_v)
+        ok('and they were invited to work, not to watch', me_v.get('edit') is True, me_v)
+    ok('somebody not signed in cannot use it either', await turned_away('vault', '', 'open-says-me'))
 
     # ── a face that belongs to the person, not to the visit ──
     async with websockets.connect(f'{URL}/pub') as one:

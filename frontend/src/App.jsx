@@ -1337,14 +1337,17 @@ export default function App() {
           label: 'anyone can drop in',
           checked: jam.mode === 'open',
           onSelect: () => jamIs(jam.mode === 'open' ? 'invite' : 'open'),
-          hint: jam.mode === 'open'
-            ? 'Anyone who can open this track can join the session, and it shows as live while you work'
-            : 'Off: only a link carrying the invite key gets in, and the session is shown to nobody',
+          hint: jam.mode !== 'open'
+            ? 'Off: only a link carrying the invite key gets in, and the session is shown to nobody'
+            : visibility === 'private'
+              // "anyone" is nobody here, and the way out is counter-intuitive enough to say
+              ? 'This track is private, so nobody else can open it — turn this off for an invite link that lets someone in anyway'
+              : 'Anyone who can open this track can join the session, and it shows as live while you work',
         },
         isOwner && !isNew && jam.mode === 'invite' && jam.key && {
           label: 'copy invite link',
           onSelect: () => copyInvite(),
-          hint: 'The link that gets someone into this session',
+          hint: 'The link that gets someone into this session, private track or not',
         },
         isOwner && !isNew && jam.mode === 'invite' && jam.key && {
           label: 'new invite link',

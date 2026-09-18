@@ -52,8 +52,8 @@ Coordinates are the surface's own, not pixels: the patch canvas sends flow x/y, 
 timeline sends bars and rows, the piano roll sends bars and midi notes. Whoever draws the
 cursor converts, so it lands in the same place at any zoom or scroll.
 
-A private track only lets its owner in; anyone who can open a track can be present on it,
-signed in or not. Changing one needs a sign-in, nothing more: a shared link is an
+A private track lets its owner in, and anyone holding an invite link the owner made for it;
+anyone who can open a public or unlisted track can be present on it, signed in or not. Changing one needs a sign-in, nothing more: a shared link is an
 invitation to work on it together. Saving is still the owner's alone, so nothing anyone
 does in a room can overwrite the version they keep.
 
@@ -252,16 +252,35 @@ def _set_jam(track_id, env, mode, key):
 def _may_join(row, user, key):
     """Whether they may be in the room at all.
 
-    Open is the ordinary case: anyone who can open the track can be in it. Invite-only means
-    the link has to carry the key — the track itself stays as readable as it ever was, and
-    it's the session that's shut. The owner never needs their own invitation, and rolling
-    the key shuts every link that was handed out before it."""
-    if not _may_open(row, user):
+    The owner always. After that it turns on how the session is set, not on who can read the
+    track:
+
+      · takes drop-ins — anyone who can open the track can be in it
+      · invite-only    — the key, and nothing but the key
+
+    The key is enough on its own, whatever the track's visibility. That is what makes an
+    invitation an invitation: it works on a track nobody else can even open, which is
+    precisely the track you most want to invite somebody into. The owner minted that link
+    and handed it over, so holding it is the consent; rolling the key takes it back.
+
+    Which means a private track is shared by shutting the session rather than opening it —
+    "anyone" is nobody when nobody else can open the track, and the invite link is the only
+    door there has ever been. That door asks for a name: an invitation into work nobody else
+    can see goes to a person, not to whoever ends up holding the link."""
+    if not row:
         return False
-    if _col(row, "jam", "open") != "invite" or _is_owner(row, user):
+    if _is_owner(row, user):
         return True
-    want = _col(row, "jam_key")
-    return bool(want) and secrets.compare_digest(str(key or ""), str(want))
+    if _col(row, "jam", "open") == "invite":
+        want = _col(row, "jam_key")
+        if not (want and secrets.compare_digest(str(key or ""), str(want))):
+            return False
+        # An invitation into work nobody else can see is to a person, not to whoever ends up
+        # holding the link. Signing in is how the owner knows who is in there with them —
+        # and somebody who isn't signed in couldn't edit anyway, so all the anonymous seat
+        # offers is a nameless watcher in a private session, which is not what was meant.
+        return bool(user) or _col(row, "visibility") != "private"
+    return _may_open(row, user)
 
 
 def _may_open(row, user):
@@ -287,7 +306,10 @@ def _may_edit(row, user, open_to_others):
     the document."""
     if _is_owner(row, user):
         return True
-    return bool(row and user and open_to_others and _may_open(row, user))
+    # everyone this is asked about is already through the door (see _may_join), so what's
+    # left is whether they're signed in and whether the owner has left the track open. An
+    # invited guest on a private track is here because they were asked: let them work.
+    return bool(row and user and open_to_others)
 
 
 def _bot_of(user, name, pid):
