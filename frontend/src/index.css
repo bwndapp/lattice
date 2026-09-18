@@ -418,6 +418,22 @@ button.lcd-unit:hover { color: var(--acid); }
 
 /* ── playlist: lanes and clips, read ahead of time ────── */
 .main { position: relative; }
+/*
+ * Timeline and patch each sit in a slot that lays out exactly as they did on their own.
+ * While you move between them both slots are up and pinned over each other, so one can
+ * come in from its side while the other leaves. The one leaving travels less than half as
+ * far as the one arriving: that difference is the whole trick — it reads as the panel
+ * behind, not as two cards swapping places.
+ */
+.canvas-slot { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.main.swapping { overflow: hidden; }
+.main.swapping > .canvas-slot { position: absolute; inset: 0; will-change: transform; }
+.main.swapping > .canvas-slot.coming { z-index: 2; transform: translateX(calc(var(--dir, 1) * 100%)); }
+.main.swapping > .canvas-slot.going { z-index: 1; }
+.main.swapping.run > .canvas-slot { transition: transform 0.36s cubic-bezier(0.22, 0.9, 0.24, 1), opacity 0.36s ease; }
+.main.swapping.run > .canvas-slot.coming { transform: none; }
+.main.swapping.run > .canvas-slot.going { transform: translateX(calc(var(--dir, 1) * -44%)); opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .main.swapping.run > .canvas-slot { transition: none; } }
 .playlist { flex: 1; display: flex; flex-direction: column; min-height: 0; --head: 200px; }
 .playlist-head { display: flex; align-items: baseline; gap: 0.9rem; padding: 0.55rem 1rem 0.5rem; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
 .playlist-title {

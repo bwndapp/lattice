@@ -179,13 +179,41 @@ export default function App() {
   const [solo, setSolo] = useState(null)
   const [confirmClear, setConfirmClear] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
-  // the canvas switch slides first, then the (heavier) canvas changes, so the slide starts at once
+  // the switch's thumb moves the moment you click, even if the canvas takes a frame to follow
   const [switching, setSwitching] = useState(null)
+  /*
+   * Timeline and patch are two panels side by side, so moving between them slides: the one
+   * you asked for comes in from its side and the one you're leaving slides out behind it,
+   * a shorter distance, which is what makes it read as depth rather than two flat cards.
+   * Both are mounted for the length of it. The incoming one starts off to the side with no
+   * transition and only begins moving once it has mounted (two frames), so its mount never
+   * lands in the middle of the movement — the slide itself is one transform, on the
+   * compositor.
+   */
+  const [swap, setSwap] = useState(null) // { from, to, dir, run } while they pass each other
+  const swapOff = useRef(null)
   const switchCanvas = (to) => {
     if (to === view) return
+    const from = view
+    const canvases = (v) => v === 'song' || v === 'graph'
+    const slides = project && canvases(from) && canvases(to)
+      && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
     setSwitching(to)
-    requestAnimationFrame(() => requestAnimationFrame(() => { setView(to); setSwitching(null) }))
+    if (!slides) {
+      requestAnimationFrame(() => requestAnimationFrame(() => { setView(to); setSwitching(null) }))
+      return
+    }
+    setSwap({ from, to, dir: to === 'graph' ? 1 : -1, run: false })
+    setView(to)
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      setSwap((s) => (s && s.to === to && !s.run ? { ...s, run: true } : s))
+      setSwitching(null)
+    }))
+    clearTimeout(swapOff.current)
+    swapOff.current = setTimeout(() => setSwap(null), 460)
   }
+  useEffect(() => () => clearTimeout(swapOff.current), [])
+  const slotClass = (which) => `canvas-slot ${swap ? (which === swap.to ? 'coming' : 'going') : ''}`
   const genRef = useRef({ solo: null })
   genRef.current = { solo }
   const readOnlyRef = useRef(null)
@@ -1272,7 +1300,10 @@ export default function App() {
       <AutomationContext.Provider value={project ? automation : null}>
       <RollContext.Provider value={rollDock}>
       <div className="body">
-        <main className="main">
+        <main
+          className={`main ${swap ? `swapping ${swap.run ? 'run' : ''}` : ''}`}
+          style={swap ? { '--dir': swap.dir } : undefined}
+        >
           {view === 'browse' && (
             <Browser
               user={user}
@@ -1363,18 +1394,22 @@ export default function App() {
               <p><strong>It can't be undone.</strong> To only empty the patch and keep the track, use <em>clear the patch</em> instead.</p>
             </ConfirmDialog>
           )}
-          {view === 'song' && project && (
-            <Timeline project={project} onUpdateProject={updateProject} transport={transport} started={started} />
+          {(view === 'song' || swap?.from === 'song') && project && (
+            <div className={slotClass('song')}>
+              <Timeline project={project} onUpdateProject={updateProject} transport={transport} started={started} />
+            </div>
           )}
-          {view === 'graph' && project && (
-            <Graph
-              project={project}
-              onUpdateProject={updateProject}
-              started={started}
-              solo={solo}
-              onSolo={setSolo}
-              transport={transport}
-            />
+          {(view === 'graph' || swap?.from === 'graph') && project && (
+            <div className={slotClass('graph')}>
+              <Graph
+                project={project}
+                onUpdateProject={updateProject}
+                started={started}
+                solo={solo}
+                onSolo={setSolo}
+                transport={transport}
+              />
+            </div>
           )}
           {view === 'graph' && !project && code && (
             <section className="graph-convert">
