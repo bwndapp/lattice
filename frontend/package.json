@@ -7,7 +7,6 @@
     "dev": "vite",
     "build": "NODE_ENV=production BUILD_TARGET=public vite build",
     "draft": "NODE_ENV=production BUILD_TARGET=webapp vite build",
-    "room": "NODE_ENV=production BUILD_TARGET=room vite build",
     "preview": "vite preview"
   },
   "dependencies": {

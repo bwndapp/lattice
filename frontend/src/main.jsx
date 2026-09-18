@@ -27,8 +27,8 @@ function AuthCallback() {
     handleCallback()
       .then((next) => {
         // Sign-in always returns to /auth/callback on the live site; `next` may belong to
-        // another mount — the draft under /preview/, a branch under /multiplayer/ — which
-        // this router (basename '') can't reach, so the browser has to go there itself.
+        // another mount — the draft under /preview/ — which this router (basename '')
+        // can't reach, so the browser has to go there itself.
         if (elsewhere(next)) window.location.replace(next)
         else navigate(next.slice(BASE.length) || '/', { replace: true })
       })

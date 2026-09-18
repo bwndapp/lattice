@@ -167,11 +167,10 @@ def _env_of(scope_or_ws):
     """Draft or live, from the path. The server's middleware only does this for http, so a
     websocket has to say for itself which database it belongs to — without this, the draft
     page's room would look its track up in the live site's tracks and never find it.
-    /multiplayer/ is a branch served beside the site; it works on the draft's tracks.
 
     The http side reads it the same way, so a room and the page asking about it agree."""
     path = getattr(scope_or_ws, "scope", {}).get("path", "") or ""
-    return "draft" if path.startswith(("/preview/", "/multiplayer/")) else "live"
+    return "draft" if path.startswith("/preview/") else "live"
 
 
 _ready = set()
@@ -180,10 +179,9 @@ _ready = set()
 def _ensure(env):
     """The columns this branch adds, made sure of once per database.
 
-    It lives here rather than in multiplayer.py because this is the branch's own file and
-    the copy of multiplayer.py the platform actually loads is the one in the shared route
-    folder — which belongs to whoever is working in the main checkout, not to us. The only
-    file that has to be right for a room to work is this one, so it carries its own schema.
+    A route carries the schema it needs. Nothing else in src/api knows these columns exist,
+    and a room that can't read them is a room that doesn't work, so this is the file that
+    has to be sure of them.
     """
     if env in _ready:
         return
