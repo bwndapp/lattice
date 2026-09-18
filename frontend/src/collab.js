@@ -8,6 +8,7 @@
  *   pointerAt(where, x, y) / pointerGone()
  *   selectionIs(where, ids)
  *   viewIs(name)                        which view we're on, for the others
+ *   onPeerEdit(fn)                      when somebody else's change lands
  *   onDoc({ seed, doc, ops, reset })    the shared project: see below
  *   sendOps(ops, hash)                  what we just changed
  *   onPlay(fn) / sendPlay(on, pos, cps) playing in time together (the room holds the last
@@ -65,6 +66,7 @@ let skew = null // what to add to our clock to get the server's
 let bestTrip = Infinity // the quickest round trip we've measured, which is the honest one
 let onPlayFn = null
 let onRoleFn = null
+let onEditFn = null
 let heldPlay = null // heard before we had the room's clock; handed on as soon as we do
 let myView = null // which view we're on, kept so a reconnection can say so again
 let pending = 0 // our own changes the room hasn't put in order yet
@@ -182,6 +184,12 @@ export function onPlay(fn) {
  */
 export function openToOthers(on) {
   if (sock?.readyState === WebSocket.OPEN) sock.send(JSON.stringify({ t: 'lock', on: !!on }))
+}
+
+/** Told when somebody else's change lands: fn(peerId). For showing that they're working. */
+export function onPeerEdit(fn) {
+  onEditFn = fn
+  return () => { if (onEditFn === fn) onEditFn = null }
 }
 
 /** Told when what we may do changes: fn({ edit, open }). */
@@ -312,6 +320,7 @@ async function open(trackId) {
       if (msg.v != null && msg.v !== version + 1) { version = msg.v; askForTrack(); return }
       version = msg.v ?? version
       compareNotes()
+      if (msg.id !== me?.id) onEditFn?.(msg.id)
       if (msg.id === me?.id) {
         // our own change, come back in the place the room gave it. Applying it again is
         // how we end up agreeing with everyone else about who turned the knob last — but

@@ -36,7 +36,7 @@ import { createTransport, formatBarBeat, parseBarBeat } from './transport'
 import { songLength } from './song'
 import { canEdit as roomTakesEdits, join as joinRoom, leave as leaveRoom, onDoc, onPlay, onRole, openToOthers, sendOps, sendPlay, viewIs } from './collab.js'
 import { applyOps, diffOps, docHash, invertOps } from './docsync.js'
-import PeerList from './PeerList.jsx'
+import PeerTray from './PeerTray.jsx'
 import { AppCursors, watchPointer } from './surfaces.jsx'
 
 function readPref(key, fallback) {
@@ -1298,7 +1298,6 @@ export default function App() {
           <span className="export-word">export</span>
         </button>
         <div className="bar-side right">
-        <PeerList together={together} onTogether={setTogether} view={view} />
         <span className="track" role="group" aria-label="Track">
           {loadError ? (
             <span className="meta track-status" title={loadError}>{loadError} <Link className="linkish" to="/">new track</Link></span>
@@ -1543,6 +1542,7 @@ export default function App() {
       )}
       </RollContext.Provider>
       </AutomationContext.Provider>
+      <PeerTray together={together} onTogether={setTogether} view={view} />
       <AppCursors />
       <Tooltip />
 

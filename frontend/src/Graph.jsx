@@ -1340,7 +1340,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
             flow
           </button>
           <ReactFlow
-            data-surface-own
+            data-surface-own="graph"
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}

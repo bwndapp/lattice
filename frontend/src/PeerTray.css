@@ -1,0 +1,73 @@
+/* Who's here, in the corner of every view. It sits above the app-wide cursors, because a
+   cursor sweeping under it must not look like it went through someone's head. */
+.peer-tray {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  background: rgba(10, 10, 14, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 999px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45);
+}
+
+.peer-faces { display: flex; align-items: center; gap: 2px; }
+
+.peer-face {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+/* bbot fills its container, so the container is where the size lives — a face in a box
+   with no height renders nothing at all. */
+.peer-face-box {
+  display: block;
+  width: 34px;
+  height: 34px;
+}
+/* you, slightly smaller and set apart: the others are what the tray is for */
+.peer-face.me { margin-left: 6px; opacity: 0.8; }
+.peer-face.me .peer-face-box { width: 26px; height: 26px; }
+.peer-face.me::before {
+  content: '';
+  position: absolute;
+  left: -5px;
+  width: 1px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* off on a view this screen isn't showing: still here, just not in the room with you */
+.peer-face.away { opacity: 0.6; }
+
+/* the name only when you go looking for it, so a row of faces stays a row of faces */
+.peer-face-name {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1px 5px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  color: #0b0b0f;
+  background: var(--face-ink, #fff);
+  border-radius: 3px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+.peer-face:hover .peer-face-name { opacity: 1; }
+
+.peer-together { flex: none; }
+
+@media (max-width: 640px) {
+  .peer-tray { right: 8px; bottom: 8px; padding: 5px 7px; }
+  .peer-face-box { width: 28px; height: 28px; }
+}

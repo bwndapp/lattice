@@ -777,7 +777,7 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
                 onPreview(clamp(HIGH - Math.floor((e.clientY - rect.top) / rowH), LOW, HIGH))
               }}
             />
-            <div className="pr-grid-wrap" data-surface-own>
+            <div className="pr-grid-wrap" data-surface-own={room}>
               <canvas
                 className="pr-grid"
                 ref={gridRef}

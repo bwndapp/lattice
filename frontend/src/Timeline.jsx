@@ -1112,7 +1112,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
               })}
             </div>
             <div
-              data-surface-own
+              data-surface-own="timeline"
               className={`song-lanes ${drag ? 'dragging' : ''} ${tool === 'slice' ? 'slicing' : ''} ${erasing ? 'erasing' : ''}`}
               ref={lanesRef}
               style={{ height: lanes * LANE_H, width: bars * ppb }}

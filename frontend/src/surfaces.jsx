@@ -62,6 +62,30 @@ export function watchPointer() {
 }
 
 /**
+ * Where somebody else's pointer is on THIS screen, in viewport pixels.
+ *
+ * `exact` says whether it's really their pointer or only the right part of the window. A
+ * named region reports a fraction of its own box, which converts exactly. A region with
+ * units of its own — flow coordinates, bars and lanes — can't be converted from out here,
+ * so we give the middle of it and say so: for pointing a face in roughly the right
+ * direction that is plenty, and for drawing a cursor it isn't good enough.
+ */
+export function whereOnScreen(at) {
+  if (!at?.where) return null
+  const named = document.querySelector(`[data-surface="${CSS.escape(at.where)}"]`)
+  if (named) {
+    const r = named.getBoundingClientRect()
+    if (!r.width || !r.height) return null
+    return { left: r.left + at.x * r.width, top: r.top + at.y * r.height, exact: true }
+  }
+  const own = document.querySelector(`[data-surface-own="${CSS.escape(at.where)}"]`)
+  if (!own) return null
+  const r = own.getBoundingClientRect()
+  if (!r.width || !r.height) return null
+  return { left: r.left + r.width / 2, top: r.top + r.height / 2, exact: false }
+}
+
+/**
  * Everyone whose pointer is in a named region, drawn over the app in one fixed layer.
  *
  * A surface this window doesn't have open — someone in the piano roll while we're on the
@@ -84,12 +108,8 @@ export function AppCursors() {
 
   const shown = []
   for (const p of peers) {
-    if (!p.at?.where) continue
-    const el = document.querySelector(`[data-surface="${CSS.escape(p.at.where)}"]`)
-    if (!el) continue
-    const r = el.getBoundingClientRect()
-    if (!r.width || !r.height) continue
-    shown.push({ p, left: r.left + p.at.x * r.width, top: r.top + p.at.y * r.height })
+    const spot = whereOnScreen(p.at)
+    if (spot?.exact) shown.push({ p, ...spot }) // the rest draw their own, in their own units
   }
   if (!shown.length) return null
   return (
