@@ -194,7 +194,7 @@
   position: absolute;
   left: 0.5rem;
   bottom: 0.5rem;
-  z-index: 2;
+  z-index: 3; /* over the card-wide cover the title lays down */
   display: grid;
   place-items: center;
   width: 2.15rem;
@@ -230,12 +230,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.b-card-title::after { content: ''; position: absolute; inset: 0; border-radius: inherit; } /* the whole card opens its page */
+/* the title stretches an invisible cover over the card, so anywhere on it opens the
+   track's page — everything else you can click sits above that cover on z-index 2 */
+.b-card-title::after { content: ''; position: absolute; inset: 0; z-index: 1; border-radius: inherit; }
 .b-card-title:hover { color: #fff; }
 .b-card-title:focus-visible { outline: none; }
 .b-card:has(.b-card-title:focus-visible) { box-shadow: 0 0 0 1px var(--paper); }
 .b-card-author { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.b-play, .b-card-meta .b-tag { position: relative; z-index: 1; }
+.b-card-meta .b-tag { position: relative; z-index: 2; }
 .b-card-meta {
   display: flex;
   flex-wrap: wrap;
