@@ -41,7 +41,7 @@ def _conn():
               author TEXT NOT NULL,
               title TEXT NOT NULL,
               code TEXT NOT NULL,
-              visibility TEXT NOT NULL DEFAULT 'public',
+              visibility TEXT NOT NULL DEFAULT 'private',
               forked_from TEXT,
               likes INTEGER NOT NULL DEFAULT 0,
               plays INTEGER NOT NULL DEFAULT 0,
@@ -230,7 +230,9 @@ def _validate(body, partial=False):
             return None, f"code is over {MAX_CODE // 1000} KB"
         out["code"] = code
     if "visibility" in body or not partial:
-        vis = body.get("visibility") or "public"
+        # private unless they say otherwise: somebody who has never thought about who can
+        # see their work should not find out by being griefed
+        vis = body.get("visibility") or "private"
         if vis not in VISIBILITIES:
             return None, "visibility must be public, unlisted or private"
         out["visibility"] = vis

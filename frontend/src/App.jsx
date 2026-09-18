@@ -162,7 +162,10 @@ export default function App() {
   const [track, setTrack] = useState(null)
   const [loadError, setLoadError] = useState('')
   const [title, setTitle] = useState('')
-  const [visibility, setVisibility] = useState('public')
+  // A track starts private. Sharing is a thing you choose, not a thing you discover has
+  // already happened — and the people most likely to be caught out are exactly the ones
+  // who have never opened this menu.
+  const [visibility, setVisibility] = useState('private')
   const [started, setStarted] = useState(false)
   const [evalError, setEvalError] = useState(null)
   const [activeCode, setActiveCode] = useState('')
@@ -1114,7 +1117,7 @@ export default function App() {
     try {
       const t = await api('/tracks', {
         method: 'POST',
-        body: { title: `${track.title} (copy)`.slice(0, 80), code: songCodeOf(editorRef.current.code), visibility: 'public', forked_from: track.id },
+        body: { title: `${track.title} (copy)`.slice(0, 80), code: songCodeOf(editorRef.current.code), visibility: 'private', forked_from: track.id },
       })
       clearDraft(track.id)
       navigate(`/t/${t.id}`)
