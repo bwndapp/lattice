@@ -82,6 +82,8 @@ const store = {
 const rememberTrack = (id) => { store.set(LAST_TRACK, id); store.set(LAST_OPEN, 'track') }
 const rememberScratchWork = () => { store.set(SCRATCH_WORK, 'yes'); store.set(LAST_OPEN, 'scratch') }
 const forgetScratchWork = () => store.set(SCRATCH_WORK, null)
+/* What the browser writes into the address; see the effect that clears them on leaving it. */
+const BROWSE_PARAMS = ['browse', 'sort', 'q', 'by', 'copies', 'who', 'track']
 /** "3 nodes · 2 patterns · 5 clips" */
 const countText = (c) => (c ? [`${c.nodes} node${c.nodes === 1 ? '' : 's'}`, `${c.patterns} pattern${c.patterns === 1 ? '' : 's'}`, c.clips ? `${c.clips} clip${c.clips === 1 ? '' : 's'}` : null].filter(Boolean).join(' · ') : 'nothing')
 const lastTrack = () => {
@@ -298,6 +300,22 @@ export default function App() {
     if (codeViewRef.current) codeViewRef.current.inert = view !== 'code'
     if (view === 'code') requestAnimationFrame(() => editorRef.current?.editor.requestMeasure())
   }, [view])
+
+  /*
+   * The address follows whichever view you're in, so a refresh comes back to it. ?browse=…
+   * belongs to the track browser, and it wins over the view you left open when the page
+   * loads — so going from the browser to the timeline or the patch clears those params.
+   * Without this, refreshing on /t/abc?browse=explore dropped you back in the browser
+   * however long ago you'd left it.
+   */
+  useEffect(() => {
+    if (view === 'browse') return
+    const now = new URLSearchParams(window.location.search)
+    if (!BROWSE_PARAMS.some((k) => now.has(k))) return
+    for (const k of BROWSE_PARAMS) now.delete(k)
+    const search = now.toString()
+    navigate({ pathname: location.pathname, search: search ? `?${search}` : '' }, { replace: true, state: location.state })
+  }, [view]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Switch to the code view with the cursor at `pos` (e.g. a lane's label). */
   const revealCode = useCallback((pos) => {
