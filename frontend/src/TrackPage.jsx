@@ -3,6 +3,7 @@ import { api, timeAgo } from './api'
 import { parseProject } from './project'
 import { changesBetween, summarise } from './history.js'
 import { previewTrack, stopPreview } from './audio'
+import BranchMark from './BranchMark.jsx'
 import './TrackPage.css'
 
 const when = (s) => new Date(s * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -168,7 +169,7 @@ export default function TrackPage({ id, user, login, onOpen, onClose, onAuthor }
           by <button type="button" className="tp-author" onClick={() => onAuthor(track.author_id, track.author)}>{track.author}</button>
           {' · '}last saved {timeAgo(track.updated_at)}
           {track.parent && (
-            <> · from <button type="button" className="tp-link" onClick={() => onOpen(track.parent.id, true)}>{track.parent.title}</button></>
+            <> · <span className="tp-from"><BranchMark />branched off <button type="button" className="tp-link" onClick={() => onOpen(track.parent.id, true)}>{track.parent.title}</button></span></>
           )}
         </p>
 
@@ -216,6 +217,11 @@ export default function TrackPage({ id, user, login, onOpen, onClose, onAuthor }
                   <div className="tp-save-top">
                     <span className="tp-save-when">{when(v.saved_at)}</span>
                     {latest && <span className="tp-here">where it is now</span>}
+                    {v.forks.length > 0 && (
+                      <span className="tp-here branch">
+                        <BranchMark />{v.forks.length} {v.forks.length === 1 ? 'branch' : 'branches'} from here
+                      </span>
+                    )}
                     {i === 0 && all.length > 1 && <span className="tp-here quiet">the oldest save kept</span>}
                     <span className="tp-save-acts">
                       <button
@@ -247,8 +253,9 @@ export default function TrackPage({ id, user, login, onOpen, onClose, onAuthor }
                   {v.forks.map((f) => (
                     <div key={f.id} className="tp-fork">
                       <span className="tp-fork-arm" aria-hidden />
+                      <BranchMark className="tp-fork-mark" />
                       <button type="button" className="tp-link" onClick={() => onOpen(f.id, true)}>{f.title}</button>
-                      <span className="tp-fork-by"> — {f.author}, {timeAgo(f.forked_at ?? f.created_at)}</span>
+                      <span className="tp-fork-by"> — {f.author} took it from this save, {timeAgo(f.forked_at ?? f.created_at)}</span>
                     </div>
                   ))}
                 </div>

@@ -306,12 +306,20 @@ button.b-card-about {
 }
 button.b-card-about:hover { background: var(--acid); color: var(--ink); }
 
-/* a copy points back at what it came from, and that link goes to its page */
+/* a branch says so, and points back at the track it left */
 button.b-card-from {
-  position: relative; z-index: 2; max-width: 11rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font: inherit; font-size: 10px; color: var(--muted); background: none; border: 0; padding: 0;
-  cursor: var(--ring); text-decoration: underline; text-decoration-color: transparent;
-  transition: color 0.12s ease, text-decoration-color 0.12s ease;
+  position: relative; z-index: 2; max-width: 13rem;
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  overflow: hidden; white-space: nowrap;
+  font: inherit; font-size: 10px; color: var(--muted);
+  background: rgb(228 255 26 / 0.07); border: 0; border-radius: 999px;
+  padding: 0.1rem 0.5rem 0.1rem 0.4rem;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--acid) 28%, transparent);
+  cursor: var(--ring);
+  transition: color 0.12s ease, background 0.12s ease;
 }
-button.b-card-from::before { content: '⤷ '; color: color-mix(in srgb, var(--acid) 70%, var(--muted)); }
-button.b-card-from:hover { color: var(--paper); text-decoration-color: currentColor; }
+button.b-card-from .branch-mark { color: var(--acid); }
+button.b-card-from b { font-weight: 700; color: #b9b9ae; overflow: hidden; text-overflow: ellipsis; }
+button.b-card-from:hover { color: var(--paper); background: rgb(228 255 26 / 0.14); }
+button.b-card-from:hover b { color: var(--paper); }
+.b-tag.quiet { display: inline-flex; align-items: center; gap: 0.25rem; }

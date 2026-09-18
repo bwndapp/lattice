@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { api, timeAgo } from './api'
 import TrackPage from './TrackPage.jsx'
 import TrackMap from './TrackMap.jsx'
+import BranchMark from './BranchMark.jsx'
 import { Glass } from './Glass.jsx'
 import './Browser.css'
 
@@ -218,10 +219,12 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
                       type="button"
                       className="b-card-from"
                       onClick={() => setPage(t.parent.id)}
-                      data-tip={`Opens ${t.parent.title} by ${t.parent.author}, the track this came from`}
-                    >from {t.parent.title}</button>
+                      data-tip={`Opens ${t.parent.title} by ${t.parent.author}, the track this branched off`}
+                    ><BranchMark />branch of <b>{t.parent.title}</b></button>
                   )}
-                  {t.forked_from && !t.parent && <span className="b-tag quiet" data-tip="Started as a copy of a track that isn't shared">copy</span>}
+                  {t.forked_from && !t.parent && (
+                    <span className="b-tag quiet" data-tip="Branched off a track that isn't shared"><BranchMark />branch</span>
+                  )}
                 </div>
               </li>
             ))}

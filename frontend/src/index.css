@@ -76,6 +76,13 @@ input, textarea, select, [contenteditable="true"],
 /* images and links drag as files/URLs on their own; on a canvas that's never wanted */
 img, svg, a { -webkit-user-drag: none; }
 
+/* the mark for a track that came off another one (see BranchMark.jsx) */
+.branch-mark {
+  width: 11px; height: 11px; flex: none; vertical-align: -1px;
+  fill: currentColor; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round;
+}
+.branch-mark path { fill: none; }
+
 /*
  * Scrollbars: the rest of the app is black panels and hairlines, and the platform's own
  * bar is a wide light slab sitting on top of that. One thin, dark bar everywhere instead —
