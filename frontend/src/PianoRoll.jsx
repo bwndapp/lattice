@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { TICK, isBlackKey, midiToNote, noteToMidi, stepCount } from './project'
-import { pointerAt, pointerGone } from './collab.js'
+import { pointerAt, pointerGone, selectionIs, useHolders } from './collab.js'
 import PeerCursors from './PeerCursors.jsx'
 
 const KEY_W = 46
@@ -104,6 +104,9 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
   const [draft, setDraft] = useState(null) // notes while dragging
   const [selection, setSelection] = useState(() => new Set()) // keys of selected notes
   const room = `roll:${pattern.id}` // presence is per pattern: two people may have different ones open
+  // what the others have hold of, by the same key the selection uses. The notes are drawn
+  // on a canvas rather than laid out as elements, so an outline is painted, not styled.
+  const peerNotes = useHolders(room)
   const [marquee, setMarquee] = useState(null) // { x0, y0, x1, y1 } in grid px while box-selecting
   const pasteAt = useRef(null) // where the next paste lands, so repeated pastes line up
   const dragRef = useRef(null)
@@ -287,9 +290,16 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
       const x = note.s * colW + 1
       const y = (HIGH - note.n) * rowH + 1
       const nw = Math.max(2, note.l * colW - 2)
-      const sel = selection.has(keyOf(note))
+      const key = keyOf(note)
+      const sel = selection.has(key)
       ctx.fillStyle = sel ? paper : acid
       ctx.fillRect(x, y, nw, rowH - 2)
+      const held = peerNotes.get(key)
+      if (held) {
+        ctx.strokeStyle = held.color
+        ctx.lineWidth = 2
+        ctx.strokeRect(x - 1, y - 1, nw + 2, rowH)
+      }
       if (nw > 8) {
         ctx.fillStyle = '#000'
         ctx.globalAlpha = 0.45
@@ -316,7 +326,7 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
       ctx.setLineDash([])
     }
     drawOverview()
-  }, [notes, selection, marquee, total, colW, rowH, pattern.stepsPerBar, stepsPerBeat, snapBeats, snapSteps, drawOverview])
+  }, [notes, selection, peerNotes, marquee, total, colW, rowH, pattern.stepsPerBar, stepsPerBeat, snapBeats, snapSteps, drawOverview])
 
   useEffect(() => { draw() }, [draw])
 
@@ -451,6 +461,10 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
     scrollRef.current?.classList.remove('panning', 'zooming')
   }
 
+  useEffect(() => { selectionIs(room, [...selection]) }, [selection, room])
+  // closing the roll lets the notes go: otherwise they stay outlined on everyone else's
+  // screen, held by somebody who isn't looking at them any more
+  useEffect(() => () => selectionIs(room, []), [room])
   const selectedNotes = (list = channel.notes) => list.filter((nt) => selection.has(keyOf(nt)))
   const selectKeys = (list) => setSelection(new Set(list.map(keyOf)))
 
