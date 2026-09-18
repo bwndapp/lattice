@@ -60,6 +60,21 @@ body {
   color: var(--paper);
 }
 :focus-visible { outline: 2px solid var(--acid); outline-offset: 2px; }
+
+/*
+ * Lattice is an instrument, not a document: dragging on it moves clips, notes and knobs,
+ * so a drag must never leave a trail of highlighted labels behind — and once text is
+ * selected the browser starts dragging *that* instead, which is how a drag ends up
+ * smearing the interface around. Nothing is selectable by default; the places where you'd
+ * actually want to copy something out opt back in below.
+ */
+/* set once at the top and inherited, so a rule further down can simply say "text" and
+   win for its own subtree without fighting a `*` selector's specificity */
+#root { user-select: none; -webkit-user-select: none; }
+input, textarea, select, [contenteditable="true"],
+.cm-editor, .tp, .selectable { user-select: text; -webkit-user-select: text; }
+/* images and links drag as files/URLs on their own; on a canvas that's never wanted */
+img, svg, a { -webkit-user-drag: none; }
 .page { max-width: 640px; margin: 0 auto; padding: 4rem 1.5rem; color: var(--muted); }
 .link, .linkish { color: var(--acid); text-decoration: underline; text-underline-offset: 3px; }
 .linkish { background: none; border: 0; padding: 0; font: inherit; cursor: var(--ring); }
