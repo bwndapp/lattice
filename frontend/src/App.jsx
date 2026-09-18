@@ -232,7 +232,7 @@ export default function App() {
       // tab-out-and-back-in flash instead of move
       setSheet({ phase, under: phase === 'in' ? view : to })
       clearTimeout(sheetOff.current)
-      sheetOff.current = setTimeout(() => setSheet(null), 520)
+      sheetOff.current = setTimeout(() => setSheet(null), 680)
     }
     setView(to)
   }
