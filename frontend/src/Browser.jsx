@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api, timeAgo } from './api'
 import TrackPage from './TrackPage.jsx'
+import TrackMap from './TrackMap.jsx'
 import { Glass } from './Glass.jsx'
 import './Browser.css'
 
@@ -189,9 +190,13 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
           <ul className="b-grid">
             {tracks.map((t) => (
               <li key={t.id} className={`b-card ${t.id === activeId ? 'active' : ''}`}>
-                <button type="button" className="b-play" aria-label={`Play ${t.title}`} title="Play" onClick={() => onPlay(t.id)}>
-                  <svg viewBox="0 0 16 16" aria-hidden><path d="M5 3.5v9l8-4.5z" /></svg>
-                </button>
+                <div className="b-art">
+                  <TrackMap shape={t.shape} />
+                  <button type="button" className="b-play" aria-label={`Play ${t.title}`} title="Play" onClick={() => onPlay(t.id)}>
+                    <svg viewBox="0 0 16 16" aria-hidden><path d="M5 3.5v9l8-4.5z" /></svg>
+                  </button>
+                  {t.shape?.bpm ? <span className="b-art-tag">{t.shape.bpm}<i>bpm</i></span> : null}
+                </div>
                 <div className="b-card-body">
                   <button type="button" className="b-card-title" onClick={() => setPage(t.id)} title={t.title}>{t.title}</button>
                   <button

@@ -144,12 +144,74 @@ def _author_id(sub):
     return hashlib.sha256(f"lattice:{sub}".encode()).hexdigest()[:12] if sub else ""
 
 
+PROJECT_MARK = "// @project "
+# the clip colours from frontend/src/clipColors.js, in the same order
+PALETTE = ["#e4ff1a", "#f2f0e6", "#b9c96a", "#ffb347", "#86d8cc", "#c8a2ff", "#ff8fa3", "#9fb4ff"]
+
+
+def _color_for(src, colors):
+    """A part's colour: the one it was given, or one from its id — as the studio does it."""
+    if colors.get(src):
+        return str(colors[src])[:24]
+    h = 0
+    for ch in src:
+        h = (h * 31 + ord(ch)) & 0xFFFFFFFF
+    return PALETTE[h % len(PALETTE)]
+
+
+def _shape(code):
+    """
+    A track's arrangement, small enough to send with a listing: where each clip sits, in
+    what colour, and how big the song is. Enough to draw the track on a card — a picture of
+    this piece of music and no other — and nowhere near enough to play it.
+    """
+    line = str(code).split("\n", 1)[0]
+    if not line.startswith(PROJECT_MARK):
+        return None
+    try:
+        p = json.loads(line[len(PROJECT_MARK):])
+    except ValueError:
+        return None
+    song = p.get("song") or {}
+    colors = song.get("colors") or {}
+    palette, clips, bars, lanes = [], [], 0.0, 0
+    for c in (song.get("clips") or [])[:140]:
+        try:
+            lane, start, length = int(c["lane"]), float(c["start"]), float(c["len"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if length <= 0 or lane < 0 or start < 0:
+            continue
+        src = str(c.get("src") or "")
+        colour = _color_for(src, colors)
+        if colour not in palette:
+            palette.append(colour)
+        # 1 marks an automation curve, which is drawn as a line rather than a block
+        clips.append([lane, round(start, 3), round(length, 3), palette.index(colour),
+                      1 if src.startswith("auto:") else 0])
+        bars = max(bars, start + length)
+        lanes = max(lanes, lane + 1)
+    return {
+        "bpm": p.get("bpm"),
+        "beats": p.get("beats"),
+        "bars": round(bars, 3),
+        "lanes": lanes,
+        "parts": len(p.get("patterns") or []),
+        "nodes": len([n for n in (p.get("nodes") or []) if n.get("type") != "output"]),
+        "p": palette,
+        "c": clips,
+    }
+
+
 def _public(row, user=None, liked=False, with_code=True):
     t = dict(row)
     t["is_owner"] = bool(user and user.get("sub") == t["owner_sub"])
     t["liked"] = bool(liked)
     t["author_id"] = _author_id(t.get("owner_sub"))
     t.pop("owner_sub", None)
+    # what the track looks like, so a list of them can be looked at and not only read
+    if t.get("code"):
+        t["shape"] = _shape(t["code"])
     if not with_code:
         t.pop("code", None)
     return t
