@@ -22,5 +22,6 @@
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
     "vite": "^5.4.8"
-  }
+  },
+  "license": "AGPL-3.0-or-later"
 }

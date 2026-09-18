@@ -22,7 +22,10 @@
 .cd-text { font-size: 12px; line-height: 1.6; color: var(--muted); }
 .cd-text p { margin: 0 0 0.5rem; }
 .cd-text p:last-child { margin-bottom: 0; }
-.cd-text strong { color: var(--paper); font-weight: 600; }
+.cd-text strong, .cd-text b { color: var(--paper); font-weight: 600; }
+.cd-quiet { color: #6f6f67; font-size: 11px; }
+/* not every dialog is a warning: the red edge is for the ones that ask before something drastic */
+.confirm-dialog.calm { border-color: var(--line); }
 .cd-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.5rem; margin-top: 0.25rem; }
 .btn.cd-danger { color: var(--ink); background: var(--danger); border-color: var(--danger); font-weight: 700; }
 .btn.cd-danger:hover { filter: brightness(1.1); }

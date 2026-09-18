@@ -46,3 +46,14 @@ cd frontend && npm install && npm run dev     # the app
 The API is FastAPI, mounted under `/api`, and expects a SQLite database beside it. The
 deployment this repo mirrors serves a draft build and a published one from the same box,
 with separate databases for each.
+
+## Licence
+
+lattice is built on Strudel, which is free software under the
+[GNU AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0.html), so lattice is
+**AGPL-3.0-or-later** as well — see [LICENSE](LICENSE). That means the source of whatever
+is running at lattice.bwnd.app is this repository, and anyone using it is free to read it,
+change it and run their own.
+
+Tracks people save with it are their own work; the licence covers the program, not the
+music made with it.

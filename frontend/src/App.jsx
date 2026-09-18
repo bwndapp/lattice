@@ -14,6 +14,7 @@ import Browser from './Browser.jsx'
 import Graph from './Graph.jsx'
 import Timeline from './Timeline.jsx'
 import ConfirmDialog from './ConfirmDialog.jsx'
+import About from './About.jsx'
 import Popover from './Popover.jsx'
 import { Glass } from './Glass.jsx'
 import { AutomationEditor } from './Automation.jsx'
@@ -201,6 +202,7 @@ export default function App() {
   const [solo, setSolo] = useState(null)
   const [confirmClear, setConfirmClear] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [showAbout, setShowAbout] = useState(false)
   const canvases = (v) => v === 'song' || v === 'graph'
   // the switch's thumb moves the moment you click, even if the canvas takes a frame to follow
   const [switching, setSwitching] = useState(null)
@@ -1304,6 +1306,8 @@ export default function App() {
         codeChanged && track && !isOwner && { label: 'undo my changes', onSelect: () => revert() },
         track && 'line',
         track && { label: 'copy link', onSelect: () => share() },
+        'line',
+        { label: 'about lattice…', onSelect: () => setShowAbout(true), hint: 'What this is, and where its source lives' },
       ],
     },
     {
@@ -1313,15 +1317,6 @@ export default function App() {
         { label: 'redo', shortcut: 'ctrl/cmd shift Z', onSelect: () => redo(), disabled: !historyRef.current.future.length },
         project && canEdit && 'line',
         project && canEdit && { label: 'clear the patch…', onSelect: () => setConfirmClear(true), disabled: !hasPatch, hint: 'Empty the patch: nodes, wires, patterns and the song' },
-      ],
-    },
-    {
-      label: 'view',
-      items: [
-        project && { label: 'timeline', checked: view === 'song', onSelect: () => switchCanvas('song') },
-        project && { label: 'patch', checked: view === 'graph', onSelect: () => switchCanvas('graph') },
-        { label: evalError ? 'code (has an error)' : 'code', shortcut: 'ctrl/cmd J', checked: view === 'code', onSelect: () => setView('code') },
-        { label: 'browse tracks', checked: view === 'browse', onSelect: () => goView('browse') },
       ],
     },
     canEdit && {
@@ -1566,6 +1561,7 @@ export default function App() {
         </span>
       </header>
 
+      {showAbout && <About onClose={() => setShowAbout(false)} />}
       {showExport && project && (
         <ExportDialog
           project={project}
