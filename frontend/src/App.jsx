@@ -87,6 +87,8 @@ const store = {
 const rememberTrack = (id) => { store.set(LAST_TRACK, id); store.set(LAST_OPEN, 'track') }
 const rememberScratchWork = () => { store.set(SCRATCH_WORK, 'yes'); store.set(LAST_OPEN, 'scratch') }
 const forgetScratchWork = () => store.set(SCRATCH_WORK, null)
+/* What the browser writes into the address; see the effect that clears them on leaving it. */
+const BROWSE_PARAMS = ['browse', 'sort', 'q', 'by', 'copies', 'who', 'track']
 /** "3 nodes · 2 patterns · 5 clips" */
 const countText = (c) => (c ? [`${c.nodes} node${c.nodes === 1 ? '' : 's'}`, `${c.patterns} pattern${c.patterns === 1 ? '' : 's'}`, c.clips ? `${c.clips} clip${c.clips === 1 ? '' : 's'}` : null].filter(Boolean).join(' · ') : 'nothing')
 const lastTrack = () => {
@@ -154,6 +156,7 @@ export default function App() {
   const loadedIdRef = useRef(undefined) // which track's code is in the editor right now
   const pendingPlayRef = useRef(null)
   const countedRef = useRef(new Set())
+  const openedRef = useRef(new Set()) // tracks counted as opened this visit
 
   const [code, setCode] = useState('')
   const [track, setTrack] = useState(null)
@@ -166,7 +169,13 @@ export default function App() {
   // the evaluated pattern, each labeled pattern in it, and which track (null = scratch) it belongs to
   const [evaluated, setEvaluated] = useState({ pattern: null, lanes: new Map(), forId: undefined })
   const capturedRef = useRef(new Map())
-  const [view, setView] = useState(() => (['browse', 'graph', 'song', 'code'].includes(readPref('strudel:view', 'graph')) ? readPref('strudel:view', 'graph') : 'graph'))
+  const [view, setView] = useState(() => {
+    // a link into the browser wins over whichever view you left open
+    const q = new URLSearchParams(window.location.hash.split('?')[1] || window.location.search)
+    if (q.get('browse') || q.get('by') || q.get('copies')) return 'browse'
+    const kept = readPref('strudel:view', 'graph')
+    return ['browse', 'graph', 'song', 'code'].includes(kept) ? kept : 'graph'
+  })
   const codeViewRef = useRef(null)
   const lastViewRef = useRef('graph') // where ctrl/cmd+J returns to from the code
   const lastCanvasRef = useRef('graph') // where browse goes back to
@@ -189,12 +198,69 @@ export default function App() {
   const [solo, setSolo] = useState(null)
   const [confirmClear, setConfirmClear] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
-  // the canvas switch slides first, then the (heavier) canvas changes, so the slide starts at once
+  const canvases = (v) => v === 'song' || v === 'graph'
+  // the switch's thumb moves the moment you click, even if the canvas takes a frame to follow
   const [switching, setSwitching] = useState(null)
+  /*
+   * Timeline and patch are two panels side by side, so moving between them slides: the one
+   * you asked for comes in from its side and the one you're leaving slides out behind it,
+   * a shorter distance, which is what makes it read as depth rather than two flat cards.
+   * Both are mounted for the length of it. The incoming one starts off to the side with no
+   * transition and only begins moving once it has mounted (two frames), so its mount never
+   * lands in the middle of the movement — the slide itself is one transform, on the
+   * compositor.
+   */
+  const [swap, setSwap] = useState(null) // { from, to, dir, run } while they pass each other
+  const swapOff = useRef(null)
   const switchCanvas = (to) => {
     if (to === view) return
+    const from = view
+    const slides = project && canvases(from) && canvases(to)
+      && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
     setSwitching(to)
-    requestAnimationFrame(() => requestAnimationFrame(() => { setView(to); setSwitching(null) }))
+    if (!slides) {
+      requestAnimationFrame(() => requestAnimationFrame(() => { setView(to); setSwitching(null) }))
+      return
+    }
+    setSwap({ from, to, dir: to === 'graph' ? 1 : -1, run: false })
+    setView(to)
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      setSwap((s) => (s && s.to === to && !s.run ? { ...s, run: true } : s))
+      setSwitching(null)
+    }))
+    clearTimeout(swapOff.current)
+    swapOff.current = setTimeout(() => setSwap(null), 460)
+  }
+  useEffect(() => () => clearTimeout(swapOff.current), [])
+  const slotClass = (which) => `canvas-slot ${swap ? (which === swap.to ? 'coming' : 'going') : ''}`
+
+  /*
+   * The browser isn't beside the canvas, it's over it: it comes down from the top of the
+   * window and goes back up the same way, so leaving it puts you back exactly where you
+   * were rather than somewhere new. Whatever it covers stays mounted only for the length
+   * of the movement — there's no sense in a timeline running behind an opaque sheet.
+   */
+  const [sheet, setSheet] = useState(null) // { phase: 'in' | 'out', under }
+  const sheetOff = useRef(null)
+  useEffect(() => () => clearTimeout(sheetOff.current), [])
+  const slideBrowse = (to) => {
+    const phase = to === 'browse' ? 'in' : 'out'
+    if (!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      // a keyframe animation, not a transition: it belongs to the class the sheet mounts
+      // with, so it can't be missed by arriving a frame late — which is what made a quick
+      // tab-out-and-back-in flash instead of move
+      setSheet({ phase, under: phase === 'in' ? view : to })
+      clearTimeout(sheetOff.current)
+      sheetOff.current = setTimeout(() => setSheet(null), 680)
+    }
+    setView(to)
+  }
+  /** Go to a view the way that view arrives: the browser drops, the canvases slide. */
+  const goView = (to) => {
+    if (to === view) return
+    if (to === 'browse' || view === 'browse') slideBrowse(to)
+    else if (canvases(to) && canvases(view)) switchCanvas(to)
+    else setView(to)
   }
   // Which lane of an output you're listening to on your own: soloing is "let me hear that
   // for a second", not a decision about the track, so it stays on this keyboard and never
@@ -224,6 +290,9 @@ export default function App() {
   }, [track, savedCode, code])
   const metaChanged = isOwner && (title !== track.title || visibility !== track.visibility)
   const dirty = isNew || codeChanged || metaChanged
+  // worth stopping for: edits to a saved track, or a scratch pad with something in it
+  const unsavedRef = useRef(false)
+  unsavedRef.current = codeChanged || metaChanged || (isNew && !!parseProject(code)?.nodes?.some((n) => n.type !== 'output'))
 
   const [preparing, setPreparing] = useState(false) // loading sounds before the first beat
   const preparingRef = useRef(false)
@@ -341,6 +410,22 @@ export default function App() {
     if (view === 'code') requestAnimationFrame(() => editorRef.current?.editor.requestMeasure())
   }, [view])
 
+  /*
+   * The address follows whichever view you're in, so a refresh comes back to it. ?browse=…
+   * belongs to the track browser, and it wins over the view you left open when the page
+   * loads — so going from the browser to the timeline or the patch clears those params.
+   * Without this, refreshing on /t/abc?browse=explore dropped you back in the browser
+   * however long ago you'd left it.
+   */
+  useEffect(() => {
+    if (view === 'browse') return
+    const now = new URLSearchParams(window.location.search)
+    if (!BROWSE_PARAMS.some((k) => now.has(k))) return
+    for (const k of BROWSE_PARAMS) now.delete(k)
+    const search = now.toString()
+    navigate({ pathname: location.pathname, search: search ? `?${search}` : '' }, { replace: true, state: location.state })
+  }, [view]) // eslint-disable-line react-hooks/exhaustive-deps
+
   /** Switch to the code view with the cursor at `pos` (e.g. a lane's label). */
   const revealCode = useCallback((pos) => {
     setView('code')
@@ -349,6 +434,17 @@ export default function App() {
     const anchor = Math.min(pos, view.state.doc.length)
     view.dispatch({ selection: { anchor }, scrollIntoView: true })
     requestAnimationFrame(() => view.focus())
+  }, [])
+
+  /**
+   * Someone opening a track that isn't theirs is the thing worth counting: it's them
+   * taking it into their own hands, which is what the number is for. Not the owner
+   * playing their own work back, and not once per press of play.
+   */
+  const countOpen = useCallback((id, owner) => {
+    if (!id || owner || openedRef.current.has(id)) return
+    openedRef.current.add(id)
+    api(`/tracks/${id}/open`, { method: 'POST' }).catch(() => {})
   }, [])
 
   const putCode = useCallback((id, text) => {
@@ -562,7 +658,11 @@ export default function App() {
   const [showVersions, setShowVersions] = useState(false)
   const [showExport, setShowExport] = useState(false)
   // the piano roll, docked along the bottom: { patternId, channelId }
-  const [browseView, setBrowseView] = useState('explore') // which list the browse page shows
+  // a shared link into the browser (?browse=explore&by=…) opens there
+  const [browseView, setBrowseView] = useState(() => {
+    const from = new URLSearchParams(window.location.hash.split('?')[1] || window.location.search).get('browse')
+    return ['explore', 'mine', 'liked'].includes(from) ? from : 'explore'
+  })
   const userRef = useRef(null)
   userRef.current = user
   /** Open the track list, on your own tracks when that's what was asked for. */
@@ -570,9 +670,12 @@ export default function App() {
   const openBrowse = useCallback((which, narrow = null) => {
     if (which) setBrowseView(which === 'mine' && !userRef.current ? 'explore' : which)
     setBrowseNarrow(narrow)
-    setView('browse')
+    goView('browse')
   }, [])
   const [roll, setRoll] = useState(null) // { patternId, channelId, tab }
+  // the rack belongs to the track you're working on: browsing isn't that, and a dock
+  // sitting over the list is in the way of the one thing that view is for
+  useEffect(() => { if (view === 'browse') setRoll(null) }, [view])
   const [rollHeight, setRollHeight] = useState(readDockHeight)
   const rollDock = useMemo(() => ({
     at: roll,
@@ -608,6 +711,13 @@ export default function App() {
 
   const [askSave, setAskSave] = useState(null) // why a save should ask first
   const [askNew, setAskNew] = useState(null) // the template a new track would start from
+  const [askOpen, setAskOpen] = useState(null) // a track to open, once the open one is settled
+
+  /** Open a track from the browser, pausing first if what's open has edits that aren't saved. */
+  const openTrack = useCallback((id, title) => {
+    if (unsavedRef.current && loadedIdRef.current !== id) return setAskOpen({ id, title })
+    navigate(`/t/${id}`)
+  }, [navigate])
   const closeAutoEditor = useCallback(() => setAutoEditing(null), [])
   const closeRoll = useCallback(() => setRoll(null), [])
   const automation = useMemo(() => {
@@ -820,11 +930,7 @@ export default function App() {
     if (!editor.repl.scheduler.started) transport.cue() // start from the cue, not bar 1
     editor.evaluate()
     tellRoom(true)
-    const id = loadedIdRef.current
-    if (id && !countedRef.current.has(id)) {
-      countedRef.current.add(id)
-      api(`/tracks/${id}/play`, { method: 'POST' }).catch(() => {})
-    }
+    countedRef.current.add(loadedIdRef.current) // played it deliberately: its code may run quietly now
   }, [transport])
 
   playRef.current = play
@@ -883,6 +989,7 @@ export default function App() {
         setTitle(t.title)
         setVisibility(t.visibility)
         rememberTrack(trackId)
+        countOpen(trackId, t.is_owner)
         const draft = readDraft(trackId, t.updated_at)
         putCode(trackId, draft ?? t.code)
         if (pendingPlayRef.current === trackId) {
@@ -919,8 +1026,11 @@ export default function App() {
   }, [code, activeCode, started, shownId, previewAllowed, evaluated.forId])
 
   const save = useCallback(async ({ replace = false } = {}) => {
-    if (!canEdit || busy) return
+    if (busy) return
     if (!user) return login()
+    // someone else's track: saving it means taking your own copy, not asking permission
+    if (track && !isOwner) return remixRef.current()
+    if (!canEdit) return
     // replacing the saved track with what looks like a different or emptied one: ask first
     if (!isNew && !replace && track) {
       const reason = replaceRisk()
@@ -973,7 +1083,7 @@ export default function App() {
    */
   const newTrack = (template = 'blank', { force = false } = {}) => {
     if (!force && ((isNew && store.get(SCRATCH_WORK) === 'yes') || (!isNew && codeChanged))) return setAskNew(template)
-    if (view === 'browse' || view === 'code') setView('graph')
+    if (view === 'browse' || view === 'code') goView('graph')
     navigate('/', { state: { fresh: Date.now(), template } })
     flash(template === 'demo' ? 'New track from the demo patch' : 'New track · nothing else changed')
   }
@@ -997,6 +1107,7 @@ export default function App() {
     }
   }
 
+  const remixRef = useRef(null)
   const remix = async () => {
     if (!user) return login()
     setBusy(true)
@@ -1008,13 +1119,15 @@ export default function App() {
       clearDraft(track.id)
       navigate(`/t/${t.id}`)
       setRefreshKey((k) => k + 1)
-      flash('Remixed into your tracks')
+      flash('Saved as your copy · the original is untouched')
     } catch (e) {
       flash(`Couldn’t save a copy: ${e.message}`)
     } finally {
       setBusy(false)
     }
   }
+
+  remixRef.current = remix
 
   const like = async () => {
     if (!user) return login()
@@ -1055,19 +1168,15 @@ export default function App() {
     flash('Back to your saved version', { label: 'undo', run: () => undoRef.current?.() })
   }
 
-  const playFromList = (id) => {
-    if (id === trackId && loadedIdRef.current === id) return play()
-    pendingPlayRef.current = id
-    navigate(`/t/${id}`)
-  }
-
   // Page-wide shortcuts (Strudel's own only fire while the editor has focus). Capture
   // phase + stopPropagation so a focused editor doesn't run them a second time.
   const keysRef = useRef({})
   keysRef.current = {
     play, save, stop, pause, toStart, undo, redo, isProject: !!project,
+    history: () => { if (isOwner) setShowVersions(true) },
     saveAsNew: () => (isNew || !isOwner ? save() : saveAsNew()),
-    swapCanvas: () => switchCanvas(view === 'song' ? 'graph' : 'song'),
+    // from the browser, tab is the way out: back where you came from, sheet and all
+    swapCanvas: () => goView(view === 'browse' ? lastCanvasRef.current : view === 'song' ? 'graph' : 'song'),
   }
   useEffect(() => {
     // only places you type text keep space and Home for themselves. A focused button, slider,
@@ -1118,6 +1227,7 @@ export default function App() {
       else if (mod && e.shiftKey && e.key.toLowerCase() === 's') keysRef.current.saveAsNew()
       else if (mod && e.key.toLowerCase() === 's') keysRef.current.save()
       else if (mod && e.key.toLowerCase() === 'j') setView((v) => (v === 'code' ? lastViewRef.current : 'code'))
+      else if (mod && e.key.toLowerCase() === 'h') keysRef.current.history()
       else return
       e.preventDefault()
       e.stopPropagation()
@@ -1186,7 +1296,7 @@ export default function App() {
         canEdit && { label: isNew ? 'save as a track' : 'save', shortcut: 'ctrl/cmd S', onSelect: () => save(), disabled: busy || (!!user && !dirty) },
         isOwner && { label: 'save as a new track', shortcut: 'ctrl/cmd shift S', onSelect: () => saveAsNew(), disabled: busy, hint: 'This track stays as it was saved' },
         !canEdit && track && { label: 'save a copy', onSelect: () => remix(), disabled: busy, hint: 'Yours to change · it still credits the original' },
-        isOwner && { label: 'earlier saves…', onSelect: () => setShowVersions(true), hint: 'Each time you save, the one before is kept here' },
+        isOwner && { label: 'history…', shortcut: 'ctrl/cmd H', onSelect: () => setShowVersions(true), hint: 'Every save, and what changed at each one' },
         project && { label: 'export…', onSelect: () => { stop(); setShowExport(true) }, hint: 'Bounce it to a WAV or MP3' },
         codeChanged && track && !isOwner && { label: 'undo my changes', onSelect: () => revert() },
         track && 'line',
@@ -1208,7 +1318,7 @@ export default function App() {
         project && { label: 'timeline', checked: view === 'song', onSelect: () => switchCanvas('song') },
         project && { label: 'patch', checked: view === 'graph', onSelect: () => switchCanvas('graph') },
         { label: evalError ? 'code (has an error)' : 'code', shortcut: 'ctrl/cmd J', checked: view === 'code', onSelect: () => setView('code') },
-        { label: 'browse tracks', checked: view === 'browse', onSelect: () => setView('browse') },
+        { label: 'browse tracks', checked: view === 'browse', onSelect: () => goView('browse') },
       ],
     },
     canEdit && {
@@ -1267,7 +1377,28 @@ export default function App() {
     <div className="studio" data-surface="app">
       <header className="bar" data-surface="header">
         <div className="bar-side left">
-        <Link to="/" className="logo" aria-label="lattice, home">
+        {/*
+          * A mark, not a way out: clicking it used to throw away what you had open for a
+          * fresh scratch pad, which is a lot to do by accident. It leans toward the pointer
+          * instead — the woven mark standing off the word behind it.
+          */}
+        <span
+          className="logo-card"
+          onPointerMove={(e) => {
+            const el = e.currentTarget
+            const r = el.getBoundingClientRect()
+            el.style.setProperty('--ry', `${(((e.clientX - r.left) / r.width - 0.5) * 22).toFixed(1)}deg`)
+            el.style.setProperty('--rx', `${((0.5 - (e.clientY - r.top) / r.height) * 18).toFixed(1)}deg`)
+            el.dataset.live = '1'
+          }}
+          onPointerLeave={(e) => {
+            const el = e.currentTarget
+            delete el.dataset.live
+            el.style.setProperty('--rx', '0deg')
+            el.style.setProperty('--ry', '0deg')
+          }}
+        >
+        <span className="logo" aria-label="lattice">
           {/* the woven mark from the app icon: two strips over two, gaps cut in the header's black */}
           <svg className="logo-mark" viewBox="14 14 36 36" aria-hidden="true">
             <g strokeLinecap="square" fill="none">
@@ -1276,8 +1407,9 @@ export default function App() {
               <path d="M14 38 38 14M26 50 50 26" stroke="currentColor" strokeWidth="7" />
             </g>
           </svg>
-          <span>lattice</span>
-        </Link>
+          <span className="logo-word">lattice</span>
+        </span>
+        </span>
         <span className="transport" role="group" aria-label="Transport">
           <button className="btn tport to-start" onClick={toStart} title="Back to the start (Home)" aria-label="Back to the start">|&lt;</button>
           <button
@@ -1326,7 +1458,7 @@ export default function App() {
         <button
           className={`btn browse-btn ${view === 'browse' ? 'on' : ''}`}
           aria-pressed={view === 'browse'}
-          onClick={() => setView(view === 'browse' ? lastCanvasRef.current : 'browse')}
+          onClick={() => goView(view === 'browse' ? lastCanvasRef.current : 'browse')}
           title={view === 'browse' ? 'Back to your track' : 'Browse tracks: yours, and what people have shared'}
         >
           <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden><path d="M1.5 1.5h3.6v3.6H1.5zM6.9 1.5h3.6v3.6H6.9zM1.5 6.9h3.6v3.6H1.5zM6.9 6.9h3.6v3.6H6.9z" fill="currentColor" /></svg>
@@ -1377,6 +1509,12 @@ export default function App() {
                 <span className="track-title">{track.title}</span>
                 <span className="meta">by {track.author}</span>
               </span>
+              <button
+                className={`btn save ${dirty ? 'primary' : ''}`}
+                onClick={() => save()}
+                disabled={busy}
+                title={user ? 'Keep your own copy of this · the original is untouched' : 'Sign in to keep your own copy'}
+              >{busy ? 'saving…' : 'save a copy'}</button>
               <button className={`btn ${track.liked ? 'on' : ''}`} onClick={like} title="Like">♥{track.likes}</button>
             </>
           ) : null}
@@ -1410,9 +1548,9 @@ export default function App() {
         </div>
         {/* phones: every view in a tab bar along the bottom */}
         <span className="seg views phone-tabs" role="group" aria-label="View">
-          <button className={`btn ${view === 'browse' ? 'on' : ''}`} aria-pressed={view === 'browse'} onClick={() => setView('browse')} title="Tracks people have shared, and yours">browse</button>
-          {project && <button className={`btn ${view === 'song' ? 'on' : ''}`} aria-pressed={view === 'song'} onClick={() => setView('song')} title="The timeline: when each part plays">timeline</button>}
-          <button className={`btn ${view === 'graph' ? 'on' : ''}`} aria-pressed={view === 'graph'} onClick={() => setView('graph')} title="The patch: what each part goes through">patch</button>
+          <button className={`btn ${view === 'browse' ? 'on' : ''}`} aria-pressed={view === 'browse'} onClick={() => goView('browse')} title="Tracks people have shared, and yours">browse</button>
+          {project && <button className={`btn ${view === 'song' ? 'on' : ''}`} aria-pressed={view === 'song'} onClick={() => goView('song')} title="The timeline: when each part plays">timeline</button>}
+          <button className={`btn ${view === 'graph' ? 'on' : ''}`} aria-pressed={view === 'graph'} onClick={() => goView('graph')} title="The patch: what each part goes through">patch</button>
           <button
             className={`btn code-toggle ${view === 'code' ? 'on' : ''} ${evalError && view !== 'code' ? 'has-error' : ''}`}
             aria-pressed={view === 'code'}
@@ -1447,20 +1585,44 @@ export default function App() {
       <AutomationContext.Provider value={project ? automation : null}>
       <RollContext.Provider value={rollDock}>
       <div className="body">
-        <main className="main" data-surface="main">
-          {view === 'browse' && (
+        <main
+          className={`main ${swap ? `swapping ${swap.run ? 'run' : ''}` : ''} ${sheet ? 'sheeting' : ''}`}
+          style={swap ? { '--dir': swap.dir } : undefined}
+          data-surface="main"
+        >
+          {(view === 'browse' || sheet?.phase === 'out') && (
+            <div className={`browse-sheet ${sheet ? (sheet.phase === 'in' ? 'coming' : 'going') : ''}`}>
             <Browser
               user={user}
               login={login}
               activeId={trackId}
               refreshKey={refreshKey}
+              started={started}
               view={browseView}
               narrowTo={browseNarrow}
+              onOpenTrack={openTrack}
               onView={setBrowseView}
-              onPlay={playFromList}
-              onPick={() => setView('graph')}
+              onPick={() => goView('graph')}
               onNew={(template) => newTrack(template)}
             />
+            </div>
+          )}
+          {askOpen && (
+            <ConfirmDialog
+              title={`Open “${askOpen.title}”?`}
+              confirmLabel="open it"
+              altLabel={canEdit ? 'save first' : null}
+              onAlt={async () => { const to = askOpen; setAskOpen(null); await save(); navigate(`/t/${to.id}`) }}
+              onCancel={() => setAskOpen(null)}
+              onConfirm={() => { const to = askOpen; setAskOpen(null); navigate(`/t/${to.id}`) }}
+            >
+              <p>
+                {isNew
+                  ? 'This scratch pad has something in it and has never been saved.'
+                  : `“${track?.title}” has changes you haven’t saved.`}
+                {' '}They’re kept in this browser, so coming back brings them with you — but the saved track won’t have them until you save.
+              </p>
+            </ConfirmDialog>
           )}
           {confirmClear && project && (
             <ConfirmDialog
@@ -1491,7 +1653,7 @@ export default function App() {
               {askSave.kind === 'renamed'
                 ? <p>You renamed it to <strong>“{title.trim() || 'untitled'}”</strong> and changed the patch, so this looks like a new track.</p>
                 : <p>This would replace “{track.title}” with a much smaller patch: <strong>{countText(askSave.after)}</strong> instead of <strong>{countText(askSave.before)}</strong>.</p>}
-              <p><strong>Save as a new track</strong> keeps “{track.title}” exactly as it was saved. <strong>Replace</strong> saves over it (what's there now stays in <em>earlier saves</em>).</p>
+              <p><strong>Save as a new track</strong> keeps “{track.title}” exactly as it was saved. <strong>Replace</strong> saves over it (what's there now stays in <em>history</em>).</p>
             </ConfirmDialog>
           )}
           {askNew && (
@@ -1520,20 +1682,24 @@ export default function App() {
               <p><strong>It can't be undone.</strong> To only empty the patch and keep the track, use <em>clear the patch</em> instead.</p>
             </ConfirmDialog>
           )}
-          {view === 'song' && project && (
-            <Timeline project={project} onUpdateProject={updateProject} transport={transport} started={started} />
+          {(view === 'song' || swap?.from === 'song' || sheet?.under === 'song') && project && (
+            <div className={slotClass('song')}>
+              <Timeline project={project} onUpdateProject={updateProject} transport={transport} started={started} />
+            </div>
           )}
-          {view === 'graph' && project && (
-            <Graph
-              project={project}
-              onUpdateProject={updateProject}
-              started={started}
-              solo={solo}
-              onSolo={setSolo}
-              laneSolo={laneSolo}
-              onLaneSolo={setLaneSolo}
-              transport={transport}
-            />
+          {(view === 'graph' || swap?.from === 'graph' || sheet?.under === 'graph') && project && (
+            <div className={slotClass('graph')}>
+              <Graph
+                project={project}
+                onUpdateProject={updateProject}
+                started={started}
+                solo={solo}
+                onSolo={setSolo}
+                laneSolo={laneSolo}
+                onLaneSolo={setLaneSolo}
+                transport={transport}
+              />
+            </div>
           )}
           {view === 'graph' && !project && code && (
             <section className="graph-convert">

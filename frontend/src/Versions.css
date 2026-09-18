@@ -44,3 +44,16 @@
 .toast.with-action { display: flex; align-items: center; gap: 0.8rem; }
 .toast-action { font: inherit; font-weight: 800; color: var(--ink); background: none; border: 2px solid var(--ink); padding: 0.1rem 0.6rem; cursor: var(--ring); text-transform: uppercase; letter-spacing: 0.04em; }
 .toast-action:hover { background: var(--ink); color: var(--acid); }
+
+/* what changed at a save, against the one before it */
+.vs-changed {
+  justify-self: start; font: inherit; font-size: 10px; color: var(--muted);
+  background: none; border: 0; padding: 2px 0 0; cursor: var(--ring);
+  text-decoration: underline; text-decoration-color: transparent; transition: color 0.12s ease, text-decoration-color 0.12s ease;
+}
+.vs-changed:hover { color: var(--paper); text-decoration-color: currentColor; }
+.vs-diff { margin-top: 4px; padding: 0.35rem 0.5rem; background: #0d0d0c; border: 1px solid var(--line); border-radius: 4px; }
+.vs-diff-note { font-size: 10.5px; color: var(--muted); }
+.vs-diff-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.vs-diff-list li { font-size: 10.5px; line-height: 1.5; color: var(--paper); }
+.vs-diff-list li::before { content: '· '; color: var(--acid); }

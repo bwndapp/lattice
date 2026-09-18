@@ -380,7 +380,7 @@ export function auditionCode(project, patternId, channelId, { midi = 48, steps =
  * The Strudel code for a project: every pattern as a const, then the graph. `solo` (a
  * node id) plays just that node, for auditioning part of the patch.
  */
-export function generateCode(project, { solo = null, laneSolo = null } = {}) {
+export function generateCode(project, { solo = null, laneSolo = null, audition = false } = {}) {
   // instruments the app plays itself take their settings from here, live (instruments/host.js)
   declareEngines(project)
   const lines = [
@@ -435,7 +435,7 @@ export function generateCode(project, { solo = null, laneSolo = null } = {}) {
     lines.push(`const ${patternVar(pattern.id)} = ${value}`)
   }
   const patternSolo = typeof solo === 'string' && solo.startsWith('pattern:') && project.patterns.some((p) => `pattern:${p.id}` === solo)
-  const graph = graphCode(project, { solo: patternSolo ? null : solo, song, auto, laneSolo })
+  const graph = graphCode(project, { solo: patternSolo ? null : solo, song, auto, laneSolo, audition })
   lines.push('', ...graph.lines.map((l) => (l.startsWith('// ') ? `// ${commentText(l.slice(3))}` : l)))
   if (patternSolo) lines.push('', '// auditioning one pattern', ...graph.lanes.map((l) => `_${l.replace(/^_/, '')}`), `solo: ${patternVar(solo.slice(8))}`)
   else lines.push('', solo ? '// auditioning one node' : '// output', ...(graph.lanes.length ? graph.lanes : ['$: silence']))

@@ -60,6 +60,47 @@ body {
   color: var(--paper);
 }
 :focus-visible { outline: 2px solid var(--acid); outline-offset: 2px; }
+
+/*
+ * Lattice is an instrument, not a document: dragging on it moves clips, notes and knobs,
+ * so a drag must never leave a trail of highlighted labels behind — and once text is
+ * selected the browser starts dragging *that* instead, which is how a drag ends up
+ * smearing the interface around. Nothing is selectable by default; the places where you'd
+ * actually want to copy something out opt back in below.
+ */
+/* set once at the top and inherited, so a rule further down can simply say "text" and
+   win for its own subtree without fighting a `*` selector's specificity */
+#root { user-select: none; -webkit-user-select: none; }
+input, textarea, select, [contenteditable="true"],
+.cm-editor, .tp, .selectable { user-select: text; -webkit-user-select: text; }
+/* images and links drag as files/URLs on their own; on a canvas that's never wanted */
+img, svg, a { -webkit-user-drag: none; }
+
+/* the mark for a track that came off another one (see BranchMark.jsx) */
+.branch-mark {
+  width: 11px; height: 11px; flex: none; vertical-align: -1px;
+  fill: currentColor; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round;
+}
+.branch-mark path { fill: none; }
+
+/*
+ * Scrollbars: the rest of the app is black panels and hairlines, and the platform's own
+ * bar is a wide light slab sitting on top of that. One thin, dark bar everywhere instead —
+ * present enough to grab, quiet enough to ignore, and it fades up when you're on the pane
+ * it belongs to. (The timeline hides its own entirely; see Timeline.css.)
+ */
+#root { scrollbar-width: thin; scrollbar-color: #26261f transparent; }
+#root :hover > ::-webkit-scrollbar-thumb { background: #33332b; }
+#root ::-webkit-scrollbar { width: 9px; height: 9px; }
+#root ::-webkit-scrollbar-track { background: transparent; }
+#root ::-webkit-scrollbar-thumb {
+  background: #26261f;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+#root ::-webkit-scrollbar-thumb:hover { background: #45453b; background-clip: content-box; }
+#root ::-webkit-scrollbar-corner { background: transparent; }
 .page { max-width: 640px; margin: 0 auto; padding: 4rem 1.5rem; color: var(--muted); }
 .link, .linkish { color: var(--acid); text-decoration: underline; text-underline-offset: 3px; }
 .linkish { background: none; border: 0; padding: 0; font: inherit; cursor: var(--ring); }
@@ -107,19 +148,33 @@ body {
   overflow: hidden;
 }
 .logo {
-  align-self: flex-end;
-  margin: 0 0.6rem 0.1em 0; /* the whole wordmark sits inside the bar, big as it is */
+  align-self: center;
+  margin: 0 0.85rem 0 0.1rem;
   font-family: var(--display);
   font-weight: 900;
   font-stretch: 125%;
-  font-size: 66px; /* the largest that fits whole in the 64px bar */
-  line-height: 0.78;
+  font-size: 34px; /* a mark in the corner: the bar belongs to the track, not the name */
+  line-height: 0.82;
   letter-spacing: -0.05em;
   color: var(--acid);
   text-decoration: none;
   display: flex;
   align-items: flex-start;
   gap: 0.1em;
+}
+/* the mark leans toward the pointer, the way the card on jameskemp.cc does */
+.logo-card { display: inline-flex; }
+@media (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .logo-card { perspective: 420px; }
+  .logo {
+    transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+    transform-style: preserve-3d;
+    transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .logo-card[data-live] .logo { transition: transform 0.08s linear; }
+  .logo-mark, .logo-word { transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .logo-card[data-live] .logo-mark { transform: translateZ(18px) rotate(calc(var(--ry, 0deg) * -0.35)); }
+  .logo-card[data-live] .logo-word { transform: translateZ(7px); }
 }
 .logo-mark {
   flex: none;
@@ -389,6 +444,50 @@ button.lcd-unit:hover { color: var(--acid); }
 
 /* ── playlist: lanes and clips, read ahead of time ────── */
 .main { position: relative; }
+/*
+ * Timeline and patch each sit in a slot that lays out exactly as they did on their own.
+ * While you move between them both slots are up and pinned over each other, so one can
+ * come in from its side while the other leaves. The one leaving travels less than half as
+ * far as the one arriving: that difference is the whole trick — it reads as the panel
+ * behind, not as two cards swapping places.
+ */
+.canvas-slot { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.main.swapping { overflow: hidden; }
+.main.swapping > .canvas-slot { position: absolute; inset: 0; will-change: transform; }
+.main.swapping > .canvas-slot.coming { z-index: 2; transform: translateX(calc(var(--dir, 1) * 100%)); }
+.main.swapping > .canvas-slot.going { z-index: 1; }
+.main.swapping.run > .canvas-slot { transition: transform 0.36s cubic-bezier(0.22, 0.9, 0.24, 1), opacity 0.36s ease; }
+.main.swapping.run > .canvas-slot.coming { transform: none; }
+.main.swapping.run > .canvas-slot.going { transform: translateX(calc(var(--dir, 1) * -44%)); opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .main.swapping.run > .canvas-slot { transition: none; } }
+/* the browser comes down over whatever you were in, and goes back up the same way */
+.browse-sheet { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.main.sheeting { overflow: hidden; }
+.main.sheeting > .canvas-slot { position: absolute; inset: 0; z-index: 1; }
+.main.sheeting > .browse-sheet {
+  position: absolute; inset: 0; z-index: 3; background: var(--ink); will-change: transform;
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.7);
+}
+.main.sheeting > .browse-sheet.coming { animation: sheet-down 0.34s cubic-bezier(0.22, 0.9, 0.24, 1) both; }
+.main.sheeting > .browse-sheet.going { animation: sheet-up 0.34s cubic-bezier(0.45, 0, 0.75, 0.2) both; }
+@keyframes sheet-down { from { transform: translateY(-100%); } to { transform: none; } }
+@keyframes sheet-up { from { transform: none; } to { transform: translateY(-100%); } }
+/*
+ * A drawer, not a door. The sheet slides out and what's inside it comes with it, a beat
+ * behind: the results start high in the drawer, catch up as it opens and settle with a
+ * little overshoot, the way loose things in a drawer do. Nothing tips or rotates — the
+ * lag and the settle are the whole effect. Closing, the contents shift back first and the
+ * drawer front follows them in.
+ */
+.main.sheeting > .browse-sheet.coming .b-main { animation: sheet-body-in 0.46s cubic-bezier(0.22, 1.12, 0.36, 1) 0.1s both; }
+.main.sheeting > .browse-sheet.going { animation-delay: 0.12s; }
+.main.sheeting > .browse-sheet.going .b-main { animation: sheet-body-out 0.24s cubic-bezier(0.4, 0, 0.75, 0.25) both; }
+@keyframes sheet-body-in { from { opacity: 0.4; transform: translateY(-72px); } to { opacity: 1; transform: none; } }
+@keyframes sheet-body-out { from { opacity: 1; transform: none; } to { opacity: 0.5; transform: translateY(-44px); } }
+@media (prefers-reduced-motion: reduce) {
+  .main.sheeting > .browse-sheet,
+  .main.sheeting > .browse-sheet .b-main { animation: none; }
+}
 .playlist { flex: 1; display: flex; flex-direction: column; min-height: 0; --head: 200px; }
 .playlist-head { display: flex; align-items: baseline; gap: 0.9rem; padding: 0.55rem 1rem 0.5rem; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
 .playlist-title {
@@ -846,19 +945,11 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
  * thread down the middle, which together read as something round with light in it rather
  * than a line. The body is the one React Flow hit-tests, so only it takes the pointer.
  */
-/* what the wire is carrying, sitting just above it while the track plays */
-.wire-db {
-  position: absolute; z-index: 3; pointer-events: none;
-  font-size: 10.5px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: 0.02em;
-  color: color-mix(in srgb, var(--wire, var(--paper)) 55%, var(--paper));
-  text-shadow: 0 1px 2px #000, 0 0 3px #000;
-  opacity: 0.9;
-  transition: opacity 0.35s ease, color 0.35s ease;
-}
-.wire-db.quiet { opacity: 0.3; color: var(--muted); }
+
+
 /* close to the ceiling, then at it: the colours a mixer's meter uses */
-.wire-db.hot { color: #ffd23f; }
-.wire-db.over { color: #ff5a43; text-shadow: 0 1px 2px #000, 0 0 7px rgb(255 90 67 / 0.65); }
+
+
 .graph-canvas .wire-casing, .graph-canvas .wire-sheen { fill: none; pointer-events: none; stroke-linecap: round; }
 .graph-canvas .wire-casing {
   stroke: #0d0d0c;
@@ -942,7 +1033,10 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
 .node-btn { font: inherit; font-size: 10px; line-height: 1.5; color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 3px; padding: 0 0.32rem; cursor: var(--ring); opacity: 0.75; }
 .node-btn:hover { opacity: 1; }
 .node-btn.on { background: var(--ink); color: var(--acid); border-color: var(--ink); opacity: 1; }
-.node-body { padding: 0.5rem 0.6rem 0.6rem; display: grid; gap: 0.5rem; }
+/* minmax(0, 1fr), not the default auto: an auto column grows to fit its widest child, so
+   one long row would widen the body past the node and everything at its right edge — the
+   output's m/s buttons first — would hang outside the frame */
+.node-body { padding: 0.5rem 0.6rem 0.6rem; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.5rem; }
 /* the controls inside a card follow it: softened, not square */
 .gnode .select, .gnode input:not([type=range]), .gnode textarea { border-radius: 3px; }
 .node-params { display: flex; flex-wrap: wrap; gap: 0.45rem 0.5rem; align-items: flex-end; }
@@ -1000,12 +1094,35 @@ button.chan-synth:hover span { color: var(--acid); }
 .node-actions { display: flex; gap: 0.3rem; flex-wrap: wrap; }
 .node-actions .btn { padding: 0.25rem 0.5rem; font-size: 11px; }
 .node-inputs { list-style: none; margin: 0 -0.6rem -0.6rem; padding: 0; border-top: 1px solid var(--line); }
-.slot { position: relative; display: flex; align-items: center; gap: 0.4rem; min-height: 2rem; padding: 0.3rem 0.6rem 0.3rem 0.9rem; border-bottom: 1px solid var(--line); }
+.slot { position: relative; display: flex; align-items: center; gap: 0.4rem; min-height: 2rem; padding: 0.3rem 0.5rem 0.3rem 0.9rem; border-bottom: 1px solid var(--line); }
 .slot:last-child { border-bottom: 0; }
 .slot-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slot-via { font-style: normal; font-size: 10px; color: var(--muted); }
+/*
+ * What each thing coming into a mixer is putting in, left over right. Driven frame by
+ * frame from flow.js; the bar turns as it approaches the ceiling and reddens past it, so
+ * you can see which input is pushing a bus too hard rather than only that it is.
+ */
+.slot-meter {
+  flex: none; display: grid; gap: 2px; width: 40px;
+}
+.slot-meter i { position: relative; display: block; height: 3px; border-radius: 2px; background: #1b1b18; overflow: hidden; }
+.slot-meter i::after {
+  content: ''; position: absolute; inset: 0 auto 0 0; width: var(--w, 0%);
+  background: linear-gradient(to right,
+    color-mix(in srgb, var(--acid) 75%, #4ade80) 0%,
+    var(--acid) 58%,
+    #ffd23f 80%,
+    #ff5a43 100%);
+  background-size: 40px 100%; /* the colours belong to the scale, not to how far it's filled */
+}
+.slot-meter i:first-child { --w: calc(var(--l, 0) * 100%); }
+.slot-meter i:last-child { --w: calc(var(--r, 0) * 100%); }
+.slot-meter.over i::after { box-shadow: 0 0 7px rgb(255 90 67 / 0.9); }
 .slot.off .slot-name { opacity: 0.4; text-decoration: line-through; }
 .slot.free .slot-name { color: var(--muted); }
-.slot-ctl { display: inline-flex; gap: 0.2rem; }
+.slot-ctl { display: inline-flex; flex: none; gap: 0.2rem; margin-left: auto; }
+.slot-ctl .led { flex: none; }
 .node-inputs.named { margin: 0 -0.6rem; border-bottom: 1px solid var(--line); }
 .node-inputs.named .slot:last-child { border-bottom: 0; }
 .slot-role { font-size: 10px; color: var(--muted); width: 3.8rem; flex-shrink: 0; }

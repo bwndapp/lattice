@@ -133,20 +133,9 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const [drag, setDrag] = useState(null) // live preview while moving / stretching / drawing
   const [marquee, setMarquee] = useState(null)
   const [erasing, setErasing] = useState(false) // right button held: the pointer shows it deletes
-  const [settling, setSettling] = useState(null) // clips that just landed, for a moment
-  const landed = useRef(0)
-  /**
-   * Let go of a clip and it drops the last of the way, rather than stopping dead. Held for
-   * a moment where it was, then let go of: it eases down on the transform it already has.
-   * Not a keyframe — swapping a clip's animation restarts the one that brings it in, which
-   * is a flash every time you drop something.
-   */
-  const land = (ids) => {
-    if (!ids.length) return
-    setSettling(new Set(ids))
-    clearTimeout(landed.current)
-    landed.current = setTimeout(() => setSettling(null), 90)
-  }
+  // Letting go used to leave the clip raised for a moment so it could drop the last of the
+  // way. It read as a hop: you've already put it where it goes, and the white outline has
+  // been showing you that spot the whole time. It lands where you dropped it.
   /**
    * Only clips that have just turned up play the arriving animation. Hanging it on every
    * clip meant the whole timeline popped each time you came back to it from the patch,
@@ -175,33 +164,61 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     clearTimeout(vanished.current)
     vanished.current = setTimeout(() => setVanishing(null), 260)
   }
-  useEffect(() => () => { clearTimeout(landed.current); clearTimeout(vanished.current) }, [])
+  useEffect(() => () => clearTimeout(vanished.current), [])
 
   /**
    * A carried clip leans the way you're throwing it and comes back level when you stop.
-   * One number, read from how fast the pointer is going and eased down every frame, written
-   * straight to the lanes as a custom property — no state, no re-render, no library.
+   * Four numbers, read from how fast the pointer is going and stepped every frame, written
+   * straight to the lanes as custom properties — no state, no re-render, no library, and
+   * the transform they feed stays on the compositor.
    */
-  const lean = useRef({ v: 0, x: 0, t: 0, frame: 0, held: false })
+  const lean = useRef({ swing: 0, sv: 0, tx: 0, ty: 0, speed: 0, vx: 0, vy: 0, x: 0, y: 0, t: 0, frame: 0, held: false })
   const leanOn = () => {
     const s = lean.current
     if (s.frame) return
     const step = () => {
-      const now = lean.current
-      now.v *= 0.9 // it settles back level when the pointer stops
-      lanesRef.current?.style.setProperty('--lean', `${now.v.toFixed(2)}deg`)
-      if (!now.held && Math.abs(now.v) < 0.02) { now.v = 0; now.frame = 0; lanesRef.current?.style.setProperty('--lean', '0deg'); return }
-      now.frame = requestAnimationFrame(step)
+      const n = lean.current
+      // A pendulum, not a fading number: how fast you're pulling pushes it, and it's
+      // pulled back toward level the further it gets — so it overshoots and settles the
+      // way something hanging does, instead of easing straight back.
+      n.sv = (n.sv + n.vx * 0.3 - n.swing * 0.12) * 0.86
+      n.swing = clamp(n.swing + n.sv, -3, 3)
+      // the face turns a little toward where it's going, and pitches a little when you pull up or down
+      n.tx = n.tx * 0.82 + clamp(-n.vy * 1.6, -3.5, 3.5) * 0.18
+      n.ty = n.ty * 0.82 + clamp(n.vx * 1.6, -4.5, 4.5) * 0.18
+      // held a touch higher the faster it moves, which is where the deeper shadow comes from
+      n.speed = n.speed * 0.85 + clamp(Math.hypot(n.vx, n.vy) / 2.2, 0, 1) * 0.15
+      n.vx *= 0.6
+      n.vy *= 0.6
+      const el = lanesRef.current
+      el?.style.setProperty('--swing', `${n.swing.toFixed(2)}deg`)
+      el?.style.setProperty('--tilt-x', `${n.tx.toFixed(2)}deg`)
+      el?.style.setProperty('--tilt-y', `${n.ty.toFixed(2)}deg`)
+      el?.style.setProperty('--speed', n.speed.toFixed(3))
+      const still = Math.abs(n.swing) < 0.05 && Math.abs(n.sv) < 0.05 && n.speed < 0.02
+        && Math.abs(n.tx) < 0.05 && Math.abs(n.ty) < 0.05
+      if (!n.held && still) {
+        n.frame = 0
+        for (const k of ['--swing', '--tilt-x', '--tilt-y']) el?.style.setProperty(k, '0deg')
+        el?.style.setProperty('--speed', '0')
+        return
+      }
+      n.frame = requestAnimationFrame(step)
     }
     s.frame = requestAnimationFrame(step)
   }
-  const leanStart = (e) => { lean.current = { v: 0, x: e.clientX, t: performance.now(), frame: lean.current.frame, held: true }; leanOn() }
+  const leanStart = (e) => {
+    lean.current = { ...lean.current, swing: 0, sv: 0, tx: 0, ty: 0, speed: 0, vx: 0, vy: 0, x: e.clientX, y: e.clientY, t: performance.now(), held: true }
+    leanOn()
+  }
   const leanTo = (e) => {
     const s = lean.current
     const now = performance.now()
-    const push = clamp(((e.clientX - s.x) / Math.max(8, now - s.t)) * 12, -7, 7)
-    s.v = s.v * 0.55 + push * 0.45
+    const dt = Math.max(8, now - s.t)
+    s.vx = (e.clientX - s.x) / dt
+    s.vy = (e.clientY - s.y) / dt
     s.x = e.clientX
+    s.y = e.clientY
     s.t = now
   }
   const leanStop = () => { lean.current.held = false }
@@ -457,6 +474,12 @@ export default function Timeline({ project, onUpdateProject, transport, started 
         openPart(clip.src, e)
         return
       }
+      // the dock is already open on some pattern: one press moves it to this one, since
+      // opening it was the thing that took two presses
+      if (dock?.at && clip.src.startsWith('pattern:') && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        const to = clip.src.slice(8)
+        if (to !== dock.at.patternId) dock.open(to, null, 'rack')
+      }
       let sel = selected
       const wasSelected = selected.has(id)
       if (e.ctrlKey || e.metaKey) {
@@ -559,7 +582,10 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       const min = leastLen(free)
       const changes = {}
       if (d.mode === 'end') {
-        const delta = clamp(snap(bar, free) - c.start, min, MAX_BARS - c.start) - c.len
+        const run = partBySrc.get(c.src)?.bars
+        const want = clamp(snap(bar, free) - c.start, min, MAX_BARS - c.start)
+        // stretching it out repeats the part, so it stops on whole ones
+        const delta = (run && !free ? Math.max(1, Math.round(want / run)) * run : want) - c.len
         for (const x of d.group) changes[x.id] = { len: clamp(x.len + delta, min, MAX_BARS - x.start) }
       } else {
         const delta = clamp(snap(bar, free), 0, c.start + c.len - min) - c.start
@@ -571,7 +597,12 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       d.moved = true
       setDrag({ changes })
     } else if (d.mode === 'draw') {
-      const end = Math.max(d.start + leastLen(free), snap(bar, free))
+      // drawing a part out lays it down whole: a four-bar pattern goes four, eight, twelve,
+      // rather than being cut off halfway through itself
+      const run = partBySrc.get(d.src)?.bars
+      const end = run && !free
+        ? d.start + Math.max(1, Math.round((snap(bar, false) - d.start) / run)) * run
+        : Math.max(d.start + leastLen(free), snap(bar, free))
       setDrag({ changes: {}, added: [{ id: '__draw', src: d.src, lane: d.lane, start: d.start, len: end - d.start }] })
     } else if (d.mode === 'marquee') {
       const box = { b0: d.bar, l0: d.lane, b1: bar, l1: lane }
@@ -615,6 +646,8 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       return
     }
     if (d.mode === 'erase') {
+      // a right-click that swept nothing away is a click on bare canvas: let the selection go
+      if (!d.gone.size) setSelected(new Set())
       if (d.gone.size) {
         // still marked while the song is being rewritten, or they blink back for a frame
         vanish([...d.gone])
@@ -641,7 +674,6 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       updateSong((s) => {
         for (const c of s.clips) if (preview.changes[c.id]) Object.assign(c, preview.changes[c.id])
       })
-      land(Object.keys(preview.changes))
     }
     if (e) e.preventDefault()
   }
@@ -1144,7 +1176,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
                   <div
                     key={c.id}
                     data-id={c.id}
-                    className={`clip ${LANE_H >= 30 && part.kind !== 'auto' ? 'roomy' : ''} ${part.kind === 'auto' ? 'automation' : ''} ${selected.has(c.id) ? 'selected' : ''} ${c.id.startsWith('__') ? 'preview' : ''} ${c.gone || vanishing?.has(c.id) ? 'gone' : ''} ${drag?.lift && (drag.changes?.[c.id] || c.id.startsWith('__copy')) ? 'lifted' : ''} ${settling?.has(c.id) ? 'settling' : ''} ${arriving?.has(c.id) ? 'arriving' : ''} ${!song.on ? 'off' : ''} ${peerClips.has(c.id) ? 'peer-held' : ''}`}
+                    className={`clip ${LANE_H >= 30 && part.kind !== 'auto' ? 'roomy' : ''} ${part.kind === 'auto' ? 'automation' : ''} ${selected.has(c.id) ? 'selected' : ''} ${c.id.startsWith('__') ? 'preview' : ''} ${c.gone || vanishing?.has(c.id) ? 'gone' : ''} ${drag?.lift && (drag.changes?.[c.id] || c.id.startsWith('__copy')) ? 'lifted' : ''} ${arriving?.has(c.id) ? 'arriving' : ''} ${!song.on ? 'off' : ''} ${peerClips.has(c.id) ? 'peer-held' : ''}`}
                     style={{ left: c.start * ppb, top: c.lane * LANE_H + 3, width: Math.max(4, c.len * ppb - 1), height: LANE_H - 6, '--clip': colorFor(c.src, song.colors), '--clip-ink': inkFor(colorFor(c.src, song.colors)), ...(peerClips.get(c.id) ? { '--peer': peerClips.get(c.id).color } : {}) }}
                     title={`${part.name} · bar ${Math.floor(c.start) + 1}${c.start % 1 ? `.${Math.round((c.start % 1) * beats) + 1}` : ''} · ${Math.round(c.len * beats) / beats} bar${c.len === 1 ? '' : 's'}`}
                   >
@@ -1156,6 +1188,22 @@ export default function Timeline({ project, onUpdateProject, transport, started 
                   </div>
                 )
               })}
+              {/* where it lands, drawn the instant it changes: the clip itself springs
+                  after the pointer, which is nice to watch and no help at all in telling
+                  you what you're about to drop it on */}
+              {drag?.lift && clips.filter((c) => drag.changes?.[c.id] || c.id.startsWith('__copy')).map((c) => (
+                <div
+                  key={`landing-${c.id}`}
+                  className="clip-landing"
+                  aria-hidden
+                  style={{
+                    left: c.start * ppb,
+                    top: c.lane * LANE_H + 3,
+                    width: Math.max(4, c.len * ppb - 1),
+                    height: LANE_H - 6,
+                  }}
+                />
+              ))}
               {ghost && ghost.lane >= 0 && (
                 <div className={`clip preview ghost ${LANE_H >= 30 ? 'roomy' : ''}`} style={{ left: ghost.start * ppb, top: ghost.lane * LANE_H + 3, width: ghost.len * ppb - 1, height: LANE_H - 6, '--clip': colorFor(ghost.src ?? '', song.colors), '--clip-ink': inkFor(colorFor(ghost.src ?? '', song.colors)) }}>
                   <ClipSketch url={sketchFor(ghost.src)} bars={partBySrc.get(ghost.src)?.bars} ppb={ppb} into={0} laneH={LANE_H} />

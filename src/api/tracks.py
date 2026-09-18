@@ -21,6 +21,7 @@ VISIBILITIES = ("public", "unlisted", "private")
 SORTS = {
     "new": "t.updated_at DESC",
     "top": "t.likes DESC, t.plays DESC, t.updated_at DESC",
+    "opened": "t.plays DESC, t.updated_at DESC",
     "played": "t.plays DESC, t.updated_at DESC",
 }
 
@@ -70,9 +71,10 @@ def _conn():
         # a public handle for whoever made a track, so "everything by this person" can be
         # asked for without their account id ever leaving the server
         cols = {r[1] for r in conn.execute("PRAGMA table_info(tracks)")}
-        # whether anyone signed in may work on the track with its owner (see collab.py)
-        if "collab" not in cols:
-            conn.execute("ALTER TABLE tracks ADD COLUMN collab INTEGER NOT NULL DEFAULT 1")
+        # when a copy was taken: where it leaves the track it came from, on its history
+        if "forked_at" not in cols:
+            conn.execute("ALTER TABLE tracks ADD COLUMN forked_at INTEGER")
+            conn.execute("UPDATE tracks SET forked_at = created_at WHERE forked_from IS NOT NULL")
         if "author_id" not in cols:
             conn.execute("ALTER TABLE tracks ADD COLUMN author_id TEXT")
             for row in conn.execute("SELECT DISTINCT owner_sub FROM tracks").fetchall():
@@ -142,12 +144,74 @@ def _author_id(sub):
     return hashlib.sha256(f"lattice:{sub}".encode()).hexdigest()[:12] if sub else ""
 
 
+PROJECT_MARK = "// @project "
+# the clip colours from frontend/src/clipColors.js, in the same order
+PALETTE = ["#e4ff1a", "#f2f0e6", "#b9c96a", "#ffb347", "#86d8cc", "#c8a2ff", "#ff8fa3", "#9fb4ff"]
+
+
+def _color_for(src, colors):
+    """A part's colour: the one it was given, or one from its id — as the studio does it."""
+    if colors.get(src):
+        return str(colors[src])[:24]
+    h = 0
+    for ch in src:
+        h = (h * 31 + ord(ch)) & 0xFFFFFFFF
+    return PALETTE[h % len(PALETTE)]
+
+
+def _shape(code):
+    """
+    A track's arrangement, small enough to send with a listing: where each clip sits, in
+    what colour, and how big the song is. Enough to draw the track on a card — a picture of
+    this piece of music and no other — and nowhere near enough to play it.
+    """
+    line = str(code).split("\n", 1)[0]
+    if not line.startswith(PROJECT_MARK):
+        return None
+    try:
+        p = json.loads(line[len(PROJECT_MARK):])
+    except ValueError:
+        return None
+    song = p.get("song") or {}
+    colors = song.get("colors") or {}
+    palette, clips, bars, lanes = [], [], 0.0, 0
+    for c in (song.get("clips") or [])[:140]:
+        try:
+            lane, start, length = int(c["lane"]), float(c["start"]), float(c["len"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if length <= 0 or lane < 0 or start < 0:
+            continue
+        src = str(c.get("src") or "")
+        colour = _color_for(src, colors)
+        if colour not in palette:
+            palette.append(colour)
+        # 1 marks an automation curve, which is drawn as a line rather than a block
+        clips.append([lane, round(start, 3), round(length, 3), palette.index(colour),
+                      1 if src.startswith("auto:") else 0])
+        bars = max(bars, start + length)
+        lanes = max(lanes, lane + 1)
+    return {
+        "bpm": p.get("bpm"),
+        "beats": p.get("beats"),
+        "bars": round(bars, 3),
+        "lanes": lanes,
+        "parts": len(p.get("patterns") or []),
+        "nodes": len([n for n in (p.get("nodes") or []) if n.get("type") != "output"]),
+        "p": palette,
+        "c": clips,
+    }
+
+
 def _public(row, user=None, liked=False, with_code=True):
     t = dict(row)
     t["is_owner"] = bool(user and user.get("sub") == t["owner_sub"])
     t["liked"] = bool(liked)
     t["author_id"] = _author_id(t.get("owner_sub"))
     t.pop("owner_sub", None)
+    # what the track looks like, so a list of them can be looked at and not only read
+    if t.get("code"):
+        t["shape"] = _shape(t["code"])
     if not with_code:
         t.pop("code", None)
     return t
@@ -170,9 +234,6 @@ def _validate(body, partial=False):
         if vis not in VISIBILITIES:
             return None, "visibility must be public, unlisted or private"
         out["visibility"] = vis
-    # off means the owner works on it alone; others can still watch (collab.py)
-    if "collab" in body:
-        out["collab"] = 1 if body.get("collab") else 0
     return out, None
 
 
@@ -214,8 +275,11 @@ def list_tracks(request: Request, q: str = "", sort: str = "new", view: str = "e
         like = f"%{q.strip()[:80]}%"
         params += [like, like]
     my_like = "EXISTS(SELECT 1 FROM likes l WHERE l.track_id = t.id AND l.sub = ?)"
+    # what it was made from, so a copy can point back to it without a second request
+    came_from = "LEFT JOIN tracks par ON par.id = t.forked_from AND par.visibility != 'private'"
     sql = (
-        f"SELECT t.*, {my_like} AS my_like FROM tracks t {join} "
+        f"SELECT t.*, {my_like} AS my_like, par.title AS parent_title, par.author AS parent_author "
+        f"FROM tracks t {join} {came_from} "
         f"WHERE {' AND '.join(where)} ORDER BY {SORTS.get(sort, SORTS['new'])} LIMIT ? OFFSET ?"
     )
     conn = _conn()
@@ -224,9 +288,15 @@ def list_tracks(request: Request, q: str = "", sort: str = "new", view: str = "e
     finally:
         conn.close()
     more = len(rows) > limit
+    def row_out(r):
+        keep = {k: r[k] for k in r.keys() if k not in ("my_like", "parent_title", "parent_author")}
+        out = _public(keep, user, r["my_like"], with_code=False)
+        if r["forked_from"] and r["parent_title"]:
+            out["parent"] = {"id": r["forked_from"], "title": r["parent_title"], "author": r["parent_author"]}
+        return out
+
     return {
-        "tracks": [_public({k: r[k] for k in r.keys() if k != "my_like"}, user, r["my_like"], with_code=False)
-                   for r in rows[:limit]],
+        "tracks": [row_out(r) for r in rows[:limit]],
         "more": more,
         "offset": offset + min(len(rows), limit),
     }
@@ -267,17 +337,28 @@ async def create_track(request: Request):
     if error:
         return _err(error, 400)
     forked_from = body.get("forked_from") or None
+    forked_at = None
     now = int(time.time())
     track_id = secrets.token_urlsafe(6)
     conn = _conn()
     try:
-        if forked_from and not conn.execute("SELECT 1 FROM tracks WHERE id = ?", (forked_from,)).fetchone():
-            forked_from = None
+        if forked_from:
+            parent = conn.execute("SELECT created_at, updated_at FROM tracks WHERE id = ?",
+                                  (forked_from,)).fetchone()
+            # the state it was taken from, so the copy can be placed on the parent's history.
+            # Branching an older save says when that save was, which is where it belongs on
+            # the line; anything outside the parent's own lifetime is ignored.
+            forked_at = parent["updated_at"] if parent else None
+            asked = body.get("forked_at")
+            if parent and isinstance(asked, (int, float)) and parent["created_at"] <= asked <= parent["updated_at"]:
+                forked_at = int(asked)
+            if not parent:
+                forked_from = None
         conn.execute(
-            "INSERT INTO tracks (id, owner_sub, author, author_id, title, code, visibility, forked_from, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO tracks (id, owner_sub, author, author_id, title, code, visibility, forked_from, forked_at, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (track_id, user["sub"], _author(user), _author_id(user["sub"]), data["title"], data["code"],
-             data["visibility"], forked_from, now, now),
+             data["visibility"], forked_from, forked_at or now, now, now),
         )
         _keep_version(conn, track_id)
         conn.commit()
@@ -317,26 +398,33 @@ async def update_track(track_id: str, request: Request):
     return _public(row, user, liked)
 
 
-def _owned(conn, track_id, user):
-    row = conn.execute("SELECT owner_sub FROM tracks WHERE id = ?", (track_id,)).fetchone()
+def _readable(conn, track_id, user):
+    """
+    Who may read a track's history: anyone who may open the track. A shared track's saves
+    are part of what was shared — how it got to where it is, and where people left from.
+    A private track stays between its owner and them.
+    """
+    row = conn.execute("SELECT owner_sub, visibility FROM tracks WHERE id = ?", (track_id,)).fetchone()
     if not row:
-        return _err("track not found", 404)
-    if not user or row["owner_sub"] != user["sub"]:
-        return _err("only the owner can see a track's saved versions", 403)
-    return None
+        return _err("track not found", 404), False
+    mine = bool(user and row["owner_sub"] == user["sub"])
+    if row["visibility"] == "private" and not mine:
+        return _err("track not found", 404), False
+    return None, mine
 
 
 @router.get("/{track_id}/versions")
 def list_versions(track_id: str, request: Request):
-    """The owner's saved versions of a track, newest first."""
+    """Every save of a track, newest first — the same history the track's page draws."""
     user = sso_user(request)
     conn = _conn()
     try:
-        denied = _owned(conn, track_id, user)
+        denied, mine = _readable(conn, track_id, user)
         if denied:
             return denied
-        _keep_version(conn, track_id)  # a track saved before history existed starts with what it has
-        conn.commit()
+        if mine:
+            _keep_version(conn, track_id)  # a track saved before history existed starts with what it has
+            conn.commit()
         rows = conn.execute(
             "SELECT id, title, code, saved_at FROM track_versions WHERE track_id = ? ORDER BY id DESC",
             (track_id,),
@@ -354,7 +442,7 @@ def get_version(track_id: str, version_id: int, request: Request):
     user = sso_user(request)
     conn = _conn()
     try:
-        denied = _owned(conn, track_id, user)
+        denied, _mine = _readable(conn, track_id, user)
         if denied:
             return denied
         row = conn.execute(
@@ -413,12 +501,24 @@ def toggle_like(track_id: str, request: Request):
     return {"liked": liked, "likes": likes}
 
 
-@router.post("/{track_id}/play")
-def count_play(track_id: str):
+@router.post("/{track_id}/open")
+def count_open(track_id: str, request: Request):
+    """Someone took this track into their own hands. Not the owner opening their own work,
+    which would only count how much they'd worked on it."""
+    user = sso_user(request)
     conn = _conn()
     try:
-        conn.execute("UPDATE tracks SET plays = plays + 1 WHERE id = ? AND visibility != 'private'", (track_id,))
+        conn.execute(
+            "UPDATE tracks SET plays = plays + 1 WHERE id = ? AND visibility != 'private' AND owner_sub IS NOT ?",
+            (track_id, user["sub"] if user else None),
+        )
         conn.commit()
     finally:
         conn.close()
     return {"ok": True}
+
+
+@router.post("/{track_id}/play")
+def count_play(track_id: str, request: Request):
+    """What opening used to be called; kept so an older page still counts."""
+    return count_open(track_id, request)

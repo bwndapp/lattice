@@ -21,13 +21,7 @@ let cycle = null
 let frame = 0
 const els = new Map() // element id → the element, while it's on screen
 const lit = new Map() // element id → the light we last wrote there
-const dbs = new Map() // wire id → the reading we last wrote above it
-const meters = new Map() // wire id → where its needle is now, in dB
-const FALL = 26 // dB a second the reading drops: it jumps to a peak and eases back down
-const FLOOR_DB = -60 // quieter than this and it may as well say nothing
-const HOT_DB = -6 // getting close to the ceiling
-const OVER_DB = 0 // at it, or past it
-let painted = 0 // when the last frame was, for the fall
+const meters = new Map() // meter id → the last reading written there
 let colors = new Map() // source key → its colour as [r, g, b]
 
 const key = (nodeId, chanId) => (chanId ? `${nodeId}|${chanId}` : nodeId)
@@ -108,20 +102,19 @@ export function stopFlow() {
   cycle = null
   // nothing playing reads as nothing, not as a number that vanished
   for (const [id, el] of els) {
-    if (id.startsWith('db:')) { el.textContent = '-∞'; el.classList.add('quiet'); el.classList.remove('hot', 'over') } else write(el, id, 0)
+    if (id.startsWith('m:')) { el.style.removeProperty('--l'); el.style.removeProperty('--r'); el.classList.remove('over') }
+    else write(el, id, 0)
   }
   els.clear()
   lit.clear()
-  dbs.clear()
   meters.clear()
-  painted = 0
 }
 
 const elementFor = (id, kind) => {
   const held = els.get(id)
   if (held?.isConnected) return held
   const where = kind === 'flow' ? `[data-flow="${CSS.escape(id)}"]`
-    : kind === 'db' ? `[data-db="${CSS.escape(id.slice(3))}"]`
+    : kind === 'meter' ? `[data-meter="${CSS.escape(id.slice(2))}"]`
       : `.react-flow__${kind}[data-id="${CSS.escape(id)}"]`
   const found = document.querySelector(`.graph-canvas ${where}`)
   if (found) els.set(id, found)
@@ -142,12 +135,8 @@ function write(el, id, value, glow = '') {
   if (glow) el.style.setProperty('--glow', glow)
 }
 
-let gap = 0.016 // seconds since the last frame, for anything that eases over time
 function tick() {
   frame = requestAnimationFrame(tick)
-  const beat = performance.now()
-  gap = Math.min(0.1, painted ? (beat - painted) / 1000 : 0.016)
-  painted = beat
   if (!source) return
   const now = source.now()
   const cps = source.cps() || 0.5
@@ -170,11 +159,13 @@ function tick() {
         if (typeof n !== 'string') continue
         // how loud it lands in the mix: its own volume, times anything turning it down on the way
         const loud = Number(hap.value.gain ?? 1) * Number(hap.value.velocity ?? 1)
+        const pan = Number(hap.value.pan ?? 0.5)
         fresh.push({
           at: Number(hap.whole.begin),
           end: Number(hap.whole.end),
           key: key(n, hap.value._c),
           loud: Number.isFinite(loud) ? Math.min(1, Math.max(0, loud)) : 1,
+          pan: Number.isFinite(pan) ? Math.min(1, Math.max(0, pan)) : 0.5,
         })
       }
       hits = [...ringing, ...fresh]
@@ -197,7 +188,7 @@ function tick() {
         : HOLD * (1 - (now - hit.end) / fade)
     }
     if (v <= 0) continue
-    if (v > (level.get(hit.key)?.v ?? 0)) level.set(hit.key, { v, loud: hit.loud })
+    if (v > (level.get(hit.key)?.v ?? 0)) level.set(hit.key, { v, loud: hit.loud, pan: hit.pan })
   }
 
   /**
@@ -211,11 +202,9 @@ function tick() {
     let g = 0
     let b = 0
     let weight = 0
-    let carried = 0 // everything sounding in it at once, which is what the readout shows
     for (const k of keys) {
       const on = level.get(k)
       if (!on) continue
-      carried += on.v * on.loud
       // how loud it is sets how much of the glow it gets and how much colour is left in it
       const v = on.v * (FLOOR + (1 - FLOOR) * on.loud)
       if (v > best) best = v
@@ -232,37 +221,43 @@ function tick() {
     const value = Math.round(Math.sqrt(best) / STEP) * STEP
     const tone = (x) => Math.round(x / weight / 8) * 8 // in steps, so small shifts don't churn
     write(el, id, value, weight ? `rgb(${tone(r)} ${tone(g)} ${tone(b)})` : '')
-    return carried
   }
 
   /**
-   * What the wire is carrying, in decibels. It goes straight to a peak and falls back at a
-   * steady rate, the way a meter's needle does, rather than following the sound exactly —
-   * which would be a number flickering too fast to read.
+   * The left and right of what a wire carries, for the meters on a mixer's rows. Panning
+   * decides how much goes each way, at equal power, so a sound in the middle isn't quietly
+   * louder than one hard left.
    */
-  const meter = (id, carried) => {
-    const el = elementFor(`db:${id}`, 'db')
+  const stereo = (id, keys) => {
+    const el = elementFor(`m:${id}`, 'meter')
     if (!el) return
-    const to = carried > 1e-4 ? 20 * Math.log10(Math.min(4, carried)) : -Infinity
-    const was = meters.get(id) ?? -Infinity
-    const now = to > was ? to : Math.max(to, was - FALL * gap)
+    let l = 0
+    let r = 0
+    for (const k of keys) {
+      const on = level.get(k)
+      if (!on) continue
+      const amount = on.v * on.loud
+      const angle = (on.pan ?? 0.5) * (Math.PI / 2)
+      l += amount * Math.cos(angle)
+      r += amount * Math.sin(angle)
+    }
+    const step = (x) => Math.round(Math.min(1.4, x) / 0.03) * 0.03
+    const now = `${step(l)}|${step(r)}`
+    if (meters.get(id) === now) return
     meters.set(id, now)
-    const text = now > FLOOR_DB ? now.toFixed(1) : '-∞'
-    if (dbs.get(id) === text) return
-    dbs.set(id, text)
-    el.textContent = text
-    // green, amber, red, as a mixer's meter reads
-    el.classList.toggle('quiet', text === '-∞')
-    el.classList.toggle('hot', now >= HOT_DB && now < OVER_DB)
-    el.classList.toggle('over', now >= OVER_DB)
+    el.style.setProperty('--l', String(step(l)))
+    el.style.setProperty('--r', String(step(r)))
+    el.classList.toggle('over', l > 0.999 || r > 0.999)
   }
+
   for (const [id, keys] of paths.nodes) {
     const el = keys.length && elementFor(id, 'node')
     if (el) paint(el, id, keys)
   }
   for (const [id, keys] of paths.edges) {
     const el = keys.length && elementFor(id, 'edge')
-    if (el) meter(id, paint(el, id, keys))
+    if (el) paint(el, id, keys)
+    if (keys.length) stereo(id, keys)
   }
   for (const [id, keys] of paths.chans) {
     const el = elementFor(id, 'flow')
