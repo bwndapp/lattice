@@ -1314,31 +1314,36 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
             addNode(type || 'pattern', at, instrument || null, wire)
           }}
         >
-          <label className="wire-slack nodrag" data-tip="How much weight the wires hang with">
-            <span>slack</span>
-            <input
-              type="range"
-              min="0"
-              max="2"
-              step="0.05"
-              value={tension}
-              onChange={(e) => setTension(Number(e.target.value))}
-              aria-label="Wire slack"
-            />
-          </label>
-          <button
-            type="button"
-            className={`flow-toggle nodrag ${lighting ? 'on' : ''}`}
-            aria-pressed={lighting}
-            title={lighting ? 'Stop lighting the patch as it plays' : 'Light the patch as it plays'}
-            onClick={() => setLighting((was) => {
-              try { localStorage.setItem(FLOW_KEY, was ? 'off' : 'on') } catch { /* storage unavailable */ }
-              return !was
-            })}
-          >
-            <span className="flow-dot" aria-hidden />
-            flow
-          </button>
+          {/* what the canvas does, stacked in the corner: the flow lamp, then the slack
+              under it. One column, so the gap between them is one number and neither has
+              to know where the other ends. */}
+          <div className="graph-tools nodrag">
+            <button
+              type="button"
+              className={`flow-toggle nodrag ${lighting ? 'on' : ''}`}
+              aria-pressed={lighting}
+              title={lighting ? 'Stop lighting the patch as it plays' : 'Light the patch as it plays'}
+              onClick={() => setLighting((was) => {
+                try { localStorage.setItem(FLOW_KEY, was ? 'off' : 'on') } catch { /* storage unavailable */ }
+                return !was
+              })}
+            >
+              <span className="flow-dot" aria-hidden />
+              flow
+            </button>
+            <label className="wire-slack nodrag" data-tip="How much weight the wires hang with">
+              <span>slack</span>
+              <input
+                type="range"
+                min="0"
+                max="2"
+                step="0.05"
+                value={tension}
+                onChange={(e) => setTension(Number(e.target.value))}
+                aria-label="Wire slack"
+              />
+            </label>
+          </div>
           <ReactFlow
             data-surface-own="graph"
             nodes={nodes}

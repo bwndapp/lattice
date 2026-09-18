@@ -811,9 +811,16 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
   font-family: var(--mono);
 }
 .graph-canvas .react-flow__attribution a { color: #5d5d56; }
-/* how much the wires droop, tucked into the corner out of the way */
+/* what the canvas does, stacked in the top-left out of the way. The column places them,
+   so neither control carries a position of its own and the gap is one number. */
+.graph-tools {
+  position: absolute; top: 8px; left: 8px; z-index: 5;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 5px;
+  pointer-events: none; /* the strip between them is still canvas to drag */
+}
+.graph-tools > * { pointer-events: auto; }
+/* how much the wires droop */
 .wire-slack {
-  position: absolute; right: 8px; bottom: 8px; z-index: 5;
   display: inline-flex; align-items: center; gap: 0.4rem;
   font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
   background: rgb(24 24 21 / 0.82); border: 1px solid var(--line); border-radius: 3px;
@@ -822,7 +829,6 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
 .wire-slack:hover { color: var(--paper); }
 .wire-slack input { width: 5.5rem; accent-color: var(--acid); cursor: var(--ring); }
 .flow-toggle {
-  position: absolute; top: 8px; left: 8px; z-index: 5;
   display: inline-flex; align-items: center; gap: 0.35rem;
   font: inherit; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase;
   color: var(--muted); background: rgb(24 24 21 / 0.82); border: 1px solid var(--line);
