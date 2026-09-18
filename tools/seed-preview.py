@@ -350,6 +350,43 @@ def earlier(project, stage):
     return p
 
 
+def insert(cur, *, sub, author, title, project, times, parent=None, forked_at=None, reach=1.0):
+    """One track and its saves. `times` are when it was saved, oldest first."""
+    import hashlib
+    track_id = "sd" + ids(6)
+    made_at = times[0]
+    cur.execute(
+        "INSERT INTO tracks (id, owner_sub, author, author_id, title, code, visibility, forked_from,"
+        " forked_at, likes, plays, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (track_id, sub, author, hashlib.sha256(f"lattice:{sub}".encode()).hexdigest()[:12],
+         title[:80], code_of(project), "public", parent, forked_at or made_at,
+         int(rand.randint(0, 34) * reach), int(rand.randint(2, 420) * reach), made_at, times[-1]))
+    for i, at in enumerate(times):
+        stage = i if i < 2 else 2
+        body = project if i == len(times) - 1 else earlier(project, stage)
+        cur.execute("INSERT INTO track_versions (track_id, title, code, saved_at) VALUES (?,?,?,?)",
+                    (track_id, title[:80], code_of(body), at))
+    return track_id
+
+
+def moved(project, by):
+    """The same track after someone else got hold of it: new tempo, things shifted about."""
+    out = json.loads(json.dumps(project))
+    out["bpm"] = max(60, project["bpm"] + by)
+    for c in out["song"]["clips"]:
+        c["start"] = max(0, c["start"] + rand.choice([-8, 0, 0, 8]))
+        c["len"] = max(4, c["len"] + rand.choice([-8, 0, 8]))
+    return out
+
+
+def saves_after(at, n):
+    """n save times, the first one `at` and the rest spread over the following weeks."""
+    times = [at]
+    for _ in range(n - 1):
+        times.append(min(NOW - 3600, times[-1] + rand.randint(1, 12) * (DAY // 2)))
+    return sorted(set(times))
+
+
 def main():
     if not DRAFT.exists():
         sys.exit(f"no preview database at {DRAFT} — open /preview/ once so it gets made")
@@ -365,7 +402,8 @@ def main():
         cur.execute(f"DELETE FROM tracks WHERE id IN ({marks})", old)
         print(f"cleared {len(old)} tracks from the last batch")
 
-    made = []  # (id, owner_sub, project, created_at, updated_at, version_times)
+    # ── the originals ─────────────────────────────────────────────────────────
+    trees = []  # (id, sub, project, title, save times)
     order = [(fn, t) for fn in GENRES for t in range(3)]
     rand.shuffle(order)
     for n, (fn, variant) in enumerate(order):
@@ -374,52 +412,42 @@ def main():
         title = TITLES[tag][variant % len(TITLES[tag])]
         if variant >= len(TITLES[tag]):
             title = f"{title} {variant + 1}"
-        made_at = NOW - rand.randint(3, 45) * DAY
-        saves = sorted(rand.sample(range(0, 40), rand.randint(2, 4)))
-        times = [made_at + s * (DAY // 2) for s in saves]
-        updated = times[-1]
-        track_id = "sd" + ids(6)
-        cur.execute(
-            "INSERT INTO tracks (id, owner_sub, author, author_id, title, code, visibility, forked_from,"
-            " forked_at, likes, plays, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (track_id, sub, author, "", title, code_of(project), "public", None, made_at,
-             rand.randint(0, 34), rand.randint(2, 480), made_at, updated))
-        for i, at in enumerate(times):
-            stage = i if i < 2 else 2
-            body = project if i == len(times) - 1 else earlier(project, stage)
-            cur.execute("INSERT INTO track_versions (track_id, title, code, saved_at) VALUES (?,?,?,?)",
-                        (track_id, title, code_of(body), at))
-        made.append((track_id, sub, project, title, times))
+        times = saves_after(NOW - rand.randint(20, 60) * DAY, rand.randint(3, 6))
+        tid = insert(cur, sub=sub, author=author, title=title, project=project, times=times)
+        trees.append((tid, sub, project, title, times))
 
-    # ── branches: someone takes a track at one of its saves and goes elsewhere ──
-    branches = 0
-    for parent_id, parent_sub, project, title, times in rand.sample(made, 12):
-        for _ in range(rand.randint(1, 2)):
+    # ── branches, and branches of branches ────────────────────────────────────
+    # somebody takes a track at one of its saves and carries on from there; what they make
+    # is a track like any other, which can be taken again
+    kinds = ["edit", "rework", "vip", "remix", "slowed", "dub", "reprise", "tool"]
+    branches, deep = [], 0
+    for parent_id, parent_sub, project, title, times in rand.sample(trees, 16):
+        for _ in range(rand.randint(1, 3)):
             sub, author = rand.choice([p for p in PEOPLE if p[0] != parent_sub])
             at = rand.choice(times)  # the save they left from
-            child = json.loads(json.dumps(project))
-            child["bpm"] = project["bpm"] + rand.choice([-6, -4, 4, 6, 8])
-            for c in child["song"]["clips"]:  # they moved things around
-                c["start"] = max(0, c["start"] + rand.choice([-8, 0, 0, 8]))
-            made_at = at + rand.randint(1, 20) * DAY
-            if made_at > NOW:
-                made_at = NOW - DAY
-            kid = "sd" + ids(6)
-            kid_title = f"{title} ({rand.choice(['edit', 'rework', 'vip', 'remix', 'slowed'])})"[:80]
-            cur.execute(
-                "INSERT INTO tracks (id, owner_sub, author, author_id, title, code, visibility, forked_from,"
-                " forked_at, likes, plays, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (kid, sub, author, "", kid_title, code_of(child), "public", parent_id, at,
-                 rand.randint(0, 12), rand.randint(1, 160), made_at, made_at + rand.randint(0, 6) * DAY))
-            cur.execute("INSERT INTO track_versions (track_id, title, code, saved_at) VALUES (?,?,?,?)",
-                        (kid, kid_title, code_of(child), made_at))
-            branches += 1
+            born = min(NOW - DAY, at + rand.randint(1, 14) * DAY)
+            child = moved(project, rand.choice([-8, -6, -4, 4, 6, 8, 12]))
+            kid_title = f"{title} ({rand.choice(kinds)})"
+            kid = insert(cur, sub=sub, author=author, title=kid_title, project=child,
+                         times=saves_after(born, rand.randint(2, 4)), parent=parent_id,
+                         forked_at=at, reach=0.45)
+            branches.append((kid, sub, child, kid_title, saves_after(born, 2)))
+
+    for parent_id, parent_sub, project, title, times in rand.sample(branches, 8):
+        sub, author = rand.choice([p for p in PEOPLE if p[0] != parent_sub])
+        at = rand.choice(times)
+        born = min(NOW - DAY, at + rand.randint(1, 10) * DAY)
+        insert(cur, sub=sub, author=author, title=f"{title.split(' (')[0]} ({rand.choice(kinds)} 2)",
+               project=moved(project, rand.choice([-6, 4, 10])),
+               times=saves_after(born, rand.randint(1, 3)), parent=parent_id, forked_at=at, reach=0.25)
+        deep += 1
 
     conn.commit()
     n = cur.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]
     v = cur.execute("SELECT COUNT(*) FROM track_versions").fetchone()[0]
     conn.close()
-    print(f"seeded {len(made)} tracks and {branches} branches across {len(GENRES)} genres")
+    print(f"seeded {len(trees)} tracks across {len(GENRES)} genres,")
+    print(f"  {len(branches)} branches off them and {deep} branches off those")
     print(f"preview now holds {n} tracks and {v} saves")
     print("live (data.db) was not opened")
 

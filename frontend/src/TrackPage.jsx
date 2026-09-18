@@ -56,15 +56,15 @@ export default function TrackPage({ id, user, login, onOpen, onClose, onAuthor }
     return () => { alive = false }
   }, [id])
 
-  // the saves are the owner's business, so only ask when they'd be allowed
+  // a shared track's history is part of what was shared, so anyone who can open it gets it
   useEffect(() => {
-    if (!track?.is_owner) return undefined
+    if (!track) return undefined
     let alive = true
     api(`/tracks/${id}/versions`)
       .then((d) => { if (alive) setSaves(d.versions) })
       .catch(() => { if (alive) setSaves([]) })
     return () => { alive = false }
-  }, [id, track?.is_owner])
+  }, [id, track?.id])
 
   /** A save's code and its project, fetched once and kept for the rest of the visit. */
   const savedAs = async (versionId) => {
@@ -144,7 +144,7 @@ export default function TrackPage({ id, user, login, onOpen, onClose, onAuthor }
    * off the save it was taken from. Someone else's track has no saves to show, so the
    * copies hang off the one point there is — the track itself.
    */
-  const points = track.is_owner && saves?.length
+  const points = saves?.length
     ? [...saves].reverse().map((v) => ({ ...v, forks: [] }))
     : [{ id: 'now', saved_at: track.updated_at, only: true, forks: [] }]
   for (const c of copies) {
@@ -154,7 +154,7 @@ export default function TrackPage({ id, user, login, onOpen, onClose, onAuthor }
     for (const p of points) if (p.saved_at <= at) spot = p
     spot.forks.push(c)
   }
-  const line = track.is_owner || copies.length ? points : []
+  const line = saves || copies.length ? points : []
 
   return (
     <section className="tp" aria-label={`About ${track.title}`}>
@@ -198,11 +198,11 @@ export default function TrackPage({ id, user, login, onOpen, onClose, onAuthor }
 
       <section className="tp-block">
         <h3 className="tp-h">
-          {track.is_owner ? 'How it got here' : 'What came out of it'}
+          How it got here
           {line.length ? <span className="tp-count">{line.length}</span> : null}
         </h3>
-        {track.is_owner && !saves && <p className="tp-quiet">Reading the saves…</p>}
-        {!line.length && <p className="tp-quiet">{track.is_owner ? 'No saves kept yet.' : 'Nobody has branched this yet.'}</p>}
+        {!saves && <p className="tp-quiet">Reading the saves…</p>}
+        {saves && !line.length && <p className="tp-quiet">No saves kept yet.</p>}
 
         {/* oldest at the top: the line reads down the way the track was made, with the
             copies people took branching off it where they left */}
@@ -216,7 +216,7 @@ export default function TrackPage({ id, user, login, onOpen, onClose, onAuthor }
                   <div className="tp-save-top">
                     <span className="tp-save-when">{when(v.saved_at)}</span>
                     {latest && <span className="tp-here">where it is now</span>}
-                    {i === 0 && all.length > 1 && track.is_owner && <span className="tp-here quiet">the oldest save kept</span>}
+                    {i === 0 && all.length > 1 && <span className="tp-here quiet">the oldest save kept</span>}
                     <span className="tp-save-acts">
                       <button
                         type="button"

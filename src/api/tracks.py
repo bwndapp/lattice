@@ -398,26 +398,33 @@ async def update_track(track_id: str, request: Request):
     return _public(row, user, liked)
 
 
-def _owned(conn, track_id, user):
-    row = conn.execute("SELECT owner_sub FROM tracks WHERE id = ?", (track_id,)).fetchone()
+def _readable(conn, track_id, user):
+    """
+    Who may read a track's history: anyone who may open the track. A shared track's saves
+    are part of what was shared — how it got to where it is, and where people left from.
+    A private track stays between its owner and them.
+    """
+    row = conn.execute("SELECT owner_sub, visibility FROM tracks WHERE id = ?", (track_id,)).fetchone()
     if not row:
-        return _err("track not found", 404)
-    if not user or row["owner_sub"] != user["sub"]:
-        return _err("only the owner can see a track's saved versions", 403)
-    return None
+        return _err("track not found", 404), False
+    mine = bool(user and row["owner_sub"] == user["sub"])
+    if row["visibility"] == "private" and not mine:
+        return _err("track not found", 404), False
+    return None, mine
 
 
 @router.get("/{track_id}/versions")
 def list_versions(track_id: str, request: Request):
-    """The owner's saved versions of a track, newest first."""
+    """Every save of a track, newest first — the same history the track's page draws."""
     user = sso_user(request)
     conn = _conn()
     try:
-        denied = _owned(conn, track_id, user)
+        denied, mine = _readable(conn, track_id, user)
         if denied:
             return denied
-        _keep_version(conn, track_id)  # a track saved before history existed starts with what it has
-        conn.commit()
+        if mine:
+            _keep_version(conn, track_id)  # a track saved before history existed starts with what it has
+            conn.commit()
         rows = conn.execute(
             "SELECT id, title, code, saved_at FROM track_versions WHERE track_id = ? ORDER BY id DESC",
             (track_id,),
@@ -435,7 +442,7 @@ def get_version(track_id: str, version_id: int, request: Request):
     user = sso_user(request)
     conn = _conn()
     try:
-        denied = _owned(conn, track_id, user)
+        denied, _mine = _readable(conn, track_id, user)
         if denied:
             return denied
         row = conn.execute(
