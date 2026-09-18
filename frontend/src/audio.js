@@ -202,10 +202,16 @@ export async function preloadPattern(pattern, { from = 0, cycles = 16, timeout =
 let previewRun = 0
 let previewTimer = 0
 
-/** Stop a track preview. Voices already started ring out; nothing new is scheduled. */
-export function stopPreview() {
+/**
+ * Stop a track preview. Nothing more is scheduled, and with `cut` the notes already ringing
+ * (and the few milliseconds of them queued ahead) go too — which is what stopping should
+ * sound like. The caller passes cut only when the studio isn't playing, since the cut takes
+ * everything with it.
+ */
+export function stopPreview({ cut = false } = {}) {
   previewRun += 1
   clearTimeout(previewTimer)
+  if (cut) silenceNow()
 }
 
 /**
@@ -214,8 +220,8 @@ export function stopPreview() {
  * you have open — so listening to someone else's track costs you nothing you were working
  * on. Its effects are added alongside yours rather than replacing them.
  */
-export async function previewTrack(project, { cycles = 8, onEnd } = {}) {
-  stopPreview()
+export async function previewTrack(project, { cycles = 8, onEnd, cut = false } = {}) {
+  stopPreview({ cut })
   const run = previewRun
   if (!project) return
   ensureAudio()
@@ -225,9 +231,9 @@ export async function previewTrack(project, { cycles = 8, onEnd } = {}) {
   const cps = (Number(project.bpm) || 120) / (Number(project.beats) || 4) / 60
   const ac = getAudioContext()
   const start = ac.currentTime + 0.12
-  // a quarter of a cycle at a time: far enough ahead to stay smooth, close enough that
-  // stopping stops within a beat instead of playing out whatever was already queued
-  const SLICE = 0.25
+  // an eighth of a cycle at a time: far enough ahead to stay smooth, close enough that
+  // what's queued when you stop is a fraction of a beat rather than most of a bar
+  const SLICE = 0.125
   let at = 0
   const push = () => {
     if (run !== previewRun) return
@@ -244,7 +250,7 @@ export async function previewTrack(project, { cycles = 8, onEnd } = {}) {
       Promise.resolve(superdough(routeVoice(hap.value), start + begin / cps, length / cps, cps, begin)).catch(() => {})
     }
     at += SLICE
-    previewTimer = setTimeout(push, (SLICE * 0.8 / cps) * 1000)
+    previewTimer = setTimeout(push, (SLICE * 0.7 / cps) * 1000)
   }
   push()
 }

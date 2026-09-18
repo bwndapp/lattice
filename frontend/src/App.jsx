@@ -1335,6 +1335,7 @@ export default function App() {
               login={login}
               activeId={trackId}
               refreshKey={refreshKey}
+              started={started}
               view={browseView}
               narrowTo={browseNarrow}
               onOpenTrack={openTrack}

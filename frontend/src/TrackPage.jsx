@@ -32,7 +32,7 @@ function facts(project) {
  * somewhere else from where it was. Copies other people made hang off the same line at the
  * save they left from, so the whole page reads as one tree growing downward.
  */
-export default function TrackPage({ id, user, login, onOpen, onClose, onAuthor }) {
+export default function TrackPage({ id, user, login, started = false, onOpen, onClose, onAuthor }) {
   const [track, setTrack] = useState(null)
   const [error, setError] = useState('')
   const [copies, setCopies] = useState([])
@@ -90,14 +90,16 @@ export default function TrackPage({ id, user, login, onOpen, onClose, onAuthor }
   }
 
   // hearing it costs nothing: no loading, and whatever you have open stays where it is
-  useEffect(() => () => stopPreview(), [id])
+  const playingRef = useRef(false)
+  playingRef.current = started
+  useEffect(() => () => stopPreview({ cut: !playingRef.current }), [id])
   const hear = async (key) => {
-    if (hearing === key) { stopPreview(); return setHearing(null) }
+    if (hearing === key) { stopPreview({ cut: !started }); return setHearing(null) }
     setHearing(key)
     try {
       const { project } = await savedAs(key)
       // it ends by itself after a while; the button goes back to 'hear this' when it does
-      await previewTrack(project, { cycles: 16, onEnd: () => setHearing((was) => (was === key ? null : was)) })
+      await previewTrack(project, { cycles: 16, cut: !started, onEnd: () => setHearing((was) => (was === key ? null : was)) })
     } catch {
       setHearing(null)
       setNote('Couldn’t play that save.')
@@ -125,7 +127,7 @@ export default function TrackPage({ id, user, login, onOpen, onClose, onAuthor }
           forked_at: v.saved_at,
         },
       })
-      stopPreview()
+      stopPreview({ cut: !started })
       onOpen(made.id, false, made.title)
     } catch (e) {
       setNote(`Couldn’t branch that save: ${e.message}`)
@@ -183,7 +185,7 @@ export default function TrackPage({ id, user, login, onOpen, onClose, onAuthor }
         )}
 
         <div className="tp-actions">
-          <button type="button" className="b-button primary" onClick={() => { stopPreview(); onOpen(track.id, false, track.title) }}>open in the studio</button>
+          <button type="button" className="b-button primary" onClick={() => { stopPreview({ cut: !started }); onOpen(track.id, false, track.title) }}>open in the studio</button>
           <button type="button" className={`b-button ${hearing === 'now' ? 'on' : ''}`} onClick={() => hear('now')}>
             {hearing === 'now' ? 'stop' : 'preview'}
           </button>

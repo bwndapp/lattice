@@ -25,7 +25,7 @@ function Switch({ options, value, onChange, label, small = false }) {
   )
 }
 
-export default function Browser({ user, login, activeId, refreshKey, onPick, onNew, view = 'explore', onView, narrowTo = null, onOpenTrack }) {
+export default function Browser({ user, login, activeId, refreshKey, onPick, onNew, started = false, view = 'explore', onView, narrowTo = null, onOpenTrack }) {
   const setView = onView
   // Where you are in the browser lives in the address, so reloading keeps it, the back
   // button walks out of it, and "everything by this person" is a link you can send.
@@ -49,14 +49,17 @@ export default function Browser({ user, login, activeId, refreshKey, onPick, onN
   // costs a click and nothing you have open changes
   const [playing, setPlaying] = useState(null)
   const codes = useRef(new Map())
-  useEffect(() => () => stopPreview(), [])
+  const playingRef = useRef(false)
+  playingRef.current = started // the studio's own playback: don't cut that out from under it
+  useEffect(() => () => stopPreview({ cut: !playingRef.current }), [])
   const hear = async (t) => {
-    if (playing === t.id) { stopPreview(); return setPlaying(null) }
+    if (playing === t.id) { stopPreview({ cut: !started }); return setPlaying(null) }
     setPlaying(t.id)
     try {
       if (!codes.current.has(t.id)) codes.current.set(t.id, (await api(`/tracks/${t.id}`)).code)
       await previewTrack(parseProject(codes.current.get(t.id) || ''), {
         cycles: 16,
+        cut: !started,
         onEnd: () => setPlaying((was) => (was === t.id ? null : was)),
       })
     } catch {
@@ -148,6 +151,7 @@ export default function Browser({ user, login, activeId, refreshKey, onPick, onN
           id={page}
           user={user}
           login={login}
+          started={started}
           onClose={() => setPage(null)}
           onOpen={(id, asPage, title) => (asPage ? setPage(id) : onOpenTrack?.(id, title))}
           onAuthor={(author, name) => { setPage(null); narrow({ author, name }) }}
