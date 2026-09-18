@@ -35,6 +35,8 @@ Messages are JSON text frames.
   playing in time (also editors only)
     → {"t":"time","c":<the client's clock>}        ← {"t":"time","c":...,"s":<the server's>}
     → {"t":"play","on":true,"pos":12.5,"cps":0.58} ← {"t":"play","id":3,...,"at":<server ms>}
+    The room keeps the last of these and hands it to anyone arriving while it plays, so
+    joining in the middle sounds like joining in the middle.
 
 Ops are the ones frontend/src/docsync.js makes, applied here by _docsync.py under the same
 rules, so every copy ends up the same. `v` counts changes: a client that sees a gap asks
@@ -106,6 +108,7 @@ class Room:
         self.next_id = 1
         self.doc = None      # the project, once somebody has sent theirs
         self.version = 0     # how many changes have been applied
+        self.play = None     # the last thing said about the transport, stamped when it was said
         self.open = True     # whether anyone but the owner may change it (the owner's call)
 
     def color_for(self):
@@ -244,6 +247,14 @@ async def collab(ws: WebSocket, track_id: str):
                 await ws.send_text(json.dumps({"t": "seed"}))
             else:
                 await ws.send_text(json.dumps({"t": "doc", "doc": room.doc, "v": room.version}))
+            # and what the room is playing, if it is. The stamp on it is this server's, so
+            # however long ago it was said a newcomer can work out where the song has got
+            # to by now — otherwise they sit in silence until someone's hand next touches
+            # the transport, which is not what being in the room sounds like. Nothing is
+            # sent for a room that's stopped: there is no music to join, and moving
+            # somebody's playhead when nobody is playing is a worse surprise than silence.
+            if room.play and room.play.get("on"):
+                await ws.send_text(json.dumps(room.play))
 
         window, moves, edits = time.monotonic(), 0, 0
         while True:
@@ -327,14 +338,16 @@ async def collab(ws: WebSocket, track_id: str):
                 await ws.send_text(json.dumps({"t": "time", "c": msg.get("c"), "s": time.time() * 1000}))
             elif kind == "play" and peer.edit:
                 # where the song is, and when: whoever hits play says so, everyone else lines up
-                await room.tell_editors(peer.id, {
+                said = {
                     "t": "play",
                     "id": peer.id,
                     "on": bool(msg.get("on")),
                     "pos": msg.get("pos"),
                     "cps": msg.get("cps"),
                     "at": time.time() * 1000,  # stamped here, so it needs no clock of its own
-                })
+                }
+                room.play = said  # the room is the thing that's playing, so the room holds it
+                await room.tell_editors(peer.id, said)
             elif kind == "lock":
                 # only the owner, and everyone finds out at once: someone who has just
                 # lost the right stops being sent changes, and stops being able to send any

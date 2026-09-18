@@ -132,6 +132,15 @@ sent.length = 0
 await new Promise((r) => setTimeout(r, 4400))
 ok('we say what we have after a quiet spell', last('same')?.h === 'mine', last('same'))
 
+// walking in on a room that's already playing: the room says so straight away, before
+// we've had a chance to measure its clock against ours
+const played = []
+collab.onPlay((h) => played.push(h))
+ws.arrive({ t: 'play', on: true, pos: 4, cps: 0.5, at: 1_000_000 })
+ok('a playhead heard before the clock is not acted on yet', played.length === 0, played)
+ws.arrive({ t: 'time', c: Date.now() - 10, s: Date.now() + 5000 })
+ok('and it lands as soon as the clock does', played.length === 1 && played[0].pos === 4, played)
+
 // a dropped connection
 ws.close()
 ok('a drop clears what we thought the room had', seen.resets === atJoin + 2, seen.resets)

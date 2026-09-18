@@ -1,4 +1,4 @@
-"""Playing in time: the clock answer, and where the playhead is going."""
+"""Playing in time: the clock answer, where the playhead is going, and joining mid-song."""
 import asyncio
 import json
 import time
@@ -24,6 +24,17 @@ async def drain(ws, want, timeout=2.0):
         msg = await recv(ws, timeout)
         if msg.get('t') == want:
             return msg
+
+
+async def until(ws, want, timeout=2.0):
+    """Everything that arrives up to and including the one we're waiting for. Use this
+    rather than drain() to say what did NOT turn up: drain walks straight past it."""
+    seen = []
+    while True:
+        msg = await recv(ws, timeout)
+        seen.append(msg)
+        if msg.get('t') == want:
+            return seen
 
 
 async def hello(ws, token, name):
@@ -62,16 +73,36 @@ async def main():
             stopped = await drain(b, 'play')
             ok('stopping travels too', stopped['on'] is False and stopped['pos'] == 16.0, stopped)
 
-            # a stranger neither hears nor moves anyone's playhead
+            # somebody watching neither hears nor moves anyone's playhead
             async with websockets.connect(URL) as c:
-                await hello(c, 'stranger', 'nosy')
+                await hello(c, '', 'nosy')  # no token: here to watch
                 await c.send(json.dumps({'t': 'play', 'on': True, 'pos': 999, 'cps': 1}))
                 await c.send(json.dumps({'t': 'at', 'where': 'graph', 'x': 0, 'y': 0}))
-                nxt = await drain(b, 'at')  # their cursor arrives; the play frame was handled first
-                ok("a stranger cannot move anyone's playhead", nxt['t'] == 'at')
+                seen = await until(b, 'at')  # their cursor arrives, so the play frame was handled first
+                ok("someone watching cannot move anyone's playhead", not any(m['t'] == 'play' for m in seen), seen)
                 await c.send(json.dumps({'t': 'time', 'c': 7}))
                 tick = await drain(c, 'time')
                 ok('anyone may ask the time', tick.get('c') == 7, tick)
+
+            # walking in while the room is playing: you are told, without anyone touching
+            # the transport again, and told when — so you can work out where it is by now
+            await a.send(json.dumps({'t': 'play', 'on': True, 'pos': 4.0, 'cps': 0.5}))
+            await drain(b, 'play')
+            async with websockets.connect(URL) as d:
+                await hello(d, 'friend', 'bo')
+                joined = await drain(d, 'play')
+                ok('a late arrival is told what the room is playing', joined['on'] is True and joined['pos'] == 4.0, joined)
+                ok('and when it was said', abs(joined['at'] - time.time() * 1000) < 2000, joined)
+
+            # a room that is stopped has no music to join, and moving someone's playhead
+            # when nobody is playing would be a worse surprise than silence
+            await a.send(json.dumps({'t': 'play', 'on': False, 'pos': 9.0}))
+            await drain(b, 'play')
+            async with websockets.connect(URL) as e:
+                await hello(e, 'friend', 'bo')
+                await e.send(json.dumps({'t': 'time', 'c': 3}))
+                seen = await until(e, 'time')
+                ok('a stopped room hands nobody a playhead', not any(m['t'] == 'play' for m in seen), seen)
 
     print('\n' + (f'{len(fails)} failing: {fails}' if fails else 'all good'))
 

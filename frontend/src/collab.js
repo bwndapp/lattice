@@ -8,7 +8,8 @@
  *   selectionIs(where, ids)
  *   onDoc({ seed, doc, ops, reset })    the shared project: see below
  *   sendOps(ops, hash)                  what we just changed
- *   onPlay(fn) / sendPlay(on, pos, cps) playing in time together
+ *   onPlay(fn) / sendPlay(on, pos, cps) playing in time together (the room holds the last
+ *                                       of these, so walking in mid-song sounds like it)
  *   openToOthers(on)                    the owner deciding whether anyone else may join in
  *   serverNow()                         the room's clock, in ms, or null while we're alone
  *
@@ -62,6 +63,7 @@ let skew = null // what to add to our clock to get the server's
 let bestTrip = Infinity // the quickest round trip we've measured, which is the honest one
 let onPlayFn = null
 let onRoleFn = null
+let heldPlay = null // heard before we had the room's clock; handed on as soon as we do
 let pending = 0 // our own changes the room hasn't put in order yet
 let settleTimer = 0
 let clockTimer = 0
@@ -155,7 +157,12 @@ function tookClock(msg) {
   if (skew != null && trip > bestTrip * 2) return // a slow answer tells us nothing new
   bestTrip = Math.min(bestTrip, trip)
   skew = msg.s + trip / 2 - Date.now() // the answer was made about halfway through the trip
+  // the room tells us what it's playing the moment we walk in, which is before this
+  if (heldPlay) { const held = heldPlay; heldPlay = null; deliverPlay(held) }
 }
+
+/** What we heard about the transport, with its time put on our clock. */
+const deliverPlay = (msg) => onPlayFn?.({ on: !!msg.on, pos: msg.pos, cps: msg.cps, at: msg.at - skew })
 
 /** Hear where everyone else's playhead is: fn({ on, pos, cps, at }) with `at` on our clock. */
 export function onPlay(fn) {
@@ -186,6 +193,7 @@ export function sendPlay(on, pos, cps) {
 
 const forgetClock = () => {
   skew = null
+  heldPlay = null
   bestTrip = Infinity
   clearInterval(clockTimer)
 }
@@ -262,9 +270,13 @@ async function open(trackId) {
     }
     if (msg.t === 'time') { tookClock(msg); return }
     if (msg.t === 'play') {
-      // `at` is on the server's clock: put it on ours before anyone tries to use it
-      if (skew == null || typeof msg.at !== 'number') return
-      onPlayFn?.({ on: !!msg.on, pos: msg.pos, cps: msg.cps, at: msg.at - skew })
+      if (typeof msg.at !== 'number') return
+      // `at` is on the server's clock and has to come onto ours, which we haven't measured
+      // yet on the way in — and on the way in is exactly when the room hands over what it
+      // is already playing. So hold it rather than drop the one message that says there's
+      // music on; it goes through the moment the clock lands, a beat later.
+      if (skew == null) { heldPlay = msg; return }
+      deliverPlay(msg)
       return
     }
     if (msg.t === 'doc') { version = msg.v ?? 0; pending = 0; doc?.doc?.(msg.doc); return }
