@@ -16,3 +16,8 @@ __pycache__/
 
 # save points: database snapshots and the live build at that moment
 saves/
+
+# worktrees: a branch checked out beside the repo is its own checkout, not content.
+# Tracking it made every edit in a branch show up as a dirty file here, and put a stale
+# duplicate of the whole app in this history.
+.claude/
