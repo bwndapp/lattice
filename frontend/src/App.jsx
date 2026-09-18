@@ -86,6 +86,8 @@ const store = {
 const rememberTrack = (id) => { store.set(LAST_TRACK, id); store.set(LAST_OPEN, 'track') }
 const rememberScratchWork = () => { store.set(SCRATCH_WORK, 'yes'); store.set(LAST_OPEN, 'scratch') }
 const forgetScratchWork = () => store.set(SCRATCH_WORK, null)
+const TOGETHER_KEY = 'lattice.together'
+const togetherWanted = () => { try { return localStorage.getItem(TOGETHER_KEY) !== 'off' } catch { return true } }
 /** "3 nodes · 2 patterns · 5 clips" */
 const countText = (c) => (c ? [`${c.nodes} node${c.nodes === 1 ? '' : 's'}`, `${c.patterns} pattern${c.patterns === 1 ? '' : 's'}`, c.clips ? `${c.clips} clip${c.clips === 1 ? '' : 's'}` : null].filter(Boolean).join(' · ') : 'nothing')
 const lastTrack = () => {
@@ -724,8 +726,17 @@ export default function App() {
   // re-sets the running pattern, and correcting 10ms sounds worse than being 10ms out.
   const LEAD = 0.03 // seconds of grace, so the seek lands just ahead of where we aim
   const TOL = 0.05 // seconds out of step before it's worth a correction
-  const [together, setTogether] = useState(false)
-  const togetherRef = useRef(false)
+  // On, unless you've turned it off. A room where one person is on the room's clock and
+  // another is on their own is worse than either of them working alone — the two of you
+  // hear different songs and neither can tell why — and a switch that quietly goes back to
+  // off on every reload produces exactly that, over and over. Playing in time is what
+  // being in a room is for, so it's the thing you have to opt out of.
+  const [together, setTogetherNow] = useState(togetherWanted)
+  const setTogether = useCallback((on) => {
+    setTogetherNow(on)
+    try { localStorage.setItem(TOGETHER_KEY, on ? 'on' : 'off') } catch { /* storage unavailable */ }
+  }, [])
+  const togetherRef = useRef(together)
   togetherRef.current = together
   const following = useRef(null) // the last thing we heard: { on, pos, cps, at }
   const settingRef = useRef(false) // true while we're acting on what we heard, so we don't echo
@@ -766,8 +777,6 @@ export default function App() {
   }, [together, lineUp])
   // moving the playhead, looping, changing the tempo: everything the transport announces
   useEffect(() => transport.subscribe(() => { if (togetherRef.current) tellRoom(transport.playing()) }), [transport, tellRoom])
-  // nobody to play along with
-  useEffect(() => { if (!trackId) setTogether(false) }, [trackId])
 
   const playRef = useRef(null)
   const play = useCallback(() => {
