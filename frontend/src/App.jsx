@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Link, useLocation, useMatch, useNavigate } from 'react-router-dom'
 import { StrudelMirror } from '@strudel/codemirror'
 import { Compartment, EditorState, StateEffect } from '@codemirror/state'
@@ -24,6 +24,7 @@ import Tooltip from './Tooltip.jsx'
 import ProgramMenu from './ProgramMenu.jsx'
 import DetailDock, { readDockHeight } from './DetailDock.jsx'
 import SynthWindows from './instruments/SynthWindows.jsx'
+import { openSynths, subscribeSynths } from './instruments/windows.js'
 import { RollContext } from './rollDock.js'
 import { AutomationContext, autoLive } from './autoLive.js'
 import { AUTO_PREFIX, activeAutos, appParam, autoValueFn, resolveTarget, toPos } from './automation.js'
@@ -568,11 +569,25 @@ export default function App() {
   // opens over whichever view you're on and is where the close work happens, so while it's
   // open it's the more useful answer — "in the drums rack" says more than "on the patch",
   // and jumping into a rack was telling nobody anything at all.
+  const synthsOpen = useSyncExternalStore(subscribeSynths, openSynths)
+  // Whatever is open over the top of it counts first, because that's where the hands are:
+  // a synth panel floats above everything, then the automation editor and the dialogs, then
+  // the dock, and only then the view behind the lot.
   const whereIAm = useMemo(() => {
-    if (!roll) return view
-    const name = project?.patterns.find((p) => p.id === roll.patternId)?.name ?? ''
-    return `${roll.tab === 'notes' ? 'notes' : 'rack'}:${name.slice(0, 16)}`
-  }, [roll, view, project])
+    const front = synthsOpen.length ? synthsOpen.reduce((a, b) => (b.z > a.z ? b : a)) : null
+    if (front) {
+      const ch = project?.patterns.find((p) => p.id === front.patternId)?.channels.find((c) => c.id === front.channelId)
+      return `synth:${(ch?.name ?? '').slice(0, 16)}`
+    }
+    if (autoEditing) return 'auto'
+    if (showExport) return 'export'
+    if (showVersions) return 'versions'
+    if (roll) {
+      const name = project?.patterns.find((p) => p.id === roll.patternId)?.name ?? ''
+      return `${roll.tab === 'notes' ? 'notes' : 'rack'}:${name.slice(0, 16)}`
+    }
+    return view
+  }, [synthsOpen, autoEditing, showExport, showVersions, roll, view, project])
   useEffect(() => { viewIs(whereIAm) }, [whereIAm])
 
   const [askSave, setAskSave] = useState(null) // why a save should ask first
@@ -1213,7 +1228,9 @@ export default function App() {
   ].filter(Boolean)
 
   return (
-    <div className="studio">
+    // the shell is the surface of last resort: a dialog nobody thought to tag still puts a
+    // cursor somewhere sensible, and so will the next floating thing anyone adds
+    <div className="studio" data-surface="app">
       <header className="bar" data-surface="header">
         <div className="bar-side left">
         <Link to="/" className="logo" aria-label="lattice, home">

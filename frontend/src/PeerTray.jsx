@@ -28,13 +28,20 @@ import './PeerTray.css'
  * sphere, so a gaze travels a curved path rather than sliding across a disc.
  */
 
-const WHERE = { song: 'on the timeline', graph: 'on the patch', browse: 'browsing', code: 'in the code' }
-const TAB = { song: 'timeline', graph: 'patch', browse: 'browsing', code: 'code' }
+const WHERE = {
+  song: 'on the timeline', graph: 'on the patch', browse: 'browsing', code: 'in the code',
+  auto: 'drawing automation', export: 'exporting the track', versions: 'looking through versions',
+}
+const TAB = {
+  song: 'timeline', graph: 'patch', browse: 'browsing', code: 'code',
+  auto: 'automation', export: 'exporting', versions: 'versions',
+}
 
 /**
  * Where someone is, in words: one for the bubble over their head, a longer one for the
- * tooltip. A view is its own name; the dock says which pattern it's open on, because "in a
- * rack" is only half an answer when a track has six of them.
+ * tooltip. A view is its own name; the dock and the synth panels say which pattern or
+ * instrument they're open on, because "in a rack" is only half an answer when a track has
+ * six of them. Whatever floats over the top wins — that's where the hands are (App.jsx).
  */
 function place(view) {
   if (!view) return null
@@ -44,6 +51,7 @@ function place(view) {
   const name = view.slice(cut + 1)
   if (kind === 'rack') return { tab: name ? `${name} rack` : 'a rack', said: name ? `in the ${name} rack` : 'in a rack' }
   if (kind === 'notes') return { tab: name ? `${name} notes` : 'notes', said: name ? `writing ${name} notes` : 'in the piano roll' }
+  if (kind === 'synth') return { tab: name || 'an instrument', said: name ? `in the ${name} panel` : 'in an instrument panel' }
   return null
 }
 

@@ -118,10 +118,15 @@ export default function SynthWindow({ project, patternId, channelId, order, fron
     writePlace(pos) // the next window opens where this one was left
   }
 
+  // The window is its own surface for presence. These are portalled to the body, outside
+  // the app shell entirely, so without it a pointer over a synth panel belongs nowhere and
+  // can't be drawn. Keyed by the channel, so two people with the same instrument open see
+  // each other on the same knob — presence names the instrument instead (App.jsx).
   return (
     <div
       ref={ref}
       className={`synth-window ${front ? 'front' : ''} ${spec.width ? 'wide' : ''}`}
+      data-surface={`panel:${channelId}`}
       role="dialog"
       aria-labelledby={`sw-title-${channelId}`}
       tabIndex={-1}
