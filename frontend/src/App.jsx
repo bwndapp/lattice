@@ -398,9 +398,6 @@ export default function App() {
   // Everyone's pointer, everywhere: one listener that names whichever region it's over
   // (surfaces.jsx). The three surfaces with coordinates of their own report for themselves.
   useEffect(() => watchPointer(), [])
-  // and which view we're on, because a cursor on a surface nobody else has open is a
-  // cursor nobody else can see: without this, changing view reads as having left
-  useEffect(() => { viewIs(view) }, [view])
 
   // ── working on this track with someone else (collab.js) ──
   // One place watches the code for changes and sends what changed, so every way of
@@ -566,6 +563,18 @@ export default function App() {
     open: (patternId, channelId = null, tab = 'rack') => setRoll({ patternId, channelId, tab }),
     close: () => setRoll(null),
   }), [roll, rollHeight])
+  // Which view we're on, because a cursor on a surface nobody else has open is a cursor
+  // nobody else can see: without this, moving somewhere reads as having left. The dock
+  // opens over whichever view you're on and is where the close work happens, so while it's
+  // open it's the more useful answer — "in the drums rack" says more than "on the patch",
+  // and jumping into a rack was telling nobody anything at all.
+  const whereIAm = useMemo(() => {
+    if (!roll) return view
+    const name = project?.patterns.find((p) => p.id === roll.patternId)?.name ?? ''
+    return `${roll.tab === 'notes' ? 'notes' : 'rack'}:${name.slice(0, 16)}`
+  }, [roll, view, project])
+  useEffect(() => { viewIs(whereIAm) }, [whereIAm])
+
   const [askSave, setAskSave] = useState(null) // why a save should ask first
   const [askNew, setAskNew] = useState(null) // the template a new track would start from
   const closeAutoEditor = useCallback(() => setAutoEditing(null), [])
@@ -1534,7 +1543,7 @@ export default function App() {
       )}
       </RollContext.Provider>
       </AutomationContext.Provider>
-      <PeerTray view={view} />
+      <PeerTray view={whereIAm} />
       <AppCursors />
       <Tooltip />
 

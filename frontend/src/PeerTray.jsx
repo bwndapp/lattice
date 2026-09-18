@@ -28,9 +28,24 @@ import './PeerTray.css'
  * sphere, so a gaze travels a curved path rather than sliding across a disc.
  */
 
-/** Where each of them is: the long form for the tooltip, one word for the bubble. */
 const WHERE = { song: 'on the timeline', graph: 'on the patch', browse: 'browsing', code: 'in the code' }
 const TAB = { song: 'timeline', graph: 'patch', browse: 'browsing', code: 'code' }
+
+/**
+ * Where someone is, in words: one for the bubble over their head, a longer one for the
+ * tooltip. A view is its own name; the dock says which pattern it's open on, because "in a
+ * rack" is only half an answer when a track has six of them.
+ */
+function place(view) {
+  if (!view) return null
+  const cut = view.indexOf(':')
+  if (cut < 0) return TAB[view] ? { tab: TAB[view], said: WHERE[view] } : null
+  const kind = view.slice(0, cut)
+  const name = view.slice(cut + 1)
+  if (kind === 'rack') return { tab: name ? `${name} rack` : 'a rack', said: name ? `in the ${name} rack` : 'in a rack' }
+  if (kind === 'notes') return { tab: name ? `${name} notes` : 'notes', said: name ? `writing ${name} notes` : 'in the piano roll' }
+  return null
+}
 
 const clamp = (v) => Math.max(-1, Math.min(1, v))
 
@@ -64,10 +79,10 @@ function PeerFace({ peer, mine = false, away = false, faces = null }) {
   }, [mine, peer.id, faces])
 
   // where they're looking: their pointer, turned into a direction from this face
-  const at = peer.at
+  const pointer = peer.at
   useEffect(() => {
     if (mine || !face.current || !box.current) return
-    const spot = whereOnScreen(at)
+    const spot = whereOnScreen(pointer)
     if (!spot) return
     const r = box.current.getBoundingClientRect()
     const reach = Math.max(window.innerWidth, window.innerHeight) / 2
@@ -76,17 +91,18 @@ function PeerFace({ peer, mine = false, away = false, faces = null }) {
       clamp((spot.top - (r.top + r.height / 2)) / reach),
       600, // longer than the gap between cursor messages, so the gaze glides rather than ticks
     )
-  }, [at, mine])
+  }, [pointer, mine])
 
   const resting = mine ? 'content' : mood(peer, away)
   useEffect(() => {
     if (!mine) face.current?.setExpression(resting)
   }, [resting, mine])
 
-  const said = [peer.name, mine ? '(you)' : WHERE[peer.view], peer.edit ? null : '(watching)'].filter(Boolean).join(' ')
-  // Somebody on another view says so without being asked: that's the one case where you
+  const at = place(peer.view)
+  const said = [peer.name, mine ? '(you)' : at?.said, peer.edit ? null : '(watching)'].filter(Boolean).join(' ')
+  // Somebody somewhere else says so without being asked: that's the one case where you
   // can't see for yourself, because their cursor is on a surface you don't have open.
-  const tab = away ? TAB[peer.view] : null
+  const tab = away ? at?.tab : null
   return (
     <span
       className={`peer-face ${mine ? 'me' : ''} ${away ? 'away' : ''}`}
@@ -103,7 +119,8 @@ function PeerFace({ peer, mine = false, away = false, faces = null }) {
 }
 
 /**
- *   view   the view WE are on, so a face can tell who's somewhere else
+ *   view   where WE are, in the same words the others report — so two people in the same
+ *          rack read as together, and the comparison is like with like
  */
 export default function PeerTray({ view = null }) {
   const peers = usePeers()
