@@ -125,6 +125,7 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
         <TrackPage
           id={page}
           user={user}
+          login={login}
           onClose={() => setPage(null)}
           onOpen={(id, asPage, title) => (asPage ? setPage(id) : onOpenTrack?.(id, title))}
           onAuthor={(author, name) => { setPage(null); narrow({ author, name }) }}

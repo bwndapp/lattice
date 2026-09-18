@@ -343,9 +343,15 @@ async def create_track(request: Request):
     conn = _conn()
     try:
         if forked_from:
-            parent = conn.execute("SELECT updated_at FROM tracks WHERE id = ?", (forked_from,)).fetchone()
-            # the state it was taken from, so the copy can be placed on the parent's history
+            parent = conn.execute("SELECT created_at, updated_at FROM tracks WHERE id = ?",
+                                  (forked_from,)).fetchone()
+            # the state it was taken from, so the copy can be placed on the parent's history.
+            # Branching an older save says when that save was, which is where it belongs on
+            # the line; anything outside the parent's own lifetime is ignored.
             forked_at = parent["updated_at"] if parent else None
+            asked = body.get("forked_at")
+            if parent and isinstance(asked, (int, float)) and parent["created_at"] <= asked <= parent["updated_at"]:
+                forked_at = int(asked)
             if not parent:
                 forked_from = None
         conn.execute(

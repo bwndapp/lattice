@@ -1,64 +1,132 @@
 /* a track's own page inside the browser (see TrackPage.jsx) */
-.tp { display: grid; gap: 1.2rem; align-content: start; padding: 1.2rem 1.4rem 3rem; overflow-y: auto; }
-.tp-head { display: grid; gap: 0.45rem; }
+.tp {
+  display: grid;
+  gap: 1.6rem;
+  align-content: start;
+  padding: 1.5rem 1.6rem 4rem;
+  overflow-y: auto;
+}
+
+/* ── what it is ─────────────────────────────────────── */
+.tp-head { display: grid; gap: 0.5rem; }
 .tp-back {
   justify-self: start; font: inherit; font-size: 11px; color: var(--muted);
-  background: none; border: 0; padding: 0; cursor: var(--ring);
+  background: none; border: 0; padding: 0 0 0.2rem; cursor: var(--ring);
 }
 .tp-back:hover { color: var(--paper); }
-.tp-title-row { display: flex; align-items: center; gap: 0.5rem; }
+.tp-title-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
 .tp-title {
   margin: 0; font-family: var(--display); font-weight: 900; font-stretch: 118%;
-  font-size: clamp(22px, 3.4vw, 34px); line-height: 1.05; letter-spacing: -0.02em; color: var(--paper);
+  font-size: clamp(24px, 3.6vw, 38px); line-height: 1.02; letter-spacing: -0.025em; color: var(--paper);
+  text-wrap: balance;
 }
-.tp-by, .tp-shape { margin: 0; font-size: 11.5px; color: var(--muted); }
+.tp-by { margin: 0; font-size: 11.5px; line-height: 1.7; color: var(--muted); }
 .tp-author, .tp-link {
   font: inherit; color: var(--paper); background: none; border: 0; padding: 0; cursor: var(--ring);
-  text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--paper) 35%, transparent);
+  text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--paper) 30%, transparent);
+  text-underline-offset: 2px;
 }
 .tp-author:hover, .tp-link:hover { text-decoration-color: currentColor; }
-.tp-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.3rem; }
+
+/* the numbers, on one line, in the app's own way of writing numbers */
+.tp-facts {
+  list-style: none; margin: 0.25rem 0 0; padding: 0;
+  display: flex; flex-wrap: wrap; gap: 0.35rem;
+  font-size: 10.5px; letter-spacing: 0.04em; text-transform: uppercase; color: #7c7c73;
+  font-variant-numeric: tabular-nums;
+}
+.tp-facts li {
+  padding: 0.22rem 0.55rem; border-radius: 999px;
+  background: linear-gradient(145deg, #141412, #0d0d0b);
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.045), 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+.tp-facts b { color: var(--paper); font-weight: 800; }
+
+.tp-actions { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.6rem; }
+.b-button.on { color: var(--ink); background: var(--acid); }
 .tp-quiet { margin: 0; font-size: 11px; color: var(--muted); }
+.tp-note { margin: 0; font-size: 11.5px; color: var(--acid); }
 .tp-error { margin: 0 0 0.6rem; font-size: 12px; color: var(--danger); }
 
-.tp-stats { display: flex; flex-wrap: wrap; gap: 1.1rem; font-size: 11.5px; color: var(--muted); }
-.tp-stats b { color: var(--paper); font-weight: 700; }
-
-.tp-block { display: grid; gap: 0.5rem; }
+/* ── how it got here ────────────────────────────────── */
+.tp-block { display: grid; gap: 0.5rem; max-width: 46rem; }
 .tp-h {
   margin: 0; font-family: var(--display); font-weight: 800; font-stretch: 112%; font-size: 13px;
   text-transform: lowercase; letter-spacing: 0.02em; color: var(--paper);
   display: flex; align-items: center; gap: 0.4rem;
 }
-.tp-count { font-family: var(--mono); font-size: 10px; color: var(--ink); background: var(--acid); padding: 0 4px; border-radius: 999px; }
-.tp-copies { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 11.5px; }
+.tp-count { font-family: var(--mono); font-size: 10px; color: var(--ink); background: var(--acid); padding: 0 5px; border-radius: 999px; }
+.tp-lede { margin: 0 0 0.5rem; font-size: 11.5px; line-height: 1.7; color: var(--muted); max-width: 42rem; }
 
 /* the saves, as a line you can walk back along */
-.tp-saves { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-.tp-save { position: relative; display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 0.5rem; padding-bottom: 0.5rem; }
+.tp-saves { list-style: none; margin: 0; padding: 0; display: grid; }
+.tp-save {
+  position: relative;
+  display: grid; grid-template-columns: 15px minmax(0, 1fr); gap: 0.6rem;
+  padding: 0.35rem 0.4rem 0.75rem 0;
+  border-radius: 8px;
+}
+/* the rail the whole history hangs from */
 .tp-save::before {
-  content: ''; position: absolute; left: 6px; top: 12px; bottom: -2px; width: 1px; background: var(--line);
+  content: ''; position: absolute; left: 6px; top: 16px; bottom: -4px; width: 1px; background: var(--line);
 }
 .tp-save:last-child::before { display: none; }
 .tp-dot {
-  width: 7px; height: 7px; margin-top: 5px; margin-left: 3px; border-radius: 50%;
-  background: var(--ink); border: 1.5px solid var(--acid); position: relative; z-index: 1;
+  width: 7px; height: 7px; margin-top: 8px; margin-left: 3px; border-radius: 50%;
+  background: var(--ink); border: 1.5px solid #4a4a44; position: relative; z-index: 1;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
-.tp-save-what { display: grid; gap: 2px; min-width: 0; }
-.tp-save-when { font-size: 11px; color: var(--paper); font-variant-numeric: tabular-nums; }
-.tp-save-more { justify-self: start; font-size: 10.5px; color: var(--muted); text-align: left; }
-.tp-diff { margin-top: 3px; padding: 0.35rem 0.5rem; background: #0d0d0c; border: 1px solid var(--line); border-radius: 4px; }
-.tp-diff-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-.tp-diff-list li { font-size: 10.5px; line-height: 1.5; color: var(--paper); }
+/* a save something branched from is filled, so splits read down the line */
+.tp-save.branching > .tp-dot { background: var(--acid); border-color: var(--acid); box-shadow: 0 0 0 3px rgb(228 255 26 / 0.14); }
+.tp-save.latest > .tp-dot { border-color: var(--paper); }
+.tp-save.playing > .tp-dot { background: var(--acid); border-color: var(--acid); box-shadow: 0 0 0 4px rgb(228 255 26 / 0.2); }
+
+.tp-save-what { display: grid; gap: 3px; min-width: 0; }
+.tp-save-top { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem 0.6rem; min-height: 1.5rem; }
+.tp-save-when { font-size: 11.5px; color: var(--paper); font-variant-numeric: tabular-nums; }
+.tp-here {
+  font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink);
+  background: var(--acid); border-radius: 999px; padding: 0.05rem 0.4rem;
+}
+.tp-here.quiet { color: var(--muted); background: rgba(255, 255, 255, 0.07); }
+
+/* what you can do with a save: quiet until you're on its row */
+.tp-save-acts { display: flex; gap: 0.3rem; margin-left: auto; opacity: 0; transition: opacity 0.16s ease; }
+.tp-save:hover .tp-save-acts, .tp-save:focus-within .tp-save-acts, .tp-save.playing .tp-save-acts { opacity: 1; }
+@media (hover: none) { .tp-save-acts { opacity: 1; } }
+.tp-act {
+  font: inherit; font-size: 10px; letter-spacing: 0.04em; color: var(--muted);
+  background: linear-gradient(145deg, #1c1c19, #131311); border: 0; border-radius: 999px;
+  padding: 0.22rem 0.6rem; cursor: var(--ring);
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.05), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  transition: color 0.14s ease, background 0.14s ease;
+}
+.tp-act:hover:not(:disabled) { color: var(--paper); background: linear-gradient(145deg, #262622, #1a1a17); }
+.tp-act.on { color: var(--ink); background: var(--acid); box-shadow: none; }
+.tp-act:disabled { opacity: 0.45; cursor: var(--dot); }
+
+.tp-save-more {
+  justify-self: start; display: inline-flex; align-items: center; gap: 0.3rem;
+  font: inherit; font-size: 10.5px; color: var(--muted); text-align: left;
+  background: none; border: 0; padding: 0; cursor: var(--ring);
+}
+.tp-save-more:hover { color: var(--paper); }
+.tp-chev { font-size: 8px; color: #55554f; }
+.tp-diff { margin-top: 4px; padding: 0.45rem 0.6rem; background: #0b0b0a; border-radius: 6px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.045); }
+.tp-diff-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+.tp-diff-list li { font-size: 10.5px; line-height: 1.55; color: var(--paper); }
 .tp-diff-list li::before { content: '· '; color: var(--acid); }
 
 /* a copy leaving the line where it was taken */
-.tp-fork { position: relative; margin: 5px 0 3px 12px; padding-left: 14px; font-size: 10.5px; line-height: 1.5; }
+.tp-fork { position: relative; margin: 6px 0 2px 14px; padding-left: 14px; font-size: 10.5px; line-height: 1.6; }
 .tp-fork-arm {
-  position: absolute; left: 0; top: -4px; width: 10px; height: 12px;
+  position: absolute; left: 0; top: -5px; width: 10px; height: 13px;
   border-left: 1px solid color-mix(in srgb, var(--acid) 45%, var(--line));
   border-bottom: 1px solid color-mix(in srgb, var(--acid) 45%, var(--line));
-  border-bottom-left-radius: 6px;
+  border-bottom-left-radius: 7px;
 }
-/* the dot of a save something branched from is filled, so splits read down the line */
-.tp-save.branching > .tp-dot { background: var(--acid); box-shadow: 0 0 0 3px rgb(228 255 26 / 0.15); }
+.tp-fork-by { color: var(--muted); }
+
+@media (prefers-reduced-motion: reduce) {
+  .tp-save-acts, .tp-dot, .tp-act { transition: none; }
+}
