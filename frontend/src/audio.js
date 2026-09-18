@@ -214,7 +214,7 @@ export function stopPreview() {
  * you have open — so listening to someone else's track costs you nothing you were working
  * on. Its effects are added alongside yours rather than replacing them.
  */
-export async function previewTrack(project, { cycles = 8 } = {}) {
+export async function previewTrack(project, { cycles = 8, onEnd } = {}) {
   stopPreview()
   const run = previewRun
   if (!project) return
@@ -225,18 +225,26 @@ export async function previewTrack(project, { cycles = 8 } = {}) {
   const cps = (Number(project.bpm) || 120) / (Number(project.beats) || 4) / 60
   const ac = getAudioContext()
   const start = ac.currentTime + 0.12
-  let cycle = 0
+  // a quarter of a cycle at a time: far enough ahead to stay smooth, close enough that
+  // stopping stops within a beat instead of playing out whatever was already queued
+  const SLICE = 0.25
+  let at = 0
   const push = () => {
-    if (run !== previewRun || cycle >= cycles) return
-    for (const hap of pattern.queryArc(cycle, cycle + 1)) {
+    if (run !== previewRun) return
+    if (at >= cycles) {
+      // it plays to the end on its own; say so once the last of it has actually sounded
+      previewTimer = setTimeout(() => { if (run === previewRun) onEnd?.() },
+                                Math.max(0, (start + cycles / cps - ac.currentTime) * 1000))
+      return
+    }
+    for (const hap of pattern.queryArc(at, Math.min(at + SLICE, cycles))) {
       if (!hap.hasOnset()) continue
       const begin = hap.whole.begin.valueOf()
       const length = hap.whole.end.valueOf() - begin
       Promise.resolve(superdough(routeVoice(hap.value), start + begin / cps, length / cps, cps, begin)).catch(() => {})
     }
-    cycle += 1
-    // kept a cycle ahead: enough to stay smooth, little enough that stopping is quick
-    previewTimer = setTimeout(push, (0.8 / cps) * 1000)
+    at += SLICE
+    previewTimer = setTimeout(push, (SLICE * 0.8 / cps) * 1000)
   }
   push()
 }

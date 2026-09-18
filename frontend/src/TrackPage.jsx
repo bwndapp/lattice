@@ -95,7 +95,8 @@ export default function TrackPage({ id, user, login, onOpen, onClose, onAuthor }
     setHearing(key)
     try {
       const { project } = await savedAs(key)
-      await previewTrack(project, { cycles: 16 })
+      // it ends by itself after a while; the button goes back to 'hear this' when it does
+      await previewTrack(project, { cycles: 16, onEnd: () => setHearing((was) => (was === key ? null : was)) })
     } catch {
       setHearing(null)
       setNote('Couldn’t play that save.')
