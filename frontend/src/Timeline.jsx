@@ -177,29 +177,57 @@ export default function Timeline({ project, onUpdateProject, transport, started 
 
   /**
    * A carried clip leans the way you're throwing it and comes back level when you stop.
-   * One number, read from how fast the pointer is going and eased down every frame, written
-   * straight to the lanes as a custom property — no state, no re-render, no library.
+   * Four numbers, read from how fast the pointer is going and stepped every frame, written
+   * straight to the lanes as custom properties — no state, no re-render, no library, and
+   * the transform they feed stays on the compositor.
    */
-  const lean = useRef({ v: 0, x: 0, t: 0, frame: 0, held: false })
+  const lean = useRef({ swing: 0, sv: 0, tx: 0, ty: 0, speed: 0, vx: 0, vy: 0, x: 0, y: 0, t: 0, frame: 0, held: false })
   const leanOn = () => {
     const s = lean.current
     if (s.frame) return
     const step = () => {
-      const now = lean.current
-      now.v *= 0.9 // it settles back level when the pointer stops
-      lanesRef.current?.style.setProperty('--lean', `${now.v.toFixed(2)}deg`)
-      if (!now.held && Math.abs(now.v) < 0.02) { now.v = 0; now.frame = 0; lanesRef.current?.style.setProperty('--lean', '0deg'); return }
-      now.frame = requestAnimationFrame(step)
+      const n = lean.current
+      // A pendulum, not a fading number: how fast you're pulling pushes it, and it's
+      // pulled back toward level the further it gets — so it overshoots and settles the
+      // way something hanging does, instead of easing straight back.
+      n.sv = (n.sv + n.vx * 0.9 - n.swing * 0.12) * 0.86
+      n.swing = clamp(n.swing + n.sv, -9, 9)
+      // the face turns toward where it's going, and pitches when you pull it up or down
+      n.tx = n.tx * 0.82 + clamp(-n.vy * 4.5, -10, 10) * 0.18
+      n.ty = n.ty * 0.82 + clamp(n.vx * 5, -14, 14) * 0.18
+      // held higher the faster it moves, which is where the deeper shadow comes from
+      n.speed = n.speed * 0.85 + clamp(Math.hypot(n.vx, n.vy) / 2.2, 0, 1) * 0.15
+      n.vx *= 0.6
+      n.vy *= 0.6
+      const el = lanesRef.current
+      el?.style.setProperty('--swing', `${n.swing.toFixed(2)}deg`)
+      el?.style.setProperty('--tilt-x', `${n.tx.toFixed(2)}deg`)
+      el?.style.setProperty('--tilt-y', `${n.ty.toFixed(2)}deg`)
+      el?.style.setProperty('--speed', n.speed.toFixed(3))
+      const still = Math.abs(n.swing) < 0.05 && Math.abs(n.sv) < 0.05 && n.speed < 0.02
+        && Math.abs(n.tx) < 0.05 && Math.abs(n.ty) < 0.05
+      if (!n.held && still) {
+        n.frame = 0
+        for (const k of ['--swing', '--tilt-x', '--tilt-y']) el?.style.setProperty(k, '0deg')
+        el?.style.setProperty('--speed', '0')
+        return
+      }
+      n.frame = requestAnimationFrame(step)
     }
     s.frame = requestAnimationFrame(step)
   }
-  const leanStart = (e) => { lean.current = { v: 0, x: e.clientX, t: performance.now(), frame: lean.current.frame, held: true }; leanOn() }
+  const leanStart = (e) => {
+    lean.current = { ...lean.current, swing: 0, sv: 0, tx: 0, ty: 0, speed: 0, vx: 0, vy: 0, x: e.clientX, y: e.clientY, t: performance.now(), held: true }
+    leanOn()
+  }
   const leanTo = (e) => {
     const s = lean.current
     const now = performance.now()
-    const push = clamp(((e.clientX - s.x) / Math.max(8, now - s.t)) * 12, -7, 7)
-    s.v = s.v * 0.55 + push * 0.45
+    const dt = Math.max(8, now - s.t)
+    s.vx = (e.clientX - s.x) / dt
+    s.vy = (e.clientY - s.y) / dt
     s.x = e.clientX
+    s.y = e.clientY
     s.t = now
   }
   const leanStop = () => { lean.current.held = false }
