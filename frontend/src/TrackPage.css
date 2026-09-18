@@ -21,20 +21,6 @@
 .tp-quiet { margin: 0; font-size: 11px; color: var(--muted); }
 .tp-error { margin: 0 0 0.6rem; font-size: 12px; color: var(--danger); }
 
-/* the arrangement, at the size it deserves on the track's own page */
-.tp-art {
-  position: relative;
-  aspect-ratio: 16 / 3.4;
-  max-height: 13rem;
-  border-radius: 12px;
-  overflow: hidden;
-  background:
-    repeating-linear-gradient(45deg, rgba(242, 240, 230, 0.045) 0 1px, transparent 1px 8px),
-    linear-gradient(160deg, #0c0c0b, #070706);
-  box-shadow: inset 3px 3px 10px rgba(0, 0, 0, 0.85), inset -1px -1px 4px rgba(255, 255, 255, 0.03), 0 0 0 1px rgba(255, 255, 255, 0.05);
-}
-.tp-art .b-map-clip { opacity: 0.9; }
-
 .tp-stats { display: flex; flex-wrap: wrap; gap: 1.1rem; font-size: 11.5px; color: var(--muted); }
 .tp-stats b { color: var(--paper); font-weight: 700; }
 

@@ -3,7 +3,6 @@ import { api, timeAgo } from './api'
 import { parseProject } from './project'
 import { changesBetween, summarise } from './history.js'
 import { previewTrack, stopPreview } from './audio'
-import TrackMap from './TrackMap.jsx'
 import './TrackPage.css'
 
 const when = (s) => new Date(s * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -136,12 +135,6 @@ export default function TrackPage({ id, user, onOpen, onClose, onAuthor }) {
         </div>
         {!user && <p className="tp-quiet">Sign in to keep your own copy of this — open it and press save.</p>}
       </div>
-
-      {track.shape?.c?.length ? (
-        <div className="tp-art" aria-label="The arrangement">
-          <TrackMap shape={track.shape} />
-        </div>
-      ) : null}
 
       <div className="tp-stats">
         <span><b>{track.likes}</b> like{track.likes === 1 ? '' : 's'}</span>
