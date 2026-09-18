@@ -13,7 +13,8 @@
  *   sendOps(ops, hash)                  what we just changed
  *   onPlay(fn) / sendPlay(on, pos, cps) playing in time together (the room holds the last
  *                                       of these, so walking in mid-song sounds like it)
- *   openToOthers(on)                    the owner deciding whether anyone else may join in
+ *   openToOthers(on)                    the owner deciding whether anyone else may edit
+ *   jamIs(mode, roll) / onJam(fn)        ...and whether anyone may walk in at all
  *   serverNow()                         the room's clock, in ms, or null while we're alone
  *
  * One websocket per open track (src/api/collab.py). Positions are each surface's own
@@ -69,6 +70,7 @@ let onRoleFn = null
 let onEditFn = null
 let heldPlay = null // heard before we had the room's clock; handed on as soon as we do
 let myView = null // which view we're on, kept so a reconnection can say so again
+let onJamFn = null
 let pending = 0 // our own changes the room hasn't put in order yet
 let settleTimer = 0
 let clockTimer = 0
@@ -192,6 +194,21 @@ export function onPeerEdit(fn) {
   return () => { if (onEditFn === fn) onEditFn = null }
 }
 
+/**
+ * Whether anyone may walk into this session, or only somebody holding a link with the key
+ * in it. The owner's call. `roll` mints a fresh key, which stops every link handed out
+ * before now — people already in the room stay, because they're already in the room.
+ */
+export function jamIs(mode, roll = false) {
+  if (sock?.readyState === WebSocket.OPEN) sock.send(JSON.stringify({ t: 'jam', mode, roll: !!roll }))
+}
+
+/** Told how the session is set, and the key if there is one: fn({ mode, key }). Owner only. */
+export function onJam(fn) {
+  onJamFn = fn
+  return () => { if (onJamFn === fn) onJamFn = null }
+}
+
 /** Told when what we may do changes: fn({ edit, open }). */
 export function onRole(fn) {
   onRoleFn = fn
@@ -241,7 +258,9 @@ async function open(trackId) {
     if (sock !== ws) return ws.close()
     const token = await getToken().catch(() => null)
     if (sock !== ws || ws.readyState !== WebSocket.OPEN) return
-    ws.send(JSON.stringify({ t: 'hello', token: token || '', name: currentUser()?.givenName || currentUser()?.name || '' }))
+    // an invite-only room wants the key out of the link that brought us here
+    const key = new URLSearchParams(window.location.search).get('join') || ''
+    ws.send(JSON.stringify({ t: 'hello', token: token || '', name: currentUser()?.givenName || currentUser()?.name || '', join: key }))
     pinger = setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.send('{"t":"ping"}') }, PING)
     // a burst to settle on an offset, then now and then, because clocks drift
     for (const wait of [0, 250, 600, 1200]) setTimeout(measureClock, wait)
@@ -257,6 +276,7 @@ async function open(trackId) {
       mayEdit = !!msg.edit
       version = 0
       me = { id: msg.id, color: msg.color, name: msg.name, edit: mayEdit, owner: !!msg.owner, open: msg.open !== false }
+      onJamFn?.({ mode: msg.jam || 'open', key: msg.key || null })
       if (myView) ws.send(JSON.stringify({ t: 'view', v: myView })) // the room forgot us when the socket went
       doc?.reset?.()
       changed()
@@ -278,6 +298,7 @@ async function open(trackId) {
       onRoleFn?.({ edit: mayEdit, open: !!msg.on })
       return
     }
+    if (msg.t === 'jam') { onJamFn?.({ mode: msg.mode, key: msg.key || null }); return }
     if (msg.t === 'seed') {
       const project = doc?.seed?.()
       if (project && canEdit()) sock.send(JSON.stringify({ t: 'doc', doc: project }))

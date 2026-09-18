@@ -10,7 +10,7 @@ and overwrite what was saved.
 Messages are JSON text frames.
 
   presence (anyone who can open the track)
-    → {"t":"hello","token":"<sso access token>","name":"..."}   first frame, always
+    → {"t":"hello","token":"<sso access token>","name":"...","join":"<invite key>"}
     → {"t":"at","where":"graph","x":120,"y":40}                 the pointer moved
     → {"t":"sel","where":"graph","ids":["n1","n2"]}             what they have selected
     → {"t":"view","v":"song"}                                   which view they're on
@@ -27,6 +27,10 @@ Messages are JSON text frames.
     → {"t":"sync"}                       I'm lost, send me the whole thing
     → {"t":"same","v":13,"h":"5f2a"}     this is what I have, when it's all gone quiet
     ← {"t":"same","id":3,"v":13,"h":"5f2a"}
+
+  the owner deciding who may walk in at all
+    → {"t":"jam","mode":"invite","roll":true}   owner only; `roll` mints a fresh key
+    ← {"t":"jam","mode":"invite","key":"..."}   the key, to the owner alone
 
   the owner deciding whether anyone else may join in
     → {"t":"lock","on":false}             owner only; remembered on the track
@@ -61,6 +65,7 @@ all.
 """
 import asyncio
 import json
+import secrets
 import time
 
 from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
@@ -119,6 +124,7 @@ class Room:
         self.version = 0     # how many changes have been applied
         self.play = None     # the last thing said about the transport, stamped when it was said
         self.open = True     # whether anyone but the owner may change it (the owner's call)
+        self.jam = "open"    # whether anyone may walk in, or only with an invite
 
     def color_for(self):
         taken = {p.color for p in self.peers.values()}
@@ -162,9 +168,9 @@ def _track(track_id, env):
         with use_env(env):
             conn = db()
             try:
-                return conn.execute("SELECT owner_sub, visibility, collab FROM tracks WHERE id = ?", (track_id,)).fetchone()
+                return conn.execute("SELECT owner_sub, visibility, collab, jam, jam_key FROM tracks WHERE id = ?", (track_id,)).fetchone()
             except Exception:
-                # a database that predates the column: the track is simply open to others
+                # a database that predates the columns: the track is open to others and to drop-ins
                 return conn.execute("SELECT owner_sub, visibility FROM tracks WHERE id = ?", (track_id,)).fetchone()
     except Exception:
         return None
@@ -179,6 +185,40 @@ def _set_collab(track_id, env, on):
             conn.commit()
     except Exception:
         pass  # the room still obeys it; it just won't outlive the room
+
+
+def _col(row, name, fallback=None):
+    """A column that may not exist yet, on a database that predates it."""
+    try:
+        return row[name] if row and name in row.keys() else fallback
+    except Exception:
+        return fallback
+
+
+def _set_jam(track_id, env, mode, key):
+    """Remember whether the session takes drop-ins, and the key that gets you in if not."""
+    try:
+        with use_env(env):
+            conn = db()
+            conn.execute("UPDATE tracks SET jam = ?, jam_key = ? WHERE id = ?", (mode, key, track_id))
+            conn.commit()
+    except Exception:
+        pass
+
+
+def _may_join(row, user, key):
+    """Whether they may be in the room at all.
+
+    Open is the ordinary case: anyone who can open the track can be in it. Invite-only means
+    the link has to carry the key — the track itself stays as readable as it ever was, and
+    it's the session that's shut. The owner never needs their own invitation, and rolling
+    the key shuts every link that was handed out before it."""
+    if not _may_open(row, user):
+        return False
+    if _col(row, "jam", "open") != "invite" or _is_owner(row, user):
+        return True
+    want = _col(row, "jam_key")
+    return bool(want) and secrets.compare_digest(str(key or ""), str(want))
 
 
 def _may_open(row, user):
@@ -230,14 +270,17 @@ async def collab(ws: WebSocket, track_id: str):
         if not row:
             await ws.close(code=4004)
             return
-        if not _may_open(row, user):
+        if not _may_join(row, user, hello.get("join")):
             await ws.close(code=4003)
             return
+        jam_mode = _col(row, "jam", "open")
+        jam_key = _col(row, "jam_key")
         room_key = f"{_env_of(ws)}:{track_id}"
         room = _rooms.setdefault(room_key, Room())
         if len(room.peers) >= MAX_PEERS:
             await ws.close(code=4008)
             return
+        room.jam = jam_mode  # the browse list asks the room, so keep it current
         if not room.peers:
             room.open = bool(row["collab"]) if "collab" in row.keys() else True
         edit = _may_edit(row, user, room.open)
@@ -246,6 +289,8 @@ async def collab(ws: WebSocket, track_id: str):
         await ws.send_text(json.dumps({
             "t": "me", "id": peer.id, "color": peer.color, "name": peer.name,
             "edit": edit, "owner": _is_owner(row, user), "open": room.open,
+            # only the owner is told the key, because only the owner hands it out
+            "jam": jam_mode, "key": jam_key if (jam_mode == "invite" and _is_owner(row, user)) else None,
         }))
         await ws.send_text(json.dumps({"t": "here", "peers": [p.public() for p in room.peers.values()]}))
         await room.tell_others(peer.id, {"t": "join", "peer": peer.public()})
@@ -381,6 +426,21 @@ async def collab(ws: WebSocket, track_id: str):
                         # everyone in the room has the track either way
                         await room.send(other, json.dumps({"t": "role", "edit": other.edit, "open": room.open}))
                 await room.tell_others(peer.id, {"t": "open", "on": room.open})
+            elif kind == "jam":
+                # the owner deciding whether anyone may walk in, or only with a link that
+                # carries the key. Rolling it stops every link handed out before now; people
+                # already in the room stay, because throwing them out mid-session would only
+                # make them reconnect in a loop against a door that has changed locks.
+                if not _is_owner(row, user):
+                    continue
+                jam_mode = "invite" if msg.get("mode") == "invite" else "open"
+                if jam_mode == "invite" and (msg.get("roll") or not jam_key):
+                    jam_key = secrets.token_urlsafe(9)
+                room.jam = jam_mode
+                await asyncio.to_thread(_set_jam, track_id, _env_of(ws), jam_mode, jam_key)
+                await ws.send_text(json.dumps({
+                    "t": "jam", "mode": jam_mode, "key": jam_key if jam_mode == "invite" else None,
+                }))
             elif kind == "ping":
                 await ws.send_text('{"t":"pong"}')
     except (WebSocketDisconnect, asyncio.TimeoutError, ValueError):
@@ -397,6 +457,22 @@ async def collab(ws: WebSocket, track_id: str):
             await ws.close()
         except Exception:
             pass
+
+
+@router.get("/live")
+async def live(request: Request):
+    """Every track somebody is working on right now, and who's on it.
+
+    For the browse list, which wants to say a track is alive without holding a socket open
+    to each one. Only sessions that take drop-ins are listed: an invite-only room is a room
+    nobody is being pointed at, so saying it's busy would point at it."""
+    here = f"{_env_of(request)}:"
+    out = {}
+    for key, room in list(_rooms.items()):
+        if not key.startswith(here) or room.jam != "open" or not room.peers:
+            continue
+        out[key[len(here):]] = [{"name": p.name, "color": p.color} for p in list(room.peers.values())[:8]]
+    return {"tracks": out}
 
 
 @router.get("/{track_id}/who")

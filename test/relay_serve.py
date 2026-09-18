@@ -13,9 +13,11 @@ if os.path.exists(path):
     os.remove(path)
 conn = sqlite3.connect(path, check_same_thread=False)
 conn.row_factory = sqlite3.Row
-conn.execute("CREATE TABLE tracks (id TEXT, owner_sub TEXT, visibility TEXT, collab INTEGER NOT NULL DEFAULT 1)")
-conn.execute("INSERT INTO tracks VALUES ('pub','someone','public',1)")
-conn.execute("INSERT INTO tracks VALUES ('priv','someone','private',1)")
+conn.execute("CREATE TABLE tracks (id TEXT, owner_sub TEXT, visibility TEXT, collab INTEGER NOT NULL DEFAULT 1,"
+             " jam TEXT NOT NULL DEFAULT 'open', jam_key TEXT)")
+conn.execute("INSERT INTO tracks VALUES ('pub','someone','public',1,'open',NULL)")
+conn.execute("INSERT INTO tracks VALUES ('priv','someone','private',1,'open',NULL)")
+conn.execute("INSERT INTO tracks VALUES ('shut','someone','public',1,'invite','sesame')")
 conn.commit()
 incubator_lib.db = lambda: conn
 

@@ -35,7 +35,7 @@ import { capturePatterns, parseLanes, tempoChange } from './lanes'
 import { PROJECT_MARK, blankProject, demoProject, generateCode, newId, normalizeProject, parseProject, projectFromCode } from './project'
 import { createTransport, formatBarBeat, parseBarBeat } from './transport'
 import { songLength } from './song'
-import { canEdit as roomTakesEdits, join as joinRoom, leave as leaveRoom, onDoc, onPlay, onRole, openToOthers, sendOps, sendPlay, viewIs } from './collab.js'
+import { canEdit as roomTakesEdits, jamIs, join as joinRoom, leave as leaveRoom, onDoc, onJam, onPlay, onRole, openToOthers, sendOps, sendPlay, viewIs } from './collab.js'
 import { applyOps, diffOps, docHash, invertOps } from './docsync.js'
 import PeerTray from './PeerTray.jsx'
 import { AppCursors, watchPointer } from './surfaces.jsx'
@@ -237,6 +237,22 @@ export default function App() {
 
   // whether anyone else in the room may change this track: the owner's call, kept on the
   // track itself, and answered by the server the moment it's flipped
+  // Whether anyone may walk into the session, or only somebody holding a link with the key
+  // in it. Separate from who may edit, and from who may open the track at all: a track can
+  // be perfectly public to read while the session you're in the middle of is not.
+  const [jam, setJam] = useState({ mode: 'open', key: null })
+  useEffect(() => onJam(setJam), [])
+  const inviteLink = useCallback(() => `${trackUrl(track.id)}?join=${encodeURIComponent(jam.key ?? '')}`, [track, jam])
+  const copyInvite = useCallback(async (minted = false) => {
+    const url = inviteLink()
+    try {
+      await navigator.clipboard.writeText(url)
+      flash(minted ? 'New invite link copied — the old one has stopped working' : 'Invite link copied')
+    } catch {
+      window.prompt('Copy this invite link', url)
+    }
+  }, [inviteLink, flash])
+
   const [openToAll, setOpenToAll] = useState(true)
   const wasAllowed = useRef(null)
   useEffect(() => onRole(({ edit, open }) => {
@@ -1204,6 +1220,24 @@ export default function App() {
         ...[['public', 'anyone', 'Listed in explore'], ['unlisted', 'anyone with the link', 'Not listed'], ['private', 'only me', 'Only you']].map(([v, label, hint]) => ({ label, hint, checked: visibility === v, onSelect: () => setVisibility(v) })),
         isOwner && !isNew && 'line',
         isOwner && !isNew && { heading: 'working on it together' },
+        isOwner && !isNew && {
+          label: 'anyone can drop in',
+          checked: jam.mode === 'open',
+          onSelect: () => jamIs(jam.mode === 'open' ? 'invite' : 'open'),
+          hint: jam.mode === 'open'
+            ? 'Anyone who can open this track can join the session, and it shows as live while you work'
+            : 'Off: only a link carrying the invite key gets in, and the session is shown to nobody',
+        },
+        isOwner && !isNew && jam.mode === 'invite' && jam.key && {
+          label: 'copy invite link',
+          onSelect: () => copyInvite(),
+          hint: 'The link that gets someone into this session',
+        },
+        isOwner && !isNew && jam.mode === 'invite' && jam.key && {
+          label: 'new invite link',
+          onSelect: () => { jamIs('invite', true); setTimeout(() => copyInvite(true), 150) },
+          hint: 'Stops every link you have handed out. Anyone already here stays',
+        },
         isOwner && !isNew && {
           label: 'others can edit',
           checked: openToAll,

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, timeAgo } from './api'
 import { Glass } from './Glass.jsx'
+import LiveOnTrack from './LiveOnTrack.jsx'
 import './Browser.css'
 
 const VIEWS = [['explore', 'explore'], ['mine', 'mine'], ['liked', 'liked']]
@@ -151,6 +152,7 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
           <ul className="b-grid">
             {tracks.map((t) => (
               <li key={t.id} className={`b-card ${t.id === activeId ? 'active' : ''}`}>
+                <LiveOnTrack trackId={t.id} />
                 <button type="button" className="b-play" aria-label={`Play ${t.title}`} title="Play" onClick={() => onPlay(t.id)}>
                   <svg viewBox="0 0 16 16" aria-hidden><path d="M5 3.5v9l8-4.5z" /></svg>
                 </button>

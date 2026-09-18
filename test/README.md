@@ -22,6 +22,7 @@ what this browser plays and nothing else, while muting stays the track's own.
     python3 test/relay_play_test.py       # the clock, and where the playhead is going
     python3 test/relay_lock_test.py       # the owner letting others in, or working alone
     python3 test/relay_three_test.py      # three at once, and a cursor storm
+    python3 test/relay_invite_test.py     # who may walk in, the invite key, and the live list
     pkill -f relay_serve.py
 
 The harness stands in for the sign-in service: the token `owner` is the track's owner,

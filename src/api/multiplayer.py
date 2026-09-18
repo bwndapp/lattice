@@ -71,16 +71,24 @@ def _load(name):
 
 
 def _ready_db():
-    """The branch's own migration, run where the branch's routes will look: whether a
-    track lets anyone but its owner change it. The shared routes know nothing about it."""
+    """The branch's own migrations, run where the branch's routes will look: whether a
+    track lets anyone but its owner change it, and whether anyone may walk into the session.
+    The shared routes know nothing about any of it."""
     from incubator_lib import db, use_env
 
     with use_env("draft"):
         conn = db()
+        if "tracks" not in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}:
+            return
         cols = {r[1] for r in conn.execute("PRAGMA table_info(tracks)")}
-        if "tracks" in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")} and "collab" not in cols:
-            conn.execute("ALTER TABLE tracks ADD COLUMN collab INTEGER NOT NULL DEFAULT 1")
-            conn.commit()
+        for name, spec in (
+            ("collab", "INTEGER NOT NULL DEFAULT 1"),   # may anyone else change it
+            ("jam", "TEXT NOT NULL DEFAULT 'open'"),    # may anyone else walk in
+            ("jam_key", "TEXT"),                        # ...or only with this in the link
+        ):
+            if name not in cols:
+                conn.execute(f"ALTER TABLE tracks ADD COLUMN {name} {spec}")
+        conn.commit()
 
 
 def _mount():
