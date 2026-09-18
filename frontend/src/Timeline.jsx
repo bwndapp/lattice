@@ -971,7 +971,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const panelNode = panel && project.nodes.find((n) => n.id === panel.nodeId)
 
   return (
-    <section className="song" aria-label="Song timeline">
+    <section className="song" aria-label="Song timeline" data-surface="song">
       <aside className="song-parts" aria-label="Parts">
         <div className="song-parts-head">
           <span className="song-title">parts</span>
@@ -1112,6 +1112,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
               })}
             </div>
             <div
+              data-surface-own
               className={`song-lanes ${drag ? 'dragging' : ''} ${tool === 'slice' ? 'slicing' : ''} ${erasing ? 'erasing' : ''}`}
               ref={lanesRef}
               style={{ height: lanes * LANE_H, width: bars * ppb }}

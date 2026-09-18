@@ -392,10 +392,15 @@ const queue = (msg) => {
   if (!frame && sock?.readyState === WebSocket.OPEN) frame = requestAnimationFrame(flush)
 }
 
+// Four decimals, because a surface's own coordinates can be bars (where a hundredth is
+// finer than anyone can point) or a fraction of a region's width (where a hundredth is a
+// visible step of about 14 pixels across a wide header).
+const round = (v) => Math.round(v * 10000) / 10000
+
 /** Where our pointer is on a surface, in that surface's own coordinates. */
 export function pointerAt(where, x, y) {
   if (!room || !Number.isFinite(x) || !Number.isFinite(y)) return
-  queue({ t: 'at', where, x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100 })
+  queue({ t: 'at', where, x: round(x), y: round(y) })
 }
 
 /** Our pointer left a surface (so nobody draws a stale cursor there). */

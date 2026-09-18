@@ -95,7 +95,7 @@ export default function Browser({ user, login, activeId, refreshKey, onPlay, onP
     : view === 'mine' ? 'Your tracks' : view === 'liked' ? 'Tracks you liked' : 'Shared tracks'
 
   return (
-    <section className="browser" aria-label="Browse tracks">
+    <section className="browser" aria-label="Browse tracks" data-surface="browse">
       <aside className="b-side">
         <h2 className="b-title">Browse</h2>
 

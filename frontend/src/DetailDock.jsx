@@ -87,6 +87,7 @@ export default function DetailDock({ project, at, transport, started, height, on
 
   return (
     <section
+      data-surface="dock"
       className="detail-dock"
       style={{ height }}
       aria-label={`${pattern.name}: ${tab === 'notes' ? 'piano roll' : 'instruments'}`}

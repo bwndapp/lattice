@@ -674,7 +674,7 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
   const zoomLabel = zoom === null ? 'fit' : `${Math.round((colW / fitCol) * 100)}%`
 
   return (
-    <div className={`pr ${full ? 'full' : ''} ${fill ? 'fill' : ''}`}>
+    <div className={`pr ${full ? 'full' : ''} ${fill ? 'fill' : ''}`} data-surface="roll">
       {full && <div className="pr-backdrop" onClick={() => setFull(false)} aria-hidden />}
       <div className="pr-panel">
         <div className="pr-toolbar">
@@ -763,7 +763,7 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
                 onPreview(clamp(HIGH - Math.floor((e.clientY - rect.top) / rowH), LOW, HIGH))
               }}
             />
-            <div className="pr-grid-wrap">
+            <div className="pr-grid-wrap" data-surface-own>
               <canvas
                 className="pr-grid"
                 ref={gridRef}

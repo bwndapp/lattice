@@ -11,6 +11,15 @@
   transition: transform 80ms linear;
 }
 
+/* Cursors that aren't inside a surface of their own are drawn over the whole window, so
+   one can cross from the canvas to the header without being handed between layers. */
+.app-cursors {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+}
+
 /* centred on the spot they're pointing at, like the real cursor's hotspot */
 .peer-cursor svg { display: block; margin: -6px 0 0 -6px; }
 

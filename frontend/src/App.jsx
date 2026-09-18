@@ -37,6 +37,7 @@ import { songLength } from './song'
 import { canEdit as roomTakesEdits, join as joinRoom, leave as leaveRoom, onDoc, onPlay, onRole, openToOthers, sendOps, sendPlay } from './collab.js'
 import { applyOps, diffOps, docHash, invertOps } from './docsync.js'
 import PeerList from './PeerList.jsx'
+import { AppCursors, watchPointer } from './surfaces.jsx'
 
 function readPref(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback } catch { return fallback }
@@ -393,6 +394,10 @@ export default function App() {
     const text = generateCode(p, genRef.current)
     if (text !== editor.code) { replaceCode(text); liveUpdate() }
   }, [laneSolo, replaceCode, liveUpdate])
+
+  // Everyone's pointer, everywhere: one listener that names whichever region it's over
+  // (surfaces.jsx). The three surfaces with coordinates of their own report for themselves.
+  useEffect(() => watchPointer(), [])
 
   // ── working on this track with someone else (collab.js) ──
   // One place watches the code for changes and sends what changed, so every way of
@@ -1196,7 +1201,7 @@ export default function App() {
 
   return (
     <div className="studio">
-      <header className="bar">
+      <header className="bar" data-surface="header">
         <div className="bar-side left">
         <Link to="/" className="logo" aria-label="lattice, home">
           {/* the woven mark from the app icon: two strips over two, gaps cut in the header's black */}
@@ -1379,7 +1384,7 @@ export default function App() {
       <AutomationContext.Provider value={project ? automation : null}>
       <RollContext.Provider value={rollDock}>
       <div className="body">
-        <main className="main">
+        <main className="main" data-surface="main">
           {view === 'browse' && (
             <Browser
               user={user}
@@ -1477,7 +1482,7 @@ export default function App() {
               </span>
             </section>
           )}
-          <section ref={codeViewRef} className="code-view" hidden={view !== 'code'} aria-label="Code">
+          <section ref={codeViewRef} className="code-view" hidden={view !== 'code'} aria-label="Code" data-surface="code">
             <div className="code-head">
               <span className="code-title">code</span>
               {project ? (
@@ -1526,6 +1531,7 @@ export default function App() {
       )}
       </RollContext.Provider>
       </AutomationContext.Provider>
+      <AppCursors />
       <Tooltip />
 
       {toast && (

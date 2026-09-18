@@ -21,21 +21,27 @@ export default function PeerCursors({ where, to, scale = 1 }) {
     <>
       {here.map((p) => {
         const at = to(p.at)
-        if (!at) return null
-        return (
-          <div
-            key={p.id}
-            className="peer-cursor"
-            style={{ transform: `translate(${at.left}px, ${at.top}px) scale(${1 / scale})`, '--peer': p.color }}
-            aria-hidden
-          >
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-              <circle cx="6" cy="6" r="4" fill={p.color} stroke="black" strokeWidth="1" />
-            </svg>
-            <span className="peer-name">{p.name}</span>
-          </div>
-        )
+        return at ? <PeerDot key={p.id} peer={p} left={at.left} top={at.top} scale={scale} /> : null
       })}
     </>
+  )
+}
+
+/**
+ * One person's pointer, at a place already worked out in pixels. Every surface draws the
+ * same dot: the one this app uses for its own cursor, in the colour the room gave them.
+ */
+export function PeerDot({ peer, left, top, scale = 1 }) {
+  return (
+    <div
+      className="peer-cursor"
+      style={{ transform: `translate(${left}px, ${top}px) scale(${1 / scale})`, '--peer': peer.color }}
+      aria-hidden
+    >
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+        <circle cx="6" cy="6" r="4" fill={peer.color} stroke="black" strokeWidth="1" />
+      </svg>
+      <span className="peer-name">{peer.name}</span>
+    </div>
   )
 }

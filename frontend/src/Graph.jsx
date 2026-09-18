@@ -1286,7 +1286,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
 
   return (
     <Ctx.Provider value={ctx}>
-      <div className="graph" ref={wrapRef}>
+      <div className="graph" ref={wrapRef} data-surface="patch">
         <Palette onAdd={(type, pos, instrument) => addNode(type, pos, instrument)} />
         <div
           className={`graph-canvas ${lighting ? '' : 'flow-off'}`}
@@ -1340,6 +1340,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
             flow
           </button>
           <ReactFlow
+            data-surface-own
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}
