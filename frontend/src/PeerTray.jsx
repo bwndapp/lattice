@@ -40,7 +40,9 @@ const clamp = (v) => Math.max(-1, Math.min(1, v))
  */
 function mood(peer, away) {
   if (!peer.edit) return 'curious' // here to watch
-  if (away) return 'sleepy' // working on a view this screen isn't showing
+  // Heads-down on a view this screen isn't showing. Not dozing: they're working, and the
+  // bubble over their head already says where — the face only has to say they're busy.
+  if (away) return 'focus'
   return 'idle'
 }
 

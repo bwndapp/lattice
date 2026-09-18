@@ -42,8 +42,9 @@
   background: rgba(255, 255, 255, 0.12);
 }
 
-/* off on a view this screen isn't showing: still here, just not in the room with you */
-.peer-face.away { opacity: 0.6; }
+/* off on a view this screen isn't showing: a step back, not a fade out — they're working,
+   and 0.6 made them look like they'd left */
+.peer-face.away { opacity: 0.88; }
 
 /* What they're doing, as a little speech bubble over their head.
    Someone on another view shows it without being asked — that's the case you can't see for
