@@ -163,7 +163,41 @@ def _env_of(scope_or_ws):
     return "draft" if path.startswith(("/preview/", "/multiplayer/")) else "live"
 
 
+_ready = set()
+
+
+def _ensure(env):
+    """The columns this branch adds, made sure of once per database.
+
+    It lives here rather than in multiplayer.py because this is the branch's own file and
+    the copy of multiplayer.py the platform actually loads is the one in the shared route
+    folder — which belongs to whoever is working in the main checkout, not to us. The only
+    file that has to be right for a room to work is this one, so it carries its own schema.
+    """
+    if env in _ready:
+        return
+    _ready.add(env)
+    try:
+        with use_env(env):
+            conn = db()
+            if "tracks" not in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}:
+                _ready.discard(env)  # no table yet: worth asking again later
+                return
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(tracks)")}
+            for name, spec in (
+                ("collab", "INTEGER NOT NULL DEFAULT 1"),   # may anyone else change it
+                ("jam", "TEXT NOT NULL DEFAULT 'open'"),    # may anyone else walk in
+                ("jam_key", "TEXT"),                        # ...or only with this in the link
+            ):
+                if name not in cols:
+                    conn.execute(f"ALTER TABLE tracks ADD COLUMN {name} {spec}")
+            conn.commit()
+    except Exception:
+        _ready.discard(env)  # try again on the next connection rather than never
+
+
 def _track(track_id, env):
+    _ensure(env)
     try:
         with use_env(env):
             conn = db()

@@ -70,27 +70,6 @@ def _load(name):
     return module
 
 
-def _ready_db():
-    """The branch's own migrations, run where the branch's routes will look: whether a
-    track lets anyone but its owner change it, and whether anyone may walk into the session.
-    The shared routes know nothing about any of it."""
-    from incubator_lib import db, use_env
-
-    with use_env("draft"):
-        conn = db()
-        if "tracks" not in {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}:
-            return
-        cols = {r[1] for r in conn.execute("PRAGMA table_info(tracks)")}
-        for name, spec in (
-            ("collab", "INTEGER NOT NULL DEFAULT 1"),   # may anyone else change it
-            ("jam", "TEXT NOT NULL DEFAULT 'open'"),    # may anyone else walk in
-            ("jam_key", "TEXT"),                        # ...or only with this in the link
-        ):
-            if name not in cols:
-                conn.execute(f"ALTER TABLE tracks ADD COLUMN {name} {spec}")
-        conn.commit()
-
-
 def _mount():
     """Put the branch on the path, replacing an earlier mount of ours if there is one."""
     app = _running_app()
@@ -98,10 +77,9 @@ def _mount():
         return []
     ours = {MOUNT} | {f"{MOUNT}/api/{name}" for name in SERVE}
     app.router.routes = [r for r in app.router.routes if getattr(r, "_branch_mount", None) not in ours]
-    try:
-        _ready_db()
-    except Exception:
-        pass  # the room still works; the owner's switch just won't outlive it
+    # (the branch's own columns are made sure of by collab.py, which is the file that
+    # actually needs them — the copy of THIS file that runs is the one in the shared route
+    # folder, so anything schema-shaped in here would only run for whoever last synced it)
     added, api = [], []
     for name in SERVE:
         try:
