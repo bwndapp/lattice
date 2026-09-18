@@ -75,6 +75,25 @@ input, textarea, select, [contenteditable="true"],
 .cm-editor, .tp, .selectable { user-select: text; -webkit-user-select: text; }
 /* images and links drag as files/URLs on their own; on a canvas that's never wanted */
 img, svg, a { -webkit-user-drag: none; }
+
+/*
+ * Scrollbars: the rest of the app is black panels and hairlines, and the platform's own
+ * bar is a wide light slab sitting on top of that. One thin, dark bar everywhere instead —
+ * present enough to grab, quiet enough to ignore, and it fades up when you're on the pane
+ * it belongs to. (The timeline hides its own entirely; see Timeline.css.)
+ */
+#root { scrollbar-width: thin; scrollbar-color: #26261f transparent; }
+#root :hover > ::-webkit-scrollbar-thumb { background: #33332b; }
+#root ::-webkit-scrollbar { width: 9px; height: 9px; }
+#root ::-webkit-scrollbar-track { background: transparent; }
+#root ::-webkit-scrollbar-thumb {
+  background: #26261f;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+#root ::-webkit-scrollbar-thumb:hover { background: #45453b; background-clip: content-box; }
+#root ::-webkit-scrollbar-corner { background: transparent; }
 .page { max-width: 640px; margin: 0 auto; padding: 4rem 1.5rem; color: var(--muted); }
 .link, .linkish { color: var(--acid); text-decoration: underline; text-underline-offset: 3px; }
 .linkish { background: none; border: 0; padding: 0; font: inherit; cursor: var(--ring); }

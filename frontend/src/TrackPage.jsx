@@ -200,11 +200,6 @@ export default function TrackPage({ id, user, login, onOpen, onClose, onAuthor }
           {track.is_owner ? 'How it got here' : 'What came out of it'}
           {line.length ? <span className="tp-count">{line.length}</span> : null}
         </h3>
-        <p className="tp-lede">
-          {track.is_owner
-            ? 'Every save is still here. Hear one as it was, or branch off it — the branch is yours and this track carries on untouched.'
-            : 'Tracks people took from this one, and where they left.'}
-        </p>
         {track.is_owner && !saves && <p className="tp-quiet">Reading the saves…</p>}
         {!line.length && <p className="tp-quiet">{track.is_owner ? 'No saves kept yet.' : 'Nobody has branched this yet.'}</p>}
 

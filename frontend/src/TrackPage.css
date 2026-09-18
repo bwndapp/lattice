@@ -56,7 +56,6 @@
   display: flex; align-items: center; gap: 0.4rem;
 }
 .tp-count { font-family: var(--mono); font-size: 10px; color: var(--ink); background: var(--acid); padding: 0 5px; border-radius: 999px; }
-.tp-lede { margin: 0 0 0.5rem; font-size: 11.5px; line-height: 1.7; color: var(--muted); max-width: 42rem; }
 
 /* the saves, as a line you can walk back along */
 .tp-saves { list-style: none; margin: 0; padding: 0; display: grid; }
