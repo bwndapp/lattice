@@ -1,6 +1,8 @@
-import { useEffect, useRef, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import { COLLAB_ROOT } from './base'
 import { createFace } from './vendor/bbot.js'
+import { applyFx } from './vendor/bbot-fx.js'
+import { botLook, botStyle } from './bot.js'
 import './LiveOnTrack.css'
 
 /**
@@ -63,15 +65,18 @@ export function useLiveOn(trackId) {
 
 function Bot({ person, i }) {
   const box = useRef(null)
+  const look = useMemo(() => botLook(person.bot, person.color), [person.bot, person.color])
   useEffect(() => {
-    const f = createFace(box.current, { expression: 'excited', track: false, idle: true })
+    const f = createFace(box.current, { expression: 'excited', track: false, idle: true, pupils: look.pupils, mouth: look.mouth })
+    const svg = box.current.querySelector('svg')
+    if (svg) try { applyFx(svg, look.fx) } catch { /* a finish is never worth a blank face */ }
     return () => f.destroy()
-  }, [])
+  }, [look])
   return (
     <span
       className="live-bot"
       // they overlap a little, most recent in front, so four people read as a huddle
-      style={{ '--face-skin': '#0b0b0f', '--face-ink': person.color, '--face-ring': person.color, zIndex: 8 - i }}
+      style={{ ...botStyle(look), zIndex: 8 - i }}
       ref={box}
     />
   )

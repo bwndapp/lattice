@@ -1,7 +1,9 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { usePeers, usePresence, onPeerEdit } from './collab.js'
 import { whereOnScreen } from './surfaces.jsx'
 import { createFace } from './vendor/bbot.js'
+import { applyFx } from './vendor/bbot-fx.js'
+import { botLook, botStyle } from './bot.js'
 import './PeerTray.css'
 
 /**
@@ -72,10 +74,16 @@ function mood(peer, away) {
 function PeerFace({ peer, mine = false, away = false, faces = null }) {
   const box = useRef(null)
   const face = useRef(null)
+  // who they are, drawn: their colour from the room, everything else from their hash
+  const look = useMemo(() => botLook(peer.bot, peer.color), [peer.bot, peer.color])
 
   useEffect(() => {
     // our own face follows our own pointer; everyone else's is aimed by hand, below
-    const f = createFace(box.current, { expression: mine ? 'content' : 'idle', track: mine, pupils: true })
+    const f = createFace(box.current, {
+      expression: mine ? 'content' : 'idle', track: mine, pupils: look.pupils, mouth: look.mouth,
+    })
+    const svg = box.current.querySelector('svg')
+    if (svg) try { applyFx(svg, look.fx) } catch { /* a finish is never worth a blank face */ }
     face.current = f
     if (faces && !mine) faces.current.set(peer.id, f)
     if (!mine) f.react('pop') // a little hello on the way in
@@ -84,7 +92,7 @@ function PeerFace({ peer, mine = false, away = false, faces = null }) {
       face.current = null
       f.destroy() // or it keeps its slot in the shared animation loop
     }
-  }, [mine, peer.id, faces])
+  }, [mine, peer.id, faces, look])
 
   // where they're looking: their pointer, turned into a direction from this face
   const pointer = peer.at
@@ -115,7 +123,7 @@ function PeerFace({ peer, mine = false, away = false, faces = null }) {
     <span
       className={`peer-face ${mine ? 'me' : ''} ${away ? 'away' : ''}`}
       title={said}
-      style={{ '--face-skin': '#0b0b0f', '--face-ink': peer.color, '--face-ring': peer.color }}
+      style={botStyle(look)}
     >
       <span className="peer-face-box" ref={box} />
       <span className="peer-face-says">

@@ -14,7 +14,8 @@ Messages are JSON text frames.
     → {"t":"at","where":"graph","x":120,"y":40}                 the pointer moved
     → {"t":"sel","where":"graph","ids":["n1","n2"]}             what they have selected
     → {"t":"view","v":"song"}                                   which view they're on
-    ← {"t":"me","id":3,"color":"#e8b","edit":true}              who the server thinks you are
+    ← {"t":"me","id":3,"color":"#e8b","bot":"9f3a...","edit":true}   who the server thinks you are
+       (`bot` is a stable hash of the account: every face they wear is drawn from it)
     ← {"t":"here","peers":[...]} · {"t":"join"|"at"|"sel"|"view"|"gone", ...}
 
   the track itself (everyone present receives it; only the signed in may send — see _may_edit)
@@ -64,6 +65,7 @@ shouldn't be on show to a link-holder wants to be private, where nobody else get
 all.
 """
 import asyncio
+import hashlib
 import json
 import secrets
 import time
@@ -96,13 +98,14 @@ COLORS = ["#6cc9ff", "#ff8fb1", "#8de88d", "#ffcf6b", "#c79bff", "#5ee0cf", "#ff
 
 
 class Peer:
-    __slots__ = ("id", "ws", "name", "color", "at", "sel", "sub", "edit", "view")
+    __slots__ = ("id", "ws", "name", "color", "at", "sel", "sub", "edit", "view", "bot")
 
-    def __init__(self, pid, ws, name, color, sub, edit):
+    def __init__(self, pid, ws, name, color, sub, edit, bot):
         self.id = pid
         self.ws = ws
         self.name = name
         self.color = color
+        self.bot = bot
         self.sub = sub
         self.edit = edit
         self.at = None
@@ -110,7 +113,8 @@ class Peer:
         self.view = None  # which of the app's views they're looking at
 
     def public(self):
-        return {"id": self.id, "name": self.name, "color": self.color, "at": self.at, "sel": self.sel, "edit": self.edit, "view": self.view}
+        return {"id": self.id, "name": self.name, "color": self.color, "bot": self.bot,
+                "at": self.at, "sel": self.sel, "edit": self.edit, "view": self.view}
 
 
 class Room:
@@ -126,12 +130,19 @@ class Room:
         self.open = True     # whether anyone but the owner may change it (the owner's call)
         self.jam = "open"    # whether anyone may walk in, or only with an invite
 
-    def color_for(self):
+    def color_for(self, bot):
+        """Their own colour, unless somebody in this room already has it.
+
+        The point of deriving it from who they are is that a person looks the same wherever
+        you run into them. The point of moving aside on a clash is that two faces in one
+        room have to be told apart, and that matters more for the few seconds it applies."""
         taken = {p.color for p in self.peers.values()}
-        for c in COLORS:
+        start = int(bot[:4], 16) % len(COLORS)
+        for i in range(len(COLORS)):
+            c = COLORS[(start + i) % len(COLORS)]
             if c not in taken:
                 return c
-        return COLORS[len(self.peers) % len(COLORS)]
+        return COLORS[start]
 
     async def send(self, peer, msg):
         try:
@@ -281,6 +292,22 @@ def _may_edit(row, user, open_to_others):
     return bool(row and user and open_to_others and _may_open(row, user))
 
 
+def _bot_of(user, name, pid):
+    """A short, stable name for someone's face.
+
+    Everything about how a person is drawn comes off this — their colour, the finish on
+    their head, whether they have pupils — so the same person is recognisably themselves in
+    the tray, on a browse card, in any room, on any day. It's a hash of the account rather
+    than the account itself, because how someone looks is not a reason to hand their id to
+    everyone else in the room.
+
+    Somebody not signed in has no identity to be stable about, so theirs is stable for the
+    visit and no longer. That is the honest answer for an anonymous person, and it still
+    tells two of them apart."""
+    seed = f"sub:{user['sub']}" if user and user.get("sub") else f"guest:{name}:{pid}"
+    return hashlib.sha256(seed.encode()).hexdigest()[:12]
+
+
 def _clean_name(raw, user):
     name = (user or {}).get("given_name") or (user or {}).get("name") or (raw or "")
     name = " ".join(str(name).split())[:24]
@@ -318,10 +345,12 @@ async def collab(ws: WebSocket, track_id: str):
         if not room.peers:
             room.open = bool(row["collab"]) if "collab" in row.keys() else True
         edit = _may_edit(row, user, room.open)
-        peer = Peer(room.next_id, ws, _clean_name(hello.get("name"), user), room.color_for(), (user or {}).get("sub"), edit)
+        name = _clean_name(hello.get("name"), user)
+        bot = _bot_of(user, name, room.next_id)
+        peer = Peer(room.next_id, ws, name, room.color_for(bot), (user or {}).get("sub"), edit, bot)
         room.next_id += 1
         await ws.send_text(json.dumps({
-            "t": "me", "id": peer.id, "color": peer.color, "name": peer.name,
+            "t": "me", "id": peer.id, "color": peer.color, "name": peer.name, "bot": peer.bot,
             "edit": edit, "owner": _is_owner(row, user), "open": room.open,
             # only the owner is told the key, because only the owner hands it out
             "jam": jam_mode, "key": jam_key if (jam_mode == "invite" and _is_owner(row, user)) else None,
@@ -505,7 +534,7 @@ async def live(request: Request):
     for key, room in list(_rooms.items()):
         if not key.startswith(here) or room.jam != "open" or not room.peers:
             continue
-        out[key[len(here):]] = [{"name": p.name, "color": p.color} for p in list(room.peers.values())[:8]]
+        out[key[len(here):]] = [{"name": p.name, "color": p.color, "bot": p.bot} for p in list(room.peers.values())[:8]]
     return {"tracks": out}
 
 
@@ -513,4 +542,4 @@ async def live(request: Request):
 async def who(request: Request, track_id: str):
     """Who's on a track right now, for a page that isn't holding a socket open."""
     room = _rooms.get(f"{_env_of(request)}:{track_id}")
-    return {"peers": [{"name": p.name, "color": p.color} for p in (room.peers.values() if room else [])]}
+    return {"peers": [{"name": p.name, "color": p.color, "bot": p.bot} for p in (room.peers.values() if room else [])]}

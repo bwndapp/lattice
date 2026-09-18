@@ -93,6 +93,17 @@ async def main():
             await drain(owner, 'at')  # their cursor arrives, so the jam frame was handled first
             ok("a guest cannot open someone else's session", await turned_away('shut', 'third'))
 
+    # ── a face that belongs to the person, not to the visit ──
+    async with websockets.connect(f'{URL}/pub') as one:
+        first = await hello(one, 'friend', 'bo')
+    async with websockets.connect(f'{URL}/pub') as two:
+        again = await hello(two, 'friend', 'bo')
+    async with websockets.connect(f'{URL}/pub') as other:
+        someone = await hello(other, 'third', 'cy')
+    ok('the same account gets the same face every time', first['bot'] == again['bot'], (first.get('bot'), again.get('bot')))
+    ok('and a different account a different one', first['bot'] != someone['bot'], (first.get('bot'), someone.get('bot')))
+    ok('the account itself is not handed out', 'sub' not in first and len(first['bot']) == 12, first)
+
     print('\n' + (f'{len(fails)} failing: {fails}' if fails else 'all good'))
 
 

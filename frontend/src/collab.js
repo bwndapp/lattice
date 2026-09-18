@@ -275,7 +275,7 @@ async function open(trackId) {
       tries = 0
       mayEdit = !!msg.edit
       version = 0
-      me = { id: msg.id, color: msg.color, name: msg.name, edit: mayEdit, owner: !!msg.owner, open: msg.open !== false }
+      me = { id: msg.id, color: msg.color, bot: msg.bot, name: msg.name, edit: mayEdit, owner: !!msg.owner, open: msg.open !== false }
       onJamFn?.({ mode: msg.jam || 'open', key: msg.key || null })
       if (myView) ws.send(JSON.stringify({ t: 'view', v: myView })) // the room forgot us when the socket went
       doc?.reset?.()
