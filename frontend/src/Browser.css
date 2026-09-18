@@ -296,7 +296,7 @@ button.b-card-author:hover { color: var(--paper); text-decoration-color: current
 .b-tag.quiet { opacity: 0.6; }
 
 .browser.one { display: block; overflow: hidden; }
-.browser.one .tp { height: 100%; max-width: 62rem; }
+.browser.one .tp { height: 100%; }
 button.b-card-about {
   position: relative; z-index: 2; order: -1;
   font: inherit; font-size: 10px; letter-spacing: 0.04em; color: var(--acid);

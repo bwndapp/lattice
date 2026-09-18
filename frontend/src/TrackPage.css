@@ -3,6 +3,9 @@
   display: grid;
   gap: 1.6rem;
   align-content: start;
+  width: 100%;
+  max-width: 52rem;
+  margin-inline: auto; /* the page sits in the middle of whatever room it's given */
   padding: 1.5rem 1.6rem 4rem;
   overflow-y: auto;
 }
@@ -49,7 +52,7 @@
 .tp-error { margin: 0 0 0.6rem; font-size: 12px; color: var(--danger); }
 
 /* ── how it got here ────────────────────────────────── */
-.tp-block { display: grid; gap: 0.5rem; max-width: 46rem; }
+.tp-block { display: grid; gap: 0.5rem; }
 .tp-h {
   margin: 0; font-family: var(--display); font-weight: 800; font-stretch: 112%; font-size: 13px;
   text-transform: lowercase; letter-spacing: 0.02em; color: var(--paper);
@@ -61,17 +64,16 @@
 .tp-saves { list-style: none; margin: 0; padding: 0; display: grid; }
 .tp-save {
   position: relative;
-  display: grid; grid-template-columns: 15px minmax(0, 1fr); gap: 0.6rem;
-  padding: 0.35rem 0.4rem 0.75rem 0;
-  border-radius: 8px;
+  display: grid; grid-template-columns: 15px minmax(0, 1fr); gap: 0.75rem;
+  padding: 0 0 0.5rem;
 }
 /* the rail the whole history hangs from */
 .tp-save::before {
-  content: ''; position: absolute; left: 6px; top: 16px; bottom: -4px; width: 1px; background: var(--line);
+  content: ''; position: absolute; left: 6px; top: 18px; bottom: -2px; width: 1px; background: var(--line);
 }
 .tp-save:last-child::before { display: none; }
 .tp-dot {
-  width: 7px; height: 7px; margin-top: 8px; margin-left: 3px; border-radius: 50%;
+  width: 7px; height: 7px; margin-top: 14px; margin-left: 3px; border-radius: 50%;
   background: var(--ink); border: 1.5px solid #4a4a44; position: relative; z-index: 1;
   transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
@@ -80,7 +82,18 @@
 .tp-save.latest > .tp-dot { border-color: var(--paper); }
 .tp-save.playing > .tp-dot { background: var(--acid); border-color: var(--acid); box-shadow: 0 0 0 4px rgb(228 255 26 / 0.2); }
 
-.tp-save-what { display: grid; gap: 3px; min-width: 0; }
+/* each save is its own plate on the rail, so the line reads as steps and not as text */
+.tp-save-what {
+  display: grid; gap: 4px; min-width: 0;
+  padding: 0.5rem 0.7rem 0.6rem;
+  border-radius: 9px;
+  background: linear-gradient(145deg, #121210, #0d0d0b);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.055), 2px 2px 8px rgba(0, 0, 0, 0.45);
+  transition: box-shadow 0.18s ease, background 0.18s ease;
+}
+.tp-save:hover > .tp-save-what { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.11), 3px 4px 12px rgba(0, 0, 0, 0.55); }
+.tp-save.playing > .tp-save-what { box-shadow: 0 0 0 1px rgb(228 255 26 / 0.45), 3px 4px 14px rgba(0, 0, 0, 0.55); }
+.tp-save.latest > .tp-save-what { background: linear-gradient(145deg, #17171400, #121210); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1), 2px 2px 8px rgba(0, 0, 0, 0.45); }
 .tp-save-top { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem 0.6rem; min-height: 1.5rem; }
 .tp-save-when { font-size: 11.5px; color: var(--paper); font-variant-numeric: tabular-nums; }
 .tp-here {
@@ -117,9 +130,14 @@
 .tp-diff-list li::before { content: '· '; color: var(--acid); }
 
 /* a copy leaving the line where it was taken */
-.tp-fork { position: relative; margin: 6px 0 2px 14px; padding-left: 14px; font-size: 10.5px; line-height: 1.6; }
+.tp-fork {
+  position: relative; margin: 6px 0 0 6px; padding: 5px 0 0 14px;
+  font-size: 10.5px; line-height: 1.6;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+.tp-fork + .tp-fork { border-top: 0; margin-top: 2px; }
 .tp-fork-arm {
-  position: absolute; left: 0; top: -5px; width: 10px; height: 13px;
+  position: absolute; left: 0; top: 4px; width: 10px; height: 11px;
   border-left: 1px solid color-mix(in srgb, var(--acid) 45%, var(--line));
   border-bottom: 1px solid color-mix(in srgb, var(--acid) 45%, var(--line));
   border-bottom-left-radius: 7px;
