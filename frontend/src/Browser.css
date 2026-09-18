@@ -146,9 +146,15 @@
 .b-button:focus-visible { outline: 1px solid var(--paper); outline-offset: 2px; }
 
 /* the list */
-.b-main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow-y: auto; padding: 1.2rem 1.6rem 2.5rem; }
-/* the results keep a measure of their own, whatever the window does */
-.b-main > * { width: 100%; max-width: 82rem; margin-inline: auto; }
+/*
+ * The results keep a measure of their own and sit in the middle of the window. The
+ * centring is in this element's padding rather than auto margins on the children, because
+ * a child that sets `margin: 0` for its own reasons — .b-grid does — would undo those.
+ */
+.b-main {
+  flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow-y: auto;
+  padding: 1.2rem max(1.6rem, (100% - 82rem) / 2) 2.5rem;
+}
 .b-main-head { display: flex; align-items: center; flex-wrap: wrap; gap: 0.6rem; min-height: 2.1rem; margin-bottom: 1rem; }
 .b-main-head h3 { margin: 0; font-family: var(--display); font-weight: 800; font-stretch: 112%; font-size: 0.8rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
 .b-count { font-size: 11px; color: #6f6f67; font-variant-numeric: tabular-nums; }
