@@ -88,12 +88,25 @@ async def main():
             async with websockets.connect(URL) as g:
                 me_g, _ = await hello(g, '', 'guest')
                 ok('a guest may look but not edit', me_g.get('edit') is False, me_g)
+                # watching is read-only, not blind: the room's copy arrives all the same
+                doc_g = await drain(g, 'doc')
+                ok('a watcher is handed the room copy too', doc_g['doc']['bpm'] == 128 and doc_g['v'] == 4, doc_g)
                 await g.send(json.dumps({'t': 'ops', 'ops': [{'op': 'set', 'path': ['bpm'], 'value': 999}], 'h': 'x'}))
                 await g.send(json.dumps({'t': 'at', 'where': 'graph', 'x': 1, 'y': 2}))
                 await drain(a, 'at')  # their cursor arrives, which means the ops frame was handled first
                 await a.send(json.dumps({'t': 'sync'}))
                 still = await drain(a, 'doc')
                 ok("a guest's edit is ignored", still['doc']['bpm'] == 128, still['doc']['bpm'])
+
+                # and the others' edits keep arriving for them
+                await a.send(json.dumps({'t': 'ops', 'ops': [{'op': 'set', 'path': ['bpm'], 'value': 126}], 'h': 'q'}))
+                landed = await drain(g, 'ops')
+                ok("a watcher sees the others' edits land", landed['ops'][0]['value'] == 126 and landed['v'] == 5, landed)
+
+                # a watcher that loses the plot can ask for the track again, like anyone else
+                await g.send(json.dumps({'t': 'sync'}))
+                again = await drain(g, 'doc')
+                ok('a watcher may ask for the track again', again['doc']['bpm'] == 126 and again['v'] == 5, again)
 
             # an edit aimed at something already gone: an everyday collision rather than an
             # error, but the sender is owed an answer or it waits for one for ever
@@ -103,10 +116,10 @@ async def main():
                 said = await drain(a, 'nope')
             except asyncio.TimeoutError:
                 said = None
-            ok('a change the room cannot place is answered, not dropped', said is not None and said.get('v') == 4, said)
+            ok('a change the room cannot place is answered, not dropped', said is not None and said.get('v') == 5, said)
             await a.send(json.dumps({'t': 'sync'}))
             untouched = await drain(a, 'doc')
-            ok('and it leaves the track as it was', untouched['v'] == 4 and len(untouched['doc']['song']['clips']) == 1, untouched)
+            ok('and it leaves the track as it was', untouched['v'] == 5 and len(untouched['doc']['song']['clips']) == 1, untouched)
 
     # the room forgets once everyone has gone
     await asyncio.sleep(0.3)

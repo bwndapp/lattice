@@ -62,13 +62,17 @@ async def main():
             # the owner keeps working while the friend watches
             await owner.send(json.dumps({'t': 'ops', 'ops': [{'op': 'set', 'path': ['bpm'], 'value': 150}], 'h': 'y'}))
             await drain(owner, 'ops')  # their own change, back in the place the room gave it
+            watched = await drain(friend, 'ops')
+            ok('someone locked out still sees the work', watched['ops'][0]['value'] == 150, watched)
 
             # and opens it again
             await owner.send(json.dumps({'t': 'lock', 'on': True}))
             back = await drain(friend, 'role')
             ok('letting them back in is told at once', back.get('edit') is True and back.get('open') is True, back)
+            # nothing has to be handed back: they never stopped receiving the room's work
+            await friend.send(json.dumps({'t': 'sync'}))
             fresh = await drain(friend, 'doc')
-            ok('they are handed the track as it now stands', fresh['doc']['bpm'] == 150, fresh['doc'])
+            ok('the track they still hold is the current one', fresh['doc']['bpm'] == 150, fresh['doc'])
 
             await friend.send(json.dumps({'t': 'ops', 'ops': [{'op': 'set', 'path': ['bpm'], 'value': 128}], 'h': 'z'}))
             await drain(owner, 'ops')  # the owner hears it

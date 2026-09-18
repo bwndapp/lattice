@@ -1,6 +1,7 @@
 /**
- * Everyone else on this track: their cursor, their selection, their name — and, when it's
- * a track they may change, the track itself.
+ * Everyone else on this track: their cursor, their selection, their name — and the track
+ * itself, which everyone in the room receives. Being signed in is what decides whether you
+ * can send anything back; watching gets the same edits and the same playhead, read-only.
  *
  *   join(trackId)                       open the room (leave() when the track changes)
  *   usePeers() / usePresence()          the others, and us, for drawing them
@@ -123,7 +124,9 @@ export function sendOps(ops, hash) {
   compareNotes()
 }
 
-const askForTrack = () => { if (canEdit()) sock.send('{"t":"sync"}') }
+// Asking for the track again is not a change to it, so watching is enough: a watcher
+// holds a copy like everyone else, and a copy you can't recover is worse than none.
+const askForTrack = () => { if (sock?.readyState === WebSocket.OPEN) sock.send('{"t":"sync"}') }
 
 /** After a quiet spell, tell the others what we have, so a disagreement can't go unnoticed. */
 function compareNotes() {
@@ -250,9 +253,10 @@ async function open(trackId) {
       return
     }
     if (msg.t === 'role') {
+      // what we may do changes; what we can see doesn't, because the room's copy keeps
+      // arriving either way. Being put back to watching stops us sending, nothing more.
       mayEdit = !!msg.edit
       if (me) me = { ...me, edit: mayEdit, open: msg.open !== false }
-      if (!mayEdit) doc?.reset?.() // we're watching now: we no longer know what the room has
       changed()
       onRoleFn?.({ edit: mayEdit, open: msg.open !== false })
       return

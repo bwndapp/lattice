@@ -16,8 +16,8 @@ Messages are JSON text frames.
     ← {"t":"me","id":3,"color":"#e8b","edit":true}              who the server thinks you are
     ← {"t":"here","peers":[...]} · {"t":"join"|"at"|"sel"|"gone", ...}
 
-  the track itself (anyone signed in — see _may_edit)
-    ← {"t":"seed"}                       you're first in: send what you have
+  the track itself (everyone present receives it; only the signed in may send — see _may_edit)
+    ← {"t":"seed"}                       you're first in, and may edit: send what you have
     → {"t":"doc","doc":{...}}            here it is
     ← {"t":"doc","doc":{...},"v":12}     what the room already has, for a late arrival
     → {"t":"ops","ops":[...],"h":"5f2a"} what I just changed, and my fingerprint after it
@@ -50,6 +50,13 @@ A private track only lets its owner in; anyone who can open a track can be prese
 signed in or not. Changing one needs a sign-in, nothing more: a shared link is an
 invitation to work on it together. Saving is still the owner's alone, so nothing anyone
 does in a room can overwrite the version they keep.
+
+Someone who isn't signed in watches, and watching is read-only rather than blind: they get
+the room's copy of the track, the edits as they land and the playhead as it moves, and they
+can send none of it. The room's copy includes work nobody has saved yet, which is the point
+— a room is people working on something before it's finished — so a track whose progress
+shouldn't be on show to a link-holder wants to be private, where nobody else gets in at
+all.
 """
 import asyncio
 import json
@@ -241,12 +248,15 @@ async def collab(ws: WebSocket, track_id: str):
         await ws.send_text(json.dumps({"t": "here", "peers": [p.public() for p in room.peers.values()]}))
         await room.tell_others(peer.id, {"t": "join", "peer": peer.public()})
         room.peers[peer.id] = peer
-        if edit:
-            # the room's copy if there is one, otherwise this is the session and we want theirs
-            if room.doc is None:
+        # The track as the room has it, to everyone who may open it. Watching is read-only,
+        # not blind and deaf: a watcher sees the edits land and hears the room play, and what
+        # they can't do is send any of either. Only someone who may edit can hand a room its
+        # first copy, so an empty room asks them alone.
+        if room.doc is None:
+            if edit:
                 await ws.send_text(json.dumps({"t": "seed"}))
-            else:
-                await ws.send_text(json.dumps({"t": "doc", "doc": room.doc, "v": room.version}))
+        else:
+            await ws.send_text(json.dumps({"t": "doc", "doc": room.doc, "v": room.version}))
             # and what the room is playing, if it is. The stamp on it is this server's, so
             # however long ago it was said a newcomer can work out where the song has got
             # to by now — otherwise they sit in silence until someone's hand next touches
@@ -296,7 +306,7 @@ async def collab(ws: WebSocket, track_id: str):
                     room.doc = doc
                     room.version = 1
                     await ws.send_text(json.dumps({"t": "ack", "v": room.version}))
-                    await room.tell_editors(peer.id, {"t": "doc", "doc": room.doc, "v": room.version})
+                    await room.tell_others(peer.id, {"t": "doc", "doc": room.doc, "v": room.version})
             elif kind == "ops" and peer.edit:
                 ops = msg.get("ops")
                 if not isinstance(ops, list) or not ops or len(raw) > MAX_OPS:
@@ -322,14 +332,15 @@ async def collab(ws: WebSocket, track_id: str):
                 # in its place they would settle on different values — the one who went
                 # last locally would be the only one not to see themselves win. Everybody
                 # applying the same changes in the same order is what makes them agree.
-                await room.tell_editors(None, {"t": "ops", "id": peer.id, "ops": ops, "v": room.version, "h": msg.get("h")})
+                await room.tell_others(None, {"t": "ops", "id": peer.id, "ops": ops, "v": room.version, "h": msg.get("h")})
             elif kind == "same" and peer.edit:
                 # a quiet moment: everyone says what they think they have, and anyone whose
                 # copy doesn't match at the same version asks for the whole track. Two
                 # people adding something at the same instant can end up with the same
                 # things in a different order, and this is what settles it.
                 await room.tell_editors(peer.id, {"t": "same", "id": peer.id, "v": msg.get("v"), "h": msg.get("h")})
-            elif kind == "sync" and peer.edit:
+            elif kind == "sync":
+                # a watcher keeps a copy too, so a watcher has to be able to recover one
                 if room.doc is not None:
                     await ws.send_text(json.dumps({"t": "doc", "doc": room.doc, "v": room.version}))
             elif kind == "time":
@@ -347,7 +358,7 @@ async def collab(ws: WebSocket, track_id: str):
                     "at": time.time() * 1000,  # stamped here, so it needs no clock of its own
                 }
                 room.play = said  # the room is the thing that's playing, so the room holds it
-                await room.tell_editors(peer.id, said)
+                await room.tell_others(peer.id, said)
             elif kind == "lock":
                 # only the owner, and everyone finds out at once: someone who has just
                 # lost the right stops being sent changes, and stops being able to send any
@@ -359,10 +370,9 @@ async def collab(ws: WebSocket, track_id: str):
                     was = other.edit
                     other.edit = _may_edit(row, {"sub": other.sub} if other.sub else None, room.open)
                     if other.edit != was:
+                        # what they may do changes; what they can see doesn't, because
+                        # everyone in the room has the track either way
                         await room.send(other, json.dumps({"t": "role", "edit": other.edit, "open": room.open}))
-                        # a peer who has just been let in needs the track as it stands
-                        if other.edit and room.doc is not None:
-                            await room.send(other, json.dumps({"t": "doc", "doc": room.doc, "v": room.version}))
                 await room.tell_others(peer.id, {"t": "open", "on": room.open})
             elif kind == "ping":
                 await ws.send_text('{"t":"pong"}')

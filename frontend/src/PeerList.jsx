@@ -4,7 +4,9 @@ import { usePeers, usePresence } from './collab.js'
  * Who else has this track open, as a row of initials, and the switch that puts your
  * playhead in step with theirs. Nothing shows when you're alone.
  *
- *   together / onTogether   the "play together" switch, when this track is yours to edit
+ *   together / onTogether   the "play together" switch, for anyone in the room — someone
+ *                           watching hears it play like everyone else, so they need the
+ *                           same way out of it as everyone else
  */
 export default function PeerList({ together = false, onTogether = null }) {
   const peers = usePeers()
@@ -20,7 +22,7 @@ export default function PeerList({ together = false, onTogether = null }) {
           <span key={p.id} className={`peer-dot ${p.edit ? '' : 'watching'}`} style={{ '--peer': p.color }}>{p.name.slice(0, 1).toUpperCase()}</span>
         ))}
       </span>
-      {onTogether && me?.edit && (
+      {onTogether && me && (
         <button
           className={`btn tiny ${together ? 'on' : ''}`}
           onClick={() => onTogether(!together)}

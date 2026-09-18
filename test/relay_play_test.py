@@ -84,6 +84,11 @@ async def main():
                 tick = await drain(c, 'time')
                 ok('anyone may ask the time', tick.get('c') == 7, tick)
 
+                # ...but watching is not deaf: the playhead reaches them like everyone else
+                await a.send(json.dumps({'t': 'play', 'on': True, 'pos': 2.0, 'cps': 0.5}))
+                heard_c = await drain(c, 'play')
+                ok('a watcher hears the playhead', heard_c['on'] is True and heard_c['pos'] == 2.0, heard_c)
+
             # walking in while the room is playing: you are told, without anyone touching
             # the transport again, and told when — so you can work out where it is by now
             await a.send(json.dumps({'t': 'play', 'on': True, 'pos': 4.0, 'cps': 0.5}))
