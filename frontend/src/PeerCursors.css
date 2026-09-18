@@ -43,7 +43,3 @@
   outline: 2px solid var(--peer);
   outline-offset: 1px;
 }
-
-/* The tray's own switch keeps this: everything else about the old header row went with
-   PeerList when who's-here moved to the corner (PeerTray.css). */
-.btn.tiny { padding: 0.1rem 0.35rem; font-size: 10px; }

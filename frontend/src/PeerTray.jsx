@@ -17,6 +17,8 @@ import './PeerTray.css'
  *     working looks about the room
  *   · a change of theirs landing makes them nod, so the track moving under your hands has
  *     a face attached to it rather than being weather
+ *   · somebody on another view says which one, unasked — the one thing you can't work out
+ *     by looking, because their cursor is somewhere this screen isn't showing
  *
  * It lives at the app's root rather than in the header, so it's in the same corner
  * wherever you are — the patch, the timeline, the browser, the code — and it isn't there
@@ -26,8 +28,9 @@ import './PeerTray.css'
  * sphere, so a gaze travels a curved path rather than sliding across a disc.
  */
 
-/** Where each of them is, in the words the buttons use. */
+/** Where each of them is: the long form for the tooltip, one word for the bubble. */
 const WHERE = { song: 'on the timeline', graph: 'on the patch', browse: 'browsing', code: 'in the code' }
+const TAB = { song: 'timeline', graph: 'patch', browse: 'browsing', code: 'code' }
 
 const clamp = (v) => Math.max(-1, Math.min(1, v))
 
@@ -79,6 +82,9 @@ function PeerFace({ peer, mine = false, away = false, faces = null }) {
   }, [resting, mine])
 
   const said = [peer.name, mine ? '(you)' : WHERE[peer.view], peer.edit ? null : '(watching)'].filter(Boolean).join(' ')
+  // Somebody on another view says so without being asked: that's the one case where you
+  // can't see for yourself, because their cursor is on a surface you don't have open.
+  const tab = away ? TAB[peer.view] : null
   return (
     <span
       className={`peer-face ${mine ? 'me' : ''} ${away ? 'away' : ''}`}
@@ -86,16 +92,18 @@ function PeerFace({ peer, mine = false, away = false, faces = null }) {
       style={{ '--face-skin': '#0b0b0f', '--face-ink': peer.color, '--face-ring': peer.color }}
     >
       <span className="peer-face-box" ref={box} />
-      <span className="peer-face-name">{peer.name}</span>
+      <span className="peer-face-says">
+        {tab && <span className="says-tab">{tab}</span>}
+        <span className="says-name">{peer.name}</span>
+      </span>
     </span>
   )
 }
 
 /**
- *   view                    the view WE are on, so a face can tell who's somewhere else
- *   together / onTogether   the switch that puts your playhead in step with theirs
+ *   view   the view WE are on, so a face can tell who's somewhere else
  */
-export default function PeerTray({ together = false, onTogether = null, view = null }) {
+export default function PeerTray({ view = null }) {
   const peers = usePeers()
   const me = usePresence()
   const faces = useRef(new Map())
@@ -112,14 +120,6 @@ export default function PeerTray({ together = false, onTogether = null, view = n
         ))}
         <PeerFace peer={me} mine />
       </div>
-      {onTogether && (
-        <button
-          className={`btn tiny peer-together ${together ? 'on' : ''}`}
-          onClick={() => onTogether(!together)}
-          aria-pressed={together}
-          title={together ? 'Your playhead follows whoever hits play' : 'Play in time with the others: whoever hits play, everyone hears it from the same place'}
-        >together</button>
-      )}
     </div>
   )
 }

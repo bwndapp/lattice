@@ -16,7 +16,7 @@
   box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45);
 }
 
-.peer-faces { display: flex; align-items: center; gap: 2px; }
+.peer-faces { display: flex; align-items: center; gap: 5px; }
 
 .peer-face {
   position: relative;
@@ -45,27 +45,51 @@
 /* off on a view this screen isn't showing: still here, just not in the room with you */
 .peer-face.away { opacity: 0.6; }
 
-/* the name only when you go looking for it, so a row of faces stays a row of faces */
-.peer-face-name {
+/* What they're doing, as a little speech bubble over their head.
+   Someone on another view shows it without being asked — that's the case you can't see for
+   yourself. Everyone else's stays out of the way until you hover, and hovering always wins,
+   so you can put a name to a face that's telling you where it is. */
+.peer-face-says {
   position: absolute;
-  bottom: calc(100% + 4px);
+  bottom: calc(100% + 6px);
   left: 50%;
-  transform: translateX(-50%);
+  transform: translateX(-50%) translateY(2px);
   padding: 1px 5px;
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 1.5;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.6;
+  letter-spacing: 0.01em;
   white-space: nowrap;
   color: #0b0b0f;
   background: var(--face-ink, #fff);
-  border-radius: 3px;
+  border-radius: 4px;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 120ms ease;
+  transition: opacity 120ms ease, transform 120ms ease;
 }
-.peer-face:hover .peer-face-name { opacity: 1; }
+/* the tail, so it reads as something the face is saying rather than a tag stuck on it */
+.peer-face-says::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  margin-left: -3px;
+  border: 3px solid transparent;
+  border-top-color: var(--face-ink, #fff);
+  border-bottom: 0;
+}
+.peer-face.away .peer-face-says,
+.peer-face:hover .peer-face-says { opacity: 1; transform: translateX(-50%) translateY(0); }
+/* a bubble being read sits above its neighbours' */
+.peer-face:hover { z-index: 1; }
 
-.peer-together { flex: none; }
+.says-tab { display: inline; }
+.says-name { display: none; }
+/* hovering asks who, not where */
+.peer-face:hover .says-tab { display: none; }
+.peer-face:hover .says-name { display: inline; }
 
 @media (max-width: 640px) {
   .peer-tray { right: 8px; bottom: 8px; padding: 5px 7px; }
