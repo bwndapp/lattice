@@ -277,7 +277,10 @@
    * 80ms rather than teleporting, which is what makes a snap to the grid read as a pull
    * rather than a jump.
    */
+  /* the clip you're carrying goes faint: the outline below says where it lands, and two
+     solid rectangles fighting over that answer is what made it hard to read */
   .clip.lifted, .clip.lifted:hover {
+    opacity: 0.3;
     z-index: 6;
     /* --lean is how hard you're throwing it, set frame by frame while you drag */
     transform: scale(1.035) rotate(var(--lean, 0deg));
@@ -361,3 +364,15 @@
 .song-color-custom input { width: 42px; height: 22px; padding: 0; border: 1px solid var(--line); background: none; cursor: var(--ring); }
 .song-color-reset { justify-self: start; font-size: 11px; }
 .clip.automation .clip-name { text-shadow: 0 0 3px var(--clip), 0 0 3px var(--clip), 0 0 1px var(--clip); } /* the name stays readable over the curve */
+
+/* where a dragged clip will land: no weight, no spring, no lag — just the answer */
+.clip-landing {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  border: 1.5px solid rgba(255, 255, 255, 0.9);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+  transition: none;
+}

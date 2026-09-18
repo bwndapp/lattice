@@ -1161,6 +1161,22 @@ export default function Timeline({ project, onUpdateProject, transport, started 
                   </div>
                 )
               })}
+              {/* where it lands, drawn the instant it changes: the clip itself springs
+                  after the pointer, which is nice to watch and no help at all in telling
+                  you what you're about to drop it on */}
+              {drag?.lift && clips.filter((c) => drag.changes?.[c.id] || c.id.startsWith('__copy')).map((c) => (
+                <div
+                  key={`landing-${c.id}`}
+                  className="clip-landing"
+                  aria-hidden
+                  style={{
+                    left: c.start * ppb,
+                    top: c.lane * LANE_H + 3,
+                    width: Math.max(4, c.len * ppb - 1),
+                    height: LANE_H - 6,
+                  }}
+                />
+              ))}
               {ghost && ghost.lane >= 0 && (
                 <div className={`clip preview ghost ${LANE_H >= 30 ? 'roomy' : ''}`} style={{ left: ghost.start * ppb, top: ghost.lane * LANE_H + 3, width: ghost.len * ppb - 1, height: LANE_H - 6, '--clip': colorFor(ghost.src ?? '', song.colors), '--clip-ink': inkFor(colorFor(ghost.src ?? '', song.colors)) }}>
                   <ClipSketch url={sketchFor(ghost.src)} bars={partBySrc.get(ghost.src)?.bars} ppb={ppb} into={0} laneH={LANE_H} />
