@@ -215,15 +215,23 @@ export default function App() {
    * here has nothing to catch up on, so their first visit is marked as seen without a
    * word: the whole thing is new to them.
    */
-  const [news, setNews] = useState(() => {
+  const [news] = useState(() => {
     const seen = readPref(SEEN_KEY, null)
-    if (seen == null) { writePref(SEEN_KEY, LATEST); return null }
-    return seen < LATEST ? seen : null
+    if (seen != null) return seen < LATEST ? seen : null
+    // No note of what you've seen. Someone who has used lattice before — a track they had
+    // open, a view they left on — has news waiting whether or not this was ever recorded;
+    // someone whose browser knows nothing about lattice is new, and the whole thing is new
+    // to them, so they're told nothing and marked up to date.
+    let used = false
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        if (/^(lattice|strudel):/.test(localStorage.key(i))) { used = true; break }
+      }
+    } catch { /* storage unavailable */ }
+    if (!used) writePref(SEEN_KEY, LATEST)
+    return used ? '' : null
   })
-  const [showNews, setShowNews] = useState(() => {
-    const seen = readPref(SEEN_KEY, null)
-    return seen != null && seen < LATEST
-  })
+  const [showNews, setShowNews] = useState(() => news != null)
   const closeNews = () => { writePref(SEEN_KEY, LATEST); setShowNews(false) }
   // the octave every keyboard in the app plays from, shown in the bar so it's never a
   // surprise which one you're on (see keyboard.js)
