@@ -655,8 +655,8 @@ button.lcd-unit:hover { color: var(--acid); }
 .ch-kind { font-size: 11px; color: var(--muted); padding: 0.25rem 0; }
 /* a code instrument's line, in the editor the code node uses (see CodeBox.jsx) */
 .codebox.ch-code { min-width: 0; width: 100%; border-radius: 0; }
-.codebox.ch-code .codebox-cm { max-height: 7.5rem; }
-.rack-body.compact .codebox.ch-code .codebox-cm { max-height: 4.5rem; }
+.codebox.ch-code .codebox-cm { min-height: 3.2rem; max-height: 7.5rem; }
+.rack-body.compact .codebox.ch-code .codebox-cm { min-height: 2.6rem; max-height: 4.5rem; }
 .steps {
   position: relative;
   display: grid;

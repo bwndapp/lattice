@@ -109,10 +109,19 @@ export default function CodeBox({ value = '', onCommit, numbers = false, autoFoc
 
   return (
     <div className={`codebox ${dirty ? 'dirty' : ''} ${className}`}>
-      <div className="codebox-cm nodrag nowheel" ref={host} />
+      {/* the way out to a bigger window is on the box itself, always: a mark that only
+          appears once you're hovering the thing you're trying to get out of is no way out */}
       {onExpand && (
-        <button type="button" className="codebox-expand" onClick={onExpand} title="Open it bigger (a window of its own)" aria-label="Open the code bigger">⤢</button>
+        <div className="codebox-bar">
+          <button
+            type="button"
+            className="codebox-expand nodrag"
+            onClick={onExpand}
+            title="Open this code in a window of its own — drag it, resize it, leave it open"
+          ><span aria-hidden>⤢</span> bigger</button>
+        </div>
       )}
+      <div className="codebox-cm nodrag nowheel" ref={host} />
       {dirty && <span className="codebox-dirty" aria-hidden>ctrl/cmd ⏎</span>}
     </div>
   )
