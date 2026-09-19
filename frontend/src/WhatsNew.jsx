@@ -23,11 +23,17 @@ export default function WhatsNew({ since, onClose }) {
   const closeRef = useRef(null)
   const listRef = useRef(null)
   const [more, setMore] = useState(false) // something under the fold: the list fades out
-  const fresh = since ? NEWS.filter((entry) => entry.id > since) : []
-  // it arrived with news to show: start on that, and keep the rest behind a line
-  const [all, setAll] = useState(!fresh.length)
-  const shown = all ? NEWS : fresh
-  const behind = NEWS.length - fresh.length
+  /*
+   * It always opens on the news and never on the archive: what's happened since you were
+   * last here, or — when there's no record of that, or you opened it yourself with nothing
+   * new — the latest release on its own. Everything older is one line away and stays
+   * there until asked for.
+   */
+  const fresh = since != null ? NEWS.filter((entry) => entry.id > since) : []
+  const opening = fresh.length ? fresh : NEWS.slice(0, 1)
+  const [all, setAll] = useState(false)
+  const shown = all ? NEWS : opening
+  const behind = NEWS.length - opening.length
 
   useEffect(() => {
     const dialog = ref.current
@@ -56,7 +62,7 @@ export default function WhatsNew({ since, onClose }) {
       onClick={(e) => { if (e.target === ref.current) onClose() }}
     >
       <div className="cd-body">
-        <h2 id="whats-new-title" className="cd-title">{all ? 'What’s new' : fresh.length > 1 ? 'While you were away' : 'What’s new'}</h2>
+        <h2 id="whats-new-title" className="cd-title">{!all && fresh.length > 1 ? 'While you were away' : 'What’s new'}</h2>
         <p className="wn-now">you’re on <b>{VERSION}</b></p>
         <div className={`wn-list ${more ? 'more' : ''}`} ref={listRef}>
           {shown.map((entry) => (
