@@ -763,6 +763,14 @@ function matchScore(item, tokens) {
 }
 
 const PAL_GROUPS = [['recent', 'recent'], ...GROUPS, ['instruments', 'instruments']]
+/*
+ * The add pane opens with every group shut: a wall of a hundred nodes is a thing to get
+ * past, not a thing to read, and the way in is the search box or the one heading you want.
+ * A new key rather than a new default, because the old one was written for everybody the
+ * first time they opened the pane, so a default alone would never reach them.
+ */
+const PAL_CLOSED_KEY = 'lattice:palette:shut'
+const PAL_ALL_SHUT = [...PAL_GROUPS.map(([group]) => group), 'unused']
 const PAL_MIN = 150
 const PAL_MAX = 460
 
@@ -782,7 +790,7 @@ function Palette({ onAdd, unused = [] }) {
   const items = useMemo(() => paletteItems(), [])
   const [width, setWidth] = useState(() => Math.min(PAL_MAX, Math.max(PAL_MIN, readPalPref('strudel:palette:width', 200))))
   const [collapsed, setCollapsed] = useState(() => readPalPref('strudel:palette:collapsed', false))
-  const [closed, setClosed] = useState(() => new Set(readPalPref('strudel:palette:closed', [])))
+  const [closed, setClosed] = useState(() => new Set(readPalPref(PAL_CLOSED_KEY, PAL_ALL_SHUT)))
   const [recent, setRecent] = useState(() => readPalPref('strudel:palette:recent', []))
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState(0)
@@ -791,7 +799,7 @@ function Palette({ onAdd, unused = [] }) {
 
   useEffect(() => writePalPref('strudel:palette:width', width), [width])
   useEffect(() => writePalPref('strudel:palette:collapsed', collapsed), [collapsed])
-  useEffect(() => writePalPref('strudel:palette:closed', [...closed]), [closed])
+  useEffect(() => writePalPref(PAL_CLOSED_KEY, [...closed]), [closed])
   useEffect(() => writePalPref('strudel:palette:recent', recent), [recent])
 
   // "/" jumps to the search box from anywhere that isn't a text field
