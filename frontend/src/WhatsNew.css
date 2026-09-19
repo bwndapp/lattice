@@ -1,0 +1,20 @@
+/* the changelog dialog (see WhatsNew.jsx) */
+.whats-new { width: min(560px, calc(100vw - 32px)); }
+.wn-list { display: grid; gap: 1.1rem; max-height: min(58vh, 30rem); overflow-y: auto; padding-right: 0.3rem; }
+.wn-entry { display: grid; gap: 0.4rem; }
+.wn-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem; flex-wrap: wrap; }
+.wn-title {
+  margin: 0; font-family: var(--display); font-weight: 800; font-stretch: 112%;
+  font-size: 14px; line-height: 1.25; color: var(--paper); text-wrap: balance;
+}
+.wn-when { font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: #6f6f67; white-space: nowrap; }
+.wn-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.wn-items li {
+  position: relative; padding-left: 0.85rem;
+  font-size: 12px; line-height: 1.6; color: var(--muted);
+}
+.wn-items li::before { content: ''; position: absolute; left: 0; top: 0.62em; width: 4px; height: 4px; border-radius: 50%; background: #45453b; }
+.wn-items b { color: var(--paper); font-weight: 700; }
+/* what you haven't seen before: its bullets are lit, the rest of the list is history */
+.wn-entry.fresh .wn-title { color: var(--acid); }
+.wn-entry.fresh .wn-items li::before { background: var(--acid); }

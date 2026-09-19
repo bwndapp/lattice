@@ -15,6 +15,8 @@ import Graph from './Graph.jsx'
 import Timeline from './Timeline.jsx'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import About from './About.jsx'
+import WhatsNew from './WhatsNew.jsx'
+import { LATEST, SEEN_KEY } from './changelog.js'
 import Popover from './Popover.jsx'
 import { Glass } from './Glass.jsx'
 import { AutomationEditor } from './Automation.jsx'
@@ -205,6 +207,24 @@ export default function App() {
   const [confirmClear, setConfirmClear] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showAbout, setShowAbout] = useState(false)
+  /*
+   * What's changed since you were last here, once, when you open lattice.
+   *
+   * The news ships with the build, so a browser that has the new app has the new entries —
+   * there's nothing to poll and nothing to get out of step. Someone who has never been
+   * here has nothing to catch up on, so their first visit is marked as seen without a
+   * word: the whole thing is new to them.
+   */
+  const [news, setNews] = useState(() => {
+    const seen = readPref(SEEN_KEY, null)
+    if (seen == null) { writePref(SEEN_KEY, LATEST); return null }
+    return seen < LATEST ? seen : null
+  })
+  const [showNews, setShowNews] = useState(() => {
+    const seen = readPref(SEEN_KEY, null)
+    return seen != null && seen < LATEST
+  })
+  const closeNews = () => { writePref(SEEN_KEY, LATEST); setShowNews(false) }
   // the octave every keyboard in the app plays from, shown in the bar so it's never a
   // surprise which one you're on (see keyboard.js)
   const [octave, setOctave] = useOctave()
@@ -1358,6 +1378,7 @@ export default function App() {
         track && 'line',
         track && { label: 'copy link', onSelect: () => share() },
         'line',
+        { label: 'what’s new…', onSelect: () => setShowNews(true), hint: 'Everything that has changed, newest first' },
         { label: 'about lattice…', onSelect: () => setShowAbout(true), hint: 'What this is, and where its source lives' },
       ],
     },
@@ -1623,6 +1644,7 @@ export default function App() {
       </header>
 
       {showAbout && <About onClose={() => setShowAbout(false)} />}
+      {showNews && <WhatsNew since={news} onClose={closeNews} />}
       {showExport && project && (
         <ExportDialog
           project={project}
