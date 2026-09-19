@@ -6,7 +6,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import { APPLY, BUS_NODES, CHANNEL_FADER, FX_UNITS, GROUPS, NODE_TYPES, channelGain, defaultData, inputKey, inputsOf, makeFxUnit, makesCycle } from './graph'
 import { ENGINES } from './instruments/index.js'
-import { openSynth } from './instruments/windows.js'
+import { openCode, openSynth } from './instruments/windows.js'
 import { INSTRUMENTS, INSTRUMENT_MIME, instrumentChannel, makePattern, newId } from './project'
 import Knob from './Knob.jsx'
 import { canAutomate, nodeTarget, unitTarget } from './automation.js'
@@ -301,7 +301,11 @@ function Param({ node, param, value: given, onChange, target: givenTarget }) {
       return (
         <label className="node-field wide nodrag nowheel">
           <span>{param.label}</span>
-          <CommitInput multiline className="node-code" value={value} spellCheck={false} rows={3} onCommit={set} title="Any Strudel pattern · ctrl/cmd + enter to apply" />
+          <CodeBox
+            value={String(value ?? '')}
+            onCommit={set}
+            onExpand={() => ctx.editCode({ nodeId: node.id, key: param.key })}
+          />
         </label>
       )
     default: // text, mini
@@ -1351,7 +1355,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
       automation?.showTimeline()
     },
     pickSound: (nodeId, key, at) => setPicking({ nodeId, key, ...at }),
-    editCode: (what) => setCoding(what),
+    editCode: ({ nodeId, key }) => openCode({ nodeId, key }),
     newPatternFor: (nodeId) => {
       const patternId = newId()
       onUpdateProject((p) => {
