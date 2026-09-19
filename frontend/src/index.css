@@ -225,9 +225,19 @@ body.dragging, body.dragging * { user-select: none !important; -webkit-user-sele
 .track > :not(.title-input) { flex-shrink: 0; }
 .bar .seg.views { font-size: inherit; padding: 0; align-items: center; gap: 0; flex-wrap: nowrap; }
 /* left and right halves grow alike, so the canvas switch sits in the middle whenever both fit */
-.bar-side { display: flex; align-items: center; gap: inherit; flex: 1 1 0; align-self: stretch; }
-.bar-side.left { min-width: max-content; }
-.bar-side.right { min-width: min-content; justify-content: flex-end; }
+.bar-side { display: flex; align-items: center; gap: inherit; flex: 1 1 0; align-self: stretch; min-width: 0; }
+.bar-side.right { justify-content: flex-end; }
+/*
+ * The bar can't grow past the window, so as it fills up the least-used things leave it
+ * rather than the most recently added thing pushing the save button off the end. In order
+ * of what you'd miss least: the loop's bar numbers (the button still says loop), the
+ * meter (it's in the project and rarely changed mid-song), the bar.beat clock (the
+ * timeline's playhead says the same thing), then the octave (− and = still move it).
+ */
+@media (max-width: 1380px) { .bar .loop-range { display: none; } }
+@media (max-width: 1240px) { .bar .lcd.meter { display: none; } }
+@media (max-width: 1120px) { .bar .position.clock { display: none; } }
+@media (max-width: 1000px) { .bar .lcd.oct { display: none; } }
 .btn.browse-btn { display: inline-flex; align-items: center; gap: 0.4rem; flex: none; font-weight: 700; margin-left: auto; }
 .btn.browse-btn svg { display: block; color: var(--muted); }
 .btn.browse-btn:hover svg, .btn.browse-btn.on svg { color: inherit; }
