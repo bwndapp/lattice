@@ -350,6 +350,16 @@ export const NODE_TYPES = {
     group: 'effect', label: 'sidechain', blurb: 'Duck the sound every time the trigger hits (kick pumps the bass)',
     // named inputs: slot 0 is ducked, slot 1 does the ducking
     inputs: ['sound', 'trigger'],
+    /*
+     * As many sounds as you like get ducked; they land on one bus and pump together, which
+     * is what you want — a bass, a pad and a stab all breathing with the same kick.
+     *
+     * The trigger stays one, and that isn't an omission. Ducking is one gain curve written
+     * onto the bus; two triggers would each write their own over the top of the other and
+     * you'd hear whichever hit last, not both. Wire triggers into one pattern or a bus
+     * first if you want a kick and a snare to duck together.
+     */
+    many: ['in-0'],
     params: [
       { key: 'depth', type: 'knob', label: 'depth', min: 0, max: 1, def: 0.85 },
       { key: 'attack', type: 'knob', label: 'attack', min: 0, max: 0.1, def: 0.005, unit: 's' },
@@ -359,11 +369,13 @@ export const NODE_TYPES = {
     // Strudel ducks an audio bus ("orbit"): the sound plays on its own bus, the trigger
     // ducks that bus. A silent trigger still ducks (postgain 0 only mutes its own sound).
     code: (d, xs, ctx) => {
-      const sound = xs[ctx.slots.indexOf('in-0')]
+      const sounds = xs.filter((_, i) => ctx.slots[i] === 'in-0')
       const trigger = xs[ctx.slots.indexOf('in-1')]
-      if (!sound) return null
-      if (!trigger) { if (ctx.route) ctx.route.orbit = ctx.inputOrbits?.[ctx.slots.indexOf('in-0')] ?? null; return sound }
-      // a sound already on its own bus (a haas or widener before this) keeps it, so both work
+      if (!sounds.length) return null
+      const sound = sounds.length === 1 ? sounds[0] : `stack(${sounds.join(', ')})`
+      if (!trigger) { if (ctx.route) ctx.route.orbit = sounds.length === 1 ? ctx.inputOrbits?.[ctx.slots.indexOf('in-0')] ?? null : null; return sound }
+      // a sound already on its own bus (a haas or widener before this) keeps it, so both work;
+      // several of them move onto the first one's, since ducking is one curve on one bus
       const orbit = ctx.inputOrbits?.[ctx.slots.indexOf('in-0')] ?? ctx.orbit
       if (ctx.route) ctx.route.orbit = orbit
       // A silent trigger only has to exist for its onset. Left as the instrument it came
@@ -373,7 +385,7 @@ export const NODE_TYPES = {
       const trig = d.hear === 'silent'
         ? `${trigger}.fmap((v) => ({ ...v, s: 'sine', bank: undefined, _c: undefined, postgain: 0 }))`
         : trigger
-      return `stack(${sound}.orbit(${orbit}), ${trig}.duckorbit(${orbit}).duckonset(${K(ctx, d, 'attack')}).duckattack(${K(ctx, d, 'release')}).duckdepth(${K(ctx, d, 'depth')}))`
+      return `stack(${sounds.map((x) => `${x}.orbit(${orbit})`).join(', ')}, ${trig}.duckorbit(${orbit}).duckonset(${K(ctx, d, 'attack')}).duckattack(${K(ctx, d, 'release')}).duckdepth(${K(ctx, d, 'depth')}))`
     },
   },
   eq3: {

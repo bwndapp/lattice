@@ -601,13 +601,15 @@ function StudioNode({ id, selected }) {
           <ul className="node-inputs named">
             {spec.inputs.map((role, i) => {
               const handle = `in-${i}`
-              const wire = wires.find((w) => w.targetHandle === handle)
-              const src = wire && ctx.project.nodes.find((n) => n.id === wire.source)
+              const on = wires.filter((w) => w.targetHandle === handle)
+              const takesMany = spec.many?.includes(handle)
               return (
-                <li key={handle} className={`slot ${wire ? '' : 'free'}`}>
-                  <Handle type="target" position={Position.Left} id={handle} className={`port in ${wire ? '' : 'free'}`} />
+                <li key={handle} className={`slot ${on.length ? '' : 'free'}`}>
+                  <Handle type="target" position={Position.Left} id={handle} className={`port in ${on.length ? '' : 'free'}`} />
                   <span className="slot-role">{role}</span>
-                  <span className="slot-name">{wire ? originLabel(ctx.project, wire) : 'connect'}</span>
+                  <span className="slot-name" title={on.map((w) => originLabel(ctx.project, w)).join(', ')}>
+                    {on.length ? on.map((w) => originLabel(ctx.project, w)).join(', ') : takesMany ? 'connect any number' : 'connect'}
+                  </span>
                 </li>
               )
             })}
@@ -1303,9 +1305,16 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
     setDetaching(null)
     onUpdateProject((p) => {
       const target = p.nodes.find((n) => n.id === c.target)
-      const handle = NODE_TYPES[target?.type]?.inputs === 1 ? 'in' : c.targetHandle
-      p.edges = p.edges.filter((e) => !(e.target === c.target && e.targetHandle === handle)) // an input takes one wire; the new one wins
-      p.edges.push({ source: c.source, sourceHandle: c.sourceHandle ?? 'out', target: c.target, targetHandle: handle })
+      const spec = NODE_TYPES[target?.type]
+      const handle = spec?.inputs === 1 ? 'in' : c.targetHandle
+      const source = c.sourceHandle ?? 'out'
+      // an input takes one wire and the new one wins — unless the node says that input
+      // takes as many as you give it (a sidechain's sound side), where they sum
+      const piles = spec?.many?.includes(handle)
+      p.edges = p.edges.filter((e) => (piles
+        ? !(e.target === c.target && e.targetHandle === handle && e.source === c.source && e.sourceHandle === source)
+        : !(e.target === c.target && e.targetHandle === handle)))
+      p.edges.push({ source: c.source, sourceHandle: source, target: c.target, targetHandle: handle })
     })
   }, [onUpdateProject])
 
@@ -1487,7 +1496,9 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
               fromRef.current = handleType === 'source' ? { nodeId, handleId } : null
               // grabbing a connected input pulls its wire off; a free one asks for something to feed it
               if (handleType !== 'target') return
-              const wire = project.edges.find((e) => e.target === nodeId && e.targetHandle === (handleId ?? 'in'))
+              // on an input that takes many, pulling takes the newest wire off the pile
+              const onHandle = project.edges.filter((e) => e.target === nodeId && e.targetHandle === (handleId ?? 'in'))
+              const wire = onHandle[onHandle.length - 1]
               detachRef.current = wire?.id ?? null
               toRef.current = wire ? null : { nodeId, handleId }
               setDetaching(detachRef.current)

@@ -27,13 +27,14 @@ export const NEWS = [
     id: '2026-09-19-3',
     date: '2026-09-19',
     version: '0.2.0',
-    title: 'Pitch, and frequency shift',
+    title: 'Pitch, frequency shift, and ducking a group',
     items: [
       '**Pitch** — semitones up or down with the tempo left alone',
       'Its **window** knob: short follows a sound closely and burbles, long is smooth and smears',
       '**Freq shift** — every partial moved by the same hertz, so a note stops being a note',
       'A little of it shimmers and beats · a lot of it makes bells',
       '**Spread** moves the two sides by different amounts, for a swirl',
+      'A **sidechain** ducks as many sounds as you wire into it, all pumping together',
     ],
   },
   {
