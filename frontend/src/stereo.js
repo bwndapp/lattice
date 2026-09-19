@@ -44,6 +44,152 @@ class CoarseProcessor extends AudioWorkletProcessor {
 registerProcessor('lattice-coarse', CoarseProcessor)
 
 /*
+ * Pitch: the bus moved up or down without moving the tempo.
+ *
+ * Everything written is kept in a ring, and two read heads run through it at the speed the
+ * new pitch needs — faster to go up, slower to go down. A head reading faster runs into the
+ * present, so each one starts a fresh pass through a window's worth of sound before it gets
+ * there, and the two are half a window apart so one is always in the middle of its pass
+ * while the other is at its ends. They're mixed by sin and cos of where each is in its
+ * pass, which sum in power to one, so the joins don't dip or peak.
+ *
+ * A short window follows a sound closely and burbles; a long one is smooth and smears.
+ * That's the trade, and it's a knob rather than a decision made here.
+ */
+class PitchProcessor extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [
+      { name: 'ratio', defaultValue: 1, minValue: 0.25, maxValue: 4, automationRate: 'k-rate' },
+      { name: 'grain', defaultValue: 0.06, minValue: 0.01, maxValue: 0.25, automationRate: 'k-rate' },
+      { name: 'mix', defaultValue: 1, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+    ]
+  }
+  constructor() {
+    super()
+    this.size = Math.max(2048, Math.ceil(0.3 * sampleRate))
+    this.ring = [new Float32Array(this.size), new Float32Array(this.size)]
+    this.at = 0
+    this.phase = 0 // where both heads are in their pass, 0 … 1 (shared, so stereo holds)
+  }
+  read(ch, pos) {
+    const size = this.size
+    let p = pos % size
+    if (p < 0) p += size
+    const i = Math.floor(p)
+    const f = p - i
+    const a = this.ring[ch][i]
+    const b = this.ring[ch][(i + 1) % size]
+    return a + (b - a) * f
+  }
+  process(inputs, outputs, params) {
+    const input = inputs[0]
+    const output = outputs[0]
+    if (!output || !output.length) return true
+    const frames = output[0].length
+    const ratio = params.ratio[0]
+    const mix = params.mix[0]
+    const grain = Math.max(64, Math.round(params.grain[0] * sampleRate))
+    const step = (1 - ratio) / grain
+    const quiet = !input || !input.length
+    for (let i = 0; i < frames; i++) {
+      const p1 = this.phase
+      const p2 = p1 < 0.5 ? p1 + 0.5 : p1 - 0.5
+      const a1 = Math.sin(Math.PI * p1)
+      const a2 = Math.sin(Math.PI * p2)
+      for (let c = 0; c < output.length; c++) {
+        const src = quiet ? 0 : (input[Math.min(c, input.length - 1)][i] || 0)
+        this.ring[c][this.at] = src
+        const at = this.at
+        const shifted = a1 * this.read(c, at - p1 * grain) + a2 * this.read(c, at - p2 * grain)
+        output[c][i] = src + (shifted - src) * mix
+      }
+      this.at = (this.at + 1) % this.size
+      this.phase += step
+      if (this.phase >= 1) this.phase -= 1
+      else if (this.phase < 0) this.phase += 1
+    }
+    return true
+  }
+}
+registerProcessor('lattice-pitch', PitchProcessor)
+
+/*
+ * Frequency shift: every partial moved by the same number of hertz, rather than by the same
+ * ratio. A note's overtones sit at multiples of its pitch; add 40 Hz to all of them and they
+ * aren't multiples of anything any more, so the sound stops being a note and becomes a
+ * clang. Small amounts make a bus shimmer or beat against itself; large ones make bells.
+ *
+ * Done by taking the sound and a copy of it a quarter cycle behind at every frequency — a
+ * Hilbert pair, here a cascade of all-passes that between them hold 90 degrees apart across
+ * the band — and ring-modulating one by a sine and the other by a cosine. Adding those
+ * cancels the lower sideband and leaves the upper; subtracting keeps the lower instead.
+ * That cancellation is the whole reason for the filters: a plain ring modulator gives you
+ * both sidebands at once, which is why it sounds like two shifts rather than one.
+ */
+const HIL_A = [0.6923877778065, 0.9360654322959, 0.9882295226860, 0.9987488452737]
+const HIL_B = [0.4021921162426, 0.8561710882420, 0.9722909545651, 0.9952884791278]
+class FreqShiftProcessor extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [
+      { name: 'hz', defaultValue: 0, minValue: -2000, maxValue: 2000, automationRate: 'k-rate' },
+      { name: 'spread', defaultValue: 0, minValue: -1, maxValue: 1, automationRate: 'k-rate' },
+      { name: 'mix', defaultValue: 1, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+    ]
+  }
+  constructor() {
+    super()
+    // two all-pass cascades per side, and one sample of delay on the A path
+    this.state = [0, 1].map(() => ({
+      a: HIL_A.map(() => ({ x1: 0, x2: 0, y1: 0, y2: 0 })),
+      b: HIL_B.map(() => ({ x1: 0, x2: 0, y1: 0, y2: 0 })),
+      last: 0,
+      phase: 0,
+    }))
+  }
+  allpass(sections, coeffs, x) {
+    let v = x
+    for (let i = 0; i < sections.length; i++) {
+      const s = sections[i]
+      const k = coeffs[i] * coeffs[i]
+      const y = k * (v + s.y2) - s.x2
+      s.x2 = s.x1; s.x1 = v
+      s.y2 = s.y1; s.y1 = y
+      v = y
+    }
+    return v
+  }
+  process(inputs, outputs, params) {
+    const input = inputs[0]
+    const output = outputs[0]
+    if (!output || !output.length) return true
+    const frames = output[0].length
+    const hz = params.hz[0]
+    const spread = params.spread[0]
+    const mix = params.mix[0]
+    const quiet = !input || !input.length
+    for (let c = 0; c < output.length; c++) {
+      const s = this.state[Math.min(c, 1)]
+      // the sides can shift by different amounts, which is what makes it swirl
+      const rate = (hz * (c === 1 ? 1 - 2 * spread : 1)) / sampleRate
+      for (let i = 0; i < frames; i++) {
+        const x = quiet ? 0 : (input[Math.min(c, input.length - 1)][i] || 0)
+        const q = this.allpass(s.b, HIL_B, x)
+        const iSig = s.last
+        s.last = this.allpass(s.a, HIL_A, x)
+        const w = 2 * Math.PI * s.phase
+        const shifted = iSig * Math.cos(w) - q * Math.sin(w)
+        output[c][i] = x + (shifted - x) * mix
+        s.phase += rate
+        if (s.phase >= 1) s.phase -= 1
+        else if (s.phase < 0) s.phase += 1
+      }
+    }
+    return true
+  }
+}
+registerProcessor('lattice-freqshift', FreqShiftProcessor)
+
+/*
  * A brickwall limiter that looks ahead: the sound is heard a few milliseconds late, so the
  * gain can already be down by the time a peak arrives, and nothing gets past the ceiling.
  *
@@ -315,6 +461,46 @@ export function setInsertParams(key, patch) {
   }
 }
 
+/**
+ * An insert whose work only a worklet can do: straight through until the audio thread has
+ * the module, then in line. `shape` turns the node's knobs into the processor's parameters,
+ * and whatever was set while it was still loading is applied the moment it arrives.
+ */
+function workletInsert(ac, name, shape) {
+  const input = new GainNode(ac, { channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' })
+  const output = new GainNode(ac, { gain: 1 })
+  input.connect(output)
+  let node = null
+  let want = null
+  let gone = false
+  const push = () => {
+    if (!node || !want) return
+    for (const [key, value] of Object.entries(want)) {
+      const param = node.parameters.get(key)
+      if (param && Number.isFinite(value)) smooth(param, value)
+    }
+  }
+  prepareInserts().then(() => {
+    if (gone) return // taken out of the rack while we waited
+    try {
+      node = new AudioWorkletNode(ac, name, { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 2, channelCountMode: 'explicit' })
+      push()
+      input.disconnect()
+      input.connect(node).connect(output)
+    } catch (err) { console.warn(`[stereo] could not start ${name}`, err) }
+  })
+  return {
+    input,
+    output,
+    set(params) { want = shape(params); push() },
+    dispose() {
+      gone = true
+      for (const audio of [input, output, node]) audio?.disconnect()
+      node = null
+    },
+  }
+}
+
 const smooth = (param, value) => {
   if (Number.isFinite(value)) param.setTargetAtTime(value, getAudioContext().currentTime, 0.02)
 }
@@ -543,6 +729,24 @@ const UNITS = {
         node = null
       },
     }
+  },
+
+  /** Everything up or down, tempo untouched (see the pitch worklet above). */
+  pitch(ac) {
+    return workletInsert(ac, 'lattice-pitch', (params) => ({
+      ratio: 2 ** (((Number(params.semitones) || 0) + (Number(params.fine) || 0) / 100) / 12),
+      grain: Math.min(0.25, Math.max(0.01, Number(params.grain) || 0.06)),
+      mix: Math.min(1, Math.max(0, Number.isFinite(+params.mix) ? +params.mix : 1)),
+    }))
+  },
+
+  /** Every partial moved by the same hertz, so nothing stays harmonic. */
+  freqshift(ac) {
+    return workletInsert(ac, 'lattice-freqshift', (params) => ({
+      hz: Math.min(2000, Math.max(-2000, Number(params.hz) || 0)),
+      spread: Math.min(1, Math.max(-1, Number(params.spread) || 0)),
+      mix: Math.min(1, Math.max(0, Number.isFinite(+params.mix) ? +params.mix : 1)),
+    }))
   },
 
   /** Cut highs or lows across the bus, so a filter node works like a mixer's filter. */

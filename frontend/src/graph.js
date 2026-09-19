@@ -268,6 +268,27 @@ export const NODE_TYPES = {
     code: stereoCode('shaper', (d) => ({ shape: d.shape, crush: d.crush, out: 1, curve: 'scurve' })),
   },
 
+  pitch: {
+    group: 'effect', label: 'pitch', blurb: 'Up or down in semitones, with the tempo left alone',
+    inputs: 1,
+    params: [
+      { key: 'semitones', type: 'knob', label: 'shift', min: -24, max: 24, def: 0, unit: 'bi', origin: 0 },
+      { key: 'fine', type: 'knob', label: 'fine', min: -100, max: 100, def: 0, unit: 'bi', origin: 0 },
+      { key: 'grain', type: 'knob', label: 'window', min: 0.01, max: 0.25, def: 0.06, log: true, unit: 's' },
+      { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 1 },
+    ],
+    code: stereoCode('pitch', (d) => ({ semitones: d.semitones, fine: d.fine, grain: d.grain, mix: d.mix })),
+  },
+  freqshift: {
+    group: 'effect', label: 'freq shift', blurb: 'Every partial moved by the same hertz: it stops being a note',
+    inputs: 1,
+    params: [
+      { key: 'hz', type: 'knob', label: 'shift', min: -500, max: 500, def: 40, unit: 'bi', origin: 0 },
+      { key: 'spread', type: 'knob', label: 'spread', min: -1, max: 1, def: 0, unit: 'bi', origin: 0 },
+      { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 1 },
+    ],
+    code: stereoCode('freqshift', (d) => ({ hz: d.hz, spread: d.spread, mix: d.mix })),
+  },
   djfilter: {
     group: 'effect', label: 'dj filter', blurb: 'One knob: left darkens, right thins out',
     inputs: 1,
@@ -575,7 +596,7 @@ function stereoCode(kind, params) {
   return code
 }
 const STEREO_TYPES = new Set(['haas', 'widener', 'utility', 'bus', 'eq3', 'saturator', 'distortion', 'clipper', 'softclip', 'compressor', 'limiter',
-  'filter', 'djfilter', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi'])
+  'filter', 'djfilter', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi', 'pitch', 'freqshift'])
 
 /**
  * Nodes that are real audio on a bus rather than settings on each note: they work on
@@ -585,7 +606,7 @@ const STEREO_TYPES = new Set(['haas', 'widener', 'utility', 'bus', 'eq3', 'satur
 export const BUS_NODES = new Set([...STEREO_TYPES, 'reverb', 'delay'])
 
 /** Effects that can sit inside an fx rack: every plain effect node. */
-export const FX_UNITS = ['eq3', 'compressor', 'limiter', 'saturator', 'distortion', 'clipper', 'softclip', 'punch', 'haas', 'widener', 'utility', 'filter', 'djfilter', 'reverb', 'delay', 'space', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi']
+export const FX_UNITS = ['eq3', 'compressor', 'limiter', 'saturator', 'distortion', 'clipper', 'softclip', 'punch', 'haas', 'widener', 'utility', 'filter', 'djfilter', 'reverb', 'delay', 'space', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi', 'pitch', 'freqshift']
 
 /**
  * Effects an instrument's lane can stack: the ones that are real audio on a bus. Reverb and
