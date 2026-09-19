@@ -349,6 +349,11 @@ const CURVES = {
     const window = ((y + 1) % 4 + 4) % 4
     return 1 - Math.abs(window - 2)
   },
+  /* a fuzz: gain so high the wave is nearly square, its corners still rounded */
+  fuzz: (x, k) => Math.tanh(x * (3 + 24 * k)),
+  /* both halves of the wave folded the same way up: the fundamental cancels and you hear
+     the octave above it. The DC the fold leaves behind is taken out after the shaper. */
+  rect: (x, k) => CURVES.soft(2 * Math.abs(x) - 0.55, 0.4 + k),
   chebyshev(x, k) {
     const kl = 10 * Math.log1p(k)
     let tnm1 = 1
@@ -362,6 +367,20 @@ const CURVES = {
     }
     return CURVES.soft(y, kl / 20)
   },
+}
+
+/*
+ * The five pedals the distortion node offers. Each is a clipping curve, how much gain runs
+ * into it, how lopsided it can be made, and the mid lift it's known for: a rat is nasal
+ * because of that lift as much as its diodes, and a fuzz is rude because it's driven
+ * twenty times harder than an overdrive.
+ */
+const DIST_MODES = {
+  overdrive: { curve: 'cubic', k: 1.2, gain: 9, bias: 0.12, voice: 2 },
+  crunch: { curve: 'scurve', k: 2, gain: 15, bias: 0.18, voice: 3 },
+  rat: { curve: 'diode', k: 2.6, gain: 26, bias: 0.22, voice: 7 },
+  fuzz: { curve: 'fuzz', k: 1, gain: 40, bias: 0.35, voice: 4 },
+  octave: { curve: 'rect', k: 1.4, gain: 20, bias: 0.1, voice: 5 },
 }
 
 const HEADROOM = 4 // a bus can run hotter than one note, so the curve covers +12 dB
@@ -682,6 +701,73 @@ const UNITS = {
         smooth(output.gain, Number.isFinite(params.out) ? params.out : 1)
       },
       dispose() { for (const node of [input, shape, output]) node.disconnect() },
+    }
+  },
+
+  /**
+   * Distortion, as a pedal rather than a curve.
+   *
+   * Saturation is a curve you push a little signal into. Distortion is a whole circuit, and
+   * the circuit is most of the sound: what you take out *before* the clipping (bass, which
+   * otherwise turns everything to mush), what the clipper is shaped like, how lopsided it
+   * is (a bias makes even harmonics — the difference between 'warm' and 'rude'), what you
+   * take out *after* it (fizz), and how much of the clean sound is still there underneath.
+   *
+   *   in → tighten (high-pass) → voice (a mid lift, per mode) → drive ↘
+   *                                                          bias → clip → DC block → tone → mix
+   *   in ──────────────────────────────────────────────────────────── dry ↗
+   *
+   * The curve is fixed per mode and `drive` is a plain gain into it, exactly as a pedal
+   * works — which also means driving it harder is one smooth parameter change rather than
+   * rebuilding a lookup table, so you can automate it.
+   */
+  dist(ac) {
+    const input = new GainNode(ac, { gain: 1 / HEADROOM, channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' })
+    const tight = new BiquadFilterNode(ac, { type: 'highpass', frequency: 20, Q: 0.707 })
+    const voice = new BiquadFilterNode(ac, { type: 'peaking', frequency: 1000, Q: 0.7, gain: 0 })
+    const pre = new GainNode(ac, { gain: 1 })
+    const bias = new ConstantSourceNode(ac, { offset: 0 })
+    const clip = new WaveShaperNode(ac, { oversample: '4x' })
+    // a fold or a bias leaves the signal sitting off-centre; without this it thumps
+    const dc = new BiquadFilterNode(ac, { type: 'highpass', frequency: 16, Q: 0.707 })
+    const tone = new BiquadFilterNode(ac, { type: 'lowpass', frequency: 14000, Q: 0.707 })
+    const wet = new GainNode(ac, { gain: 1 })
+    const dry = new GainNode(ac, { gain: 0 })
+    const output = new GainNode(ac, { gain: 1 })
+    input.connect(tight).connect(voice).connect(pre).connect(clip)
+    bias.connect(clip)
+    clip.connect(dc).connect(tone).connect(wet).connect(output)
+    input.connect(dry).connect(output)
+    bias.start()
+    let made = ''
+    return {
+      input,
+      output,
+      set(params) {
+        const spec = DIST_MODES[params.mode] ?? DIST_MODES.overdrive
+        const at = (v, lo, hi, def) => Math.min(hi, Math.max(lo, Number.isFinite(+v) ? +v : def))
+        const drive = at(params.drive, 0, 1, 0.45)
+        if (spec.curve !== made) {
+          made = spec.curve
+          clip.curve = curveTable(CURVES[spec.curve], spec.k)
+        }
+        const gain = 1 + drive * spec.gain
+        smooth(pre.gain, gain)
+        smooth(voice.gain, spec.voice * (0.3 + 0.7 * drive))
+        smooth(bias.offset, at(params.bias, 0, 1, 0) * spec.bias)
+        // both ends of the tone stack are where the ear hears them, not linear in hertz
+        smooth(tight.frequency, 20 * (400 / 20) ** at(params.tighten, 0, 1, 0))
+        smooth(tone.frequency, 700 * (16000 / 700) ** at(params.tone, 0, 1, 0.55))
+        const mix = at(params.mix, 0, 1, 1)
+        // driving it harder shouldn't mean turning it up: the knob stays about where it was
+        smooth(wet.gain, mix / (1 + Math.log1p(gain) * 0.32))
+        smooth(dry.gain, 1 - mix)
+        smooth(output.gain, at(params.out, 0.05, 1, 0.8))
+      },
+      dispose() {
+        try { bias.stop() } catch { /* already stopped */ }
+        for (const node of [input, tight, voice, pre, bias, clip, dc, tone, wet, dry, output]) node.disconnect()
+      },
     }
   },
 

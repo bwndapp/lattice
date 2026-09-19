@@ -379,6 +379,22 @@ export const NODE_TYPES = {
     // on the summed bus, like a mixer insert (see stereo.js)
     code: stereoCode('shaper', (d) => ({ drive: d.drive, out: d.out, curve: SATURATION[d.character] ?? 'soft' })),
   },
+  distortion: {
+    group: 'effect', label: 'distortion', blurb: 'A pedal: drive it, bias it, and shape what goes in and comes out',
+    inputs: 1,
+    params: [
+      { key: 'drive', type: 'knob', label: 'drive', min: 0, max: 1, def: 0.45 },
+      { key: 'mode', type: 'select', label: 'pedal', options: ['overdrive', 'crunch', 'rat', 'fuzz', 'octave'], def: 'overdrive' },
+      { key: 'tighten', type: 'knob', label: 'tighten', min: 0, max: 1, def: 0.15 },
+      { key: 'tone', type: 'knob', label: 'tone', min: 0, max: 1, def: 0.55 },
+      { key: 'bias', type: 'knob', label: 'bias', min: 0, max: 1, def: 0 },
+      { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 1 },
+      { key: 'out', type: 'knob', label: 'output', min: 0.05, max: 1, def: 0.8 },
+    ],
+    code: stereoCode('dist', (d) => ({
+      drive: d.drive, mode: d.mode, tighten: d.tighten, tone: d.tone, bias: d.bias, mix: d.mix, out: d.out,
+    })),
+  },
   clipper: {
     group: 'mixing', label: 'hard clip', blurb: 'Cuts peaks off flat: loud, aggressive, and it bites',
     inputs: 1,
@@ -558,7 +574,7 @@ function stereoCode(kind, params) {
   code.insert = { kind, params }
   return code
 }
-const STEREO_TYPES = new Set(['haas', 'widener', 'utility', 'bus', 'eq3', 'saturator', 'clipper', 'softclip', 'compressor', 'limiter',
+const STEREO_TYPES = new Set(['haas', 'widener', 'utility', 'bus', 'eq3', 'saturator', 'distortion', 'clipper', 'softclip', 'compressor', 'limiter',
   'filter', 'djfilter', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi'])
 
 /**
@@ -569,7 +585,7 @@ const STEREO_TYPES = new Set(['haas', 'widener', 'utility', 'bus', 'eq3', 'satur
 export const BUS_NODES = new Set([...STEREO_TYPES, 'reverb', 'delay'])
 
 /** Effects that can sit inside an fx rack: every plain effect node. */
-export const FX_UNITS = ['eq3', 'compressor', 'limiter', 'saturator', 'clipper', 'softclip', 'punch', 'haas', 'widener', 'utility', 'filter', 'djfilter', 'reverb', 'delay', 'space', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi']
+export const FX_UNITS = ['eq3', 'compressor', 'limiter', 'saturator', 'distortion', 'clipper', 'softclip', 'punch', 'haas', 'widener', 'utility', 'filter', 'djfilter', 'reverb', 'delay', 'space', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi']
 
 /**
  * Effects an instrument's lane can stack: the ones that are real audio on a bus. Reverb and
