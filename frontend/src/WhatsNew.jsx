@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { NEWS } from './changelog.js'
+import { NEWS, VERSION } from './changelog.js'
 import './ConfirmDialog.css'
 import './WhatsNew.css'
 
@@ -51,12 +51,16 @@ export default function WhatsNew({ since, onClose }) {
     >
       <div className="cd-body">
         <h2 id="whats-new-title" className="cd-title">What’s new</h2>
+        <p className="wn-now">you’re on <b>{VERSION}</b></p>
         <div className={`wn-list ${more ? 'more' : ''}`} ref={listRef}>
           {NEWS.map((entry) => (
             <section key={entry.id} className={`wn-entry ${since && entry.id > since ? 'fresh' : ''}`}>
               <header className="wn-head">
                 <h3 className="wn-title">{entry.title}</h3>
-                <span className="wn-when">{when(entry)}</span>
+                <span className="wn-when">
+                  {entry.version && <b className="wn-ver">{entry.version}</b>}
+                  {when(entry)}
+                </span>
               </header>
               <ul className="wn-items">
                 {entry.items.map((item, i) => <li key={i}>{line(item)}</li>)}

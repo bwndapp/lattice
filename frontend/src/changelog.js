@@ -13,13 +13,20 @@
  * A line is a line, not a sentence: name the thing in **bold**, say what it does in a few
  * words, stop. Someone reads this standing up, deciding whether to go and try something.
  *
+ * Each entry is a release with a number. Numbering starts at 0.1.0, the first release with
+ * this list in it; the three before it are numbered back from there, since they happened
+ * whether or not anyone was counting. While lattice is 0.x: the middle number moves when
+ * there's something new to use, the last one when something already there got better.
+ *
  * `id` orders the entries and is what a browser remembers having seen, so it only ever
  * grows: two on the same day are `2026-09-19` and `2026-09-19-2`. `date` is what's shown.
+ * The version is for people to say out loud; the id is for the machine.
  */
 export const NEWS = [
   {
     id: '2026-09-19-2',
     date: '2026-09-19',
+    version: '0.1.1',
     title: 'What’s new, when it’s new',
     items: [
       'This — what has changed since you were last here, once, as you arrive',
@@ -29,6 +36,7 @@ export const NEWS = [
   {
     id: '2026-09-19',
     date: '2026-09-19',
+    version: '0.1.0',
     title: 'Distortion, one octave, engines in time',
     items: [
       '**Distortion** — five pedals: overdrive, crunch, rat, fuzz, octave',
@@ -41,6 +49,7 @@ export const NEWS = [
   {
     id: '2026-09-18',
     date: '2026-09-18',
+    version: '0.0.9',
     title: 'Tracks have a history you can hear',
     items: [
       'Every track has a **page** of its own',
@@ -53,6 +62,7 @@ export const NEWS = [
   {
     id: '2026-09-17',
     date: '2026-09-17',
+    version: '0.0.8',
     title: 'The timeline, with more give',
     items: [
       'A white **outline** shows where a clip will land',
@@ -63,4 +73,6 @@ export const NEWS = [
 ]
 
 export const LATEST = NEWS[0]?.id ?? ''
+/** What this build of lattice is called. */
+export const VERSION = NEWS[0]?.version ?? '0.1.0'
 export const SEEN_KEY = 'lattice:news-seen'

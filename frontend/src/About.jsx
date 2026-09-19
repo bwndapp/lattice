@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { VERSION } from './changelog.js'
 import './ConfirmDialog.css'
 
 const SOURCE = 'https://github.com/bwndapp/lattice'
@@ -33,7 +34,7 @@ export default function About({ onClose }) {
       onClick={(e) => { if (e.target === ref.current) onClose() }}
     >
       <div className="cd-body">
-        <h2 id="about-title" className="cd-title">lattice</h2>
+        <h2 id="about-title" className="cd-title">lattice <span className="cd-ver">{VERSION}</span></h2>
         <div className="cd-text">
           <p>
             A node-patch studio for <a className="link" href="https://strudel.cc" target="_blank" rel="noreferrer noopener">Strudel</a>:

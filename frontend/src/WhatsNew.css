@@ -19,7 +19,15 @@
   margin: 0; font-family: var(--display); font-weight: 800; font-stretch: 112%;
   font-size: 14px; line-height: 1.25; color: var(--paper); text-wrap: balance;
 }
-.wn-when { font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: #6f6f67; white-space: nowrap; }
+.wn-when {
+  display: inline-flex; align-items: center; gap: 0.45rem;
+  font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: #6f6f67; white-space: nowrap;
+}
+/* the number people say out loud, in the app's own way of writing numbers */
+.wn-ver { font-family: var(--mono); font-variant-numeric: tabular-nums; letter-spacing: 0; color: #a3a39a; font-weight: 700; }
+.wn-entry.fresh .wn-ver { color: var(--acid); }
+.wn-now { margin: -0.45rem 0 0; font-size: 10.5px; color: #6f6f67; }
+.wn-now b { font-family: var(--mono); color: var(--paper); font-weight: 700; }
 .wn-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
 .wn-items li {
   position: relative; padding-left: 0.85rem;
