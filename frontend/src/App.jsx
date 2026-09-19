@@ -1255,6 +1255,33 @@ export default function App() {
     }
   }, [])
 
+  /*
+   * While the pointer is down anywhere that isn't a text field, nothing on the page can be
+   * selected. `user-select: none` on the app isn't enough on its own: every input and
+   * select in a node is deliberately selectable so you can edit it, and a drag that starts
+   * on — or passes through — one of those islands anchors a selection there and then drags
+   * it across everything else. On a canvas you move things by dragging; you never highlight
+   * them. Any selection left over from before goes too, since this drag would extend it.
+   */
+  useEffect(() => {
+    const down = (e) => {
+      if (e.target?.closest?.('input, textarea, [contenteditable="true"], .cm-editor')) return
+      document.body.classList.add('dragging')
+      const selection = window.getSelection?.()
+      if (selection && !selection.isCollapsed) selection.removeAllRanges()
+    }
+    const up = () => document.body.classList.remove('dragging')
+    window.addEventListener('pointerdown', down, true)
+    window.addEventListener('pointerup', up, true)
+    window.addEventListener('pointercancel', up, true)
+    return () => {
+      window.removeEventListener('pointerdown', down, true)
+      window.removeEventListener('pointerup', up, true)
+      window.removeEventListener('pointercancel', up, true)
+      document.body.classList.remove('dragging')
+    }
+  }, [])
+
   // ctrl/cmd + scroll (and trackpad pinch, which browsers send the same way) zooms things
   // inside the app: the patch, the piano roll. Never let it zoom the page as well. Handlers
   // on those elements run first, so this only cancels the browser's own zoom. Keyboard zoom

@@ -75,6 +75,8 @@ input, textarea, select, [contenteditable="true"],
 .cm-editor, .tp, .selectable { user-select: text; -webkit-user-select: text; }
 /* images and links drag as files/URLs on their own; on a canvas that's never wanted */
 img, svg, a { -webkit-user-drag: none; }
+/* a drag is a drag, wherever it started: see the pointerdown listener in App.jsx */
+body.dragging, body.dragging * { user-select: none !important; -webkit-user-select: none !important; }
 
 /* the mark for a track that came off another one (see BranchMark.jsx) */
 .branch-mark {
