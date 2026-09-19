@@ -869,7 +869,7 @@ button.lcd-unit:hover { color: var(--acid); }
 }
 .palette.graph-palette.collapsed { width: 2rem; }
 /* parts that exist with nothing playing them: the same acid the timeline marks them with */
-.pal-group.pal-unused .pal-group-head .pal-label { color: var(--acid); }
+.pal-group.pal-unused .pal-group-head .pal-label { color: var(--acid); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pal-item.pal-part { border-left: 2px solid color-mix(in srgb, var(--acid) 55%, transparent); }
 .pal-item.pal-part .pal-item-blurb { color: color-mix(in srgb, var(--acid) 45%, var(--muted)); }
 

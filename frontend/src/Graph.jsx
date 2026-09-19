@@ -896,10 +896,11 @@ function Palette({ onAdd, unused = [] }) {
             <button
               className="pal-group-head"
               aria-expanded={!closed.has('unused')}
+              title="Parts written in this track that nothing on the patch plays. Everything else in this pane makes something new; these already exist."
               onClick={() => setClosed((s) => { const next = new Set(s); next.has('unused') ? next.delete('unused') : next.add('unused'); return next })}
             >
               <span className="pal-caret" aria-hidden>{closed.has('unused') ? '+' : '−'}</span>
-              <span className="pal-label">unused</span>
+              <span className="pal-label">unused in this track</span>
               <span className="pal-n">{unused.length}</span>
             </button>
             {!closed.has('unused') && unused.map((part) => (
