@@ -14,7 +14,6 @@ import SoundPicker from './SoundPicker.jsx'
 import { useRollDock } from './rollDock.js'
 import AddMenu from './AddMenu.jsx'
 import CodeBox from './CodeBox.jsx'
-import CodeWindow from './CodeWindow.jsx'
 import { ADD_INTO_WIRE, EDGE_TYPES } from './WireEdge.jsx'
 import { copyNodes, pasteNodes, readClipboard, writeClipboard } from './nodeClipboard'
 import { onSoundsChange, previewSound, soundCatalog } from './audio'
@@ -1055,7 +1054,6 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
     requestAnimationFrame(() => flow.fitView({ padding: 0.12, maxZoom: 1 }))
   }, [initialized, flow])
   const [picking, setPicking] = useState(null)
-  const [coding, setCoding] = useState(null) // a node's code, open in a window of its own // { nodeId, key, x, y }
   const [menu, setMenu] = useState(null) // right-click add menu: { x, y, at (flow position), wire (edge id or null) }
   /**
    * What the add menu offers, which depends on where it was opened: into a wire, only what
@@ -1475,14 +1473,6 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
     <Ctx.Provider value={ctx}>
       <div className="graph" ref={wrapRef} data-surface="patch">
         <Palette onAdd={(type, pos, instrument) => addNode(type, pos, instrument)} unused={unused} onForget={forgetPart} />
-        {coding && (
-          <CodeWindow
-            title={coding.title}
-            value={String(project.nodes.find((n) => n.id === coding.nodeId)?.data?.[coding.key] ?? '')}
-            onCommit={(text) => updateNode(coding.nodeId, (d) => { d[coding.key] = text })}
-            onClose={() => setCoding(null)}
-          />
-        )}
         <div
           className={`graph-canvas ${lighting ? '' : 'flow-off'}`}
           onDragOver={(e) => {

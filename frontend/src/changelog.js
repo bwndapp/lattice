@@ -39,7 +39,7 @@ export const NEWS = [
       '**Unused** in the add pane — put a deleted part back with a click, clips and all',
       'Or throw an unused part away for good · undo brings it back',
       'The **code** node has a real editor: highlighting, brackets, undo of its own',
-      '**⤢** opens it in a window big enough to work in',
+      '**⤢** opens it as a window of its own, like a synth — drag it, resize it, leave it open',
     ],
   },
   {
