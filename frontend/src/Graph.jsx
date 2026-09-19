@@ -786,7 +786,11 @@ function writePalPref(key, value) {
  * collapse it to a rail, fold groups away. Type to search (press / to jump to the box),
  * arrow keys move through results, Enter adds.
  */
-function Palette({ onAdd, unused = [] }) {
+function Palette({ onAdd, unused = [], onForget }) {
+  // deleting a part for good takes two clicks on the same × rather than a dialog
+  const [arming, setArming] = useState(null)
+  const armed = useRef(0)
+  useEffect(() => () => clearTimeout(armed.current), [])
   const items = useMemo(() => paletteItems(), [])
   const [width, setWidth] = useState(() => Math.min(PAL_MAX, Math.max(PAL_MIN, readPalPref('strudel:palette:width', 200))))
   const [collapsed, setCollapsed] = useState(() => readPalPref('strudel:palette:collapsed', false))
@@ -912,17 +916,31 @@ function Palette({ onAdd, unused = [] }) {
               <span className="pal-n">{unused.length}</span>
             </button>
             {!closed.has('unused') && unused.map((part) => (
-              <button
-                key={part.id}
-                className="pal-item pal-part"
-                draggable
-                title={`${part.name} is written but nothing on the patch plays it${part.clips ? ` · ${part.clips} clip${part.clips === 1 ? '' : 's'} of it on the timeline` : ''}. Add it and those clips play again.`}
-                onDragStart={(e) => { e.dataTransfer.setData(PART_MIME, part.id); e.dataTransfer.effectAllowed = 'copy' }}
-                onClick={() => onAdd('pattern', null, { patternId: part.id })}
-              >
-                <span className="pal-item-label">{part.name}</span>
-                {wide && <span className="pal-item-blurb">{part.clips ? `${part.clips} clip${part.clips === 1 ? '' : 's'} waiting` : 'nothing plays it'}</span>}
-              </button>
+              <div className="pal-part-row" key={part.id}>
+                <button
+                  className="pal-item pal-part"
+                  draggable
+                  title={`${part.name} is written but nothing on the patch plays it${part.clips ? ` · ${part.clips} clip${part.clips === 1 ? '' : 's'} of it on the timeline` : ''}. Add it and those clips play again.`}
+                  onDragStart={(e) => { e.dataTransfer.setData(PART_MIME, part.id); e.dataTransfer.effectAllowed = 'copy' }}
+                  onClick={() => onAdd('pattern', null, { patternId: part.id })}
+                >
+                  <span className="pal-item-label">{part.name}</span>
+                  {wide && <span className="pal-item-blurb">{part.clips ? `${part.clips} clip${part.clips === 1 ? '' : 's'} waiting` : 'nothing plays it'}</span>}
+                </button>
+                <button
+                  className={`pal-part-x ${arming === part.id ? 'armed' : ''}`}
+                  aria-label={`Delete ${part.name} for good`}
+                  title={arming === part.id
+                    ? `Click again and ${part.name} is gone${part.clips ? ` with its ${part.clips} clip${part.clips === 1 ? '' : 's'}` : ''} · ctrl/cmd Z brings it back`
+                    : `Throw ${part.name} away for good${part.clips ? ` — it still has ${part.clips} clip${part.clips === 1 ? '' : 's'} on the timeline` : ''}`}
+                  onClick={() => {
+                    clearTimeout(armed.current)
+                    if (arming === part.id) { setArming(null); onForget?.(part.id); return }
+                    setArming(part.id)
+                    armed.current = setTimeout(() => setArming(null), 3000)
+                  }}
+                >{arming === part.id ? 'sure?' : '×'}</button>
+              </div>
             ))}
           </section>
         )}
@@ -1362,6 +1380,27 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
 
   const selected = project.nodes.find((n) => nodes.find((r) => r.id === n.id && r.selected))
 
+  /**
+   * Throw an unused part away for good: the part, its variations, and any clips of it left
+   * on the timeline. Only reachable for parts nothing plays, and one undo brings all of it
+   * back — which is why it asks by arming rather than with a dialog.
+   */
+  const forgetPart = useCallback((patternId) => {
+    onUpdateProject((p) => {
+      const doomed = new Set([patternId, ...p.patterns.filter((v) => v.parent === patternId).map((v) => v.id)])
+      p.patterns = p.patterns.filter((x) => !doomed.has(x.id))
+      const gone = new Set(p.nodes.filter((n) => n.type === 'pattern' && doomed.has(n.data.patternId)).map((n) => n.id))
+      if (gone.size) {
+        p.nodes = p.nodes.filter((n) => !gone.has(n.id))
+        p.edges = p.edges.filter((e) => !gone.has(e.source) && !gone.has(e.target))
+      }
+      if (p.song) {
+        p.song.clips = p.song.clips.filter((c) => !(c.src.startsWith('pattern:') && doomed.has(c.src.slice(8))))
+        if (p.song.colors) for (const id of doomed) delete p.song.colors[`pattern:${id}`]
+      }
+    })
+  }, [onUpdateProject])
+
   /*
    * Parts that exist but nothing on the patch plays: delete a pattern's node and the pattern
    * itself stays, with every clip of it still on the timeline, silent. They're offered in
@@ -1426,7 +1465,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
   return (
     <Ctx.Provider value={ctx}>
       <div className="graph" ref={wrapRef} data-surface="patch">
-        <Palette onAdd={(type, pos, instrument) => addNode(type, pos, instrument)} unused={unused} />
+        <Palette onAdd={(type, pos, instrument) => addNode(type, pos, instrument)} unused={unused} onForget={forgetPart} />
         <div
           className={`graph-canvas ${lighting ? '' : 'flow-off'}`}
           onDragOver={(e) => {

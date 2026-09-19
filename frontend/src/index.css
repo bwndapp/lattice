@@ -870,7 +870,19 @@ button.lcd-unit:hover { color: var(--acid); }
 .palette.graph-palette.collapsed { width: 2rem; }
 /* parts that exist with nothing playing them: the same acid the timeline marks them with */
 .pal-group.pal-unused .pal-group-head .pal-label { color: var(--acid); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pal-item.pal-part { border-left: 2px solid color-mix(in srgb, var(--acid) 55%, transparent); }
+.pal-item.pal-part { border-left: 2px solid color-mix(in srgb, var(--acid) 55%, transparent); padding-right: 2.6rem; }
+/* throwing one away: out of the way until you're on the row, and it asks once */
+.pal-part-row { position: relative; }
+.pal-part-x {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  font: inherit; font-size: 10px; line-height: 1; color: var(--muted);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 3px;
+  padding: 2px 4px; cursor: var(--ring); opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.pal-part-row:hover .pal-part-x, .pal-part-x:focus-visible, .pal-part-x.armed { opacity: 1; }
+.pal-part-x:hover { color: var(--danger); border-color: var(--danger); }
+.pal-part-x.armed { color: var(--ink); background: var(--danger); border-color: var(--danger); font-weight: 700; }
 .pal-item.pal-part .pal-item-blurb { color: color-mix(in srgb, var(--acid) 45%, var(--muted)); }
 
 .pal-rail { flex: 1; font: inherit; font-size: 11px; color: var(--muted); background: var(--panel); border: 0; cursor: var(--ring); padding: 0.6rem 0; }

@@ -37,6 +37,7 @@ export const NEWS = [
       'A **sidechain** ducks as many sounds as you wire into it, all pumping together',
       'Clips whose part has left the patch say so, instead of sitting there silent',
       '**Unused** in the add pane — put a deleted part back with a click, clips and all',
+      'Or throw an unused part away for good · undo brings it back',
     ],
   },
   {
