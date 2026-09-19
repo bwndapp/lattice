@@ -70,12 +70,20 @@ class LatticeInstrument extends AudioWorkletProcessor {
     this.alive = true
     this.watching = false
     this.ticks = 0
+    // where the song is, from the host (see syncEngines): { at, cycle, cps }, or null
+    this.song = null
     this.port.onmessage = (e) => {
       if (e.data === 'dispose') this.alive = false
+      else if (e.data && e.data.sync !== undefined) this.song = e.data.sync
       else if (e.data && e.data.watch !== undefined) this.watching = !!e.data.watch
       else if (e.data && e.data.data) this.onData(e.data.data)
     }
     this.initial = options && options.processorOptions && options.processorOptions.data
+  }
+  /** Where the song is right now, in cycles (a cycle is a bar), or null if nothing plays. */
+  songCycle() {
+    const s = this.song
+    return s ? s.cycle + (currentTime - s.at) * s.cps : null
   }
   onData() {}
   report() { return null }

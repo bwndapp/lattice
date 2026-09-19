@@ -146,13 +146,23 @@ class SyrupProcessor extends LatticeInstrument {
     }
     for (let q = 0; q < SY_LANES; q++) { this.busL[q].fill(0); this.busR[q].fill(0) }
     const mods = this.cfg.modulators
+    // where the song is at the start of this block, for the lfos that follow it
+    const cycle = this.songCycle()
     for (let j = 0; j < mods.length; j++) {
       const m = mods[j]
       if (!m.lfo) continue
       const rate = m.sync ? k.cps / Math.max(1 / 64, m.bars) : k[SY_DN[j].hz]
       this.lfoRate[j] = rate
-      this.lfoStart[j] = this.lfoPhase[j]
-      this.lfoPhase[j] = syWrap(this.lfoPhase[j] + (rate * frames) / sampleRate)
+      if (m.sync && cycle != null) {
+        // a synced lfo is *at* a place in the song rather than however far it has counted:
+        // seek, loop or come back tomorrow and a one-bar sweep is still where the bar says
+        const bars = Math.max(1 / 64, m.bars)
+        this.lfoStart[j] = syWrap(cycle / bars)
+        this.lfoPhase[j] = syWrap((cycle + (k.cps * frames) / sampleRate) / bars)
+      } else {
+        this.lfoStart[j] = this.lfoPhase[j]
+        this.lfoPhase[j] = syWrap(this.lfoPhase[j] + (rate * frames) / sampleRate)
+      }
     }
   }
   // a drawn shape as a table: the same curve as the editor, point to point

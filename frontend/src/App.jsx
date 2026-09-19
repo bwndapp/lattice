@@ -33,6 +33,7 @@ import { setFxParams } from './fxbus.js'
 import { setInsertParams } from './stereo.js'
 import { setEngineParams } from './instruments/host.js'
 import { capturePatterns, parseLanes, tempoChange } from './lanes'
+import { syncEngines } from './instruments/host.js'
 import { useOctave } from './keyboard.js'
 import { PROJECT_MARK, blankProject, demoProject, generateCode, newId, normalizeProject, parseProject, projectFromCode } from './project'
 import { createTransport, formatBarBeat, parseBarBeat } from './transport'
@@ -931,6 +932,25 @@ export default function App() {
   }, [lineUp])
   // moving the playhead, looping, changing the tempo: everything the transport announces
   useEffect(() => transport.subscribe(() => tellRoom(transport.playing())), [transport, tellRoom])
+
+  /*
+   * The engines' own tempo-synced modulators need to know where the song is, not just how
+   * fast it's going — otherwise a one-bar sweep sits at whatever phase it happened to reach
+   * and seeking never brings it back. Sent whenever the transport says anything, and
+   * cleared when nothing is playing so auditioning a sound still moves.
+   */
+  const cpsRef = useRef(0.5)
+  cpsRef.current = cpsOf(project)
+  useEffect(() => {
+    const tell = () => {
+      if (!transport.playing()) return syncEngines(null)
+      try {
+        syncEngines({ at: getAudioContext().currentTime, cycle: transport.position(), cps: cpsRef.current })
+      } catch { /* the audio engine isn't up yet */ }
+    }
+    tell()
+    return transport.subscribe(tell)
+  }, [transport])
 
   const playRef = useRef(null)
   const play = useCallback(() => {

@@ -99,6 +99,30 @@ export function watchInstrument(channelId, type, fn) {
 const instances = new WeakMap() // audio context → Map(`${channel}:${type}` → instance)
 const everywhere = new Set() // every instance, to find them by instrument
 
+/*
+ * Where the song is, for the engines that care.
+ *
+ * An engine's tempo-synced modulators ran on a clock of their own that started when the
+ * engine did: the right rate, but a phase with no relation to the song. Two bars in, a
+ * one-bar LFO could be anywhere, seeking didn't move it, and nothing brought it back — so
+ * a synced sweep drifted away from what you'd written. They take the song's position from
+ * here instead: `cycle` is where the song is (a cycle is a bar) at audio time `at`, moving
+ * at `cps`, which is all a processor needs to work out its phase for any sample. Null when
+ * nothing is playing, and then they free-run, so auditioning still moves.
+ */
+let songNow = null
+
+/** Tell the engines where the song is. Called whenever the transport says anything. */
+export function syncEngines(where) {
+  songNow = where && Number.isFinite(where.cycle) && Number.isFinite(where.at)
+    ? { at: where.at, cycle: where.cycle, cps: Number(where.cps) || 0.5 }
+    : null
+  for (const inst of everywhere) {
+    if (inst.ac.state === 'closed') { everywhere.delete(inst); continue }
+    inst.sync(songNow)
+  }
+}
+
 function* live(channelId, type) {
   for (const inst of everywhere) {
     if (inst.ac.state === 'closed') { everywhere.delete(inst); continue }
@@ -143,6 +167,7 @@ function createInstance(ac, channelId, type) {
     for (const fn of watchers.get(key) ?? []) fn(e.data.report)
   }
   if (watchers.has(key)) node.port.postMessage({ watch: true })
+  if (songNow) node.port.postMessage({ sync: songNow }) // an engine made mid-song joins in time
   const param = (name) => node.parameters.get(name)
   const voices = Array.from({ length: spec.voices }, () => ({ until: 0, started: 0, note: null }))
   let trig = 0
@@ -155,6 +180,7 @@ function createInstance(ac, channelId, type) {
     get data() { return current },
     rig,
     watch(on) { node.port.postMessage({ watch: on }) },
+    sync(where) { node.port.postMessage({ sync: where ?? null }) },
     apply({ data, cps, beats }) {
       current = data
       rig?.update({ data, cps, beats })
