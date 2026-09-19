@@ -5,7 +5,7 @@ import { holdInPatch, previewInPatch } from '../audio'
 import { ENGINES, engineData } from './index.js'
 import { closeSynth, raiseSynth } from './windows.js'
 import { watchInstrument } from './host.js'
-import { keyNote, readOctave, writeOctave } from '../keyboard.js'
+import { keyNote, useOctave } from '../keyboard.js'
 import KickPanel from './KickPanel.jsx'
 import SyrupPanel from './syrup/SyrupPanel.jsx'
 import './SynthWindow.css'
@@ -54,11 +54,10 @@ export default function SynthWindow({ project, patternId, channelId, order, fron
 
   useEffect(() => { ref.current?.focus({ preventScroll: true }) }, [])
 
-  // while the window has focus, the computer keyboard plays the instrument (as in the piano roll)
-  // (an engine with a home octave, like the kick's, keeps its own)
-  const octaveKey = spec?.keyOctave != null ? `lattice:synth-octave:${spec.type}` : undefined
-  const [octave, setOctave] = useState(() => readOctave(octaveKey, spec?.keyOctave ?? 4))
-  const shiftOctave = (by) => setOctave((o) => { const next = clamp(o + by, 0, 8); writeOctave(next, octaveKey); return next })
+  // while the window has focus, the computer keyboard plays the instrument (as in the piano
+  // roll) — from the one octave the whole app shares
+  const [octave, setOctave] = useOctave()
+  const shiftOctave = (by) => setOctave(clamp(octave + by, 0, 8))
   const [lit, setLit] = useState(false) // a key is playing, for the header's light
   const down = useRef(new Map()) // key → let go of its note
   const letGo = (key) => {

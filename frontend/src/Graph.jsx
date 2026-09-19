@@ -23,7 +23,7 @@ import { useAutomation } from './autoLive.js'
 import { useTypingKeys } from './typingKeys.js'
 import { pointerAt, pointerGone, selectionIs, useHolders } from './collab.js'
 import PeerCursors from './PeerCursors.jsx'
-import { readOctave, writeOctave } from './keyboard.js'
+import { useOctave } from './keyboard.js'
 
 const NODE_MIME = 'application/x-strudel-node'
 const Ctx = createContext(null)
@@ -1318,14 +1318,14 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
     ? project.patterns.find((p) => p.id === selected.data.patternId)
     : null
   const loneChannel = lone?.channels.length === 1 && lone.channels[0].kind !== 'code' ? lone.channels[0] : null
-  const [octave, setOctave] = useState(() => readOctave())
+  const [octave, setOctave] = useOctave()
   useTypingKeys({
     enabled: !!loneChannel,
     project,
     pattern: lone,
     channel: loneChannel,
     octave,
-    onOctave: (next) => { setOctave(next); writeOctave(next) },
+    onOctave: setOctave,
   })
   const soundNode = picking && project.nodes.find((n) => n.id === picking.nodeId)
 

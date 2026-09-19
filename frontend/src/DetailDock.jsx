@@ -4,7 +4,7 @@ import { PatternChannels, exactStepAt } from './Rack.jsx'
 import { NameInput } from './NameInput.jsx'
 import { previewInPatch } from './audio'
 import { STEPS_PER_BAR, midiToNote, reshapePattern, stepDivision } from './project'
-import { OCTAVE_KEY } from './keyboard.js'
+import { useOctave } from './keyboard.js'
 import { useTypingKeys } from './typingKeys.js'
 import './DetailDock.css'
 
@@ -37,8 +37,7 @@ export default function DetailDock({ project, at, transport, started, height, on
 
   // the computer keyboard as a piano: on or off, and which octave it starts from
   const [keysOn, setKeysOn] = useState(() => readPref(KEYS_KEY, true))
-  const [octave, setOctave] = useState(() => readPref(OCTAVE_KEY, 4))
-  const shiftOctave = (to) => { const next = clamp(to, 0, 8); setOctave(next); writePref(OCTAVE_KEY, next) }
+  const [octave, shiftOctave] = useOctave() // shared with the patch and with instrument windows
   useEffect(() => writePref(KEYS_KEY, keysOn), [keysOn])
 
   const cursorRef = useRef(() => -1)

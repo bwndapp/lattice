@@ -118,7 +118,6 @@ export default {
   // at once (dry to the mixer, and again into a reverb for rumble). With one voice the
   // second play cut the first off, and whichever landed last was the only one you heard.
   voices: 4,
-  keyOctave: 2, // the typing keyboard starts where C2, the kick as tuned, is on z
   oneShot: true, // it plays its whole shape whatever the note's length
   params: PARAMS,
   groups: [['pitch', 'pitch'], ['body', 'body'], ['click', 'click'], ['out', 'output']],
