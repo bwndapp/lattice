@@ -778,7 +778,7 @@ function writePalPref(key, value) {
  * collapse it to a rail, fold groups away. Type to search (press / to jump to the box),
  * arrow keys move through results, Enter adds.
  */
-function Palette({ onAdd, offPatch = [] }) {
+function Palette({ onAdd, unused = [] }) {
   const items = useMemo(() => paletteItems(), [])
   const [width, setWidth] = useState(() => Math.min(PAL_MAX, Math.max(PAL_MIN, readPalPref('strudel:palette:width', 200))))
   const [collapsed, setCollapsed] = useState(() => readPalPref('strudel:palette:collapsed', false))
@@ -891,23 +891,23 @@ function Palette({ onAdd, offPatch = [] }) {
         />
       </div>
       <div className="pal-list" ref={listRef}>
-        {!results && offPatch.length > 0 && (
-          <section className="pal-group pal-loose">
+        {!results && unused.length > 0 && (
+          <section className="pal-group pal-unused">
             <button
               className="pal-group-head"
-              aria-expanded={!closed.has('offpatch')}
-              onClick={() => setClosed((s) => { const next = new Set(s); next.has('offpatch') ? next.delete('offpatch') : next.add('offpatch'); return next })}
+              aria-expanded={!closed.has('unused')}
+              onClick={() => setClosed((s) => { const next = new Set(s); next.has('unused') ? next.delete('unused') : next.add('unused'); return next })}
             >
-              <span className="pal-caret" aria-hidden>{closed.has('offpatch') ? '+' : '−'}</span>
-              <span className="pal-label">off the patch</span>
-              <span className="pal-n">{offPatch.length}</span>
+              <span className="pal-caret" aria-hidden>{closed.has('unused') ? '+' : '−'}</span>
+              <span className="pal-label">unused</span>
+              <span className="pal-n">{unused.length}</span>
             </button>
-            {!closed.has('offpatch') && offPatch.map((part) => (
+            {!closed.has('unused') && unused.map((part) => (
               <button
                 key={part.id}
                 className="pal-item pal-part"
                 draggable
-                title={`${part.name} is written but nothing plays it${part.clips ? ` · ${part.clips} clip${part.clips === 1 ? '' : 's'} of it on the timeline` : ''}. Put it back and those clips play again.`}
+                title={`${part.name} is written but nothing on the patch plays it${part.clips ? ` · ${part.clips} clip${part.clips === 1 ? '' : 's'} of it on the timeline` : ''}. Add it and those clips play again.`}
                 onDragStart={(e) => { e.dataTransfer.setData(PART_MIME, part.id); e.dataTransfer.effectAllowed = 'copy' }}
                 onClick={() => onAdd('pattern', null, { patternId: part.id })}
               >
@@ -1360,7 +1360,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
    * clips — it's the same part, not a new one. A variation isn't listed: it plays through
    * its original's node, so the original is the one to put back.
    */
-  const offPatch = useMemo(() => {
+  const unused = useMemo(() => {
     const clips = project.song?.clips ?? []
     return project.patterns
       .filter((p) => !p.parent && !project.nodes.some((n) => n.type === 'pattern' && n.data.patternId === p.id))
@@ -1417,7 +1417,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
   return (
     <Ctx.Provider value={ctx}>
       <div className="graph" ref={wrapRef} data-surface="patch">
-        <Palette onAdd={(type, pos, instrument) => addNode(type, pos, instrument)} offPatch={offPatch} />
+        <Palette onAdd={(type, pos, instrument) => addNode(type, pos, instrument)} unused={unused} />
         <div
           className={`graph-canvas ${lighting ? '' : 'flow-off'}`}
           onDragOver={(e) => {
