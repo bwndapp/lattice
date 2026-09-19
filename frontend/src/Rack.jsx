@@ -10,6 +10,8 @@ import SoundPicker from './SoundPicker.jsx'
 import { openSynth } from './instruments/windows.js'
 import { ENGINES, engineSound } from './instruments/index.js'
 import { useRollDock } from './rollDock.js'
+import CodeBox from './CodeBox.jsx'
+import CodeWindow from './CodeWindow.jsx'
 
 const mod = (a, n) => ((a % n) + n) % n
 const GAIN = PARAMS.find((p) => p.key === 'gain')
@@ -112,7 +114,9 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
   const paintRef = useRef(null) // value being painted while the pointer is down
   const [dropping, setDropping] = useState(false)
   const [picker, setPicker] = useState(null) // { channelId, x, y }
+  const [coding, setCoding] = useState(null) // the channel whose code is open in its own window
   const [openFx, setOpenFx] = useState(() => new Set())
+  const coded = coding ? pattern.channels.find((c) => c.id === coding) : null
   const dock = useRollDock() // the piano roll lives along the bottom of the app
 
   const toggle = (setter, id) => setter((s) => { const next = new Set(s); next.has(id) ? next.delete(id) : next.add(id); return next })
@@ -252,13 +256,11 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
             </div>
 
             {ch.kind === 'code' ? (
-              <CommitInput
+              <CodeBox
                 className="ch-code"
-                value={ch.code}
-                spellCheck={false}
-                aria-label="Strudel code for this instrument"
-                title="Any Strudel pattern · Enter to apply"
+                value={ch.code ?? ''}
                 onCommit={(v) => updateChannel(ch.id, (c) => { c.code = v })}
+                onExpand={() => setCoding(ch.id)}
               />
             ) : ch.kind === 'synth' ? (
               <MiniRoll channel={ch} total={n} open={rollOpen} onToggle={() => (rollOpen ? dock?.close() : dock?.open(pattern.id, ch.id, 'notes'))} />
@@ -355,6 +357,15 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
             updateChannel(pickerChannel.id, (c) => { delete c.engine; c.sound = sound; if (c.kind === 'drum') c.bank = bank })
           }}
           onClose={() => setPicker(null)}
+        />
+      )}
+      {/* the same code, big enough to work in; what's applied there is applied here */}
+      {coded && (
+        <CodeWindow
+          title={`${pattern.name} · ${coded.name}`}
+          value={coded.code ?? ''}
+          onCommit={(v) => updateChannel(coded.id, (c) => { c.code = v })}
+          onClose={() => setCoding(null)}
         />
       )}
     </div>

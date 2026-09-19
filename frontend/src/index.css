@@ -643,11 +643,10 @@ button.lcd-unit:hover { color: var(--acid); }
 .ch-input:focus { outline: none; border-color: var(--acid); }
 .ch-note { flex: 0 0 3.6rem; color: var(--acid); }
 .ch-kind { font-size: 11px; color: var(--muted); padding: 0.25rem 0; }
-.ch-code {
-  font: inherit; font-size: 12px; color: var(--acid); background: var(--ink);
-  border: 1px solid var(--line); border-radius: 0; padding: 0.35rem 0.5rem; min-width: 0; width: 100%;
-}
-.ch-code:focus { outline: none; border-color: var(--acid); }
+/* a code instrument's line, in the editor the code node uses (see CodeBox.jsx) */
+.codebox.ch-code { min-width: 0; width: 100%; border-radius: 0; }
+.codebox.ch-code .codebox-cm { max-height: 7.5rem; }
+.rack-body.compact .codebox.ch-code .codebox-cm { max-height: 4.5rem; }
 .steps {
   position: relative;
   display: grid;
