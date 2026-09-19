@@ -13,15 +13,21 @@ function line(text) {
 /**
  * What's changed since you were last here.
  *
- * It opens by itself when there's something you haven't seen, and closing it is agreeing
- * you've seen it. Everything older is still in here, so it doubles as the whole list from
- * the file menu.
+ * Opened by itself, it shows what's new and nothing else — a list that grows every release
+ * would bury the thing you opened it for under everything you've already read. What came
+ * before is one line away, and opening it from the file menu starts there: then you came
+ * for the history, not for the news.
  */
 export default function WhatsNew({ since, onClose }) {
   const ref = useRef(null)
   const closeRef = useRef(null)
   const listRef = useRef(null)
   const [more, setMore] = useState(false) // something under the fold: the list fades out
+  const fresh = since ? NEWS.filter((entry) => entry.id > since) : []
+  // it arrived with news to show: start on that, and keep the rest behind a line
+  const [all, setAll] = useState(!fresh.length)
+  const shown = all ? NEWS : fresh
+  const behind = NEWS.length - fresh.length
 
   useEffect(() => {
     const dialog = ref.current
@@ -50,10 +56,10 @@ export default function WhatsNew({ since, onClose }) {
       onClick={(e) => { if (e.target === ref.current) onClose() }}
     >
       <div className="cd-body">
-        <h2 id="whats-new-title" className="cd-title">What’s new</h2>
+        <h2 id="whats-new-title" className="cd-title">{all ? 'What’s new' : fresh.length > 1 ? 'While you were away' : 'What’s new'}</h2>
         <p className="wn-now">you’re on <b>{VERSION}</b></p>
         <div className={`wn-list ${more ? 'more' : ''}`} ref={listRef}>
-          {NEWS.map((entry) => (
+          {shown.map((entry) => (
             <section key={entry.id} className={`wn-entry ${since && entry.id > since ? 'fresh' : ''}`}>
               <header className="wn-head">
                 <h3 className="wn-title">{entry.title}</h3>
@@ -67,6 +73,11 @@ export default function WhatsNew({ since, onClose }) {
               </ul>
             </section>
           ))}
+          {!all && behind > 0 && (
+            <button type="button" className="wn-back" onClick={() => setAll(true)}>
+              everything before this <span>{behind}</span>
+            </button>
+          )}
         </div>
         <div className="cd-actions">
           <button ref={closeRef} type="button" className="btn primary" onClick={onClose}>got it</button>
