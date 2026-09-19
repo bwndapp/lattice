@@ -35,6 +35,7 @@ export const NEWS = [
       'A little of it shimmers and beats · a lot of it makes bells',
       '**Spread** moves the two sides by different amounts, for a swirl',
       'A **sidechain** ducks as many sounds as you wire into it, all pumping together',
+      'Clips whose part has left the patch say so, instead of sitting there silent',
     ],
   },
   {

@@ -1172,16 +1172,19 @@ export default function Timeline({ project, onUpdateProject, transport, started 
                 const into = loops ? (((c.offset ?? 0) % part.bars) + part.bars) % part.bars : 0
                 const firstRepeat = part.bars - into
                 const repeats = loops ? Math.max(0, Math.ceil((c.len - firstRepeat - 1e-9) / part.bars)) : 0
+                // nothing on the patch plays this any more: it sits here and makes no sound
+                const loose = part.kind === 'pattern' ? !part.inPatch : part.kind === 'auto' && !resolveTarget(project, part.target)
                 return (
                   <div
                     key={c.id}
                     data-id={c.id}
-                    className={`clip ${LANE_H >= 30 && part.kind !== 'auto' ? 'roomy' : ''} ${part.kind === 'auto' ? 'automation' : ''} ${selected.has(c.id) ? 'selected' : ''} ${c.id.startsWith('__') ? 'preview' : ''} ${c.gone || vanishing?.has(c.id) ? 'gone' : ''} ${drag?.lift && (drag.changes?.[c.id] || c.id.startsWith('__copy')) ? 'lifted' : ''} ${arriving?.has(c.id) ? 'arriving' : ''} ${!song.on ? 'off' : ''} ${peerClips.has(c.id) ? 'peer-held' : ''}`}
+                    className={`clip ${LANE_H >= 30 && part.kind !== 'auto' ? 'roomy' : ''} ${part.kind === 'auto' ? 'automation' : ''} ${selected.has(c.id) ? 'selected' : ''} ${c.id.startsWith('__') ? 'preview' : ''} ${c.gone || vanishing?.has(c.id) ? 'gone' : ''} ${drag?.lift && (drag.changes?.[c.id] || c.id.startsWith('__copy')) ? 'lifted' : ''} ${arriving?.has(c.id) ? 'arriving' : ''} ${!song.on ? 'off' : ''} ${loose ? 'loose' : ''} ${peerClips.has(c.id) ? 'peer-held' : ''}`}
                     style={{ left: c.start * ppb, top: c.lane * LANE_H + 3, width: Math.max(4, c.len * ppb - 1), height: LANE_H - 6, '--clip': colorFor(c.src, song.colors), '--clip-ink': inkFor(colorFor(c.src, song.colors)), ...(peerClips.get(c.id) ? { '--peer': peerClips.get(c.id).color } : {}) }}
-                    title={`${part.name} · bar ${Math.floor(c.start) + 1}${c.start % 1 ? `.${Math.round((c.start % 1) * beats) + 1}` : ''} · ${Math.round(c.len * beats) / beats} bar${c.len === 1 ? '' : 's'}`}
+                    title={`${part.name} · bar ${Math.floor(c.start) + 1}${c.start % 1 ? `.${Math.round((c.start % 1) * beats) + 1}` : ''} · ${Math.round(c.len * beats) / beats} bar${c.len === 1 ? '' : 's'}${loose ? (part.kind === 'auto' ? ' · its knob is gone, so this plays nothing' : ' · not in the patch, so this plays nothing · drag the part onto the patch to hook it up') : ''}`}
                   >
                     <ClipSketch url={sketchFor(c.src)} bars={part.bars} ppb={ppb} into={into} laneH={LANE_H} full={part.kind === 'auto'} />
                     <span className="clip-name">{part.name}</span>
+                    {loose && <span className="clip-loose" aria-label="not in the patch">?</span>}
                     {Array.from({ length: repeats }, (_, i) => (
                       <span key={i} className="clip-repeat" style={{ left: (firstRepeat + i * part.bars) * ppb }} aria-hidden />
                     ))}
