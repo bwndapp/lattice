@@ -726,15 +726,19 @@ export function normalizeGraph(raw, patterns) {
     if (!spec.inputs) continue
     const handle = spec.inputs === 1 ? 'in' : `in-${slotIndex(e.targetHandle)}`
     if (Array.isArray(spec.inputs) && slotIndex(e.targetHandle) >= spec.inputs.length) continue
-    const key = `${target.id}:${handle}`
-    if (taken.has(key)) continue // one wire per input slot
-    taken.add(key)
     // a wire can leave a pattern node by one instrument's port instead of its main out;
     // when that instrument is gone the wire goes with it
     const chan = source.type === 'pattern' && /^out-[\w-]{1,40}$/.test(String(e?.sourceHandle)) ? e.sourceHandle.slice(4) : null
     const known = chan && channelsIn(source.data.patternId)
     if (chan && known && !known.some((c) => c.id === chan)) continue
     const from = chan ? `out-${chan}` : 'out'
+    // one wire per input slot, unless the node says that input takes as many as you give
+    // it (a sidechain's sound side) — there, one wire per thing feeding it
+    const key = spec.many?.includes(handle)
+      ? `${target.id}:${handle}:${source.id}:${from}`
+      : `${target.id}:${handle}`
+    if (taken.has(key)) continue
+    taken.add(key)
     edges.push({ id: `e_${source.id}_${from === 'out' ? '' : `${from.slice(4)}_`}${target.id}_${handle.replace('-', '')}`, source: source.id, sourceHandle: from, target: target.id, targetHandle: handle })
   }
   return { nodes, edges: dropCycles(nodes, edges) }
