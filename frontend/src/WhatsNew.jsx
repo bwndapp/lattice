@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NEWS } from './changelog.js'
 import './ConfirmDialog.css'
 import './WhatsNew.css'
@@ -20,6 +20,8 @@ function line(text) {
 export default function WhatsNew({ since, onClose }) {
   const ref = useRef(null)
   const closeRef = useRef(null)
+  const listRef = useRef(null)
+  const [more, setMore] = useState(false) // something under the fold: the list fades out
 
   useEffect(() => {
     const dialog = ref.current
@@ -27,6 +29,15 @@ export default function WhatsNew({ since, onClose }) {
     if (!dialog.open) dialog.showModal()
     closeRef.current?.focus()
     return () => { if (dialog.open) dialog.close() }
+  }, [])
+
+  useEffect(() => {
+    const list = listRef.current
+    if (!list) return undefined
+    const check = () => setMore(list.scrollTop + list.clientHeight < list.scrollHeight - 4)
+    check()
+    list.addEventListener('scroll', check, { passive: true })
+    return () => list.removeEventListener('scroll', check)
   }, [])
 
   return (
@@ -40,7 +51,7 @@ export default function WhatsNew({ since, onClose }) {
     >
       <div className="cd-body">
         <h2 id="whats-new-title" className="cd-title">What’s new</h2>
-        <div className="wn-list">
+        <div className={`wn-list ${more ? 'more' : ''}`} ref={listRef}>
           {NEWS.map((entry) => (
             <section key={entry.id} className={`wn-entry ${since && entry.id > since ? 'fresh' : ''}`}>
               <header className="wn-head">

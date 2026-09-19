@@ -1,6 +1,18 @@
 /* the changelog dialog (see WhatsNew.jsx) */
 .whats-new { width: min(560px, calc(100vw - 32px)); }
-.wn-list { display: grid; gap: 1.1rem; max-height: min(58vh, 30rem); overflow-y: auto; padding-right: 0.3rem; }
+/* long enough to read, short enough to stay a dialog: the rest scrolls, and the list
+   fades out at the bottom edge so there's no doubt there's more under it */
+.wn-list {
+  display: grid; gap: 1.1rem;
+  max-height: min(56vh, 28rem);
+  overflow-y: auto;
+  padding-right: 0.4rem;
+}
+/* only when there's something under the fold, so a short list's last line isn't dimmed */
+.wn-list.more {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1.5rem), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 1.5rem), transparent);
+}
 .wn-entry { display: grid; gap: 0.4rem; }
 .wn-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem; flex-wrap: wrap; }
 .wn-title {
@@ -11,7 +23,8 @@
 .wn-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
 .wn-items li {
   position: relative; padding-left: 0.85rem;
-  font-size: 12px; line-height: 1.6; color: var(--muted);
+  font-size: 12px; line-height: 1.5; color: var(--muted);
+  text-wrap: pretty;
 }
 .wn-items li::before { content: ''; position: absolute; left: 0; top: 0.62em; width: 4px; height: 4px; border-radius: 50%; background: #45453b; }
 .wn-items b { color: var(--paper); font-weight: 700; }
