@@ -36,6 +36,7 @@ export const NEWS = [
       '**Spread** moves the two sides by different amounts, for a swirl',
       'A **sidechain** ducks as many sounds as you wire into it, all pumping together',
       'Clips whose part has left the patch say so, instead of sitting there silent',
+      '**Off the patch** in the add pane — put a deleted part back with a click, clips and all',
     ],
   },
   {

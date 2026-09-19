@@ -26,6 +26,7 @@ import PeerCursors from './PeerCursors.jsx'
 import { useOctave } from './keyboard.js'
 
 const NODE_MIME = 'application/x-strudel-node'
+const PART_MIME = 'application/x-lattice-part'
 const Ctx = createContext(null)
 
 const slotNum = (h) => Number(/^in-(\d+)$/.exec(h ?? '')?.[1] ?? -1)
@@ -777,7 +778,7 @@ function writePalPref(key, value) {
  * collapse it to a rail, fold groups away. Type to search (press / to jump to the box),
  * arrow keys move through results, Enter adds.
  */
-function Palette({ onAdd }) {
+function Palette({ onAdd, offPatch = [] }) {
   const items = useMemo(() => paletteItems(), [])
   const [width, setWidth] = useState(() => Math.min(PAL_MAX, Math.max(PAL_MIN, readPalPref('strudel:palette:width', 200))))
   const [collapsed, setCollapsed] = useState(() => readPalPref('strudel:palette:collapsed', false))
@@ -890,6 +891,32 @@ function Palette({ onAdd }) {
         />
       </div>
       <div className="pal-list" ref={listRef}>
+        {!results && offPatch.length > 0 && (
+          <section className="pal-group pal-loose">
+            <button
+              className="pal-group-head"
+              aria-expanded={!closed.has('offpatch')}
+              onClick={() => setClosed((s) => { const next = new Set(s); next.has('offpatch') ? next.delete('offpatch') : next.add('offpatch'); return next })}
+            >
+              <span className="pal-caret" aria-hidden>{closed.has('offpatch') ? '+' : '−'}</span>
+              <span className="pal-label">off the patch</span>
+              <span className="pal-n">{offPatch.length}</span>
+            </button>
+            {!closed.has('offpatch') && offPatch.map((part) => (
+              <button
+                key={part.id}
+                className="pal-item pal-part"
+                draggable
+                title={`${part.name} is written but nothing plays it${part.clips ? ` · ${part.clips} clip${part.clips === 1 ? '' : 's'} of it on the timeline` : ''}. Put it back and those clips play again.`}
+                onDragStart={(e) => { e.dataTransfer.setData(PART_MIME, part.id); e.dataTransfer.effectAllowed = 'copy' }}
+                onClick={() => onAdd('pattern', null, { patternId: part.id })}
+              >
+                <span className="pal-item-label">{part.name}</span>
+                {wide && <span className="pal-item-blurb">{part.clips ? `${part.clips} clip${part.clips === 1 ? '' : 's'} waiting` : 'nothing plays it'}</span>}
+              </button>
+            ))}
+          </section>
+        )}
         {results ? (
           <>
             <span className="pal-count" aria-live="polite">{results.length ? `${results.length} match${results.length === 1 ? '' : 'es'} · enter adds the highlighted one` : `nothing matches “${query}”`}</span>
@@ -1152,10 +1179,16 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
     onUpdateProject((p) => {
       const data = defaultData(type)
       if (type === 'pattern') {
-        const pattern = makePattern(`pattern ${p.patterns.length + 1}`)
-        if (instrument) { pattern.channels.push(instrumentChannel(instrument, pattern)); pattern.name = instrument }
-        p.patterns.push(pattern)
-        data.patternId = pattern.id
+        // a part that's already written — taken off the patch, or never put on it — goes
+        // back as it is, keeping its name, its steps and every clip of it on the timeline
+        const back = instrument && typeof instrument === 'object' ? instrument.patternId : null
+        if (back && p.patterns.some((x) => x.id === back)) data.patternId = back
+        else {
+          const pattern = makePattern(`pattern ${p.patterns.length + 1}`)
+          if (instrument) { pattern.channels.push(instrumentChannel(instrument, pattern)); pattern.name = instrument }
+          p.patterns.push(pattern)
+          data.patternId = pattern.id
+        }
       }
       p.nodes.push({ id, type, x: Math.round(at.x), y: Math.round(at.y), data })
       if (intoWire) spliceInto(p, intoWire, id)
@@ -1321,6 +1354,24 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
   const selected = project.nodes.find((n) => nodes.find((r) => r.id === n.id && r.selected))
 
   /*
+   * Parts that exist but nothing on the patch plays: delete a pattern's node and the pattern
+   * itself stays, with every clip of it still on the timeline, silent. They're offered in
+   * the add pane so putting one back is a click, and putting it back reconnects it to those
+   * clips — it's the same part, not a new one. A variation isn't listed: it plays through
+   * its original's node, so the original is the one to put back.
+   */
+  const offPatch = useMemo(() => {
+    const clips = project.song?.clips ?? []
+    return project.patterns
+      .filter((p) => !p.parent && !project.nodes.some((n) => n.type === 'pattern' && n.data.patternId === p.id))
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        clips: clips.filter((c) => c.src === `pattern:${p.id}`).length,
+      }))
+  }, [project.patterns, project.nodes, project.song])
+
+  /*
    * Which instrument the keyboard plays while you're on the patch.
    *
    * Selecting a pattern node holding one instrument arms it, without having to open the
@@ -1366,11 +1417,11 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
   return (
     <Ctx.Provider value={ctx}>
       <div className="graph" ref={wrapRef} data-surface="patch">
-        <Palette onAdd={(type, pos, instrument) => addNode(type, pos, instrument)} />
+        <Palette onAdd={(type, pos, instrument) => addNode(type, pos, instrument)} offPatch={offPatch} />
         <div
           className={`graph-canvas ${lighting ? '' : 'flow-off'}`}
           onDragOver={(e) => {
-            if (!e.dataTransfer.types.includes(NODE_MIME) && !e.dataTransfer.types.includes(INSTRUMENT_MIME)) return
+            if (!e.dataTransfer.types.includes(NODE_MIME) && !e.dataTransfer.types.includes(INSTRUMENT_MIME) && !e.dataTransfer.types.includes(PART_MIME)) return
             e.preventDefault()
             e.dataTransfer.dropEffect = 'copy'
             // the node type isn't readable during dragover, so any node lights wires; the drop decides
@@ -1384,13 +1435,14 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
           onDrop={(e) => {
             const type = e.dataTransfer.getData(NODE_MIME)
             const instrument = e.dataTransfer.getData(INSTRUMENT_MIME)
-            if (!type && !instrument) return
+            const part = e.dataTransfer.getData(PART_MIME)
+            if (!type && !instrument && !part) return
             e.preventDefault()
             setSpliceTarget(null)
             const at = flow.screenToFlowPosition({ x: e.clientX - 20, y: e.clientY - 20 })
             const r = 14
             const wire = type && splicable(type) ? wireAt({ left: e.clientX - r, right: e.clientX + r, top: e.clientY - r, bottom: e.clientY + r }) : null
-            addNode(type || 'pattern', at, instrument || null, wire)
+            addNode(type || 'pattern', at, part ? { patternId: part } : instrument || null, wire)
           }}
         >
           {/* what the canvas does, stacked in the corner: the flow lamp, then the slack

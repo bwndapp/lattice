@@ -868,6 +868,11 @@ button.lcd-unit:hover { color: var(--acid); }
   width: 200px; border-left: 0; border-right: 1px solid var(--line); overflow: visible;
 }
 .palette.graph-palette.collapsed { width: 2rem; }
+/* parts that exist with nothing playing them: the same acid the timeline marks them with */
+.pal-group.pal-loose .pal-group-head .pal-label { color: var(--acid); }
+.pal-item.pal-part { border-left: 2px solid color-mix(in srgb, var(--acid) 55%, transparent); }
+.pal-item.pal-part .pal-item-blurb { color: color-mix(in srgb, var(--acid) 45%, var(--muted)); }
+
 .pal-rail { flex: 1; font: inherit; font-size: 11px; color: var(--muted); background: var(--panel); border: 0; cursor: var(--ring); padding: 0.6rem 0; }
 .pal-rail span { writing-mode: vertical-rl; letter-spacing: 0.15em; }
 .pal-rail:hover { color: var(--acid); }
