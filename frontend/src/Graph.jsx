@@ -939,7 +939,12 @@ function Palette({ onAdd, unused = [], onForget }) {
                     setArming(part.id)
                     armed.current = setTimeout(() => setArming(null), 3000)
                   }}
-                >{arming === part.id ? 'sure?' : '×'}</button>
+                >
+                  <svg viewBox="0 0 14 14" aria-hidden>
+                    <path d="M3 4h8M5.6 4V2.9h2.8V4M4.2 4l.5 7.1h4.6L9.8 4" />
+                    <path className="bin-lines" d="M6 6.2v3.4M8 6.2v3.4" />
+                  </svg>
+                </button>
               </div>
             ))}
           </section>

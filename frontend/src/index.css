@@ -870,19 +870,33 @@ button.lcd-unit:hover { color: var(--acid); }
 .palette.graph-palette.collapsed { width: 2rem; }
 /* parts that exist with nothing playing them: the same acid the timeline marks them with */
 .pal-group.pal-unused .pal-group-head .pal-label { color: var(--acid); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pal-item.pal-part { border-left: 2px solid color-mix(in srgb, var(--acid) 55%, transparent); padding-right: 2.6rem; }
-/* throwing one away: out of the way until you're on the row, and it asks once */
-.pal-part-row { position: relative; }
-.pal-part-x {
-  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
-  font: inherit; font-size: 10px; line-height: 1; color: var(--muted);
-  background: var(--panel); border: 1px solid var(--line); border-radius: 3px;
-  padding: 2px 4px; cursor: var(--ring); opacity: 0;
-  transition: opacity 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+/*
+ * An unused part's row is the card, and the bin lives inside it: the label fills the card
+ * and carries no border of its own, so what you see is one object with a corner you can
+ * throw it away by, rather than a button with another button sitting on top of it.
+ */
+.pal-part-row {
+  position: relative; display: flex; align-items: stretch;
+  background: var(--ink); border: 1px solid var(--line);
+  border-left: 3px solid color-mix(in srgb, var(--acid) 55%, transparent);
 }
+.pal-part-row:hover { border-color: var(--acid); border-left-color: var(--acid); }
+.pal-item.pal-part { flex: 1; min-width: 0; background: none; border: 0; padding-right: 0.3rem; }
+.pal-item.pal-part:hover { border: 0; }
+.pal-part-x {
+  flex: none; align-self: center; display: grid; place-items: center;
+  width: 22px; height: 22px; margin-right: 3px;
+  color: #55554f; background: none; border: 0; border-radius: 3px;
+  cursor: var(--ring); opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.pal-part-x svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+.pal-part-x .bin-lines { opacity: 0.6; }
 .pal-part-row:hover .pal-part-x, .pal-part-x:focus-visible, .pal-part-x.armed { opacity: 1; }
-.pal-part-x:hover { color: var(--danger); border-color: var(--danger); }
-.pal-part-x.armed { color: var(--ink); background: var(--danger); border-color: var(--danger); font-weight: 700; }
+.pal-part-x:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 18%, transparent); }
+/* asked once: the bin is filled, and the next click does it */
+.pal-part-x.armed { color: var(--ink); background: var(--danger); }
+.pal-part-x.armed svg { stroke-width: 1.5; }
 .pal-item.pal-part .pal-item-blurb { color: color-mix(in srgb, var(--acid) 45%, var(--muted)); }
 
 .pal-rail { flex: 1; font: inherit; font-size: 11px; color: var(--muted); background: var(--panel); border: 0; cursor: var(--ring); padding: 0.6rem 0; }
