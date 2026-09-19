@@ -424,6 +424,16 @@ body.dragging, body.dragging * { user-select: none !important; -webkit-user-sele
 .tempo.editing, .tempo.editing .lcd-value { cursor: text; user-select: text; }
 .tempo.dragging { border-color: var(--acid); }
 .tempo:not(.editing) .lcd-value::selection { background: transparent; }
+/* the octave the typing keyboard plays from: one number, next to the meter, because every
+   keyboard in the app plays from it (see keyboard.js) */
+.lcd.oct { align-items: center; gap: 0.2rem; }
+.lcd.oct .lcd-value { font-size: 0.95rem; min-width: 2.4ch; text-align: center; }
+.lcd-step {
+  font: inherit; font-size: 13px; line-height: 1; color: var(--muted);
+  background: none; border: 0; padding: 0 0.2rem; cursor: var(--ring);
+}
+.lcd-step:hover:not(:disabled) { color: var(--acid); }
+.lcd-step:disabled { opacity: 0.3; cursor: var(--dot); }
 .lcd-unit { font-size: 10px; color: var(--muted); font-family: inherit; background: none; border: 0; padding: 0; cursor: var(--ring); }
 button.lcd-unit:hover { color: var(--acid); }
 .position.clock .lcd-value { cursor: var(--ring); color: var(--paper); }

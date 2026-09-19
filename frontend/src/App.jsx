@@ -33,6 +33,7 @@ import { setFxParams } from './fxbus.js'
 import { setInsertParams } from './stereo.js'
 import { setEngineParams } from './instruments/host.js'
 import { capturePatterns, parseLanes, tempoChange } from './lanes'
+import { useOctave } from './keyboard.js'
 import { PROJECT_MARK, blankProject, demoProject, generateCode, newId, normalizeProject, parseProject, projectFromCode } from './project'
 import { createTransport, formatBarBeat, parseBarBeat } from './transport'
 import { songLength } from './song'
@@ -203,6 +204,9 @@ export default function App() {
   const [confirmClear, setConfirmClear] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showAbout, setShowAbout] = useState(false)
+  // the octave every keyboard in the app plays from, shown in the bar so it's never a
+  // surprise which one you're on (see keyboard.js)
+  const [octave, setOctave] = useOctave()
   const canvases = (v) => v === 'song' || v === 'graph'
   // the switch's thumb moves the moment you click, even if the canvas takes a frame to follow
   const [switching, setSwitching] = useState(null)
@@ -1472,6 +1476,16 @@ export default function App() {
             {[2, 3, 4, 5, 6, 7, 8].map((n) => <option key={n} value={n}>{n}/4</option>)}
           </select>
         </label>
+        <div
+          className="lcd oct"
+          title={`Typing plays from C${octave}: z s x d c v g b h n j m , is that octave, q 2 w 3 e r 5 t 6 y 7 u the next. − and = move it, wherever you are.`}
+          onWheel={(e) => { e.preventDefault(); setOctave(octave + (e.deltaY < 0 ? 1 : -1)) }}
+        >
+          <button type="button" className="lcd-step" disabled={octave <= 0} onClick={() => setOctave(octave - 1)} aria-label="An octave down">−</button>
+          <span className="lcd-value" aria-live="polite">C{octave}</span>
+          <button type="button" className="lcd-step" disabled={octave >= 8} onClick={() => setOctave(octave + 1)} aria-label="An octave up">+</button>
+          <span className="lcd-unit" aria-hidden>oct</span>
+        </div>
         <button
           className={`btn loop ${transport.loop.on ? 'on' : ''}`}
           aria-pressed={transport.loop.on}
