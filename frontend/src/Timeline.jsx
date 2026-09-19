@@ -9,6 +9,7 @@ import PeerCursors from './PeerCursors.jsx'
 import { useRollDock } from './rollDock.js'
 import { KnobMenu } from './KnobMenu.jsx'
 import { AUTO_PREFIX, curveAt, resolveTarget } from './automation.js'
+import CodeBox from './CodeBox.jsx'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import { KitSelect } from './Graph.jsx'
 import { NODE_TYPES } from './graph'
@@ -1344,7 +1345,9 @@ function PartPanel({ node, anchor, onUpdateProject, onClose }) {
           return (
             <label key={param.key} className="node-field wide">
               <span>{param.label}{param.type === 'mini' ? ' · mini-notation' : ''}</span>
-              <PanelInput value={String(value)} multiline={param.type === 'code'} rows={param.type === 'code' ? 5 : undefined} onCommit={(v) => set(param.key, v)} aria-label={param.label} />
+              {param.type === 'code'
+                ? <CodeBox value={String(value)} onCommit={(v) => set(param.key, v)} />
+                : <PanelInput value={String(value)} onCommit={(v) => set(param.key, v)} aria-label={param.label} />}
             </label>
           )
         })}
