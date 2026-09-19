@@ -1311,13 +1311,38 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
 
   const selected = project.nodes.find((n) => nodes.find((r) => r.id === n.id && r.selected))
 
-  // Select a pattern node holding one instrument and the keyboard plays it, without having
-  // to open the dock first. With more than one there's nothing to say which you meant, and
-  // the dock's own keyboard wins whenever it's open, so a key can never play twice.
-  const lone = selected?.type === 'pattern' && !dock?.at
-    ? project.patterns.find((p) => p.id === selected.data.patternId)
-    : null
-  const loneChannel = lone?.channels.length === 1 && lone.channels[0].kind !== 'code' ? lone.channels[0] : null
+  /*
+   * Which instrument the keyboard plays while you're on the patch.
+   *
+   * Selecting a pattern node holding one instrument arms it, without having to open the
+   * dock first — and so does selecting anything that instrument runs into: the fx rack
+   * you're building, the bus, the compressor you're dialling in. You're working on that
+   * instrument's sound, so you need to hear it while you work. Walking back from the
+   * selected node, if exactly one instrument feeds it, that's the one; where two or more
+   * arrive there's nothing to say which you meant, and nothing is armed. The dock's own
+   * keyboard wins whenever it's open, so a key can never play twice.
+   */
+  const armed = useMemo(() => {
+    if (!selected || dock?.at) return null
+    const byId = new Map(project.nodes.map((n) => [n.id, n]))
+    const found = new Set()
+    const seen = new Set()
+    const back = (id) => {
+      if (seen.has(id) || found.size > 1) return
+      seen.add(id)
+      const node = byId.get(id)
+      if (!node) return
+      if (node.type === 'pattern') return void found.add(node.data.patternId)
+      for (const e of project.edges) if (e.target === id) back(e.source)
+    }
+    back(selected.id)
+    if (found.size !== 1) return null
+    const pattern = project.patterns.find((p) => p.id === [...found][0])
+    const channel = pattern?.channels.length === 1 && pattern.channels[0].kind !== 'code' ? pattern.channels[0] : null
+    return channel ? { pattern, channel } : null
+  }, [selected, project, dock?.at])
+  const lone = armed?.pattern ?? null
+  const loneChannel = armed?.channel ?? null
   const [octave, setOctave] = useOctave()
   useTypingKeys({
     enabled: !!loneChannel,
@@ -1506,7 +1531,14 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
           <div className="graph-tip" aria-live="polite">
             {solo
               ? <>auditioning <b>{nodeTitle(project.nodes.find((n) => n.id === solo), project)}</b> · <button className="linkish" onClick={() => onSolo(null)}>back to the output</button></>
-              : selected ? <>{NODE_TYPES[selected.type]?.blurb}{selected.type !== 'output' && <> · click an effect in the pane to chain it after this</>}</>
+              : selected ? (
+                <>
+                  {NODE_TYPES[selected.type]?.blurb}
+                  {selected.type !== 'output' && <> · click an effect in the pane to chain it after this</>}
+                  {/* so it's never a mystery which instrument the letters are playing */}
+                  {armed && <> · typing plays <b>{armed.channel.name || armed.pattern.name}</b> from C{octave}</>}
+                </>
+              )
               : project.nodes.length === 1 && project.nodes[0].type === 'output'
                 ? <>empty patch · click a sound in the pane (<b>pattern</b>, <b>rhythm</b>, <b>melody</b>) and it wires itself into the output · with it selected, click effects to chain them after it</>
                 : 'double-click a pattern to open its rack · wire: drag right dot → left dot · pull a wire off an input to remove it · drop a node on a wire to insert it'}
