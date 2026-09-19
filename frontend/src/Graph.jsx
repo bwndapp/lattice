@@ -557,6 +557,13 @@ function StudioNode({ id, selected }) {
                             title={`Open ${ENGINES[c.engine.type].label}`}
                             onClick={() => openSynth(node.data.patternId, c.id)}
                           >{c.name}<span aria-hidden>↗</span></button>
+                        ) : c.kind === 'code' ? (
+                          // one written as code: the same, into a window you write in
+                          <button
+                            className="chan-name chan-synth nodrag"
+                            title={`Open ${c.name} · ${c.code?.trim() ? c.code.trim().slice(0, 60) : 'empty'}`}
+                            onClick={() => openCode({ patternId: node.data.patternId, channelId: c.id })}
+                          >{c.name}<span aria-hidden>↗</span></button>
                         ) : <span className="chan-name">{c.name}</span>}
                         {wired && (
                           <button
