@@ -3,7 +3,7 @@ import { NEWS } from './changelog.js'
 import './ConfirmDialog.css'
 import './WhatsNew.css'
 
-const when = (id) => new Date(`${id}T12:00:00`).toLocaleDateString([], { month: 'long', day: 'numeric' })
+const when = (entry) => new Date(`${entry.date ?? entry.id}T12:00:00`).toLocaleDateString([], { month: 'long', day: 'numeric' })
 
 /** **bold** and nothing else: enough to point at a name without writing markup in the list. */
 function line(text) {
@@ -56,7 +56,7 @@ export default function WhatsNew({ since, onClose }) {
             <section key={entry.id} className={`wn-entry ${since && entry.id > since ? 'fresh' : ''}`}>
               <header className="wn-head">
                 <h3 className="wn-title">{entry.title}</h3>
-                <span className="wn-when">{when(entry.id)}</span>
+                <span className="wn-when">{when(entry)}</span>
               </header>
               <ul className="wn-items">
                 {entry.items.map((item, i) => <li key={i}>{line(item)}</li>)}
