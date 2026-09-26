@@ -225,14 +225,19 @@ body.dragging, body.dragging * { user-select: none !important; -webkit-user-sele
 .track > :not(.title-input) { flex-shrink: 0; }
 .bar .seg.views { font-size: inherit; padding: 0; align-items: center; gap: 0; flex-wrap: nowrap; }
 /* left and right halves grow alike, so the canvas switch sits in the middle whenever both fit */
-.bar-side { display: flex; align-items: center; gap: inherit; flex: 1 1 0; align-self: stretch; min-width: 0; }
+.bar-side { display: flex; align-items: center; gap: inherit; flex: 1 1 0; align-self: stretch; }
 /*
- * A flex item can be squeezed narrower than the things inside it, and what's inside then
- * spills out of its box and draws over whatever comes next — which is how the transport
- * ended up on top of the browse button. Each half keeps what it can't fit to itself.
+ * The left half is never squeezed narrower than what's in it: a flex item that is spills
+ * its contents out of its own box and draws them over whatever comes next, which is how
+ * the transport ended up on top of the browse button — and clipping it instead only traded
+ * the overlap for controls that vanished. What doesn't fit at a given width leaves on
+ * purpose, below.
+ *
+ * The right half takes the slack and gives it up again, with the track's name as the part
+ * that gives: its box holds what's in it, so the two never meet.
  */
-.bar-side { overflow: hidden; }
-.bar-side.right { justify-content: flex-end; }
+.bar-side.left { min-width: max-content; }
+.bar-side.right { min-width: 0; overflow: hidden; justify-content: flex-end; }
 /*
  * The bar can't grow past the window, so as it fills up the least-used things leave it
  * rather than the most recently added thing pushing the save button off the end. In order
