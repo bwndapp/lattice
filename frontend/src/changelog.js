@@ -24,6 +24,16 @@
  */
 export const NEWS = [
   {
+    id: '2026-09-26-5',
+    date: '2026-09-26',
+    version: '0.2.5',
+    title: 'You stay signed in',
+    items: [
+      '**You stay signed in**: no more being signed out at random',
+      '**A plain sign-in button** at the top of the menu',
+    ],
+  },
+  {
     id: '2026-09-26-4',
     date: '2026-09-26',
     version: '0.2.4',
