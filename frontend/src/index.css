@@ -126,7 +126,7 @@ body.dragging, body.dragging * { user-select: none !important; -webkit-user-sele
 .btn.primary:disabled { background: transparent; color: var(--muted); border-color: var(--line); opacity: 1; }
 .btn.ghost { border-color: transparent; color: var(--muted); }
 .btn.danger:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); }
-.select, .title-input {
+.select {
   font: inherit;
   color: var(--paper);
   background: var(--ink);
@@ -219,12 +219,10 @@ body.dragging, body.dragging * { user-select: none !important; -webkit-user-sele
 /* ── main column: the tool ────────────────────────────── */
 .body { flex: 1; display: flex; min-height: 0; position: relative; }
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-/* the track: title, save and its menu, in the header */
-.track { display: flex; align-items: center; gap: 0.35rem; flex: 0 1 22rem; min-width: min-content; } /* the title gives way first */
-.track .title-input { max-width: 16rem; }
+/* the track: save and its menu, in the header */
+.track { display: flex; align-items: center; gap: 0.35rem; flex-shrink: 0; }
 .bar-side.right > :not(.track) { flex-shrink: 0; }
 .bar > .btn, .bar > .user, .bar > .lcd, .bar > .transport { flex-shrink: 0; }
-.track > :not(.title-input) { flex-shrink: 0; }
 .bar .seg.views { font-size: inherit; padding: 0; align-items: center; gap: 0; flex-wrap: nowrap; }
 /* left and right halves grow alike, so the canvas switch sits in the middle whenever both fit */
 .bar-side { display: flex; align-items: center; gap: inherit; flex: 1 1 0; align-self: stretch; }
@@ -345,24 +343,6 @@ body.dragging, body.dragging * { user-select: none !important; -webkit-user-sele
 @media (prefers-reduced-motion: reduce) { .cs-thumb, .cs-opt { transition: none; } }
 .seg.side-views .btn { font-size: 12px; }
 .phone-tabs { display: none !important; }
-.bar .title-input {
-  width: auto;
-  min-width: 4rem;
-  flex: 1 1 13rem;
-  font-family: var(--display);
-  font-weight: 800;
-  font-stretch: 112%;
-  font-size: 1.05rem;
-  letter-spacing: -0.01em;
-  color: var(--paper);
-  background: transparent;
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  padding: 0.25rem 0.2rem;
-  text-overflow: ellipsis;
-}
-.title-input::placeholder { color: var(--muted); }
-.title-input:hover, .title-input:focus { border-bottom-color: var(--acid); outline: none; }
 .btn.track-more { padding-inline: 0.55rem; font-weight: 700; letter-spacing: 0.05em; }
 /* save and its menu: save, save as a new track, new track (the file menu of a DAW) */
 .save-split { display: inline-flex; align-items: stretch; }
@@ -411,12 +391,7 @@ body.dragging, body.dragging * { user-select: none !important; -webkit-user-sele
   max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .track-line-from:hover, .track-line-out:hover { color: var(--paper); text-decoration-color: currentColor; }
-.track-heading { display: flex; flex-direction: column; margin-right: 0.35rem; min-width: 0; max-width: 16rem; }
-.track-heading .meta { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.track-title {
-  font-family: var(--display); font-weight: 800; font-stretch: 112%;
-  font-size: 1.05rem; line-height: 1.05; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
+.track-heading { font-size: 10px; margin-right: 0.35rem; max-width: 16rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .meta { color: var(--muted); font-size: 11.5px; }
 .editor { flex: 1; overflow: auto; position: relative; background: var(--ink) !important; }
 .editor .cm-editor { height: 100%; font-size: 15px; }
@@ -1281,13 +1256,9 @@ button.chan-synth:hover span { color: var(--acid); }
 
 }
 @media (max-width: 1560px) {
-  .bar .title-input { flex-basis: 9rem; }
-  .track { flex-basis: 17rem; }
   .seg.history { display: none; } /* ctrl/cmd + Z and shift + Z still undo and redo */
 }
 @media (max-width: 1400px) {
-  .bar .title-input { flex-basis: 7rem; }
-  .track { flex-basis: 14rem; }
   .btn.tport.to-start { display: none; } /* Home goes back to the start */
   .track-heading { max-width: 9rem; }
   .code-word { display: none; }
@@ -1295,8 +1266,7 @@ button.chan-synth:hover span { color: var(--acid); }
 }
 
 @media (max-width: 1280px) {
-  .bar .title-input, .track-heading { display: none; } /* the title is in the ··· menu */
-  .track { flex-basis: auto; }
+  .track-heading { display: none; }
 }
 @media (max-width: 1180px) {
   .canvas-switch { margin-inline: 0.4rem; --cs-w: 5.5rem; }

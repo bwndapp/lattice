@@ -1581,26 +1581,13 @@ export default function App() {
             <span className="meta track-status">Loading…</span>
           ) : canEdit ? (
             <>
-              <input
-                className="title-input"
-                size={6}
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="untitled"
-                maxLength={80}
-                aria-label="Track title"
-                title={isNew ? 'Scratch pad · not saved yet' : `saved ${timeAgo(track.updated_at)}`}
-              />
               <button className={`btn save ${dirty || !user ? 'primary' : ''} ${user ? '' : 'signed-out'}`} onClick={() => save()} disabled={busy || (!!user && !dirty)} title={!user ? 'Sign in to save this track' : dirty ? (isNew ? 'Save as a track (ctrl/cmd + S)' : `Save “${track?.title}” (ctrl/cmd + S)`) : 'Everything is saved'}>
                 {busy ? 'saving…' : !user || dirty ? 'save' : 'saved'}
               </button>
             </>
           ) : track ? (
             <>
-              <span className="track-heading" title={`by ${track.author}`}>
-                <span className="track-title">{track.title}</span>
-                <span className="meta">by {track.author}</span>
-              </span>
+              <span className="track-heading meta" title={`by ${track.author}`}>by {track.author}</span>
               <button
                 className={`btn save ${dirty ? 'primary' : ''}`}
                 onClick={() => save()}
