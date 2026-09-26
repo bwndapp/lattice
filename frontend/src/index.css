@@ -226,6 +226,12 @@ body.dragging, body.dragging * { user-select: none !important; -webkit-user-sele
 .bar .seg.views { font-size: inherit; padding: 0; align-items: center; gap: 0; flex-wrap: nowrap; }
 /* left and right halves grow alike, so the canvas switch sits in the middle whenever both fit */
 .bar-side { display: flex; align-items: center; gap: inherit; flex: 1 1 0; align-self: stretch; min-width: 0; }
+/*
+ * A flex item can be squeezed narrower than the things inside it, and what's inside then
+ * spills out of its box and draws over whatever comes next — which is how the transport
+ * ended up on top of the browse button. Each half keeps what it can't fit to itself.
+ */
+.bar-side { overflow: hidden; }
 .bar-side.right { justify-content: flex-end; }
 /*
  * The bar can't grow past the window, so as it fills up the least-used things leave it
@@ -234,10 +240,11 @@ body.dragging, body.dragging * { user-select: none !important; -webkit-user-sele
  * meter (it's in the project and rarely changed mid-song), the bar.beat clock (the
  * timeline's playhead says the same thing), then the octave (− and = still move it).
  */
-@media (max-width: 1380px) { .bar .loop-range { display: none; } }
-@media (max-width: 1240px) { .bar .lcd.meter { display: none; } }
-@media (max-width: 1120px) { .bar .position.clock { display: none; } }
-@media (max-width: 1000px) { .bar .lcd.oct { display: none; } }
+@media (max-width: 1600px) { .bar .loop-range { display: none; } }
+@media (max-width: 1460px) { .bar .lcd.meter { display: none; } }
+@media (max-width: 1320px) { .bar .position.clock { display: none; } }
+@media (max-width: 1180px) { .bar .lcd.oct { display: none; } }
+@media (max-width: 1080px) { .bar .btn.loop { display: none; } }
 .btn.browse-btn { display: inline-flex; align-items: center; gap: 0.4rem; flex: none; font-weight: 700; margin-left: auto; }
 .btn.browse-btn svg { display: block; color: var(--muted); }
 .btn.browse-btn:hover svg, .btn.browse-btn.on svg { color: inherit; }
