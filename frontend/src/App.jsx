@@ -1545,6 +1545,12 @@ export default function App() {
           <button className="btn solo-chip" onClick={() => setSolo(null)} title="You're hearing one part only. Click to hear the whole output again">soloing ×</button>
         )}
         </div>
+        {/* what the canvas shows: the patch or the song */}
+        <span className={`canvas-switch ${(switching ?? view) === 'song' ? 'at-first' : (switching ?? view) === 'graph' ? 'at-second' : 'at-neither'}`} role="group" aria-label="Canvas">
+          <Glass className="cs-thumb" aria-hidden />
+          <button className={`cs-opt ${(switching ?? view) === 'song' ? 'on' : ''}`} aria-pressed={view === 'song'} onClick={() => switchCanvas('song')} title="The timeline: when each part plays" disabled={!project}>timeline</button>
+          <button className={`cs-opt ${(switching ?? view) === 'graph' ? 'on' : ''}`} aria-pressed={view === 'graph'} onClick={() => switchCanvas('graph')} title="The patch: what each part goes through">patch</button>
+        </span>
         {/* the track catalogue is one click away, wherever you are */}
         <button
           className={`btn browse-btn ${view === 'browse' ? 'on' : ''}`}
@@ -1555,12 +1561,6 @@ export default function App() {
           <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden><path d="M1.5 1.5h3.6v3.6H1.5zM6.9 1.5h3.6v3.6H6.9zM1.5 6.9h3.6v3.6H1.5zM6.9 6.9h3.6v3.6H6.9z" fill="currentColor" /></svg>
           <span className="browse-word">browse</span>
         </button>
-        {/* what the canvas shows: the patch or the song */}
-        <span className={`canvas-switch ${(switching ?? view) === 'song' ? 'at-first' : (switching ?? view) === 'graph' ? 'at-second' : 'at-neither'}`} role="group" aria-label="Canvas">
-          <Glass className="cs-thumb" aria-hidden />
-          <button className={`cs-opt ${(switching ?? view) === 'song' ? 'on' : ''}`} aria-pressed={view === 'song'} onClick={() => switchCanvas('song')} title="The timeline: when each part plays" disabled={!project}>timeline</button>
-          <button className={`cs-opt ${(switching ?? view) === 'graph' ? 'on' : ''}`} aria-pressed={view === 'graph'} onClick={() => switchCanvas('graph')} title="The patch: what each part goes through">patch</button>
-        </span>
         <button
           className="btn bar-export"
           onClick={() => setShowExport(true)}

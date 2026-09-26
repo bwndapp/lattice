@@ -245,7 +245,7 @@ body.dragging, body.dragging * { user-select: none !important; -webkit-user-sele
 @media (max-width: 1320px) { .bar .position.clock { display: none; } }
 @media (max-width: 1180px) { .bar .lcd.oct { display: none; } }
 @media (max-width: 1080px) { .bar .btn.loop { display: none; } }
-.btn.browse-btn { display: inline-flex; align-items: center; gap: 0.4rem; flex: none; font-weight: 700; margin-left: auto; }
+.btn.browse-btn { display: inline-flex; align-items: center; gap: 0.4rem; flex: none; font-weight: 700; }
 .btn.browse-btn svg { display: block; color: var(--muted); }
 .btn.browse-btn:hover svg, .btn.browse-btn.on svg { color: inherit; }
 @media (max-width: 1180px) { .browse-word { display: none; } }
