@@ -151,13 +151,13 @@ body.dragging, body.dragging * { user-select: none !important; -webkit-user-sele
 }
 .logo {
   align-self: center;
-  margin: 0 0.6rem 0 0.1rem;
+  margin: 0 0.55rem 0 0.15rem;
   font-family: var(--display);
   font-weight: 900;
   font-stretch: 125%;
-  font-size: 26px; /* a mark in the corner: the bar belongs to the track, not the name */
+  font-size: 17px; /* a mark in the corner: the bar belongs to the track, not the name */
   line-height: 0.82;
-  letter-spacing: -0.05em;
+  letter-spacing: -0.035em;
   color: var(--acid);
   text-decoration: none;
   display: flex;
@@ -166,6 +166,8 @@ body.dragging, body.dragging * { user-select: none !important; -webkit-user-sele
 }
 /* the mark leans toward the pointer, the way the card on jameskemp.cc does */
 .logo-card { display: inline-flex; }
+/* tight for the bar: the name is one thing among many up there, not the headline */
+@media (max-width: 1240px) { .logo-word { display: none; } }
 @media (pointer: fine) and (prefers-reduced-motion: no-preference) {
   .logo-card { perspective: 420px; }
   .logo {
