@@ -15,7 +15,7 @@ from incubator_lib import db, db_path, sso_user
 
 router = APIRouter()
 
-MAX_CODE = 100_000
+MAX_CODE = 500_000  # a pasted song lands twice: in the header, and in the code under it
 MAX_TITLE = 80
 VISIBILITIES = ("public", "unlisted", "private")
 SORTS = {

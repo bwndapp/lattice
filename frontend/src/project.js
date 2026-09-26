@@ -208,7 +208,7 @@ export function normalizeProject(raw) {
   const { nodes, edges } = normalizeGraph(graph, project.patterns)
   project.nodes = nodes
   project.edges = edges
-  if (typeof raw.prelude === 'string' && raw.prelude.trim()) project.prelude = raw.prelude.slice(0, 20000)
+  if (typeof raw.prelude === 'string' && raw.prelude.trim()) project.prelude = raw.prelude.slice(0, 100_000)
   if (!nodes.some((n) => n.type === 'output')) project.nodes.push({ id: 'out', type: 'output', x: 700, y: 200, data: { muted: {}, solo: null } })
   if (raw.song) project.song = normalizeSong(raw.song, project)
   return project

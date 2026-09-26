@@ -12,6 +12,7 @@
  * grow a new input slot as you connect them; slot order is the order in the code.
  */
 
+import { parse } from 'acorn'
 import { STEREO_ORBIT_BASE, beginInserts, commitInserts, declareInsert, declareRoute } from './stereo'
 import { DELAY_DEFAULTS, DELAY_DIVISIONS, GLOBAL_DELAY, GLOBAL_REVERB, REVERB_DEFAULTS, beginFx, commitFx, declareFx } from './fxbus.js'
 
@@ -108,7 +109,7 @@ export const NODE_TYPES = {
     group: 'source', label: 'code', blurb: 'Any Strudel pattern, written out',
     inputs: 0,
     params: [{ key: 'code', type: 'code', label: 'code', def: 's("bd sd")' }],
-    code: (d) => (String(d.code ?? '').trim() ? `(${String(d.code).trim()})` : null),
+    code: (d) => codeNodeExpr(d.code),
   },
 
   fast: {
@@ -587,6 +588,66 @@ export const NODE_TYPES = {
   },
 }
 
+const CODE_MAX = 100_000
+const TEMPO_CALLS = new Set(['setcpm', 'setCpm', 'setcps', 'setCps'])
+const codeCache = new Map()
+
+/**
+ * What a code node plays. One pattern (`s("bd sd")`) is used as it is. A whole script (the
+ * consts, sliders and helpers a pasted song comes with) runs inside a function of its own
+ * and plays its last pattern, or its `$:` parts stacked, so its names can't clash with the
+ * rest of the patch. The track sets the tempo, so the script's own setcpm/setcps is left
+ * out. Code that doesn't parse, or throws while it runs, plays nothing instead of
+ * stopping the whole track.
+ */
+export function codeNodeExpr(raw) {
+  const src = String(raw ?? '').trim()
+  if (!src) return null
+  if (codeCache.has(src)) return codeCache.get(src)
+  const out = compileCodeNode(src)
+  if (codeCache.size > 50) codeCache.delete(codeCache.keys().next().value)
+  codeCache.set(src, out)
+  return out
+}
+
+function compileCodeNode(src) {
+  let ast
+  try {
+    ast = parse(src, { ecmaVersion: 'latest', sourceType: 'module', allowAwaitOutsideFunction: true, allowReturnOutsideFunction: true })
+  } catch (e) {
+    return `(silence /* code node: mistake on line ${e.loc?.line ?? '?'} */)`
+  }
+  const body = ast.body
+  const text = (n) => src.slice(n.start, n.end)
+  const only = body.length === 1 && body[0].type === 'ExpressionStatement' ? body[0] : null
+  if (only) return `(${text(only.expression)})`
+  const stmts = []
+  const parts = []
+  let last = null
+  for (const n of body) {
+    const call = n.type === 'ExpressionStatement' && n.expression.type === 'CallExpression' ? n.expression : null
+    if (call?.callee.type === 'Identifier' && TEMPO_CALLS.has(call.callee.name)) continue
+    if (n.type === 'LabeledStatement') {
+      const muted = /^_|_$/.test(n.label.name)
+      if (!muted) parts.push(text(n.body).replace(/;\s*$/, ''))
+      continue
+    }
+    // setup like `await samples(…)` can't wait in here: it loads, and plays once it has
+    if (n.type === 'ExpressionStatement' && n.expression.type === 'AwaitExpression') {
+      stmts.push(`${text(n.expression.argument)};`)
+      last = null
+      continue
+    }
+    if (n.type === 'ExpressionStatement') last = text(n.expression)
+    else last = null
+    stmts.push(text(n))
+  }
+  let result = 'silence'
+  if (parts.length) result = parts.length === 1 ? parts[0] : `stack(${parts.join(', ')})`
+  else if (last != null) { stmts.pop(); result = last }
+  return `(() => { try {\n${stmts.join('\n')}\nreturn (${result})\n} catch (e) { console.warn('code node:', e); return silence } })()`
+}
+
 /**
  * Haas and widener process the audio bus ("orbit") a sound plays on (see stereo.js). The
  * code puts the sound on a bus of its own, unless it's already on one, and the app
@@ -653,7 +714,7 @@ export function cleanData(type, raw) {
     if (p.type === 'knob' || p.type === 'int') data[p.key] = clampNum(v, p.def, p.min, p.max)
     if (p.type === 'int') data[p.key] = Math.round(data[p.key])
     if (p.type === 'select') data[p.key] = p.options.includes(v) ? v : p.def
-    if (['text', 'mini', 'sound', 'code', 'kit'].includes(p.type)) data[p.key] = String(v).slice(0, p.type === 'code' ? 20000 : 400)
+    if (['text', 'mini', 'sound', 'code', 'kit'].includes(p.type)) data[p.key] = String(v).slice(0, p.type === 'code' ? CODE_MAX : 400)
   }
   return data
 }
