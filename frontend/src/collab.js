@@ -50,7 +50,11 @@ import { useSyncExternalStore } from 'react'
 import { COLLAB_ROOT } from './base'
 import { currentUser, getToken } from './bwnd'
 
-const RETRY = [700, 1500, 3000, 6000, 12000] // how long to wait before trying again
+const RETRY = [1000, 2000, 4000, 8000, 16000, 30000] // how long to wait before trying again
+const STEADY = 20000 // up this long and a drop counts as a fresh one, not more of the same
+// the room saying no rather than falling over: no track by that id (never saved, or
+// deleted), not ours to open, or a hello it couldn't read. Asking again gets the same answer.
+const REFUSED = new Set([4000, 4003, 4004])
 const PING = 25000 // keeps the connection alive through anything that times idle ones out
 const CLOCK_EVERY = 20000 // how often we check our clock against the server's
 const SETTLED = 4000 // quiet for this long and we compare notes with the others
@@ -61,6 +65,7 @@ let me = null
 let peers = new Map()
 let tries = 0
 let timer = 0
+let steady = 0
 let pinger = 0
 let mayEdit = false // whether the server lets us change this track
 let skew = null // what to add to our clock to get the server's
@@ -272,7 +277,8 @@ async function open(trackId) {
     let msg
     try { msg = JSON.parse(e.data) } catch { return }
     if (msg.t === 'me') {
-      tries = 0
+      clearTimeout(steady)
+      steady = setTimeout(() => { tries = 0 }, STEADY)
       mayEdit = !!msg.edit
       version = 0
       me = { id: msg.id, color: msg.color, bot: msg.bot, name: msg.name, edit: mayEdit, owner: !!msg.owner, open: msg.open !== false }
@@ -379,9 +385,10 @@ async function open(trackId) {
       selChanged()
     }
   }
-  ws.onclose = () => {
+  ws.onclose = (e) => {
     if (sock !== ws) return
     clearInterval(pinger)
+    clearTimeout(steady)
     sock = null
     me = null
     mayEdit = false
@@ -390,14 +397,15 @@ async function open(trackId) {
     forgetClock()
     doc?.reset?.()
     if (peers.size) { peers = new Map(); changed(); selChanged() }
-    retry(trackId)
+    if (!REFUSED.has(e.code)) retry(trackId)
   }
   ws.onerror = () => { try { ws.close() } catch { /* already gone */ } }
 }
 
 function retry(trackId) {
   if (room !== trackId) return
-  const wait = RETRY[Math.min(tries++, RETRY.length - 1)]
+  const base = RETRY[Math.min(tries++, RETRY.length - 1)]
+  const wait = base * (0.75 + Math.random() * 0.5) // spread out, so a room that dropped everyone isn't hit all at once
   clearTimeout(timer)
   timer = setTimeout(() => open(trackId), wait)
 }
@@ -414,6 +422,7 @@ export function join(trackId) {
 export function leave() {
   room = null
   clearTimeout(timer)
+  clearTimeout(steady)
   clearInterval(pinger)
   const ws = sock
   sock = null
