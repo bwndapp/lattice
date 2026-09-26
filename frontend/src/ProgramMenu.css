@@ -12,6 +12,7 @@
 .pm-head-title { display: block; font-family: var(--display); font-weight: 800; font-stretch: 112%; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pm-head-status { display: block; font-size: 10.5px; color: var(--muted); }
 .pm-head-status .unsaved { color: var(--acid); }
+.pm-head-signin { grid-column: 1 / -1; width: 100%; }
 
 .pm-list { list-style: none; margin: 0; padding: 0; }
 .pm-entry { position: relative; }

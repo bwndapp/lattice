@@ -1364,10 +1364,7 @@ export default function App() {
           {user.name && user.email && <span className="pm-head-status">{user.email}</span>}
         </>
       ) : (
-        <>
-          <span className="pm-head-title">{userLoading ? 'checking…' : 'not signed in'}</span>
-          <span className="pm-head-status">sign in to save, like and copy tracks</span>
-        </>
+        <button type="button" className="btn primary pm-head-signin" disabled={userLoading} onClick={() => login()}>Sign in</button>
       )}
     </div>
   )
