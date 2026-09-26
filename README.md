@@ -1,59 +1,64 @@
 # lattice
 
-A node-patch studio for [Strudel](https://strudel.cc). Wire beats, synths and effects
-together as nodes, arrange the parts on a timeline, and hear the patch play live in the
-browser. Everything you build is a project: one JSON header that the whole app reads and
-writes, and that generates the Strudel code underneath.
+**Make music in your browser by connecting boxes together.**
 
-Live at **[lattice.bwnd.app](https://lattice.bwnd.app)**.
+lattice is a music studio built on [Strudel](https://strudel.cc). You drop in drums,
+basslines, chords and effects, wire them up, and hear the result right away. You don't
+install anything and you don't need to write any code.
 
-## What's here
+👉 **Try it at [lattice.bwnd.app](https://lattice.bwnd.app)**
 
-| | |
-|---|---|
-| `frontend/` | the app — React, Vite, React Flow for the patch canvas |
-| `frontend/src/project.js` | the data model and the code generator; the format everything else agrees on |
-| `frontend/src/graph.js` | node types, what each one is worth in audio, and how the patch becomes code |
-| `frontend/src/stereo.js` | bus inserts (filters, drive, comp, lo-fi worklet) as real stereo units |
-| `frontend/src/Timeline.jsx` | the arrangement: clips, lanes, automation, the playhead |
-| `frontend/src/Browser.jsx` | the catalogue: cards that draw their own arrangement |
-| `frontend/src/TrackPage.jsx` | a track's history — every save, what changed at it, who branched off where |
-| `src/api/` | FastAPI routes: tracks, saved versions, likes, and the collaboration relay |
-| `tools/` | seeding a catalogue for a test environment, and copying live data over it |
-| `test/` | the collaboration relay's tests |
+![The patch view: sounds on the left flow through effects to the output](docs/patch.png)
 
-## The ideas worth knowing
+---
 
-**A project is one line.** `// @project {…}` at the top of the code holds patterns, nodes,
-edges and the song. The UI edits that; the code under it is generated, never the source of
-truth. Opening a track regenerates its code from the header, so a track saved by an older
-build still plays.
+## How it works
 
-**Effects are bus inserts, not per-voice parameters.** Strudel gives each voice its own
-chain in a fixed order; lattice claims an orbit per route and mounts real stereo units on
-it, so a chain of effects behaves the way it does in a DAW — in the order you wired it.
+### 1. Build your sound
 
-**A save is a fixed point.** History only grows: you don't rewind a track, you branch off
-the save you want, and the branch records which save it left from. A public track's
-history is public, so anyone can hear how it got where it is.
+In **Patch** view, each box is either a sound (a beat, a bassline, a chord) or an effect
+(filter, delay, reverb, compressor…). To send a sound through an effect, drag a wire
+from one box to the next. Turn the knobs and you'll hear the change straight away.
 
-## Running it
+### 2. Arrange your song
+
+![The timeline view: parts laid out as clips across bars](docs/timeline.png)
+
+Switch to **Timeline** to lay out your parts over time. Drag clips around, stretch them,
+copy them, and draw automation curves, such as a filter opening up over eight bars.
+
+### 3. Share it
+
+![The browse page: tracks shared by other people](docs/browse.png)
+
+When you save a track you can share it. On **Browse** you can play other people's tracks,
+like them, or make your own copy and remix it. Every track keeps its save history, so you
+can see how it grew.
+
+---
+
+## Running it yourself
 
 ```sh
-cd frontend && npm install && npm run dev     # the app
+cd frontend
+npm install
+npm run dev
 ```
 
-The API is FastAPI, mounted under `/api`, and expects a SQLite database beside it. The
-deployment this repo mirrors serves a draft build and a published one from the same box,
-with separate databases for each.
+Then open the address it prints. The app is React. The small server behind it, in
+`src/api/`, is Python (FastAPI) and stores tracks in SQLite.
+
+## Where things live
+
+| Folder | What's in it |
+|---|---|
+| `frontend/` | the app you see in the browser |
+| `src/api/` | the server: saving tracks, likes, sharing, playing together live |
+| `test/` | tests |
+| `tools/` | helper scripts |
 
 ## Licence
 
-lattice is built on Strudel, which is free software under the
-[GNU AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0.html), so lattice is
-**AGPL-3.0-or-later** as well — see [LICENSE](LICENSE). That means the source of whatever
-is running at lattice.bwnd.app is this repository, and anyone using it is free to read it,
-change it and run their own.
-
-Tracks people save with it are their own work; the licence covers the program, not the
-music made with it.
+Strudel is free software under the AGPL-3.0 licence, so lattice is too
+(**AGPL-3.0-or-later**, see [LICENSE](LICENSE)). You're free to read the code, change it
+and run your own copy. The licence covers the app only. Any music you make with it is yours.
