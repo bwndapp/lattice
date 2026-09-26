@@ -5,31 +5,87 @@ import { KickDrive } from './kick.js'
 /**
  * The kick's face: its waveform and pitch drawn from the knobs as they are, then the
  * knobs in strips. The drawing follows the same maths as the processor (kick.js), drive
- * stage and all, without the click's noise. A param with `choices` is a row of buttons.
+ * stage and all, without the click's noise. Each strip shows the knobs you reach for every
+ * time; the rest (params marked `more`) fold away behind its 'more'. A param with
+ * `choices` is a small menu up front, a row of buttons behind 'more'.
  */
 export default function KickPanel({ data, groups, knob, change }) {
+  const [open, setOpen] = useState(readOpen)
+  const toggle = (key) => setOpen((was) => {
+    const next = was.includes(key) ? was.filter((k) => k !== key) : [...was, key]
+    writeOpen(next)
+    return next
+  })
+  const pick = (p) => (v) => change((d) => { d[p.key] = v })
   return (
     <div className="kick-panel">
       <KickShape data={data} />
       <div className="sw-groups">
-        {groups.map((g) => (
-          <section key={g.key} className={`sw-group sw-group-${g.key}`} aria-label={g.title}>
-            <h3 className="sw-group-title">{g.title}</h3>
-            {g.params.some((p) => p.choices) && (
-              <div className="kick-choices">
-                {g.params.filter((p) => p.choices).map((p) => (
-                  <Choice key={p.key} def={p} value={data[p.key]} onChange={(v) => change((d) => { d[p.key] = v })} />
-                ))}
+        {groups.map((g) => {
+          const front = g.params.filter((p) => !p.more)
+          const extra = g.params.filter((p) => p.more)
+          const shown = open.includes(g.key) && extra.length > 0
+          // a folded-away knob that's been moved: a dot on 'more' says so
+          const moved = extra.some((p) => Math.abs(data[p.key] - p.def) > 1e-6)
+          return (
+            <section key={g.key} className={`sw-group kick-group sw-group-${g.key} ${shown ? 'open' : ''}`} aria-label={g.title}>
+              <h3 className="sw-group-title">
+                {g.title}
+                {extra.length > 0 && (
+                  <button type="button" className="kick-more-btn" aria-expanded={shown} onClick={() => toggle(g.key)} title={shown ? 'Fold the rest away' : `${extra.map((p) => p.label).join(', ')}`}>
+                    <Chevron open={shown} />{shown ? 'less' : 'more'}
+                    {moved && !shown && <span className="kick-more-dot" aria-label="(changed)" />}
+                  </button>
+                )}
+              </h3>
+              <div className="kick-row">
+                <div className="sw-knobs">
+                  {front.map((p) => (p.choices ? <Pick key={p.key} def={p} value={data[p.key]} onChange={pick(p)} /> : knob(p)))}
+                </div>
+                {shown && (
+                  <div className="kick-more">
+                    {extra.some((p) => p.choices) && (
+                      <div className="kick-choices">
+                        {extra.filter((p) => p.choices).map((p) => <Choice key={p.key} def={p} value={data[p.key]} onChange={pick(p)} />)}
+                      </div>
+                    )}
+                    <div className="sw-knobs">{extra.filter((p) => !p.choices).map(knob)}</div>
+                  </div>
+                )}
               </div>
-            )}
-            <div className="sw-knobs">{g.params.filter((p) => !p.choices).map(knob)}</div>
-          </section>
-        ))}
+            </section>
+          )
+        })}
       </div>
     </div>
   )
 }
 
+// which strips have their 'more' open, for this browser session
+const OPEN_KEY = 'lattice:kick-more'
+const readOpen = () => { try { return JSON.parse(sessionStorage.getItem(OPEN_KEY)) ?? [] } catch { return [] } }
+const writeOpen = (v) => { try { sessionStorage.setItem(OPEN_KEY, JSON.stringify(v)) } catch { /* storage unavailable */ } }
+
+const Chevron = ({ open }) => (
+  <svg width="8" height="8" viewBox="0 0 10 10" aria-hidden style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.12s' }}>
+    <path d="M3 1.5 L7 5 L3 8.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+  </svg>
+)
+
+/** A choice as a small menu, the size of a knob, its name underneath like a knob's. */
+function Pick({ def, value, onChange }) {
+  const at = Math.round(value)
+  return (
+    <label className={`kick-pick ${at !== def.def ? 'changed' : ''}`}>
+      <select value={at} onChange={(e) => onChange(Number(e.target.value))}>
+        {def.choices.map((name, i) => <option key={name} value={i}>{name}</option>)}
+      </select>
+      <span className="knob-label">{def.label}</span>
+    </label>
+  )
+}
+
+/** A choice as a row of buttons. */
 function Choice({ def, value, onChange }) {
   const at = Math.round(value)
   return (

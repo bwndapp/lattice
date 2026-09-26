@@ -20,30 +20,31 @@ const PARAMS = [
   { key: 'start', group: 'pitch', label: 'start', min: 40, max: 4000, def: 320, log: true, unit: 'hz' },
   { key: 'tune', group: 'pitch', label: 'tune', min: 25, max: 200, def: 48, log: true, unit: 'hz' },
   { key: 'sweep', group: 'pitch', label: 'sweep', min: 0.005, max: 1, def: 0.045, log: true, unit: 's' },
-  { key: 'bend', group: 'pitch', label: 'bend', min: 0.25, max: 8, def: 2, log: true, unit: 'x' },
+  { key: 'bend', group: 'pitch', label: 'bend', min: 0.25, max: 8, def: 2, log: true, unit: 'x', more: true },
   // body
-  { key: 'attack', group: 'body', label: 'attack', min: 0, max: 0.03, def: 0.001, unit: 's' },
-  { key: 'hold', group: 'body', label: 'hold', min: 0, max: 1, def: 0.06, unit: 's' },
+  { key: 'attack', group: 'body', label: 'attack', min: 0, max: 0.03, def: 0.001, unit: 's', more: true },
+  { key: 'hold', group: 'body', label: 'hold', min: 0, max: 1, def: 0.06, unit: 's', more: true },
   { key: 'decay', group: 'body', label: 'decay', min: 0.02, max: 3, def: 0.4, log: true, unit: 's' },
-  { key: 'curve', group: 'body', label: 'curve', min: 0.3, max: 6, def: 2, log: true, unit: 'x' },
+  { key: 'curve', group: 'body', label: 'curve', min: 0.3, max: 6, def: 2, log: true, unit: 'x', more: true },
   { key: 'shape', group: 'body', label: 'shape', min: 0, max: 1, def: 0 },
   // click
   { key: 'click', group: 'click', label: 'level', min: 0, max: 1, def: 0.35 },
-  { key: 'clicktone', group: 'click', label: 'tone', min: 500, max: 16000, def: 4000, log: true, unit: 'hz' },
-  { key: 'clicklen', group: 'click', label: 'length', min: 0.001, max: 0.05, def: 0.008, log: true, unit: 's' },
+  { key: 'clicktone', group: 'click', label: 'tone', min: 500, max: 16000, def: 4000, log: true, unit: 'hz', more: true },
+  { key: 'clicklen', group: 'click', label: 'length', min: 0.001, max: 0.05, def: 0.008, log: true, unit: 's', more: true },
   // drive: a choice param holds an index into its `choices`
-  { key: 'dtype', group: 'drive', label: 'curve', min: 0, max: 4, def: 0, choices: ['soft', 'hard', 'tube', 'fold', 'crush'] },
-  { key: 'dos', group: 'drive', label: 'oversample', min: 0, max: 2, def: 1, choices: ['1x', '2x', '4x'] },
-  { key: 'dauto', group: 'drive', label: 'make-up gain', min: 0, max: 1, def: 0, choices: ['off', 'auto'] },
-  { key: 'droute', group: 'drive', label: 'click', min: 0, max: 1, def: 0, choices: ['through', 'around'] },
+  // (`more`: behind the panel's 'more' toggle for its section; still a param like any other)
+  { key: 'dtype', group: 'drive', label: 'type', min: 0, max: 4, def: 0, choices: ['soft', 'hard', 'tube', 'fold', 'crush'] },
+  { key: 'dos', group: 'drive', label: 'oversample', min: 0, max: 2, def: 1, choices: ['1x', '2x', '4x'], more: true },
+  { key: 'dauto', group: 'drive', label: 'auto gain', min: 0, max: 1, def: 0, choices: ['off', 'auto'], more: true },
+  { key: 'droute', group: 'drive', label: 'click', min: 0, max: 1, def: 0, choices: ['through', 'around'], more: true },
   { key: 'drive', group: 'drive', label: 'drive', min: 0, max: 1, def: 0.15 },
   { key: 'dmix', group: 'drive', label: 'mix', min: 0, max: 1, def: 1 },
-  { key: 'dsub', group: 'drive', label: 'clean sub', min: 0, max: 1, def: 0 },
-  { key: 'dsplit', group: 'drive', label: 'split', min: 40, max: 300, def: 100, log: true, unit: 'hz' },
-  { key: 'denv', group: 'drive', label: 'env', min: -1, max: 1, def: 0, unit: 'bi', origin: 0 },
-  { key: 'dtime', group: 'drive', label: 'env time', min: 0.01, max: 1, def: 0.12, log: true, unit: 's' },
-  { key: 'dtilt', group: 'drive', label: 'tilt', min: -1, max: 1, def: 0, unit: 'bi', origin: 0 },
-  { key: 'dtone', group: 'drive', label: 'tone', min: 500, max: 20000, def: 20000, log: true, unit: 'hz' },
+  { key: 'dsub', group: 'drive', label: 'sub', min: 0, max: 1, def: 0, more: true },
+  { key: 'dsplit', group: 'drive', label: 'split', min: 40, max: 300, def: 100, log: true, unit: 'hz', more: true },
+  { key: 'denv', group: 'drive', label: 'env', min: -1, max: 1, def: 0, unit: 'bi', origin: 0, more: true },
+  { key: 'dtime', group: 'drive', label: 'env time', min: 0.01, max: 1, def: 0.12, log: true, unit: 's', more: true },
+  { key: 'dtilt', group: 'drive', label: 'tilt', min: -1, max: 1, def: 0, unit: 'bi', origin: 0, more: true },
+  { key: 'dtone', group: 'drive', label: 'lowpass', min: 500, max: 20000, def: 20000, log: true, unit: 'hz', more: true },
   // out
   { key: 'level', group: 'out', label: 'level', min: -24, max: 6, def: 0, unit: 'db', origin: 0 },
 ]
@@ -369,7 +370,7 @@ export default {
   voices: 4,
   oneShot: true, // it plays its whole shape whatever the note's length
   params: PARAMS,
-  groups: [['pitch', 'pitch'], ['body', 'body'], ['click', 'click'], ['out', 'output'], ['drive', 'drive']],
+  groups: [['pitch', 'pitch'], ['body', 'body'], ['click', 'click'], ['drive', 'drive'], ['out', 'out']],
   /** How long a hit rings, in seconds, with these settings. */
   tail: (d) => d.attack + d.hold + d.decay + 0.02, // the drive's delay is well inside the 20 ms
   dsp: DSP,
