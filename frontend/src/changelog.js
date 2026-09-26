@@ -24,6 +24,15 @@
  */
 export const NEWS = [
   {
+    id: '2026-09-26-2',
+    date: '2026-09-26',
+    version: '0.2.2',
+    title: 'Your face at the top of the menu',
+    items: [
+      '**Your face** at the top of the menu, once you’re signed in',
+    ],
+  },
+  {
     id: '2026-09-26',
     date: '2026-09-26',
     version: '0.2.1',
