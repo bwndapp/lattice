@@ -24,6 +24,15 @@
  */
 export const NEWS = [
   {
+    id: '2026-09-26-4',
+    date: '2026-09-26',
+    version: '0.2.4',
+    title: 'A cleaner top bar',
+    items: [
+      '**A cleaner top bar**: rename your track from the Track tab',
+    ],
+  },
+  {
     id: '2026-09-26-3',
     date: '2026-09-26',
     version: '0.2.3',
