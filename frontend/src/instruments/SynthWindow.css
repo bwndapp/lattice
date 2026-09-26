@@ -77,6 +77,15 @@
 .sw-knobs .knob { width: 50px; }
 
 .kick-panel { display: grid; gap: 0.6rem; }
+.sw-group-drive { flex-basis: 100%; }
+.kick-choices { display: flex; flex-wrap: wrap; gap: 0.4rem 0.9rem; margin-bottom: 0.45rem; }
+.kick-choice { display: flex; align-items: center; gap: 0.4rem; }
+.kick-choice-label { font-size: 10px; color: var(--muted); }
+.kick-seg { display: flex; height: 22px; border: 1px solid var(--line); border-radius: 2px; background: #0b0b0a; }
+.kick-seg button { font: inherit; font-size: 10px; color: var(--muted); background: transparent; border: 0; padding: 0 0.5rem; cursor: var(--ring); white-space: nowrap; }
+.kick-seg button + button { border-left: 1px solid var(--line); }
+.kick-seg button:hover { color: var(--paper); }
+.kick-seg button.on { color: var(--ink); background: var(--acid); }
 .kick-shape {
   display: block;
   width: 100%;

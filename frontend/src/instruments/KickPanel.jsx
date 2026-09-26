@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { drawCurve, drawWave, fitCanvas } from './scope.js'
+import { KickDrive } from './kick.js'
 
 /**
  * The kick's face: its waveform and pitch drawn from the knobs as they are, then the
- * knobs in four strips. The drawing follows the same maths as the processor (kick.js),
- * without the click's noise.
+ * knobs in strips. The drawing follows the same maths as the processor (kick.js), drive
+ * stage and all, without the click's noise. A param with `choices` is a row of buttons.
  */
-export default function KickPanel({ data, groups, knob }) {
+export default function KickPanel({ data, groups, knob, change }) {
   return (
     <div className="kick-panel">
       <KickShape data={data} />
@@ -14,8 +15,29 @@ export default function KickPanel({ data, groups, knob }) {
         {groups.map((g) => (
           <section key={g.key} className={`sw-group sw-group-${g.key}`} aria-label={g.title}>
             <h3 className="sw-group-title">{g.title}</h3>
-            <div className="sw-knobs">{g.params.map(knob)}</div>
+            {g.params.some((p) => p.choices) && (
+              <div className="kick-choices">
+                {g.params.filter((p) => p.choices).map((p) => (
+                  <Choice key={p.key} def={p} value={data[p.key]} onChange={(v) => change((d) => { d[p.key] = v })} />
+                ))}
+              </div>
+            )}
+            <div className="sw-knobs">{g.params.filter((p) => !p.choices).map(knob)}</div>
           </section>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function Choice({ def, value, onChange }) {
+  const at = Math.round(value)
+  return (
+    <div className="kick-choice">
+      <span className="kick-choice-label">{def.label}</span>
+      <div className="kick-seg" role="radiogroup" aria-label={def.label}>
+        {def.choices.map((name, i) => (
+          <button key={name} type="button" role="radio" aria-checked={at === i} className={at === i ? 'on' : ''} onClick={() => onChange(i)}>{name}</button>
         ))}
       </div>
     </div>
@@ -29,8 +51,8 @@ function simulate(d, rate) {
   const wave = new Float32Array(n)
   const pitch = new Float32Array(n)
   const start = Math.max(d.tune, d.start)
-  const drive = d.drive > 0.001 ? 1 + d.drive * 8 : 0
-  const norm = drive ? 1 / Math.tanh(drive) : 1
+  let drive = null
+  if (d.drive > 0.001) { drive = new KickDrive(rate); drive.set(d) }
   const gain = 10 ** (d.level / 20)
   let phase = 0
   for (let i = 0; i < n; i++) {
@@ -45,7 +67,7 @@ function simulate(d, rate) {
     let y = Math.sin(2 * Math.PI * phase)
     if (d.shape > 0.001) { const g = 1 + d.shape * 6; y = Math.tanh(y * g) / Math.tanh(g) }
     y *= amp
-    if (drive) y = Math.tanh(y * drive) * norm
+    if (drive) y = drive.run(y, 0, t)
     wave[i] = y * gain
     pitch[i] = f
   }
