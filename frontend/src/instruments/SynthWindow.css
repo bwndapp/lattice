@@ -76,22 +76,46 @@
 .sw-knobs { display: flex; flex-wrap: wrap; gap: 0.25rem 0.35rem; }
 .sw-knobs .knob { width: 50px; }
 
-.kick-panel { display: grid; gap: 0.6rem; }
-/* each strip: the everyday knobs, then (opened) the rest after a hairline */
-.kick-group .sw-group-title { display: flex; align-items: center; gap: 0.5rem; min-height: 14px; }
-.kick-more-btn {
-  display: inline-flex; align-items: center; gap: 3px; margin-left: auto; padding: 0 2px;
-  font: inherit; font-size: 9px; font-weight: 400; letter-spacing: 0.06em; color: #6c6c63;
-  background: none; border: 0; cursor: var(--ring);
+/* the kick: sections down the side, the hit drawn big, the picked section's knobs along
+   the bottom. Pulled taller from its corner, the drawing takes the room. */
+.synth-window.sw-kick { display: flex; flex-direction: column; }
+.sw-kick .sw-body { flex: 1 0 auto; grid-template-rows: minmax(0, 1fr); }
+.kick-panel {
+  display: grid; grid-template-columns: 84px minmax(0, 1fr); grid-template-rows: minmax(230px, 1fr) auto;
+  gap: 0.6rem;
 }
-.kick-more-btn:hover, .kick-more-btn[aria-expanded='true'] { color: var(--paper); }
-.kick-more-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--acid); }
-.kick-row { display: flex; align-items: flex-start; gap: 0.6rem; }
-.kick-more { display: flex; align-items: flex-start; gap: 0.6rem; padding-left: 0.6rem; border-left: 1px solid var(--line); }
-.kick-group.open { flex-grow: 2; }
-.sw-group-drive.open { flex-basis: 100%; }
-/* a choice up front: a small menu in a knob's place */
-.kick-pick { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; width: 60px; }
+.kick-tabs { display: flex; flex-direction: column; gap: 2px; }
+.kick-tab {
+  display: flex; align-items: center; justify-content: space-between; height: 30px; padding: 0 0.6rem;
+  font: inherit; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
+  background: rgba(0, 0, 0, 0.45); border: 1px solid var(--line); border-left: 2px solid transparent; border-radius: 2px;
+  cursor: var(--ring); text-align: left;
+}
+.kick-tab:hover { color: var(--paper); }
+.kick-tab.on { color: var(--paper); background: #151513; border-left-color: var(--acid); }
+.kick-tab-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--acid); }
+.kick-display { position: relative; min-height: 230px; }
+.kick-shape {
+  position: absolute; inset: 0;
+  display: block; width: 100%; height: 100%;
+  background: #050504;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+.kick-bar {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; gap: 0.6rem; min-height: 72px;
+  padding: 0.45rem 0.6rem;
+  background: rgba(0, 0, 0, 0.45); border: 1px solid var(--line); border-radius: 3px;
+}
+.kick-bar-section, .kick-bar-pinned { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.3rem 0.35rem; }
+.kick-bar-section { flex: 1; min-width: 0; }
+.kick-bar-pinned { flex: none; padding-left: 0.6rem; border-left: 1px solid var(--line); align-self: stretch; align-items: center; }
+.kick-bar .knob { width: 50px; }
+.kick-bar-note { font-size: 10px; color: var(--muted); }
+/* a choice: buttons (or a small menu) in a knob's place, its name underneath */
+.kick-pick, .kick-choice { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; }
+.kick-pick { width: 64px; }
 .kick-pick select {
   width: 100%; height: 22px; margin: 7px 0; padding: 0 0.25rem;
   font: inherit; font-size: 10px; color: var(--paper); background: #0b0b0a;
@@ -100,24 +124,12 @@
 .kick-pick select:hover { border-color: #4a4a40; }
 .kick-pick select:focus-visible { outline: 1px solid var(--acid); outline-offset: 1px; }
 .kick-pick.changed select { border-color: #6f7a18; }
-.kick-pick.changed .knob-label { color: var(--paper); }
-/* choices behind 'more': short rows of buttons, stacked and aligned */
-.kick-choices { display: grid; grid-template-columns: auto auto; align-items: center; gap: 0.3rem 0.45rem; }
-.kick-choice { display: contents; }
-.kick-choice-label { font-size: 9px; color: var(--muted); text-align: right; }
-.kick-seg { display: flex; justify-self: start; height: 20px; border: 1px solid var(--line); border-radius: 2px; background: #0b0b0a; }
-.kick-seg button { font: inherit; font-size: 10px; color: var(--muted); background: transparent; border: 0; padding: 0 0.45rem; cursor: var(--ring); white-space: nowrap; }
+.kick-pick.changed .knob-label, .kick-choice.changed .knob-label { color: var(--paper); }
+.kick-seg { display: flex; height: 22px; margin: 7px 0; border: 1px solid var(--line); border-radius: 2px; background: #0b0b0a; }
+.kick-seg button { font: inherit; font-size: 10px; color: var(--muted); background: transparent; border: 0; padding: 0 0.4rem; cursor: var(--ring); white-space: nowrap; }
 .kick-seg button + button { border-left: 1px solid var(--line); }
 .kick-seg button:hover { color: var(--paper); }
 .kick-seg button.on { color: var(--ink); background: var(--acid); }
-.kick-shape {
-  display: block;
-  width: 100%;
-  height: 150px;
-  background: #050504;
-  border: 1px solid var(--line);
-  border-radius: 3px;
-}
 
 /* an engine instrument's row in a rack: its name opens the window, the caret picks a sound */
 .sound-btn.engine { padding: 0; align-items: stretch; }

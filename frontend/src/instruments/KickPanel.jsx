@@ -3,76 +3,59 @@ import { drawCurve, drawWave, fitCanvas } from './scope.js'
 import { KickDrive } from './kick.js'
 
 /**
- * The kick's face: its waveform and pitch drawn from the knobs as they are, then the
- * knobs in strips. The drawing follows the same maths as the processor (kick.js), drive
- * stage and all, without the click's noise. Each strip shows the knobs you reach for every
- * time; the rest (params marked `more`) fold away behind its 'more'. A param with
- * `choices` is a small menu up front, a row of buttons behind 'more'.
+ * The kick's face, laid out like a hardware-ish kick plugin: the sections down the side,
+ * the hit drawn big in the middle, and along the bottom the knobs of the section you
+ * picked, with drive and level pinned at the right end whichever it is. The drawing
+ * follows the same maths as the processor (kick.js), drive stage and all, without the
+ * click's noise. A param with `choices` is a row of buttons, or a small menu if it has
+ * many.
  */
 export default function KickPanel({ data, groups, knob, change }) {
-  const [open, setOpen] = useState(readOpen)
-  const toggle = (key) => setOpen((was) => {
-    const next = was.includes(key) ? was.filter((k) => k !== key) : [...was, key]
-    writeOpen(next)
-    return next
-  })
+  const [tab, setTab] = useState(readTab)
+  const pickTab = (key) => { setTab(key); writeTab(key) }
   const pick = (p) => (v) => change((d) => { d[p.key] = v })
+  const current = groups.find((g) => g.key === tab) ?? groups[0]
+  const pinned = PINNED.map((key) => groups.flatMap((g) => g.params).find((p) => p.key === key)).filter(Boolean)
+  const control = (p) => {
+    if (!p.choices) return knob(p)
+    const C = p.choices.length > 3 ? Pick : Choice
+    return <C key={p.key} def={p} value={data[p.key]} onChange={pick(p)} />
+  }
+  const shown = current.params.filter((p) => !PINNED.includes(p.key))
   return (
     <div className="kick-panel">
-      <KickShape data={data} />
-      <div className="sw-groups">
+      <nav className="kick-tabs" role="tablist" aria-label="Sections">
         {groups.map((g) => {
-          const front = g.params.filter((p) => !p.more)
-          const extra = g.params.filter((p) => p.more)
-          const shown = open.includes(g.key) && extra.length > 0
-          // a folded-away knob that's been moved: a dot on 'more' says so
-          const moved = extra.some((p) => Math.abs(data[p.key] - p.def) > 1e-6)
+          // a section with anything moved off where it started wears a dot
+          const moved = g.params.some((p) => Math.abs(data[p.key] - p.def) > 1e-6)
           return (
-            <section key={g.key} className={`sw-group kick-group sw-group-${g.key} ${shown ? 'open' : ''}`} aria-label={g.title}>
-              <h3 className="sw-group-title">
-                {g.title}
-                {extra.length > 0 && (
-                  <button type="button" className="kick-more-btn" aria-expanded={shown} onClick={() => toggle(g.key)} title={shown ? 'Fold the rest away' : `${extra.map((p) => p.label).join(', ')}`}>
-                    <Chevron open={shown} />{shown ? 'less' : 'more'}
-                    {moved && !shown && <span className="kick-more-dot" aria-label="(changed)" />}
-                  </button>
-                )}
-              </h3>
-              <div className="kick-row">
-                <div className="sw-knobs">
-                  {front.map((p) => (p.choices ? <Pick key={p.key} def={p} value={data[p.key]} onChange={pick(p)} /> : knob(p)))}
-                </div>
-                {shown && (
-                  <div className="kick-more">
-                    {extra.some((p) => p.choices) && (
-                      <div className="kick-choices">
-                        {extra.filter((p) => p.choices).map((p) => <Choice key={p.key} def={p} value={data[p.key]} onChange={pick(p)} />)}
-                      </div>
-                    )}
-                    <div className="sw-knobs">{extra.filter((p) => !p.choices).map(knob)}</div>
-                  </div>
-                )}
-              </div>
-            </section>
+            <button key={g.key} type="button" role="tab" aria-selected={g.key === current.key} className={`kick-tab ${g.key === current.key ? 'on' : ''}`} onClick={() => pickTab(g.key)}>
+              {g.title}
+              {moved && <span className="kick-tab-dot" aria-label="(changed)" />}
+            </button>
           )
         })}
+      </nav>
+      <KickShape data={data} />
+      <div className="kick-bar" role="tabpanel" aria-label={current.title}>
+        <div className="kick-bar-section">
+          {shown.length ? shown.map(control) : <span className="kick-bar-note">{current.title}: the level is at the right</span>}
+        </div>
+        <div className="kick-bar-pinned">{pinned.map(control)}</div>
       </div>
     </div>
   )
 }
 
-// which strips have their 'more' open, for this browser session
-const OPEN_KEY = 'lattice:kick-more'
-const readOpen = () => { try { return JSON.parse(sessionStorage.getItem(OPEN_KEY)) ?? [] } catch { return [] } }
-const writeOpen = (v) => { try { sessionStorage.setItem(OPEN_KEY, JSON.stringify(v)) } catch { /* storage unavailable */ } }
+// always on the bar, whichever section is picked
+const PINNED = ['drive', 'level']
 
-const Chevron = ({ open }) => (
-  <svg width="8" height="8" viewBox="0 0 10 10" aria-hidden style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.12s' }}>
-    <path d="M3 1.5 L7 5 L3 8.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
-  </svg>
-)
+// which section is picked, for this browser session
+const TAB_KEY = 'lattice:kick-tab'
+const readTab = () => { try { return sessionStorage.getItem(TAB_KEY) ?? 'pitch' } catch { return 'pitch' } }
+const writeTab = (v) => { try { sessionStorage.setItem(TAB_KEY, v) } catch { /* storage unavailable */ } }
 
-/** A choice as a small menu, the size of a knob, its name underneath like a knob's. */
+/** A choice with many names as a small menu, its name underneath like a knob's. */
 function Pick({ def, value, onChange }) {
   const at = Math.round(value)
   return (
@@ -85,17 +68,17 @@ function Pick({ def, value, onChange }) {
   )
 }
 
-/** A choice as a row of buttons. */
+/** A choice as a row of buttons, its name underneath like a knob's. */
 function Choice({ def, value, onChange }) {
   const at = Math.round(value)
   return (
-    <div className="kick-choice">
-      <span className="kick-choice-label">{def.label}</span>
+    <div className={`kick-choice ${at !== def.def ? 'changed' : ''}`}>
       <div className="kick-seg" role="radiogroup" aria-label={def.label}>
         {def.choices.map((name, i) => (
           <button key={name} type="button" role="radio" aria-checked={at === i} className={at === i ? 'on' : ''} onClick={() => onChange(i)}>{name}</button>
         ))}
       </div>
+      <span className="knob-label">{def.label}</span>
     </div>
   )
 }
@@ -137,7 +120,7 @@ function KickShape({ data }) {
   useEffect(() => {
     const canvas = ref.current
     if (!canvas) return
-    const observer = new ResizeObserver(() => setSize(canvas.clientWidth))
+    const observer = new ResizeObserver(() => setSize(`${canvas.clientWidth}x${canvas.clientHeight}`))
     observer.observe(canvas)
     return () => observer.disconnect()
   }, [])
@@ -184,5 +167,9 @@ function KickShape({ data }) {
     const total = `${Math.round(length * 1000)} ms`
     ctx.fillText(total, w - ctx.measureText(total).width - 6 * dpr, 6 * dpr)
   }, [shape, size])
-  return <canvas ref={ref} className="kick-shape" role="img" aria-label="The kick's waveform and pitch" />
+  return (
+    <div className="kick-display">
+      <canvas ref={ref} className="kick-shape" role="img" aria-label="The kick's waveform and pitch" />
+    </div>
+  )
 }
