@@ -168,24 +168,56 @@ export function silentLogin({ timeout = 6000 } = {}) {
   })
 }
 
-async function refresh() {
+/**
+ * Trade the refresh token for fresh tokens. Only one refresh runs at a time, in
+ * this tab (a single in-flight promise) and across tabs (a Web Lock): the issuer
+ * may rotate refresh tokens, and two tabs spending the same one at once used to
+ * get the loser an invalid_grant that wiped the sign-in everywhere. Local tokens
+ * are dropped only when the issuer definitively refuses the refresh token we
+ * still hold; a network error, a 5xx or a rate limit keeps the session.
+ */
+let refreshing = null
+function refresh(force = false) {
+  if (!refreshing) {
+    const run = () => doRefresh(force)
+    const locked = typeof navigator !== 'undefined' && navigator.locks?.request
+      ? navigator.locks.request('bwnd_sso_refresh', run)
+      : run()
+    refreshing = locked.finally(() => { refreshing = null })
+  }
+  return refreshing
+}
+
+async function doRefresh(force) {
   const t = read()
   if (!t?.refresh_token) return null
+  // another tab may have refreshed while we waited for the lock
+  if (!force && t.access_token && !expiring(t.access_token)) return t
   const body = new URLSearchParams({ grant_type: 'refresh_token', refresh_token: t.refresh_token, client_id: CLIENT_ID })
   let r
   try { r = await fetch(`${ISSUER}/token`, { method: 'POST', body }) } catch { return null }   // offline: keep the session
-  if (!r.ok) { write(null); return null }
+  if (!r.ok) {
+    let err = ''
+    try { err = (await r.json()).error || '' } catch { /* not JSON */ }
+    const refused = (r.status === 400 || r.status === 401) && (err === 'invalid_grant' || !err)
+    // only forget the sign-in if nobody replaced the token we just tried
+    if (refused && read()?.refresh_token === t.refresh_token) { write(null); notify() }
+    return null
+  }
   const n = await r.json()
-  write({ ...n, obtained_at: Date.now() })
-  return n
+  // keep the old refresh token when the issuer doesn't send a new one
+  const next = { ...t, ...n, refresh_token: n.refresh_token || t.refresh_token, obtained_at: Date.now() }
+  write(next)
+  return next
 }
+
+const expiring = (jwt) => { const c = decode(jwt); return !!(c?.exp && c.exp * 1000 - Date.now() < 60_000) }
 
 /** A valid access token, refreshing when it is within a minute of expiry. */
 export async function getToken() {
   const t = read()
   if (!t?.access_token) return null
-  const claims = decode(t.access_token)
-  if (claims?.exp && claims.exp * 1000 - Date.now() < 60_000) {
+  if (expiring(t.access_token)) {
     const n = await refresh()
     return n?.access_token || null
   }
@@ -207,15 +239,16 @@ export function currentUser() {
 export const API_BASE = API_ROOT
 export function apiUrl(path) { return typeof path === 'string' && (path === '/api' || path.startsWith('/api/')) ? API_BASE + path.slice(4) : path }
 
-/** fetch() with the bearer token attached. A 401 from your own API means the
- *  sign-in is gone (signed out elsewhere, or revoked by an admin): the local
- *  tokens are dropped so the UI stops claiming a user. */
+/** fetch() with the bearer token attached. A 401 from your own API may mean the
+ *  sign-in is gone, or only that the API couldn't reach the issuer to check the
+ *  token; so ask the issuer itself (checkSession) rather than dropping the
+ *  tokens on the API's word. */
 export async function authFetch(url, opts = {}) {
   const tok = await getToken()
   const headers = { ...(opts.headers || {}) }
   if (tok) headers.Authorization = `Bearer ${tok}`
   const r = await fetch(apiUrl(url), { ...opts, headers })
-  if (r.status === 401 && tok) { write(null); notify() }
+  if (r.status === 401 && tok) checkSession().catch(() => {})
   return r
 }
 
@@ -226,8 +259,14 @@ export async function checkSession() {
   const tok = await getToken()
   if (!tok) return null
   try {
-    const r = await fetch(`${ISSUER}/userinfo`, { headers: { Authorization: `Bearer ${tok}` } })
-    if (r.status === 401) { write(null); notify(); return null }
+    let r = await fetch(`${ISSUER}/userinfo`, { headers: { Authorization: `Bearer ${tok}` } })
+    if (r.status === 401) {
+      // the access token may just have lapsed; a refresh settles whether the sign-in is really gone
+      const n = await refresh(true)
+      if (!n?.access_token) return read() ? currentUser() : null
+      r = await fetch(`${ISSUER}/userinfo`, { headers: { Authorization: `Bearer ${n.access_token}` } })
+      if (r.status === 401) { write(null); notify(); return null }
+    }
   } catch { /* offline: keep what we have */ }
   return currentUser()
 }
