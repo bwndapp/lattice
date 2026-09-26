@@ -24,6 +24,16 @@
  */
 export const NEWS = [
   {
+    id: '2026-09-26',
+    date: '2026-09-26',
+    version: '0.2.1',
+    title: 'Paste a whole song into code',
+    items: [
+      '**Code** takes a whole script — consts, sliders and all — and plays its last pattern',
+      'A **code** part with a mistake goes quiet instead of stopping the track',
+    ],
+  },
+  {
     id: '2026-09-19-3',
     date: '2026-09-19',
     version: '0.2.0',
