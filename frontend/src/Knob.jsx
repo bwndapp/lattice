@@ -9,6 +9,7 @@ const toPos = (v, { min, max, log }) => (log ? Math.log(v / min) / Math.log(max 
 const fromPos = (t, { min, max, log }) => (log ? min * (max / min) ** t : min + t * (max - min))
 
 export function formatValue(v, def) {
+  if (def.choices) return def.choices[Math.round(v)] ?? ''
   if (def.key === 'pan') return v === 0.5 ? 'C' : v < 0.5 ? `L${Math.round((0.5 - v) * 200)}` : `R${Math.round((v - 0.5) * 200)}`
   if (def.unit === 'hz') return v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k` : v < 10 ? `${v.toFixed(2)}` : `${Math.round(v)}`
   if (def.unit === 'ct') return `${v > 0.5 ? '+' : ''}${Math.round(v)}ct`

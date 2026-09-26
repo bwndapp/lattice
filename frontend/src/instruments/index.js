@@ -17,7 +17,8 @@ import syrup from './syrup/index.js'
  *   processor   the name its audio-thread processor registers under
  *   voices      how many notes it can sound at once (one output each)
  *   oneShot     whether a hit plays its whole shape whatever the note's length
- *   params      its knobs: { key, group, label, min, max, def, log?, unit?, origin? }
+ *   params      its knobs: { key, group, label, min, max, def, log?, unit?, origin? }; one
+ *               with `choices` (names) holds an index into them, 0 … choices.length - 1
  *   groups      [group key, title] in the order the window shows them
  *   tail(data)  seconds a note rings past its end (or, one-shot, past its start)
  *   dsp         the processor's source (see dsp.js)
@@ -53,7 +54,7 @@ export function engineData(engine) {
   const out = {}
   for (const p of spec.params) {
     const v = Number(engine.data?.[p.key])
-    out[p.key] = Number.isFinite(v) ? Math.min(p.max, Math.max(p.min, v)) : p.def
+    out[p.key] = Number.isFinite(v) ? Math.min(p.max, Math.max(p.min, p.choices ? Math.round(v) : v)) : p.def
   }
   return out
 }
