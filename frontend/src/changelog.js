@@ -24,6 +24,17 @@
  */
 export const NEWS = [
   {
+    id: '2026-09-26-3',
+    date: '2026-09-26',
+    version: '0.2.3',
+    title: 'The kick gets drive and a plugin-style panel',
+    items: [
+      '**Kick drive** with five curves to pick from, a clean sub underneath, and its own envelope and tone',
+      '**The kick panel** looks like a plugin: sections down the side, the hit drawn big, knobs along the bottom',
+      '**Everyday knobs up front**, the rest tucked behind “more”',
+    ],
+  },
+  {
     id: '2026-09-26-2',
     date: '2026-09-26',
     version: '0.2.2',
