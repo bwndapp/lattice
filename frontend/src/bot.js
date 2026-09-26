@@ -69,3 +69,18 @@ export function botLook(bot, color) {
 
 /** The CSS custom properties bbot reads, as a style object. */
 export const botStyle = (look) => ({ '--face-skin': look.skin, '--face-ink': look.ink, '--face-ring': look.ring })
+
+/** The palette the room hands colours out of: the same list, in the same order, as collab.py. */
+const COLORS = ['#6cc9ff', '#ff8fb1', '#8de88d', '#ffcf6b', '#c79bff', '#5ee0cf', '#ff9e6b', '#a8b6ff']
+
+/** Someone's own colour, as the room picks it when nobody else has it (collab.py color_for). */
+export const colorOf = (bot) => COLORS[parseInt(bot.slice(0, 4), 16) % COLORS.length]
+
+/**
+ * The signed-in person's hash, worked out here rather than asked of a room: the same seed
+ * collab.py `_bot_of` uses, so it's the same face with or without a track open.
+ */
+export async function botOf(sub) {
+  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`sub:${sub}`))
+  return [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 12)
+}

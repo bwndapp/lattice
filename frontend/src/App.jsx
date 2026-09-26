@@ -40,6 +40,7 @@ import { useOctave } from './keyboard.js'
 import { PROJECT_MARK, blankProject, demoProject, generateCode, newId, normalizeProject, parseProject, projectFromCode } from './project'
 import { createTransport, formatBarBeat, parseBarBeat } from './transport'
 import { songLength } from './song'
+import { MyFace } from './BotFace.jsx'
 import { canEdit as roomTakesEdits, jamIs, join as joinRoom, leave as leaveRoom, onDoc, onJam, onPlay, onRole, openToOthers, sendOps, sendPlay, viewIs } from './collab.js'
 import { applyOps, diffOps, docHash, invertOps } from './docsync.js'
 import PeerTray from './PeerTray.jsx'
@@ -1358,7 +1359,7 @@ export default function App() {
     <div className="pm-head">
       {user ? (
         <>
-          <span className="pm-head-face" aria-hidden>{(user.name || user.email || '?').trim()[0].toUpperCase()}</span>
+          <MyFace user={user} className="pm-head-face" />
           <span className="pm-head-title">{user.name || user.email}</span>
           {user.name && user.email && <span className="pm-head-status">{user.email}</span>}
         </>
