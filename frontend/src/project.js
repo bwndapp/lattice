@@ -211,7 +211,33 @@ export function normalizeProject(raw) {
   if (typeof raw.prelude === 'string' && raw.prelude.trim()) project.prelude = raw.prelude.slice(0, 100_000)
   if (!nodes.some((n) => n.type === 'output')) project.nodes.push({ id: 'out', type: 'output', x: 700, y: 200, data: { muted: {}, solo: null } })
   if (raw.song) project.song = normalizeSong(raw.song, project)
+  const frames = normalizeFrames(raw.frames)
+  if (frames.length) project.frames = frames
   return project
+}
+
+/**
+ * Frames: labelled boxes drawn behind nodes on the patch, purely to organise it. They live
+ * apart from the nodes so nothing that plays the patch ever sees them. Which nodes a frame
+ * holds isn't stored: it's whatever sits inside it.
+ */
+function normalizeFrames(list) {
+  const out = []
+  const ids = new Set()
+  for (const f of Array.isArray(list) ? list : []) {
+    if (!f || typeof f.id !== 'string' || ids.has(f.id)) continue
+    ids.add(f.id)
+    out.push({
+      id: f.id,
+      x: Math.round(num(f.x, 0, -1e6, 1e6)),
+      y: Math.round(num(f.y, 0, -1e6, 1e6)),
+      w: Math.round(num(f.w, 320, 80, 20000)),
+      h: Math.round(num(f.h, 200, 60, 20000)),
+      title: String(f.title ?? 'frame').slice(0, 60),
+      color: typeof f.color === 'string' && /^[a-z]{1,12}$/.test(f.color) ? f.color : 'stone',
+    })
+  }
+  return out
 }
 
 /** The project in a code string, or null when the code isn't a project. */

@@ -11,8 +11,11 @@ const KEY = 'lattice:clipboard:nodes'
 const clone = (v) => JSON.parse(JSON.stringify(v))
 let memory = null // fallback when storage is unavailable
 
-/** Build a copy of the given nodes (the output never copies). Null when there's nothing to copy. */
-export function copyNodes(project, ids) {
+/**
+ * Build a copy of the given nodes (the output never copies), and any frames around them.
+ * Null when there's nothing to copy.
+ */
+export function copyNodes(project, ids, frames = []) {
   const wanted = new Set(ids)
   const nodes = project.nodes.filter((n) => wanted.has(n.id) && n.type !== 'output')
   if (!nodes.length) return null
@@ -26,6 +29,7 @@ export function copyNodes(project, ids) {
     nodes: nodes.map((n) => ({ ...n, x: n.x - minX, y: n.y - minY })),
     edges: project.edges.filter((e) => kept.has(e.source) && kept.has(e.target)).map(({ source, target, targetHandle }) => ({ source, target, targetHandle })),
     patterns: project.patterns.filter((p) => patternIds.has(p.id)),
+    frames: frames.map((f) => ({ ...f, x: f.x - minX, y: f.y - minY })),
   })
 }
 
@@ -73,6 +77,10 @@ export function pasteNodes(p, clip, at) {
   }
   for (const e of clip.edges ?? []) {
     if (nodeIds.has(e.source) && nodeIds.has(e.target)) p.edges.push({ source: nodeIds.get(e.source), target: nodeIds.get(e.target), targetHandle: e.targetHandle })
+  }
+  for (const f of clip.frames ?? []) {
+    p.frames ??= []
+    p.frames.push({ ...clone(f), id: `frame${newId().slice(-5)}`, x: Math.round(at.x + f.x), y: Math.round(at.y + f.y) })
   }
   return [...nodeIds.values()]
 }

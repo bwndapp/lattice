@@ -1316,3 +1316,55 @@ button.chan-synth:hover span { color: var(--acid); }
 .node-warn { margin: 0; padding: 0.35rem 0.45rem; font-size: 10px; line-height: 1.4; color: var(--danger); border: 1px dashed var(--danger); border-radius: 4px; }
 .node-warn .warn-btn { display: block; margin-top: 0.3rem; padding: 0.15rem 0.4rem; font: inherit; color: var(--danger); background: color-mix(in srgb, var(--danger) 16%, transparent); border: 1px solid var(--danger); border-radius: 3px; cursor: pointer; }
 .node-warn .warn-btn:hover { color: var(--bg); background: var(--danger); }
+
+/*
+ * Frames (ctrl/cmd + F): a tinted, rounded box behind some nodes, in one of a few quiet
+ * colours. Only the title bar, its buttons and the corner grip take the pointer: the rest
+ * lets clicks through to the canvas, the wires and the nodes.
+ */
+.react-flow__node.frame-node { pointer-events: none !important; }
+.gframe {
+  --frame: #6b6b63;
+  position: relative; width: 100%; height: 100%; box-sizing: border-box;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--frame) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--frame) 60%, transparent);
+}
+.gframe.selected { border-color: var(--acid); box-shadow: 0 0 0 1px var(--acid); }
+.frame-bar {
+  pointer-events: all; cursor: grab;
+  display: flex; align-items: center; gap: 0.35rem; height: 26px; padding: 0 0.4rem 0 0.7rem;
+  background: color-mix(in srgb, var(--frame) 42%, transparent);
+  border-radius: 9px 9px 0 0;
+  color: var(--paper); font-family: var(--display); font-weight: 800; font-size: 12px;
+}
+.react-flow__node.dragging .frame-bar { cursor: grabbing; }
+.frame-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: none; }
+.frame-name {
+  flex: 1; min-width: 0; font: inherit; color: var(--paper);
+  background: var(--ink); border: 1px solid var(--acid); border-radius: 3px; padding: 0 0.3rem;
+}
+.frame-btn {
+  pointer-events: all; flex: none; font: inherit; font-size: 13px; line-height: 1;
+  width: 18px; height: 18px; padding: 0; display: grid; place-items: center;
+  color: var(--paper); background: transparent; border: 1px solid transparent; border-radius: 3px;
+  cursor: pointer; opacity: 0.7;
+}
+.frame-btn:hover { opacity: 1; border-color: color-mix(in srgb, var(--paper) 40%, transparent); }
+.frame-swatch::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--frame); box-shadow: 0 0 0 1.5px var(--paper); }
+.frame-colors {
+  pointer-events: all; position: absolute; top: 30px; right: 6px; z-index: 1;
+  display: flex; gap: 5px; padding: 6px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+}
+.frame-colors button {
+  width: 16px; height: 16px; padding: 0; border-radius: 50%; cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+.frame-colors button[aria-selected="true"] { box-shadow: 0 0 0 2px var(--paper); }
+.react-flow__resize-control.handle.frame-resize {
+  pointer-events: all; width: 12px; height: 12px; border: none; border-radius: 2px;
+  background: color-mix(in srgb, var(--frame) 70%, var(--paper));
+  opacity: 0.55; translate: -120% -120%; cursor: nwse-resize;
+}
+.react-flow__resize-control.handle.frame-resize:hover { opacity: 1; }

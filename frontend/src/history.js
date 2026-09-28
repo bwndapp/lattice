@@ -130,6 +130,16 @@ export function changesBetween(before, after) {
   for (const e of wiredUp) out.push(`wired ${label(byId(after.nodes).get(e.source), after)} into ${label(byId(after.nodes).get(e.target), after)}`)
   for (const e of unwired) out.push(`unwired ${label(byId(before.nodes).get(e.source), before)} from ${label(byId(before.nodes).get(e.target), before)}`)
 
+  // frames: boxes drawn around nodes, nothing you hear
+  const wasFrames = byId(before.frames)
+  const nowFrames = byId(after.frames)
+  for (const f of after.frames ?? []) {
+    const was = wasFrames.get(f.id)
+    if (!was) out.push(`framed ${f.title}`)
+    else if (was.title !== f.title) out.push(`frame ${was.title} renamed ${f.title}`)
+  }
+  for (const f of before.frames ?? []) if (!nowFrames.has(f.id)) out.push(`removed the ${f.title} frame`)
+
   // ── the parts ──
   const wasPats = byId(before.patterns)
   const nowPats = byId(after.patterns)
