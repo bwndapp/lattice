@@ -218,7 +218,7 @@ export const NODE_TYPES = {
     group: 'effect', cat: 'space', label: 'reverb', blurb: 'A room around the sound: how big, how bright, how wide',
     inputs: 1,
     params: [
-      { key: 'mix', type: 'knob', label: 'amount', min: 0, max: 1, def: 0.35 },
+      { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 0.35 },
       { key: 'size', type: 'knob', label: 'size', min: 0.2, max: 12, def: 2.2, log: true, unit: 's' },
       { key: 'predelay', type: 'knob', label: 'pre-delay', min: 0, max: 0.2, def: 0.015, unit: 's' },
       { key: 'tone', type: 'knob', label: 'tone', min: 0, max: 1, def: 0.55 },
@@ -236,7 +236,7 @@ export const NODE_TYPES = {
     group: 'effect', cat: 'space', label: 'delay', blurb: 'Echoes in time with the track, fading through a tone filter',
     inputs: 1,
     params: [
-      { key: 'mix', type: 'knob', label: 'amount', min: 0, max: 1, def: 0.3 },
+      { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 0.3 },
       { key: 'time', type: 'select', label: 'time', options: Object.keys(DELAY_DIVISIONS), def: '1/8 dotted' },
       { key: 'feedback', type: 'knob', label: 'feedback', min: 0, max: 0.95, def: 0.4 },
       { key: 'tone', type: 'knob', label: 'tone', min: 0, max: 1, def: 0.6 },
@@ -254,7 +254,7 @@ export const NODE_TYPES = {
     group: 'effect', cat: 'stereo', hidden: true, label: 'level', blurb: 'Volume and pan',
     inputs: 1,
     params: [
-      { key: 'gain', type: 'knob', label: 'vol', min: 0, max: 1.5, def: 0.8 },
+      { key: 'gain', type: 'knob', label: 'vol', min: 0, max: 1.5, def: 0.8, fmt: 'gain' },
       { key: 'pan', type: 'knob', label: 'pan', min: 0, max: 1, def: 0.5 },
     ],
     // a fader on the bus, like the mixer bus node's own (see stereo.js)
@@ -274,8 +274,8 @@ export const NODE_TYPES = {
     group: 'effect', cat: 'pitch', label: 'pitch', blurb: 'Up or down in semitones, with the tempo left alone',
     inputs: 1,
     params: [
-      { key: 'semitones', type: 'knob', label: 'shift', min: -24, max: 24, def: 0, unit: 'bi', origin: 0 },
-      { key: 'fine', type: 'knob', label: 'fine', min: -100, max: 100, def: 0, unit: 'bi', origin: 0 },
+      { key: 'semitones', type: 'knob', label: 'shift', min: -24, max: 24, def: 0, unit: 'st', origin: 0 },
+      { key: 'fine', type: 'knob', label: 'fine', min: -100, max: 100, def: 0, unit: 'ct', origin: 0 },
       { key: 'grain', type: 'knob', label: 'window', min: 0.01, max: 0.25, def: 0.06, log: true, unit: 's' },
       { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 1 },
     ],
@@ -285,7 +285,7 @@ export const NODE_TYPES = {
     group: 'effect', cat: 'pitch', label: 'freq shift', blurb: 'Every partial moved by the same hertz: it stops being a note',
     inputs: 1,
     params: [
-      { key: 'hz', type: 'knob', label: 'shift', min: -500, max: 500, def: 40, unit: 'bi', origin: 0 },
+      { key: 'hz', type: 'knob', label: 'shift', min: -500, max: 500, def: 40, unit: 'hz', origin: 0 },
       { key: 'spread', type: 'knob', label: 'spread', min: -1, max: 1, def: 0, unit: 'bi', origin: 0 },
       { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 1 },
     ],
@@ -312,7 +312,7 @@ export const NODE_TYPES = {
     params: [
       { key: 'rate', type: 'knob', label: 'rate', min: 0.05, max: 5, def: 0.8, log: true },
       { key: 'depth', type: 'knob', label: 'depth', min: 0, max: 1, def: 0.5 },
-      { key: 'mix', type: 'knob', label: 'amount', min: 0, max: 1, def: 0.5 },
+      { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 0.5 },
     ],
     code: stereoCode('chorus', (d) => ({ rate: d.rate, depth: d.depth, mix: d.mix })),
   },
@@ -323,7 +323,7 @@ export const NODE_TYPES = {
       { key: 'rate', type: 'knob', label: 'rate', min: 0.02, max: 10, def: 0.25, log: true },
       { key: 'depth', type: 'knob', label: 'depth', min: 0, max: 1, def: 0.8 },
       { key: 'feedback', type: 'knob', label: 'feedback', min: -0.95, max: 0.95, def: 0.6, unit: 'bi', origin: 0 },
-      { key: 'mix', type: 'knob', label: 'amount', min: 0, max: 1, def: 0.5 },
+      { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 0.5 },
     ],
     code: stereoCode('flanger', (d) => ({ rate: d.rate, depth: d.depth, feedback: d.feedback, mix: d.mix })),
   },
@@ -409,7 +409,7 @@ export const NODE_TYPES = {
     params: [
       { key: 'drive', type: 'knob', label: 'drive', min: 0, max: 4, def: 1.2 },
       { key: 'character', type: 'select', label: 'character', options: ['warm', 'tape', 'tube', 'asym', 'harmonics', 'fold'], def: 'tape' },
-      { key: 'out', type: 'knob', label: 'output', min: 0.05, max: 1, def: 0.8 },
+      { key: 'out', type: 'knob', label: 'output', min: 0.05, max: 1, def: 0.8, fmt: 'gain' },
     ],
     // on the summed bus, like a mixer insert (see stereo.js)
     code: stereoCode('shaper', (d) => ({ drive: d.drive, out: d.out, curve: SATURATION[d.character] ?? 'soft' })),
@@ -424,7 +424,7 @@ export const NODE_TYPES = {
       { key: 'tone', type: 'knob', label: 'tone', min: 0, max: 1, def: 0.55 },
       { key: 'bias', type: 'knob', label: 'bias', min: 0, max: 1, def: 0 },
       { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 1 },
-      { key: 'out', type: 'knob', label: 'output', min: 0.05, max: 1, def: 0.8 },
+      { key: 'out', type: 'knob', label: 'output', min: 0.05, max: 1, def: 0.8, fmt: 'gain' },
     ],
     code: stereoCode('dist', (d) => ({
       drive: d.drive, mode: d.mode, tighten: d.tighten, tone: d.tone, bias: d.bias, mix: d.mix, out: d.out,
@@ -435,7 +435,7 @@ export const NODE_TYPES = {
     inputs: 1,
     params: [
       { key: 'push', type: 'knob', label: 'push', min: 0, max: 3, def: 0.6 },
-      { key: 'ceiling', type: 'knob', label: 'output', min: 0.1, max: 1, def: 0.9 },
+      { key: 'ceiling', type: 'knob', label: 'output', min: 0.1, max: 1, def: 0.9, fmt: 'gain' },
     ],
     code: stereoCode('shaper', (d) => ({ drive: d.push, out: d.ceiling, curve: 'hard' })),
   },
@@ -445,7 +445,7 @@ export const NODE_TYPES = {
     params: [
       { key: 'push', type: 'knob', label: 'push', min: 0, max: 3, def: 0.5 },
       { key: 'knee', type: 'select', label: 'knee', options: ['round', 'smooth', 'cubic'], def: 'round' },
-      { key: 'ceiling', type: 'knob', label: 'output', min: 0.1, max: 1, def: 0.95 },
+      { key: 'ceiling', type: 'knob', label: 'output', min: 0.1, max: 1, def: 0.95, fmt: 'gain' },
     ],
     code: stereoCode('shaper', (d) => ({ drive: d.push, out: d.ceiling, curve: KNEES[d.knee] ?? 'scurve' })),
   },
@@ -490,7 +490,7 @@ export const NODE_TYPES = {
     inputs: 1,
     params: [
       { key: 'time', type: 'knob', label: 'time', min: 0.001, max: 0.04, def: 0.015, unit: 's' },
-      { key: 'mix', type: 'knob', label: 'amount', min: 0, max: 1, def: 1 },
+      { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 1 },
       { key: 'side', type: 'select', label: 'delay', options: ['right', 'left'], def: 'right' },
     ],
     code: stereoCode('haas', (d) => ({ time: d.time, mix: d.mix, side: d.side })),
@@ -537,7 +537,7 @@ export const NODE_TYPES = {
     inputs: 'many',
     params: [
       { key: 'name', type: 'text', label: 'name', def: 'bus' },
-      { key: 'vol', type: 'knob', label: 'vol', min: 0, max: 1.5, def: 1 },
+      { key: 'vol', type: 'knob', label: 'vol', min: 0, max: 1.5, def: 1, fmt: 'gain' },
       { key: 'pan', type: 'knob', label: 'pan', min: 0, max: 1, def: 0.5 },
     ],
     // Like a mixer insert: everything wired in plays on one audio bus (an orbit), so reverb,
@@ -700,7 +700,7 @@ export const inputKey = (edge) => `${edge.source}:${edge.sourceHandle ?? 'out'}`
 /** A mixer bus's fader for one channel (1 when it hasn't been touched). */
 export const channelGain = (data, key) => clampNum(key ? data?.chan?.[key] : 1, 1, 0, 1.5)
 /** The fader knob a mixer bus gives each channel. */
-export const CHANNEL_FADER = { key: 'chan', type: 'knob', label: 'level', min: 0, max: 1.5, def: 1 }
+export const CHANNEL_FADER = { key: 'chan', type: 'knob', label: 'level', min: 0, max: 1.5, def: 1, fmt: 'gain' }
 
 /** Saturator characters → Strudel's waveshaping curves. */
 const SATURATION = { warm: 'scurve', tape: 'soft', tube: 'diode', asym: 'asym', harmonics: 'chebyshev', fold: 'fold' }

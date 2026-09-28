@@ -101,6 +101,17 @@ const code = m.graphCode(project, {})
 const text = code.lines.join('\n')
 ok('it still plays through all three', ['// space', '// drive', '// level'].every((c) => text.includes(c)) && code.lanes.length === 1 && /const n_lv = n_dr/.test(text), text)
 
+// ---- labels and units
+const knobs = Object.entries(NODE_TYPES).flatMap(([t, s]) => s.params.filter((p) => p.type === 'knob').map((p) => ({ t, ...p })))
+const UNITS = [undefined, 'hz', 'ct', 'st', 'x', 'bar', 's', 'c', 'db', 'ratio', 'bi']
+ok('every knob has a unit the knob can show', knobs.every((p) => UNITS.includes(p.unit)), knobs.filter((p) => !UNITS.includes(p.unit)).map((p) => `${p.t}.${p.key}`))
+ok('every knob sits in its range, default inside', knobs.every((p) => p.min < p.max && p.def >= p.min && p.def <= p.max))
+ok('a wet/dry knob is called mix everywhere', knobs.filter((p) => p.key === 'mix').every((p) => p.label === 'mix'), knobs.filter((p) => p.key === 'mix' && p.label !== 'mix').map((p) => p.t))
+ok('nothing is called amount any more where it means mix', !knobs.some((p) => p.label === 'amount'))
+ok('every output that stores a gain reads in dB', knobs.filter((p) => p.label === 'output').every((p) => p.fmt === 'gain' || p.unit === 'db'))
+ok('semitones, cents and hertz say so', NODE_TYPES.pitch.params[0].unit === 'st' && NODE_TYPES.pitch.params[1].unit === 'ct' && NODE_TYPES.freqshift.params[0].unit === 'hz')
+ok('a level fader reads in dB', [m.CHANNEL_FADER, NODE_TYPES.bus.params.find((p) => p.key === 'vol'), NODE_TYPES.level.params.find((p) => p.key === 'gain')].every((p) => p.fmt === 'gain'))
+
 // ---- renamed labels keep the code the same
 ok('transient shaper still writes "transient" in the code', NODE_TYPES.punch.label === 'transient shaper' && NODE_TYPES.punch.codeLabel === 'transient')
 ok('note echo still writes "echo" in the code', NODE_TYPES.echo.label === 'note echo' && NODE_TYPES.echo.codeLabel === 'echo')

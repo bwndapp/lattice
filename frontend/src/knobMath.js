@@ -106,6 +106,49 @@ export function undetent(q, c, width = 0.04) {
   return q > c ? c + width + ((q - c) * (1 - c - width)) / (1 - c) : c - width - ((c - q) * (c - width)) / c
 }
 
+// ── showing a value ──────────────────────────────────────────────────────────
+/** A linear gain (1 = as it was) in dB, the way a level is read; silence is -∞. */
+export const gainDb = (v) => (v > 0 ? 20 * Math.log10(v) : -Infinity)
+
+/**
+ * A value the way the knob shows it. Display only: what's stored never changes. `unit` is
+ * hz, ct (cents), st (semitones), x, bar, s, db, ratio, or bi (a ± share, shown as ±%);
+ * none is a 0…1 share, shown as %. `fmt: 'gain'` reads a linear gain in dB. A `pan` knob
+ * reads L100 … C … R100.
+ */
+export function formatValue(v, def) {
+  if (def.choices) return def.choices[Math.round(v)] ?? ''
+  if (def.key === 'pan') return v === 0.5 ? 'C' : v < 0.5 ? `L${Math.round((0.5 - v) * 200)}` : `R${Math.round((v - 0.5) * 200)}`
+  if (def.fmt === 'gain') {
+    const db = gainDb(v)
+    if (db < -60) return '-∞'
+    return `${db > 0.05 ? '+' : ''}${Math.abs(db) >= 10 ? Math.round(db) : db.toFixed(1)}`
+  }
+  // a shift either way (origin 0) carries its sign
+  if (def.unit === 'hz' && def.origin === 0 && v !== 0) return `${v < 0 ? '-' : '+'}${formatValue(Math.abs(v), { ...def, origin: undefined })}`
+  if (def.unit === 'st') return `${v > 0.05 ? '+' : ''}${Math.round(v * 10) / 10}st`
+  if (def.unit === 'hz') return v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k` : v < 10 ? `${v.toFixed(2)}` : `${Math.round(v)}`
+  if (def.unit === 'ct') return `${v > 0.5 ? '+' : ''}${Math.round(v)}ct`
+  if (def.unit === 'x') return `${v.toFixed(2)}x`
+  if (def.unit === 'bar') return `${Math.round(v * 16 * 10) / 10}/16`
+  if (def.unit === 's') return v < 0.1 ? `${Math.round(v * 1000)}ms` : `${v.toFixed(2)}s`
+  if (def.unit === 'db') return `${v > 0.05 && def.origin === 0 ? '+' : ''}${Math.abs(v) >= 10 ? Math.round(v) : v.toFixed(1)}${def.origin === 0 && v <= def.min ? ' off' : ''}`
+  if (def.unit === 'ratio') return `${v < 10 ? v.toFixed(1) : Math.round(v)}:1`
+  if (def.unit === 'bi') return `${v > 0.005 ? '+' : ''}${Math.round(v * 100)}`
+  return `${Math.round(v * 100)}`
+}
+
+/** A value with its unit, for the readout. */
+export function readoutText(v, def) {
+  const s = formatValue(v, def)
+  if (def.choices || def.key === 'pan') return s
+  if (def.fmt === 'gain') return `${s} dB`
+  if (def.unit === 'hz') return `${s}Hz`
+  if (def.unit === 'db') return s.endsWith(' off') ? s : `${s} dB`
+  if (!def.unit || def.unit === 'bi' || def.unit === 'c') return `${s}%`
+  return s
+}
+
 // ── typing a value ───────────────────────────────────────────────────────────
 // a knob with no unit that sets a level stores it as a gain (1 = as it was), so dB converts
 const LEVELISH = /gain|vol|level|amp|fader|out|mix|send/i
@@ -114,8 +157,9 @@ const LEVELISH = /gain|vol|level|amp|fader|out|mix|send/i
  * What a typed value means on this knob, in what the knob stores, or null. Units are
  * optional and read the way the knob shows them: "2k" or "2 kHz" → 2000, "-6 dB" (a
  * level knob that stores a gain gets 10^(dB/20)), "250ms" or "1.5s", "40%" on a 0…1
- * knob, "L30" / "C" / "R50" on a pan, a choice by name. A bare number means what the knob
- * shows: "80" on a knob showing 80 for 0.8. Not clamped: the knob does that.
+ * knob, "L30" / "C" / "R50" on a pan, "+7st" or "-12 cents" on a pitch, a choice by name.
+ * A bare number means what the knob shows: "80" on a knob showing 80 for 0.8, "-6" on a
+ * gain shown in dB (`fmt: 'gain'`). Not clamped: the knob does that.
  */
 export function parseKnobValue(text, def) {
   const t = String(text ?? '').trim().toLowerCase().replace(/,/g, '.').replace(/\s+/g, '')
@@ -131,6 +175,7 @@ export function parseKnobValue(text, def) {
     const side = /^([lr])(\d*\.?\d+)%?$/.exec(t)
     if (side) return 0.5 + (side[1] === 'l' ? -1 : 1) * Number(side[2]) / 200
   }
+  if (def.fmt === 'gain' && (t === 'off' || t === '-inf' || t === '-∞')) return 0
   const m = /^([+-]?(?:\d+\.?\d*|\.\d+))(.*)$/.exec(t)
   if (!m) return null
   let n = Number(m[1])
@@ -139,10 +184,12 @@ export function parseKnobValue(text, def) {
   // a thousand of whatever it is: "2k", "2khz", "1.2ks"
   if (/^k(hz)?$/.test(unit)) { n *= 1000; unit = unit.slice(1) }
   if (def.key === 'pan') return unit === '' || unit === '%' ? 0.5 + n / 200 : null
+  // a linear gain shown in dB: a bare number is dB too, "%" still means the gain itself
+  if (def.fmt === 'gain') return unit === '' || unit === 'db' ? 10 ** (n / 20) : unit === '%' ? n / 100 : null
   const shown = def.unit
   switch (unit) {
     case '':
-      if (shown === 'hz' || shown === 'x' || shown === 'ct' || shown === 'db' || shown === 'ratio') return n
+      if (shown === 'hz' || shown === 'x' || shown === 'ct' || shown === 'st' || shown === 'db' || shown === 'ratio') return n
       if (shown === 's') return n > def.max ? n / 1000 : n // "250" on a knob that stops at 2s means ms
       if (shown === 'bar') return n / 16
       return n / 100 // shown as a percentage (0…1 and ±1 knobs)
@@ -161,6 +208,8 @@ export function parseKnobValue(text, def) {
       return shown === 'x' ? n : null
     case 'ct': case 'c': case 'cents':
       return shown === 'ct' ? n : null
+    case 'st': case 'semi': case 'semitones':
+      return shown === 'st' ? n : null
     case ':1':
       return shown === 'ratio' ? n : null
     case '/16':

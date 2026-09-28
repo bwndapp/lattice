@@ -2,32 +2,11 @@ import { useCallback, useState } from 'react'
 import { useAutoLive, useAutomation } from './autoLive.js'
 import { KnobMenu } from './KnobMenu.jsx'
 import { knobBridge } from './knobBridge.js'
-import { clamp, fromPos, parseKnobValue, snapValue, stepOf, toPos } from './knobMath.js'
+import { clamp, formatValue, fromPos, parseKnobValue, readoutText, snapValue, stepOf, toPos } from './knobMath.js'
 import { KnobReadout, KnobTypeInput, RESET_HINT, useKnobControl } from './useKnobControl.jsx'
 
-export function formatValue(v, def) {
-  if (def.choices) return def.choices[Math.round(v)] ?? ''
-  if (def.key === 'pan') return v === 0.5 ? 'C' : v < 0.5 ? `L${Math.round((0.5 - v) * 200)}` : `R${Math.round((v - 0.5) * 200)}`
-  if (def.unit === 'hz') return v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k` : v < 10 ? `${v.toFixed(2)}` : `${Math.round(v)}`
-  if (def.unit === 'ct') return `${v > 0.5 ? '+' : ''}${Math.round(v)}ct`
-  if (def.unit === 'x') return `${v.toFixed(2)}x`
-  if (def.unit === 'bar') return `${Math.round(v * 16 * 10) / 10}/16`
-  if (def.unit === 's') return v < 0.1 ? `${Math.round(v * 1000)}ms` : `${v.toFixed(2)}s`
-  if (def.unit === 'db') return `${v > 0.05 && def.origin === 0 ? '+' : ''}${Math.abs(v) >= 10 ? Math.round(v) : v.toFixed(1)}${def.origin === 0 && v <= def.min ? ' off' : ''}`
-  if (def.unit === 'ratio') return `${v < 10 ? v.toFixed(1) : Math.round(v)}:1`
-  if (def.unit === 'bi') return `${v > 0.005 ? '+' : ''}${Math.round(v * 100)}`
-  return `${Math.round(v * 100)}`
-}
-
-/** A value with its unit, for the readout. */
-export function readoutText(v, def) {
-  const s = formatValue(v, def)
-  if (def.choices || def.key === 'pan') return s
-  if (def.unit === 'hz') return `${s}Hz`
-  if (def.unit === 'db') return s.endsWith(' off') ? s : `${s} dB`
-  if (!def.unit || def.unit === 'bi' || def.unit === 'c') return `${s}%`
-  return s
-}
+// the readout lives with the rest of the knob arithmetic, where it's tested
+export { formatValue, gainDb, readoutText } from './knobMath.js'
 
 /**
  * A knob: drag up/down or sideways (shift for fine), scroll, arrow keys, double-click (or

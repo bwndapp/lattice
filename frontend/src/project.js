@@ -32,7 +32,7 @@ export const BANKS = ['', 'RolandTR909', 'RolandTR808', 'RolandTR707', 'RolandTR
  * channels. Values equal to `def` are left out of the code.
  */
 export const PARAMS = [
-  { key: 'gain', label: 'vol', min: 0, max: 1.5, def: 1 },
+  { key: 'gain', label: 'vol', min: 0, max: 1.5, def: 1, fmt: 'gain' }, // stored linear, shown in dB
   { key: 'pan', label: 'pan', min: 0, max: 1, def: 0.5 },
   { key: 'lpf', label: 'cutoff', min: 60, max: 20000, def: 20000, log: true, unit: 'hz' },
   { key: 'lpq', label: 'reso', min: 0, max: 25, def: 0 },

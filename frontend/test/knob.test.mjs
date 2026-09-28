@@ -1,6 +1,6 @@
 // node frontend/test/knob.test.mjs — the arithmetic knobs turn by (knobMath.js)
 import assert from 'node:assert/strict'
-import { NOTCH_PX, detent, dragTo, lockAxis, parseKnobValue, pastThreshold, undetent, snapValue, startDrag, stepOf, wheelPixels, wheelTravel } from '../src/knobMath.js'
+import { NOTCH_PX, detent, dragTo, formatValue, lockAxis, parseKnobValue, readoutText, pastThreshold, undetent, snapValue, startDrag, stepOf, wheelPixels, wheelTravel } from '../src/knobMath.js'
 
 const near = (a, b, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} ≉ ${b}`)
 
@@ -96,5 +96,39 @@ assert.equal(parseKnobValue('4/16', { key: 'time', label: 'time', min: 0, max: 1
 assert.equal(parseKnobValue('4:1', { key: 'ratio', label: 'ratio', min: 1, max: 20, unit: 'ratio' }), 4)
 assert.equal(parseKnobValue('', unit), null)
 assert.equal(parseKnobValue('loud', unit), null)
+
+// showing a value: display only, the stored number is the same one
+const gain = { key: 'out', label: 'output', min: 0.05, max: 1, fmt: 'gain' } // a linear gain, read in dB
+assert.equal(readoutText(1, gain), '0.0 dB')
+assert.equal(readoutText(0.5, gain), '-6.0 dB')
+assert.equal(readoutText(1.5, { ...gain, max: 1.5 }), '+3.5 dB')
+assert.equal(formatValue(0, { ...gain, min: 0 }), '-∞')
+near(parseKnobValue('-6', gain), 10 ** (-6 / 20)) // a bare number is what it shows: dB
+near(parseKnobValue('-6 dB', gain), 10 ** (-6 / 20))
+assert.equal(parseKnobValue('50%', gain), 0.5)
+assert.equal(parseKnobValue('off', { ...gain, min: 0 }), 0)
+assert.equal(readoutText(0.5, pan), 'C')
+assert.equal(readoutText(0.25, pan), 'L50')
+assert.equal(readoutText(1, pan), 'R100')
+const st = { key: 'semitones', label: 'shift', min: -24, max: 24, unit: 'st', origin: 0 }
+assert.equal(readoutText(7, st), '+7st')
+assert.equal(readoutText(-12, st), '-12st')
+assert.equal(readoutText(0, st), '0st')
+assert.equal(parseKnobValue('+7st', st), 7)
+assert.equal(parseKnobValue('-12', st), -12)
+assert.equal(parseKnobValue('7ct', st), null)
+const ct = { key: 'fine', label: 'fine', min: -100, max: 100, unit: 'ct', origin: 0 }
+assert.equal(readoutText(25, ct), '+25ct')
+assert.equal(parseKnobValue('-30 cents', ct), -30)
+assert.equal(parseKnobValue('-30', ct), -30)
+const shift = { key: 'hz', label: 'shift', min: -500, max: 500, unit: 'hz', origin: 0 }
+assert.equal(readoutText(40, shift), '+40Hz')
+assert.equal(readoutText(-250, shift), '-250Hz')
+assert.equal(parseKnobValue('-250hz', shift), -250)
+assert.equal(parseKnobValue('-250', shift), -250)
+// what a knob shows, typed back in, lands where it was
+for (const [v, def] of [[0.5, gain], [0.8, gain], [0.25, pan], [7, st], [-30, ct], [-250, shift], [0.3, unit]]) {
+  assert.ok(Math.abs(parseKnobValue(readoutText(v, def), def) - v) < 0.01, `${readoutText(v, def)} round trip`)
+}
 
 console.log('knob ok')
