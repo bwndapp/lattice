@@ -9,7 +9,7 @@ import { ENGINES } from './instruments/index.js'
 import { openCode, openSynth } from './instruments/windows.js'
 import { INSTRUMENTS, INSTRUMENT_MIME, instrumentChannel, makePattern, newId } from './project'
 import { FRAME_BAR_H, collapseFrame, collapsedHosts, expandFrame, heldBy, removeFrame as dropFrame, rfSize, routeEdge } from './frames'
-import Knob from './Knob.jsx'
+import Knob, { formatValue } from './Knob.jsx'
 import { canAutomate, nodeTarget, unitTarget } from './automation.js'
 import SoundPicker from './SoundPicker.jsx'
 import { useRollDock } from './rollDock.js'
@@ -640,7 +640,21 @@ function StudioNode({ id, selected }) {
           </ul>
         )}
 
-        {spec.params.length > 0 && (
+        {node.type === 'bus' ? (
+          // a console strip: its name, then the master level and pan in a box of their own
+          <div className="node-params bus-params">
+            {spec.params.filter((p) => p.type !== 'knob').map((p) => <Param key={p.key} node={node} param={p} />)}
+            <div className="bus-master">
+              <span className="bus-cap">master</span>
+              {spec.params.filter((p) => p.type === 'knob').map((p) => (
+                <span key={p.key} className="bus-ctl">
+                  <Param node={node} param={p} />
+                  <span className="bus-read">{formatValue(node.data[p.key] ?? p.def, p)}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : spec.params.length > 0 && (
           <div className="node-params">
             {spec.params.map((p) => <Param key={p.key} node={node} param={p} />)}
           </div>
@@ -655,17 +669,21 @@ function StudioNode({ id, selected }) {
               const soloed = ctx.laneSolo?.[id] ?? null
               const solo = soloed === w.targetHandle
               return (
-                <li key={w.targetHandle} className={`slot ${node.type === 'output' && (muted || (soloed && !solo)) ? 'off' : ''}`}>
+                <li key={w.targetHandle} className={`slot ${node.type === 'bus' ? 'bus-chan' : ''} ${node.type === 'output' && (muted || (soloed && !solo)) ? 'off' : ''}`}>
                   <Handle type="target" position={Position.Left} id={w.targetHandle} className="port in" />
                   <span className="slot-meter" data-meter={w.id} aria-hidden><i /><i /></span>
-                  <span className="slot-name">
-                    {originLabel(ctx.project, w)}
-                    {(() => {
-                      // two paths from the same part look identical without saying where they've been
-                      const last = nodeTitle(src, ctx.project, w.sourceHandle)
-                      return last === originLabel(ctx.project, w) ? null : <em className="slot-via"> via {last}</em>
-                    })()}
-                  </span>
+                  {(() => {
+                    // two paths from the same part look identical without saying where they've been
+                    const origin = originLabel(ctx.project, w)
+                    const last = nodeTitle(src, ctx.project, w.sourceHandle)
+                    const via = last === origin ? null : last
+                    return (
+                      <span className="slot-name" title={via ? `${origin} via ${via}` : origin}>
+                        {origin}
+                        {via && <em className="slot-via"> via {via}</em>}
+                      </span>
+                    )
+                  })()}
                   {node.type === 'arrange' && (
                     <Stepper
                       param={{ ...spec.slotParam, label: 'bars' }}
@@ -681,6 +699,7 @@ function StudioNode({ id, selected }) {
                         value={channelGain(node.data, inputKey(w))}
                         onChange={(v) => ctx.updateNode(id, (d) => { d.chan = { ...(d.chan ?? {}), [inputKey(w)]: v } })}
                       />
+                      <span className="bus-read">{formatValue(channelGain(node.data, inputKey(w)), CHANNEL_FADER)}</span>
                     </span>
                   )}
                   {node.type === 'output' && (
@@ -697,7 +716,7 @@ function StudioNode({ id, selected }) {
                 </li>
               )
             })}
-            <li className="slot free">
+            <li className={`slot free ${node.type === 'bus' ? 'bus-chan' : ''}`}>
               <Handle type="target" position={Position.Left} id={nextSlot} className="port in free" />
               <span className="slot-name">{wires.length ? 'connect another' : node.type === 'output' ? 'connect what you want to hear' : 'connect inputs'}</span>
             </li>
