@@ -918,6 +918,7 @@ button.lcd-unit:hover { color: var(--acid); }
 .pal-search { padding: 0 0.6rem 0.5rem; border-bottom: 1px solid var(--line); }
 .pal-search .node-input { font-size: 12px; }
 .pal-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0.3rem 0.6rem 1rem; display: flex; flex-direction: column; gap: 0.25rem; }
+.pal-sub { display: block; padding: 0.3rem 0 0.1rem; font-size: 9px; letter-spacing: 0.06em; color: var(--muted); opacity: 0.8; }
 .pal-count { font-size: 10px; color: var(--muted); padding: 0.2rem 0 0.3rem; }
 .pal-group { display: flex; flex-direction: column; gap: 0.25rem; margin-top: 0.3rem; }
 .pal-group-head { display: flex; align-items: baseline; gap: 0.4rem; font: inherit; background: none; border: 0; padding: 0.2rem 0; cursor: var(--ring); color: var(--muted); text-align: left; }
@@ -1139,7 +1140,7 @@ ul.node-chans { display: block; border-top: 1px solid var(--line); }
   display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0.5rem 0.25rem;
   background: var(--ink); border: 1px solid var(--line); border-radius: 3px;
 }
-.bus-cap { flex: 1; font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.bus-cap { flex: 1; font-size: 9px; letter-spacing: 0.06em; color: var(--muted); opacity: 0.8; }
 .bus-ctl { display: inline-flex; align-items: center; gap: 0.2rem; }
 .bus-ctl .bus-read { margin-bottom: 13px; text-align: left; } /* level with the knob, not its label */
 .chan-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

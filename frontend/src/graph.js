@@ -3,8 +3,9 @@
  *
  *   sources      pattern, sound, notes, code          → a pattern out
  *   transforms   fast, slow, every, euclid, …         → one pattern in, one out
- *   effects      filter, space, level, drive          → one pattern in, one out
- *   eq & dynamics  eq, saturator, clipper, compressor, limiter  → one pattern in, one out
+ *   effects      filter, eq, reverb, compressor, …    → one pattern in, one out
+ *                (the add menu files them by `cat`; `hidden` ones are older duplicates
+ *                that saved tracks still play, left out of the menus)
  *   combine      stack, sequence, arrange             → many in, one out
  *   output       each wire into it is a lane you hear (mute is the track's, solo is yours)
  *
@@ -153,7 +154,7 @@ export const NODE_TYPES = {
     code: (d, [x], ctx) => `${x}.degradeBy(${K(ctx, d, 'amount')})`,
   },
   echo: {
-    group: 'transform', label: 'echo', blurb: 'Repeat each event, fading',
+    group: 'transform', label: 'note echo', codeLabel: 'echo', blurb: 'Repeat each note, fading (the notes, not the audio: see delay)',
     inputs: 1,
     params: [
       { key: 'times', type: 'int', label: 'times', min: 2, max: 8, def: 3 },
@@ -178,7 +179,7 @@ export const NODE_TYPES = {
   },
 
   filter: {
-    group: 'effect', label: 'filter', blurb: 'Cut highs or lows',
+    group: 'effect', cat: 'filter', label: 'filter', blurb: 'Cut highs or lows',
     inputs: 1,
     params: [
       { key: 'lpf', type: 'knob', label: 'cutoff', min: 60, max: 20000, def: 2000, log: true, unit: 'hz' },
@@ -190,7 +191,7 @@ export const NODE_TYPES = {
     code: stereoCode('filter', (d) => ({ lpf: d.lpf, lpq: d.lpq, hpf: d.hpf })),
   },
   space: {
-    group: 'effect', label: 'space', blurb: 'Reverb and delay',
+    group: 'effect', cat: 'space', hidden: true, label: 'space', blurb: 'Reverb and delay',
     inputs: 1,
     params: [
       { key: 'room', type: 'knob', label: 'reverb', min: 0, max: 1, def: 0.4 },
@@ -214,7 +215,7 @@ export const NODE_TYPES = {
     },
   },
   reverb: {
-    group: 'effect', label: 'reverb', blurb: 'A room around the sound: how big, how bright, how wide',
+    group: 'effect', cat: 'space', label: 'reverb', blurb: 'A room around the sound: how big, how bright, how wide',
     inputs: 1,
     params: [
       { key: 'mix', type: 'knob', label: 'amount', min: 0, max: 1, def: 0.35 },
@@ -232,7 +233,7 @@ export const NODE_TYPES = {
     },
   },
   delay: {
-    group: 'effect', label: 'delay', blurb: 'Echoes in time with the track, fading through a tone filter',
+    group: 'effect', cat: 'space', label: 'delay', blurb: 'Echoes in time with the track, fading through a tone filter',
     inputs: 1,
     params: [
       { key: 'mix', type: 'knob', label: 'amount', min: 0, max: 1, def: 0.3 },
@@ -250,7 +251,7 @@ export const NODE_TYPES = {
     },
   },
   level: {
-    group: 'effect', label: 'level', blurb: 'Volume and pan',
+    group: 'effect', cat: 'stereo', hidden: true, label: 'level', blurb: 'Volume and pan',
     inputs: 1,
     params: [
       { key: 'gain', type: 'knob', label: 'vol', min: 0, max: 1.5, def: 0.8 },
@@ -260,7 +261,7 @@ export const NODE_TYPES = {
     code: stereoCode('fader', (d) => ({ gain: d.gain, pan: d.pan })),
   },
   drive: {
-    group: 'effect', label: 'drive', blurb: 'Distortion and bitcrush',
+    group: 'effect', cat: 'drive', hidden: true, label: 'drive', blurb: 'Distortion and bitcrush',
     inputs: 1,
     params: [
       { key: 'shape', type: 'knob', label: 'drive', min: 0, max: 0.9, def: 0.4 },
@@ -270,7 +271,7 @@ export const NODE_TYPES = {
   },
 
   pitch: {
-    group: 'effect', label: 'pitch', blurb: 'Up or down in semitones, with the tempo left alone',
+    group: 'effect', cat: 'pitch', label: 'pitch', blurb: 'Up or down in semitones, with the tempo left alone',
     inputs: 1,
     params: [
       { key: 'semitones', type: 'knob', label: 'shift', min: -24, max: 24, def: 0, unit: 'bi', origin: 0 },
@@ -281,7 +282,7 @@ export const NODE_TYPES = {
     code: stereoCode('pitch', (d) => ({ semitones: d.semitones, fine: d.fine, grain: d.grain, mix: d.mix })),
   },
   freqshift: {
-    group: 'effect', label: 'freq shift', blurb: 'Every partial moved by the same hertz: it stops being a note',
+    group: 'effect', cat: 'pitch', label: 'freq shift', blurb: 'Every partial moved by the same hertz: it stops being a note',
     inputs: 1,
     params: [
       { key: 'hz', type: 'knob', label: 'shift', min: -500, max: 500, def: 40, unit: 'bi', origin: 0 },
@@ -291,13 +292,13 @@ export const NODE_TYPES = {
     code: stereoCode('freqshift', (d) => ({ hz: d.hz, spread: d.spread, mix: d.mix })),
   },
   djfilter: {
-    group: 'effect', label: 'dj filter', blurb: 'One knob: left darkens, right thins out',
+    group: 'effect', cat: 'filter', label: 'dj filter', blurb: 'One knob: left darkens, right thins out',
     inputs: 1,
     params: [{ key: 'djf', type: 'knob', label: 'sweep', min: 0, max: 1, def: 0.5 }],
     code: stereoCode('djfilter', (d) => ({ djf: d.djf })),
   },
   phaser: {
-    group: 'effect', label: 'phaser', blurb: 'A swirling, sweeping sound',
+    group: 'effect', cat: 'mod', label: 'phaser', blurb: 'A swirling, sweeping sound',
     inputs: 1,
     params: [
       { key: 'rate', type: 'knob', label: 'rate', min: 0.1, max: 16, def: 2, log: true },
@@ -306,7 +307,7 @@ export const NODE_TYPES = {
     code: stereoCode('phaser', (d) => ({ rate: d.rate, depth: d.depth })),
   },
   chorus: {
-    group: 'effect', label: 'chorus', blurb: 'Thicker and wider, like several players at once',
+    group: 'effect', cat: 'mod', label: 'chorus', blurb: 'Thicker and wider, like several players at once',
     inputs: 1,
     params: [
       { key: 'rate', type: 'knob', label: 'rate', min: 0.05, max: 5, def: 0.8, log: true },
@@ -316,7 +317,7 @@ export const NODE_TYPES = {
     code: stereoCode('chorus', (d) => ({ rate: d.rate, depth: d.depth, mix: d.mix })),
   },
   flanger: {
-    group: 'effect', label: 'flanger', blurb: 'A metallic whoosh that sweeps up and down, like a jet',
+    group: 'effect', cat: 'mod', label: 'flanger', blurb: 'A metallic whoosh that sweeps up and down, like a jet',
     inputs: 1,
     params: [
       { key: 'rate', type: 'knob', label: 'rate', min: 0.02, max: 10, def: 0.25, log: true },
@@ -327,7 +328,7 @@ export const NODE_TYPES = {
     code: stereoCode('flanger', (d) => ({ rate: d.rate, depth: d.depth, feedback: d.feedback, mix: d.mix })),
   },
   tremolo: {
-    group: 'effect', label: 'tremolo', blurb: 'Volume that pulses',
+    group: 'effect', cat: 'mod', label: 'tremolo', blurb: 'Volume that pulses',
     inputs: 1,
     params: [
       { key: 'rate', type: 'knob', label: 'rate', min: 0.25, max: 32, def: 4, log: true },
@@ -336,13 +337,13 @@ export const NODE_TYPES = {
     code: stereoCode('tremolo', (d) => ({ rate: d.rate, depth: d.depth })),
   },
   vowel: {
-    group: 'effect', label: 'vowel', blurb: 'Makes it sound like it says a vowel',
+    group: 'effect', cat: 'filter', label: 'vowel', blurb: 'Makes it sound like it says a vowel',
     inputs: 1,
     params: [{ key: 'vowel', type: 'select', label: 'vowel', options: ['a', 'e', 'i', 'o', 'u'], def: 'a' }],
     code: stereoCode('vowel', (d) => ({ vowel: ['a', 'e', 'i', 'o', 'u'].includes(d.vowel) ? d.vowel : 'a' })),
   },
   lofi: {
-    group: 'effect', label: 'lo-fi', blurb: 'Lower sample rate, grittier',
+    group: 'effect', cat: 'drive', label: 'lo-fi', blurb: 'Lower sample rate, grittier',
     inputs: 1,
     params: [{ key: 'coarse', type: 'int', label: 'grit', min: 1, max: 32, def: 6 }],
     code: stereoCode('lofi', (d) => ({ coarse: d.coarse })),
@@ -390,7 +391,7 @@ export const NODE_TYPES = {
     },
   },
   eq3: {
-    group: 'mixing', label: '3-band eq', blurb: 'Boost or cut lows, mids and highs on the sound going through it',
+    group: 'mixing', cat: 'filter', label: '3-band eq', blurb: 'Boost or cut lows, mids and highs on the sound going through it',
     inputs: 1,
     params: [
       { key: 'low', type: 'knob', label: 'low', min: -24, max: 12, def: 0, unit: 'db', origin: 0 },
@@ -403,7 +404,7 @@ export const NODE_TYPES = {
     code: stereoCode('eq', (d) => ({ low: d.low, mid: d.mid, high: d.high, lowf: d.lowf, highf: d.highf })),
   },
   saturator: {
-    group: 'mixing', label: 'saturator', blurb: 'Warmth and grit: rounds off peaks and adds harmonics',
+    group: 'mixing', cat: 'drive', label: 'saturator', blurb: 'Warmth and grit: rounds off peaks and adds harmonics',
     inputs: 1,
     params: [
       { key: 'drive', type: 'knob', label: 'drive', min: 0, max: 4, def: 1.2 },
@@ -414,7 +415,7 @@ export const NODE_TYPES = {
     code: stereoCode('shaper', (d) => ({ drive: d.drive, out: d.out, curve: SATURATION[d.character] ?? 'soft' })),
   },
   distortion: {
-    group: 'effect', label: 'distortion', blurb: 'A pedal: drive it, bias it, and shape what goes in and comes out',
+    group: 'effect', cat: 'drive', label: 'distortion', blurb: 'A pedal: drive it, bias it, and shape what goes in and comes out',
     inputs: 1,
     params: [
       { key: 'drive', type: 'knob', label: 'drive', min: 0, max: 1, def: 0.45 },
@@ -430,7 +431,7 @@ export const NODE_TYPES = {
     })),
   },
   clipper: {
-    group: 'mixing', label: 'hard clip', blurb: 'Cuts peaks off flat: loud, aggressive, and it bites',
+    group: 'mixing', cat: 'drive', label: 'hard clip', blurb: 'Cuts peaks off flat: loud, aggressive, and it bites',
     inputs: 1,
     params: [
       { key: 'push', type: 'knob', label: 'push', min: 0, max: 3, def: 0.6 },
@@ -439,7 +440,7 @@ export const NODE_TYPES = {
     code: stereoCode('shaper', (d) => ({ drive: d.push, out: d.ceiling, curve: 'hard' })),
   },
   softclip: {
-    group: 'mixing', label: 'soft clip', blurb: 'Rounds peaks into the ceiling instead of cutting them flat',
+    group: 'mixing', cat: 'drive', label: 'soft clip', blurb: 'Rounds peaks into the ceiling instead of cutting them flat',
     inputs: 1,
     params: [
       { key: 'push', type: 'knob', label: 'push', min: 0, max: 3, def: 0.5 },
@@ -449,7 +450,7 @@ export const NODE_TYPES = {
     code: stereoCode('shaper', (d) => ({ drive: d.push, out: d.ceiling, curve: KNEES[d.knee] ?? 'scurve' })),
   },
   compressor: {
-    group: 'mixing', label: 'compressor', blurb: 'Evens out the level: loud parts get turned down',
+    group: 'mixing', cat: 'dynamics', label: 'compressor', blurb: 'Evens out the level: loud parts get turned down',
     inputs: 1,
     params: [
       { key: 'threshold', type: 'knob', label: 'thresh', min: -60, max: 0, def: -18, unit: 'db' },
@@ -463,7 +464,7 @@ export const NODE_TYPES = {
     code: stereoCode('comp', (d) => ({ threshold: d.threshold, ratio: d.ratio, knee: d.knee, attack: d.attack, release: d.release, makeup: d.makeup })),
   },
   limiter: {
-    group: 'mixing', label: 'limiter', blurb: 'Pushes the level up to a ceiling nothing gets past: loud, clean, last on the master',
+    group: 'mixing', cat: 'dynamics', label: 'limiter', blurb: 'Pushes the level up to a ceiling nothing gets past: loud, clean, last on the master',
     inputs: 1,
     params: [
       { key: 'gain', type: 'knob', label: 'gain', min: -6, max: 24, def: 0, unit: 'db', origin: 0 },
@@ -474,7 +475,7 @@ export const NODE_TYPES = {
     code: stereoCode('limiter', (d) => ({ gain: d.gain, ceiling: d.ceiling, release: d.release })),
   },
   punch: {
-    group: 'mixing', label: 'transient', blurb: 'More or less snap at the start of each hit, and more or less tail',
+    group: 'mixing', cat: 'dynamics', label: 'transient shaper', codeLabel: 'transient', blurb: 'More or less snap at the start of each hit, and more or less tail',
     inputs: 1,
     params: [
       { key: 'attack', type: 'knob', label: 'snap', min: -1, max: 1, def: 0.5, unit: 'bi', origin: 0 },
@@ -485,7 +486,7 @@ export const NODE_TYPES = {
   },
 
   haas: {
-    group: 'mixing', label: 'haas', blurb: 'Delay one ear by a few milliseconds: a mono sound opens up wide',
+    group: 'mixing', cat: 'stereo', label: 'haas', blurb: 'Delay one ear by a few milliseconds: a mono sound opens up wide',
     inputs: 1,
     params: [
       { key: 'time', type: 'knob', label: 'time', min: 0.001, max: 0.04, def: 0.015, unit: 's' },
@@ -495,7 +496,7 @@ export const NODE_TYPES = {
     code: stereoCode('haas', (d) => ({ time: d.time, mix: d.mix, side: d.side })),
   },
   widener: {
-    group: 'mixing', label: 'stereo widener', blurb: 'Wider stereo image, with the low end kept in the middle',
+    group: 'mixing', cat: 'stereo', label: 'stereo widener', blurb: 'Wider stereo image, with the low end kept in the middle',
     inputs: 1,
     params: [
       { key: 'width', type: 'knob', label: 'width', min: 0, max: 2, def: 1.5, unit: 'x', origin: 1 },
@@ -505,7 +506,7 @@ export const NODE_TYPES = {
     code: stereoCode('widener', (d) => ({ width: d.width, spread: d.spread, mono: d.mono })),
   },
   utility: {
-    group: 'mixing', label: 'utility', blurb: 'The plain jobs: gain, mono or width, balance, swap or pick a side, flip the phase',
+    group: 'mixing', cat: 'stereo', label: 'utility', blurb: 'The plain jobs: gain, mono or width, balance, swap or pick a side, flip the phase',
     inputs: 1,
     params: [
       { key: 'gain', type: 'knob', label: 'gain', min: -36, max: 24, def: 0, unit: 'db', origin: 0 },
@@ -519,7 +520,7 @@ export const NODE_TYPES = {
   },
 
   fxrack: {
-    group: 'effect', label: 'fx rack', blurb: 'Several effects in one box, applied top to bottom',
+    group: 'effect', cat: 'rack', label: 'fx rack', blurb: 'Several effects in one box, applied top to bottom',
     inputs: 1,
     params: [],
     code: (d, [x], ctx) => {
@@ -724,14 +725,49 @@ export function makeFxUnit(type, id) {
   return { id, type, on: true, data: defaultData(type) }
 }
 
+/**
+ * The add menu's groups. A node's `group` stays what the patch runs on (its colour, how it
+ * wires); the menu files effects and mixing tools together under "effects", sorted by `cat`,
+ * and the sidechain with the other things that move sound around.
+ */
 export const GROUPS = [
   ['source', 'sources'],
-  ['transform', 'transform'],
+  ['transform', 'pattern tools'],
   ['effect', 'effects'],
-  ['mixing', 'eq, dynamics & stereo'],
-  ['combine', 'combine'],
+  ['combine', 'routing'],
   ['output', 'output'],
 ]
+
+/** What each effect does, in the order the menus list them. */
+export const FX_CATS = [
+  ['rack', 'rack'],
+  ['filter', 'eq & filter'],
+  ['dynamics', 'dynamics'],
+  ['drive', 'drive & colour'],
+  ['space', 'space'],
+  ['mod', 'modulation'],
+  ['pitch', 'pitch'],
+  ['stereo', 'stereo & utility'],
+]
+
+/** Which add-menu group a node type is filed under. */
+export function menuGroup(type) {
+  const spec = NODE_TYPES[type]
+  if (!spec) return null
+  if (type === 'sidechain') return 'combine'
+  return spec.group === 'mixing' ? 'effect' : spec.group
+}
+
+/**
+ * Effect types, menu order: by category, then as listed. Hidden ones (older duplicates that
+ * saved tracks still use) are left out unless asked for.
+ */
+export function effectsByCat({ hidden = false, only = null } = {}) {
+  const cats = FX_CATS.map(([key]) => key)
+  return Object.keys(NODE_TYPES)
+    .filter((t) => NODE_TYPES[t].cat && (hidden || !NODE_TYPES[t].hidden) && (!only || only.includes(t)))
+    .sort((a, b) => cats.indexOf(NODE_TYPES[a].cat) - cats.indexOf(NODE_TYPES[b].cat))
+}
 
 export function defaultData(type) {
   const spec = NODE_TYPES[type]
@@ -928,7 +964,8 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     if (spec.group === 'source') expr = fromNode(expr, id)
     if (route.orbit != null) orbitOf.set(id, route.orbit)
     const name = nodeVar(id)
-    lines.push(`// ${node.data.name ?? spec.label}`, `const ${name} = ${expr}`)
+    // `codeLabel` keeps a renamed node's comment as it was, so saved tracks make the same code
+    lines.push(`// ${node.data.name ?? spec.codeLabel ?? spec.label}`, `const ${name} = ${expr}`)
     exprs.set(id, name)
     return name
   }

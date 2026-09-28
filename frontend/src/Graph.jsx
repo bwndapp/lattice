@@ -1,10 +1,10 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Handle, NodeResizeControl, Position, SelectionMode, ViewportPortal,
   applyNodeChanges, applyEdgeChanges, useNodesInitialized, useReactFlow, useUpdateNodeInternals, useViewport,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { APPLY, BUS_NODES, CHANNEL_FADER, FX_UNITS, GROUPS, NODE_TYPES, channelGain, defaultData, inputKey, inputsOf, makeFxUnit, makesCycle } from './graph'
+import { APPLY, BUS_NODES, CHANNEL_FADER, FX_CATS, FX_UNITS, GROUPS, NODE_TYPES, channelGain, defaultData, effectsByCat, inputKey, inputsOf, makeFxUnit, makesCycle, menuGroup } from './graph'
 import { ENGINES } from './instruments/index.js'
 import { openCode, openSynth } from './instruments/windows.js'
 import { INSTRUMENTS, INSTRUMENT_MIME, instrumentChannel, makePattern, newId } from './project'
@@ -445,7 +445,14 @@ function FxRack({ node }) {
           }}
         >
           <option value="">+ add effect</option>
-          {FX_UNITS.map((t) => <option key={t} value={t}>{NODE_TYPES[t].label}</option>)}
+          {FX_CATS.map(([cat, label]) => {
+            const types = effectsByCat({ only: FX_UNITS }).filter((t) => NODE_TYPES[t].cat === cat)
+            return types.length > 0 && (
+              <optgroup key={cat} label={label}>
+                {types.map((t) => <option key={t} value={t}>{NODE_TYPES[t].label}</option>)}
+              </optgroup>
+            )
+          })}
         </select>
       </label>
       <span className="fx-io">out</span>
@@ -912,11 +919,23 @@ const SEARCH_WORDS = {
   output: 'master out hear speakers main',
 }
 
+const CAT_LABEL = Object.fromEntries(FX_CATS)
+
+/*
+ * Effects come in the order of their categories, each under its heading. Hidden ones (older
+ * duplicates that saved tracks still play) stay out of the groups but search still finds
+ * them, marked as older, so a track that uses one can have another.
+ */
 function paletteItems() {
-  const nodes = Object.entries(NODE_TYPES).map(([type, s]) => ({
-    id: `node:${type}`, kind: 'node', key: type, group: s.group, label: s.label, blurb: s.blurb,
-    words: `${type} ${s.group} ${SEARCH_WORDS[type] ?? ''}`,
-  }))
+  const types = [...Object.keys(NODE_TYPES).filter((t) => !NODE_TYPES[t].cat), ...effectsByCat({ hidden: true })]
+  const nodes = types.map((type) => {
+    const s = NODE_TYPES[type]
+    return {
+      id: `node:${type}`, kind: 'node', key: type, group: menuGroup(type), cat: s.cat, catLabel: CAT_LABEL[s.cat], hidden: !!s.hidden,
+      label: s.hidden ? `${s.label} (older)` : s.label, blurb: s.blurb,
+      words: `${type} ${s.group} ${CAT_LABEL[s.cat] ?? ''} ${SEARCH_WORDS[type] ?? ''}`,
+    }
+  })
   const instruments = INSTRUMENTS.map((inst) => ({
     id: `instrument:${inst.key}`, kind: 'instrument', key: inst.key, group: 'instruments', label: inst.label,
     blurb: inst.kind === 'code' ? 'a pattern with a line of code' : `a pattern with a ${inst.kind === 'drum' ? 'drum' : 'synth'} (${inst.patch.sound})`,
@@ -940,7 +959,7 @@ function matchScore(item, tokens) {
   return score
 }
 
-const PAL_GROUPS = [['recent', 'recent'], ...GROUPS, ['instruments', 'instruments']]
+const PAL_GROUPS = [['recent', 'recent'], GROUPS[0], ['instruments', 'instruments'], ...GROUPS.slice(1)]
 /*
  * The add pane opens with every group shut: a wall of a hundred nodes is a thing to get
  * past, not a thing to read, and the way in is the search box or the one heading you want.
@@ -1053,7 +1072,7 @@ function Palette({ onAdd, unused = [], onForget }) {
 
   const byGroup = (group) => (group === 'recent'
     ? recent.map((id) => items.find((it) => it.id === id)).filter(Boolean)
-    : items.filter((it) => it.group === group).sort((a, b) => (b.key === 'fxrack') - (a.key === 'fxrack')))
+    : items.filter((it) => it.group === group && !it.hidden))
 
   return (
     <aside className={`palette graph-palette ${wide ? 'wide' : ''}`} aria-label="Add nodes" style={{ width }}>
@@ -1148,7 +1167,12 @@ function Palette({ onAdd, unused = [], onForget }) {
                   <span className="pal-label">{label}</span>
                   <span className="pal-n">{list.length}</span>
                 </button>
-                {open && list.map((item) => <Item key={item.id} item={item} index={-1} />)}
+                {open && list.map((item, i) => (
+                  <Fragment key={item.id}>
+                    {group !== 'recent' && item.catLabel && item.catLabel !== list[i - 1]?.catLabel && <span className="pal-sub">{item.catLabel}</span>}
+                    <Item item={item} index={-1} />
+                  </Fragment>
+                ))}
               </section>
             )
           })

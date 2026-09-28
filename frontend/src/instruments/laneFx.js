@@ -4,7 +4,7 @@
  * rack unit keeps (graph.js). Reverb and delay are sends in the app, so here they get a dry
  * path beside them and their amount is the wet level.
  */
-import { LANE_FX, NODE_TYPES, cleanData, defaultData, laneFxParams } from '../graph.js'
+import { FX_CATS, LANE_FX, NODE_TYPES, cleanData, defaultData, effectsByCat, laneFxParams } from '../graph.js'
 import { makeInsert } from '../stereo.js'
 import { makeSendEffect } from '../fxbus.js'
 
@@ -15,6 +15,8 @@ export { LANE_FX }
 /** What a lane's patch model needs to know about these effects (see syrup/model.js). */
 export const LANE_FX_CATALOG = {
   types: LANE_FX,
+  // the add picker: [heading, types] by category, older duplicates left out (saved lanes keep them)
+  menu: FX_CATS.map(([cat, label]) => [label, effectsByCat({ only: LANE_FX }).filter((t) => NODE_TYPES[t].cat === cat)]).filter(([, ts]) => ts.length),
   spec: (type) => NODE_TYPES[type],
   clean: (type, data) => cleanData(type, data),
   defaults: (type) => defaultData(type),

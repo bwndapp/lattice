@@ -655,7 +655,13 @@ function Lane({ ui, index, drag }) {
             onChange={(e) => { const type = e.target.value; if (type) edit((p) => { if (p.lanes[index].effects.length < MAX_LANE_FX) p.lanes[index].effects.push(makeLaneFx(type)) }) }}
           >
             <option value="">+ effect</option>
-            {catalog.types.map((t) => <option key={t} value={t}>{catalog.spec(t).label}</option>)}
+            {catalog.menu
+              ? catalog.menu.map(([label, types]) => (
+                <optgroup key={label} label={label}>
+                  {types.map((t) => <option key={t} value={t}>{catalog.spec(t).label}</option>)}
+                </optgroup>
+              ))
+              : catalog.types.map((t) => <option key={t} value={t}>{catalog.spec(t).label}</option>)}
           </select>
         )}
         {!lane.effects.length && <span className="sy-fx-hint">{from.length || feeds.length ? 'plays straight through' : 'nothing plays in yet'}</span>}

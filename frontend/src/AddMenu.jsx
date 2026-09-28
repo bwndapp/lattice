@@ -1,11 +1,12 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import './AddMenu.css'
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 
 /**
  * Right-click on the patch, or Shift + A: an add menu at the pointer. Groups open into their items
- * (hover, click or arrow right); typing searches everything at once. Enter or a click
+ * (hover, click or arrow right), under sub-headings where items have a `catLabel` (the
+ * effects); typing searches everything at once, older `hidden` items included. Enter or a click
  * adds the item where you right-clicked. Esc, a click outside or scrolling closes it.
  *
  * `items` and `score` come from the add pane, so both always offer the same things; where the
@@ -25,7 +26,7 @@ export default function AddMenu({ x, y, items, groups, score, onPick, onClose, c
   }, [])
   const inGroup = (key) => (key === 'recent'
     ? recent.map((id) => items.find((it) => it.id === id)).filter(Boolean)
-    : items.filter((it) => it.group === key))
+    : items.filter((it) => it.group === key && !it.hidden)) // hidden ones: search only
   const shownGroups = groups.filter(([key]) => inGroup(key).length)
 
   const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
@@ -170,7 +171,12 @@ export default function AddMenu({ x, y, items, groups, score, onPick, onClose, c
       </div>
       {!results && group && (
         <div className="am-flyout am-list" role="menu" aria-label={shownGroups.find(([k]) => k === group)?.[1]}>
-          {openItems.map((item, i) => row(item, i, 'items'))}
+          {openItems.map((item, i) => (
+            <Fragment key={item.id}>
+              {group !== 'recent' && item.catLabel && item.catLabel !== openItems[i - 1]?.catLabel && <span className="am-sub" role="presentation">{item.catLabel}</span>}
+              {row(item, i, 'items')}
+            </Fragment>
+          ))}
         </div>
       )}
     </div>
