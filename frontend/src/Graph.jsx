@@ -885,7 +885,7 @@ const SEARCH_WORDS = {
   sometimes: 'random chance probability maybe',
   euclid: 'rhythm polyrhythm spread hits pattern',
   thin: 'random drop degrade probability sparse fewer',
-  echo: 'delay repeat stutter ghost',
+  echo: 'note echo repeat stutter ghost notes pattern',
   shape: 'reverse jux stereo swing palindrome iter ply shuffle',
   transpose: 'pitch key semitones octave up down',
   filter: 'lpf low pass high pass hpf cutoff resonance eq tone muffle',
@@ -920,6 +920,7 @@ const SEARCH_WORDS = {
 }
 
 const CAT_LABEL = Object.fromEntries(FX_CATS)
+const GROUP_LABEL = Object.fromEntries(GROUPS)
 
 /*
  * Effects come in the order of their categories, each under its heading. Hidden ones (older
@@ -933,7 +934,7 @@ function paletteItems() {
     return {
       id: `node:${type}`, kind: 'node', key: type, group: menuGroup(type), cat: s.cat, catLabel: CAT_LABEL[s.cat], hidden: !!s.hidden,
       label: s.hidden ? `${s.label} (older)` : s.label, blurb: s.blurb,
-      words: `${type} ${s.group} ${CAT_LABEL[s.cat] ?? ''} ${SEARCH_WORDS[type] ?? ''}`,
+      words: `${type} ${s.group} ${GROUP_LABEL[menuGroup(type)] ?? ''} ${CAT_LABEL[s.cat] ?? ''} ${SEARCH_WORDS[type] ?? ''}`,
     }
   })
   const instruments = INSTRUMENTS.map((inst) => ({
