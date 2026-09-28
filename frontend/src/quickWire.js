@@ -1,4 +1,4 @@
-import { NODE_TYPES, makesCycle } from './graph'
+import { NODE_TYPES, defaultData, inputKey, makesCycle } from './graph'
 import { collapsedHosts, routeEdge } from './frames'
 
 /** Can this kind of node be dropped into the middle of a wire? It needs an input and an output. */
@@ -99,8 +99,11 @@ export function quickWire(p, selId, newId) {
 /*
  * The knife: shift + right-drag a line across wires, then pick something to sit inline on all
  * of them. One wire takes it as an insert. Several wires take a bus (anything that takes many)
- * as one node gathering them, but only when they all end on the same input side of one node;
- * a one-input effect goes on each wire as its own copy.
+ * as one node gathering them, but only when they all end on the same input side of one node.
+ * A one-input effect on several such wires gets a mixer bus gathering them first, with the
+ * effect after it (the bus puts them on one audio bus, so the effect treats them as one
+ * sound); on wires that end in different places it goes on each as its own copy, since
+ * merging them would send every sound to every place.
  */
 
 /** Where segments ab and cd cross, or null. */
@@ -161,20 +164,36 @@ function cutWires(p, cuts) {
     .filter((e) => e && !seen.has(e) && seen.add(e) && !routeEdge(e, hosts)?.hidden)
 }
 
+/** Do the wires all end on the same input side of one node (never a sidechain's sound and trigger at once)? */
+function oneTarget(p, wires) {
+  const to = p.nodes.find((n) => n.id === wires[0].target)
+  if (!to || wires.some((e) => e.target !== to.id)) return false
+  return NODE_TYPES[to.type]?.inputs === 'many' || wires.every((e) => e.targetHandle === wires[0].targetHandle)
+}
+
 /**
  * How a node of this type goes in on the cut wires: 'splice' (one wire), 'gather' (several,
- * into one node that takes many), 'each' (a copy per wire), or null when it can't.
+ * into one node that takes many), 'bus' (several into one place: a mixer bus gathers them
+ * and this effect goes after it), 'each' (a copy per wire), or null when it can't.
  */
 export function knifeMode(p, cuts, type) {
   const wires = cutWires(p, cuts)
   if (!wires.length || !splicable(type)) return null
   if (wires.length === 1) return 'splice'
-  if (NODE_TYPES[type].inputs !== 'many') return 'each'
-  // gathering needs one target; on a node with named inputs (a sidechain), one of them
-  const to = p.nodes.find((n) => n.id === wires[0].target)
-  if (!to || wires.some((e) => e.target !== to.id)) return null
-  if (NODE_TYPES[to.type]?.inputs !== 'many' && wires.some((e) => e.targetHandle !== wires[0].targetHandle)) return null
-  return 'gather'
+  const spec = NODE_TYPES[type]
+  const same = oneTarget(p, wires)
+  if (spec.inputs === 'many') return same ? 'gather' : null
+  if (same && spec.inputs === 1 && (spec.group === 'effect' || spec.group === 'mixing')) return 'bus'
+  return 'each'
+}
+
+/** The add menu's line for the cut wires: what picking an effect (or a bus) will do. */
+export function knifeHint(p, cuts) {
+  const n = cutWires(p, cuts).length
+  if (n <= 1) return '→ on this wire'
+  return oneTarget(p, cutWires(p, cuts))
+    ? `→ one bus on ${n} wires · an effect goes after the bus`
+    : `→ on each of ${n} wires · they end in different places`
 }
 
 const NODE_W = 250
@@ -190,23 +209,42 @@ function clearSpot(p, node) {
 /**
  * Put the just-added node `nodeId` inline on the cut wires (knifeMode says how). Cuts are
  * [{ id, x, y }] in patch coordinates; the node already sits where the knife was let go, and
- * copies (one per wire) sit on their own cut. `makeId` names the copies. Keeps every other
- * wire and lane as it is, never makes a loop. Mutates the draft; returns the new nodes' ids,
- * or null when it wired nothing.
+ * copies (one per wire) sit on their own cut. `makeId(i, type)` names the copies and the bus.
+ * Keeps every other wire and lane as it is, never makes a loop. Mutates the draft; returns
+ * the ids to select (the effect, not the bus it made), or null when it wired nothing.
  */
-export function knifeInsert(p, cuts, nodeId, makeId = (i) => `${nodeId}-${i}`) {
+export function knifeInsert(p, cuts, nodeId, makeId = (i, type) => `${nodeId}-${type === 'bus' ? 'bus' : i}`) {
   const node = p.nodes.find((n) => n.id === nodeId)
   const mode = node && knifeMode(p, cuts, node.type)
   if (!mode) return null
   const wires = cutWires(p, cuts)
   if (wires.some((e) => e.source === nodeId || e.target === nodeId)) return null
 
-  if (mode === 'gather') {
+  if (mode === 'gather' || mode === 'bus') {
     const lanes = [...wires].sort((a, b) => slotOf(a.targetHandle) - slotOf(b.targetHandle))
-    const lane = lanes[0].targetHandle
+    const { target, targetHandle: lane } = lanes[0]
+    let gather = node
+    if (mode === 'bus') {
+      // a mixer bus where the knife was let go, named for the effect, the effect just right of it
+      const data = { ...defaultData('bus'), name: `${NODE_TYPES[node.type].label} bus` }
+      // cut out of a mixer bus: each channel keeps the fader it had there
+      const from = p.nodes.find((n) => n.id === target)
+      if (from?.type === 'bus' && from.data?.chan) {
+        const chan = Object.fromEntries(lanes.map(inputKey).filter((k) => k in from.data.chan).map((k) => [k, from.data.chan[k]]))
+        if (Object.keys(chan).length) data.chan = chan
+      }
+      gather = { id: makeId(0, 'bus'), type: 'bus', x: node.x, y: node.y, data }
+      p.nodes.push(gather)
+    }
     p.edges = p.edges.filter((e) => !wires.includes(e))
-    lanes.forEach((e, i) => p.edges.push({ source: e.source, sourceHandle: e.sourceHandle, target: nodeId, targetHandle: `in-${i}` }))
-    p.edges.push({ source: nodeId, target: lanes[0].target, targetHandle: lane })
+    lanes.forEach((e, i) => p.edges.push({ source: e.source, sourceHandle: e.sourceHandle, target: gather.id, targetHandle: `in-${i}` }))
+    if (mode === 'bus') {
+      p.edges.push({ source: gather.id, target: nodeId, targetHandle: firstInput(node.type) })
+      p.edges.push({ source: nodeId, target, targetHandle: lane })
+      clearSpot(p, gather)
+      node.x = gather.x + NODE_W + 50
+      node.y = gather.y
+    } else p.edges.push({ source: nodeId, target, targetHandle: lane })
     clearSpot(p, node)
     return [nodeId]
   }
@@ -214,7 +252,7 @@ export function knifeInsert(p, cuts, nodeId, makeId = (i) => `${nodeId}-${i}`) {
   // a copy per wire (or the one node on its one wire), each on its own cut
   const ids = []
   wires.forEach((wire, i) => {
-    const n = i ? { ...JSON.parse(JSON.stringify(node)), id: makeId(i) } : node
+    const n = i ? { ...JSON.parse(JSON.stringify(node)), id: makeId(i, node.type) } : node
     const cut = cuts.find((c) => (c.id ?? c) === wire.id)
     if (mode === 'each' && cut?.x != null) { n.x = Math.round(cut.x - NODE_W / 2); n.y = Math.round(cut.y - NODE_H / 2) }
     if (i) p.nodes.push(n)

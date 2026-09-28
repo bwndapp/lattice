@@ -17,7 +17,7 @@ import AddMenu from './AddMenu.jsx'
 import CodeBox from './CodeBox.jsx'
 import { ADD_INTO_WIRE, EDGE_TYPES } from './WireEdge.jsx'
 import { copyNodes, pasteNodes, readClipboard, writeClipboard } from './nodeClipboard'
-import { canQuickWire, firstInput, knifeCuts, knifeInsert, knifeMode, quickSide, quickWire, spliceInto, splicable } from './quickWire.js'
+import { canQuickWire, firstInput, knifeCuts, knifeHint, knifeInsert, knifeMode, quickSide, quickWire, spliceInto, splicable } from './quickWire.js'
 import { onSoundsChange, previewSound, soundCatalog } from './audio'
 import { flowPaths, setFlowPaths, startFlow, stopFlow } from './flow.js'
 import { colorFor, inkFor, nodeSrc, rgbOf } from './clipColors.js'
@@ -1435,9 +1435,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
       const p = projectRef.current
       const allowed = new Set(Object.keys(NODE_TYPES).filter((type) => knifeMode(p, cuts, type)))
       if (!allowed.size) return
-      const gathers = [...allowed].some((type) => knifeMode(p, cuts, type) === 'gather')
-      const hint = cuts.length === 1 ? '→ on this wire' : `→ on ${cuts.length} wires · ${gathers ? 'a bus gathers them, ' : ''}an effect goes on each`
-      setMenu({ x: e.clientX, y: e.clientY, at: flow.screenToFlowPosition({ x: e.clientX - 20, y: e.clientY - 20 }), wire: null, knife: { cuts, allowed, hint } })
+      setMenu({ x: e.clientX, y: e.clientY, at: flow.screenToFlowPosition({ x: e.clientX - 20, y: e.clientY - 20 }), wire: null, knife: { cuts, allowed, hint: knifeHint(p, cuts) } })
     }
     const onMenu = (e) => {
       // mid-knife (Linux and macOS fire this on press): hold it until we know it was a click
@@ -1549,8 +1547,8 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
       p.nodes.push({ id, type, x: Math.round(at.x), y: Math.round(at.y), data })
       if (intoWire) spliceInto(p, intoWire, id)
       if (quick) quickWire(p, quick, id) // placed beside the selected node and wired to it
-      // inline on the wires the knife crossed (one per wire for a one-input effect)
-      if (knifeAt) made = knifeInsert(p, knifeAt, id, () => `${type}${newId().slice(-5)}`)
+      // inline on the wires the knife crossed (an effect on several into one place gets a bus first)
+      if (knifeAt) made = knifeInsert(p, knifeAt, id, (_i, t = type) => `${t}${newId().slice(-5)}`)
       // dragged out of a port and dropped on nothing: the wire you were pulling lands here
       if (fromPort && NODE_TYPES[type]?.inputs) {
         p.edges.push({ source: fromPort.nodeId, sourceHandle: fromPort.handleId ?? 'out', target: id, targetHandle: firstInput(type) })
