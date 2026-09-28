@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAutoLive, useAutomation } from './autoLive.js'
 import { KnobMenu } from './KnobMenu.jsx'
 import { knobBridge } from './knobBridge.js'
+import { wheelPixels, wheelTravel } from './knobMath.js'
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 
@@ -70,9 +71,10 @@ export default function Knob({ def, value, onChange, target = null }) {
     const rounded = def.log ? Math.round(next * 100) / 100 : Math.round(next * 1000) / 1000
     let t = turn.current
     if (!t) {
-      t = turn.current = { value: null, pending: null, timer: 0, raf: false, wrote: 0, idle: 0 }
+      t = turn.current = { pos: 0, value: null, pending: null, timer: 0, raf: false, wrote: 0, idle: 0 }
       knobBridge.begin()
     }
+    t.pos = clamp(p, 0, 1) // where it is between rounded values, so small turns add up
     if (rounded === t.value) return
     t.value = rounded
     setLive(rounded)
@@ -104,12 +106,22 @@ export default function Knob({ def, value, onChange, target = null }) {
   }
   useEffect(() => () => finish(), []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The wheel only turns a knob you mean: one that has focus (you clicked it), or that the
+  // pointer has rested on for a moment. Scrolling past it scrolls the page or zooms the canvas.
+  const hover = useRef({ since: 0, passed: 0, at: 0 })
   useEffect(() => {
     const el = ref.current
     if (!el) return
     const onWheel = (e) => {
+      const h = hover.current
+      const now = performance.now()
+      const meant = document.activeElement === el || now - h.at < 400 || (h.since && now - h.since >= 300 && now - h.passed >= 300)
+      if (!meant) { h.passed = now; return }
       e.preventDefault()
-      set(toPos(turn.current?.value ?? value, def) - Math.sign(e.deltaY) * (e.shiftKey ? 0.01 : 0.04))
+      e.stopPropagation()
+      h.at = now
+      const from = turn.current?.pos ?? toPos(shown, def)
+      set(from + wheelTravel(wheelPixels(e), { fine: e.shiftKey }))
       finishSoon()
     }
     el.addEventListener('wheel', onWheel, { passive: false })
@@ -152,7 +164,10 @@ export default function Knob({ def, value, onChange, target = null }) {
         aria-valuemax={def.max}
         aria-valuenow={Math.round(shown * 1000) / 1000}
         aria-valuetext={formatValue(shown, def)}
+        onPointerEnter={() => { hover.current.since = performance.now() }}
+        onPointerLeave={() => { hover.current.since = 0 }}
         onPointerDown={(e) => {
+          e.currentTarget.focus({ preventScroll: true })
           e.currentTarget.setPointerCapture(e.pointerId)
           drag.current = { y: e.clientY, t: toPos(value, def) }
         }}
@@ -168,7 +183,7 @@ export default function Knob({ def, value, onChange, target = null }) {
         onDoubleClick={() => { finish(); onChange(def.def) }}
         onKeyDown={(e) => {
           const step = e.shiftKey ? 0.01 : 0.05
-          const from = toPos(turn.current?.value ?? value, def)
+          const from = turn.current?.pos ?? toPos(shown, def)
           if (e.key === 'ArrowUp' || e.key === 'ArrowRight') set(from + step)
           else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') set(from - step)
           else if (e.key === 'Home' || e.key === 'Delete' || e.key === 'Backspace') { finish(); onChange(def.def) }

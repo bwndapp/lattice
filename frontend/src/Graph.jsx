@@ -287,7 +287,7 @@ function Param({ node, param, value: given, onChange, target: givenTarget }) {
     case 'kit':
       return <KitSelect node={node} param={param} value={value} onChange={set} />
     case 'knob':
-      return <div className="nowheel"><Knob def={param} value={value} onChange={set} target={target} /></div>
+      return <div><Knob def={param} value={value} onChange={set} target={target} /></div>
     case 'int':
       return <Stepper param={param} value={value} onChange={set} />
     case 'select':

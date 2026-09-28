@@ -35,6 +35,7 @@ import { setFxParams } from './fxbus.js'
 import { setInsertParams } from './stereo.js'
 import { setEngineParams } from './instruments/host.js'
 import { knobBridge } from './knobBridge.js'
+import { NOTCH_PX, wheelPixels } from './knobMath.js'
 import { capturePatterns, parseLanes, tempoChange } from './lanes'
 import { syncEngines } from './instruments/host.js'
 import { useOctave } from './keyboard.js'
@@ -1921,18 +1922,34 @@ function Tempo({ bpm, onChange }) {
     if (String(next) !== String(tidy(bpmRef.current))) { bpmRef.current = next; onChange(next) }
   }, [onChange])
 
-  // scroll to nudge (a non-passive listener, so the page doesn't scroll too)
+  // scroll to nudge, a bpm a click (a tenth with shift), once it has focus or the pointer
+  // has rested on it; a burst of scrolling is one undo step
+  const hover = useRef({ since: 0, passed: 0, at: 0 })
+  const wheel = useRef(null)
   useEffect(() => {
     const el = boxRef.current
     if (!el) return
     const onWheel = (e) => {
       if (editing) return
+      const h = hover.current
+      const now = performance.now()
+      const meant = el.contains(document.activeElement) || now - h.at < 400 || (h.since && now - h.since >= 300 && now - h.passed >= 300)
+      if (!meant) { h.passed = now; return }
       e.preventDefault()
-      set(bpmRef.current - Math.sign(e.deltaY) * (e.shiftKey ? 0.1 : 1))
+      h.at = now
+      const unit = e.shiftKey ? 0.1 : 1
+      let w = wheel.current
+      if (!w) { w = wheel.current = { from: bpmRef.current, total: 0, unit, idle: 0 }; knobBridge.begin() }
+      if (w.unit !== unit) { w.unit = unit; w.from = bpmRef.current; w.total = 0 }
+      w.total -= wheelPixels(e) / NOTCH_PX
+      set(w.from + Math.trunc(w.total) * unit)
+      clearTimeout(w.idle)
+      w.idle = setTimeout(() => { wheel.current = null; knobBridge.end() }, 300)
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
   }, [editing, set])
+  useEffect(() => () => { if (wheel.current) { clearTimeout(wheel.current.idle); wheel.current = null; knobBridge.end() } }, [])
 
   const commit = () => {
     const next = Number(text.trim().replace(',', '.'))
@@ -1959,6 +1976,8 @@ function Tempo({ bpm, onChange }) {
       ref={boxRef}
       className={`lcd tempo ${editing ? 'editing' : ''} ${dragging ? 'dragging' : ''}`}
       title="Tempo · drag up/down or scroll (shift: fine) · click to type · double-click for 140"
+      onPointerEnter={() => { hover.current.since = performance.now() }}
+      onPointerLeave={() => { hover.current.since = 0 }}
       onPointerDown={(e) => {
         if (editing || e.button !== 0) return
         e.preventDefault()
