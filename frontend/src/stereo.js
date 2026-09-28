@@ -852,25 +852,35 @@ const UNITS = {
     return modDelay(ac, { voices: [0.0035], sweep: 0.003, spread: false, feedback: true })
   },
 
-  /** Three formant peaks, so the bus sounds like it says a vowel. */
+  /**
+   * Three formant peaks, so the bus sounds like it says a vowel. Narrow bands only pass a
+   * sliver of the sound, so the output gets makeup gain the way Strudel's own vowel does
+   * (superdough/vowel.mjs), whose first three formants these are.
+   */
   vowel(ac) {
     const input = new GainNode(ac, { channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' })
-    const output = new GainNode(ac, { gain: 1 })
-    const bands = [[1, 8], [0.55, 10], [0.3, 12]].map(([gain, q]) => {
+    const output = new GainNode(ac, { gain: 8 })
+    const bands = [8, 10, 12].map((q) => {
       const band = new BiquadFilterNode(ac, { type: 'bandpass', frequency: 800, Q: q })
-      const level = new GainNode(ac, { gain })
+      const level = new GainNode(ac, { gain: 0 })
       input.connect(band).connect(level).connect(output)
-      return band
+      return { band, level }
     })
-    const FORMANTS = { a: [800, 1150, 2900], e: [400, 1600, 2700], i: [350, 1700, 2700], o: [450, 800, 2830], u: [325, 700, 2530] }
+    const FORMANTS = {
+      a: [[660, 1], [1120, 0.5], [2750, 0.07]],
+      e: [[440, 1], [1800, 0.2], [2700, 0.13]],
+      i: [[270, 1], [1850, 0.063], [2900, 0.063]],
+      o: [[430, 1], [820, 0.32], [2700, 0.05]],
+      u: [[370, 1], [630, 0.1], [2750, 0.07]],
+    }
     return {
       input,
       output,
       set({ vowel }) {
         const f = FORMANTS[vowel] ?? FORMANTS.a
-        bands.forEach((band, i) => smooth(band.frequency, f[i]))
+        bands.forEach(({ band, level }, i) => { smooth(band.frequency, f[i][0]); smooth(level.gain, f[i][1]) })
       },
-      dispose() { for (const node of [input, output, ...bands]) node.disconnect() },
+      dispose() { for (const node of [input, output, ...bands.flatMap((b) => [b.band, b.level])]) node.disconnect() },
     }
   },
 
