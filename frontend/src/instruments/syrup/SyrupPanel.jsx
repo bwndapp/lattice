@@ -3,9 +3,9 @@ import { createPortal } from 'react-dom'
 import Knob from '../../Knob.jsx'
 import { drawCurve, drawWave, fitCanvas } from '../scope.js'
 import {
-  FM_WAVES, K, LANES, LFO_BARS, LFO_MODES, LFO_POLARITIES, LFO_PRESETS, MAX_LAYERS, MAX_MODULATORS, MAX_ROUTES, MAX_ROUTES_EACH,
+  ENV_KNOBS, FM_WAVES, K, LANES, LFO_KNOBS, LFO_BARS, LFO_MODES, LFO_POLARITIES, LFO_PRESETS, MAX_LAYERS, MAX_MODULATORS, MAX_ROUTES, MAX_ROUTES_EACH,
   NOISES, PRESETS, TABLES, TABLE_NAMES, WARP_MODES, barsLabel, layerKnobKey, layerLetter, makeEnv, makeLayer, makeLfo,
-  MAX_LANE_FX, fxKnobKey, laneFxCatalog, laneLoops, laneName, lanesSummed, makeLaneFx, modColor, modKnobKey, modName, newPartId, normalizePatch, targetSpec,
+  MAX_LANE_FX, fxKnobKey, laneFxCatalog, laneLoops, laneName, lanesSummed, makeLaneFx, modColor, modKnobKey, modName, newPartId, normalizePatch, pruneRoutes, routeLoops, targetSpec,
 } from './model.js'
 import { tableFrame } from './tables.js'
 import CurveEditor from '../CurveEditor.jsx'
@@ -266,6 +266,14 @@ function destinations(patch) {
     if (l.type !== 'noise') knobs.push('pitch', 'fine', 'fm', 'ratio')
     for (const k of new Set(knobs)) list.push([`layer:${l.id}.${k}`, `${layerLetter(i)} ${K[k].label}`])
   })
+  // every modulator's knobs, and every route's amount
+  patch.modulators.forEach((m) => {
+    for (const k of m.kind === 'lfo' ? LFO_KNOBS : ENV_KNOBS) list.push([`mod:${m.id}.${k}`, `${modName(patch, m.id)} ${k}`])
+  })
+  for (const r of patch.routes) {
+    const t = !r.target.startsWith('route:') && targetSpec(patch, `route:${r.id}.amt`)
+    if (t) list.push([`route:${r.id}.amt`, t.label])
+  }
   // every knob on every lane effect
   const catalog = laneFxCatalog()
   patch.lanes.forEach((lane, li) => {
@@ -284,16 +292,20 @@ const DEST_GROUPS = [
   ['generators', (t) => t.startsWith('layer:')],
   ['lanes', (t) => t.startsWith('lane:')],
   ['lane effects', (t) => t.startsWith('fx:')],
+  ['modulators', (t) => t.startsWith('mod:')],
+  ['route amounts', (t) => t.startsWith('route:')],
 ]
 
-const AMOUNT = { key: 'amt', label: 'amount', min: -1, max: 1, def: 0.5, unit: 'bi', origin: 0 }
+const AMOUNT = K.amt
 
 /** Where one modulator goes: a destination and an amount each. */
 function Destinations({ ui, src }) {
   const { patch, edit } = ui
   const routes = patch.routes.filter((r) => r.src === src)
   const options = destinations(patch)
-  const free = options.filter(([t]) => !routes.some((r) => r.target === t))
+  // a target this modulator can't reach without a loop isn't offered
+  const loops = new Set(options.filter(([t]) => routeLoops(patch, src, t)).map(([t]) => t))
+  const free = options.filter(([t]) => !routes.some((r) => r.target === t) && !loops.has(t))
   const color = modColor(patch, src)
   const room = routes.length < MAX_ROUTES_EACH && patch.routes.length < MAX_ROUTES
   return (
@@ -304,22 +316,22 @@ function Destinations({ ui, src }) {
           <select
             value={r.target}
             aria-label={`${modName(patch, src)} destination`}
-            onChange={(e) => edit((p) => { const x = p.routes.find((y) => y.id === r.id); if (x && !p.routes.some((y) => y.src === src && y.target === e.target.value)) x.target = e.target.value })}
+            onChange={(e) => edit((p) => { const x = p.routes.find((y) => y.id === r.id); if (x && !p.routes.some((y) => y.src === src && y.target === e.target.value)) { x.target = e.target.value; pruneRoutes(p) } })}
           >
             {!options.some(([t]) => t === r.target) && <option value={r.target}>{targetSpec(patch, r.target)?.label ?? 'gone'}</option>}
             {DEST_GROUPS.map(([name, test]) => {
               const items = options.filter(([t]) => test(t))
               return items.length ? (
                 <optgroup key={name} label={name}>
-                  {items.map(([t, label]) => <option key={t} value={t} disabled={t !== r.target && routes.some((x) => x.target === t)}>{label}</option>)}
+                  {items.map(([t, label]) => <option key={t} value={t} disabled={t !== r.target && (routes.some((x) => x.target === t) || loops.has(t))}>{label}</option>)}
                 </optgroup>
               ) : null
             })}
           </select>
           <div className="sy-dest-amt">
-            <Knob def={AMOUNT} value={r.amt} onChange={(v) => edit((p) => { const x = p.routes.find((y) => y.id === r.id); if (x) x.amt = v })} />
+            <ModKnob ui={ui} route={`route:${r.id}.amt`} def={AMOUNT} value={r.amt} onChange={(v) => edit((p) => { const x = p.routes.find((y) => y.id === r.id); if (x) x.amt = v })} />
           </div>
-          <button type="button" className="sy-x" aria-label="Remove destination" onClick={() => edit((p) => { p.routes = p.routes.filter((x) => x.id !== r.id) })}>×</button>
+          <button type="button" className="sy-x" aria-label="Remove destination" onClick={() => edit((p) => { p.routes = p.routes.filter((x) => x.id !== r.id); pruneRoutes(p) })}>×</button>
         </div>
       ))}
       {free.length > 0 && room && (
@@ -383,7 +395,7 @@ function Generator({ ui, layer, index }) {
         <button type="button" className="sy-icon" title="Move up" aria-label="Move up" disabled={index === 0} onClick={() => ui.edit((p) => { const i = p.layers.findIndex((x) => x.id === layer.id); if (i > 0) p.layers.splice(i - 1, 0, ...p.layers.splice(i, 1)) })}>↑</button>
         <button type="button" className="sy-icon" title="Move down" aria-label="Move down" disabled={index === ui.patch.layers.length - 1} onClick={() => ui.edit((p) => { const i = p.layers.findIndex((x) => x.id === layer.id); if (i >= 0 && i < p.layers.length - 1) p.layers.splice(i + 1, 0, ...p.layers.splice(i, 1)) })}>↓</button>
         <button type="button" className="sy-icon" disabled={full} title="Duplicate" aria-label={`Duplicate generator ${layerLetter(index)}`} onClick={() => ui.edit((p) => { const i = p.layers.findIndex((x) => x.id === layer.id); if (i >= 0 && p.layers.length < MAX_LAYERS) p.layers.splice(i + 1, 0, { ...JSON.parse(JSON.stringify(layer)), id: newPartId() }) })}><CopyIcon /></button>
-        <button type="button" className="sy-icon" title="Remove" aria-label={`Remove generator ${layerLetter(index)}`} onClick={() => ui.edit((p) => { p.layers = p.layers.filter((x) => x.id !== layer.id); p.routes = p.routes.filter((r) => !r.target.startsWith(`layer:${layer.id}.`)) })}>×</button>
+        <button type="button" className="sy-icon" title="Remove" aria-label={`Remove generator ${layerLetter(index)}`} onClick={() => ui.edit((p) => { p.layers = p.layers.filter((x) => x.id !== layer.id); pruneRoutes(p) })}>×</button>
       </div>
       {open && (
         <div className="sy-gen-body">
@@ -676,14 +688,30 @@ function LfoBody({ ui, mod, slot }) {
           <Segmented label="Rate mode" value={mod.sync ? 'bars' : 'hz'} options={['bars', 'hz']} onChange={(v) => set((m) => { m.sync = v === 'bars' })} />
           {mod.sync
             ? <select className="sy-rate-select" aria-label="Every" value={String(mod.bars)} onChange={(e) => set((m) => { m.bars = Number(e.target.value) })}>{LFO_BARS.map((b) => <option key={b} value={String(b)}>{barsLabel(b)}</option>)}</select>
-            : <Knob def={K.hz} value={mod.hz} onChange={(v) => set((m) => { m.hz = v })} target={ui.target(modKnobKey(mod.id, 'hz'))} />}
+            : <ModKnob ui={ui} route={`mod:${mod.id}.rate`} auto={modKnobKey(mod.id, 'hz')} def={K.hz} value={mod.hz} onChange={(v) => set((m) => { m.hz = v })} />}
+          {mod.sync && <ModDots ui={ui} route={`mod:${mod.id}.rate`} />}
         </div>
         <Segmented label="Polarity" value={mod.polarity} options={LFO_POLARITIES} format={(v) => ({ up: '+', bi: '±', down: '−' })[v]} onChange={(v) => set((m) => { m.polarity = v })} />
+        <DepthKnob ui={ui} mod={mod} />
         <select className="sy-grid-select" value={mod.grid} aria-label="Grid" title="Where points snap to (alt: anywhere)" onChange={(e) => set((m) => { m.grid = Number(e.target.value) })}>
           {GRIDS.map(([g, label]) => <option key={g} value={g}>{label === 'free' ? 'no grid' : `grid ${label}`}</option>)}
         </select>
       </div>
     </>
+  )
+}
+
+/** How much of a modulator reaches where it goes. */
+function DepthKnob({ ui, mod }) {
+  return (
+    <ModKnob
+      ui={ui}
+      route={`mod:${mod.id}.depth`}
+      auto={modKnobKey(mod.id, 'depth')}
+      def={K.depth}
+      value={mod.depth ?? 1}
+      onChange={(v) => ui.edit((p) => { const m = p.modulators.find((x) => x.id === mod.id); if (!m) return; if (v === 1) delete m.depth; else m.depth = v })}
+    />
   )
 }
 
@@ -694,8 +722,9 @@ function EnvBody({ ui, mod }) {
       <EnvScope env={mod} />
       <div className="sy-knobs tight">
         {ADSR.map((k) => (
-          <Knob key={k} def={K[k]} value={mod[k]} onChange={(v) => ui.edit((p) => { const m = p.modulators.find((x) => x.id === mod.id); if (m) m[k] = v })} target={ui.target(modKnobKey(mod.id, k))} />
+          <ModKnob key={k} ui={ui} route={`mod:${mod.id}.${k}`} auto={modKnobKey(mod.id, k)} def={K[k]} value={mod[k]} onChange={(v) => ui.edit((p) => { const m = p.modulators.find((x) => x.id === mod.id); if (m) m[k] = v })} />
         ))}
+        <DepthKnob ui={ui} mod={mod} />
       </div>
     </>
   )
@@ -715,7 +744,7 @@ function Modulator({ ui, mod, slot }) {
           <Segmented label="Mode" value={mod.mode} options={LFO_MODES} onChange={(v) => set((m) => { m.mode = v })} format={(m) => ({ free: 'free', retrig: 'trig', env: 'env' })[m]} />
         )}
         <button type="button" className="sy-icon" title="Duplicate" aria-label="Duplicate" disabled={ui.patch.modulators.length >= MAX_MODULATORS} onClick={() => ui.edit((p) => { const i = p.modulators.findIndex((x) => x.id === mod.id); if (i >= 0 && p.modulators.length < MAX_MODULATORS) { const copy = { ...JSON.parse(JSON.stringify(mod)), id: newPartId() }; delete copy.name; p.modulators.splice(i + 1, 0, copy) } })}><CopyIcon /></button>
-        <button type="button" className="sy-icon" title="Remove (and where it goes)" aria-label="Remove" onClick={() => ui.edit((p) => { p.modulators = p.modulators.filter((x) => x.id !== mod.id); p.routes = p.routes.filter((r) => r.src !== mod.id) })}>×</button>
+        <button type="button" className="sy-icon" title="Remove (and where it goes)" aria-label="Remove" onClick={() => ui.edit((p) => { p.modulators = p.modulators.filter((x) => x.id !== mod.id); p.routes = p.routes.filter((r) => r.src !== mod.id); pruneRoutes(p) })}>×</button>
       </header>
       <div className="sy-mod-body">
         {mod.kind === 'lfo' ? <LfoBody ui={ui} mod={mod} slot={slot} /> : <EnvBody ui={ui} mod={mod} />}
@@ -761,10 +790,11 @@ export default function SyrupPanel({ data, change, target, watch, cps = 0.5 }) {
     const ids = new Map([...next.layers, ...next.modulators].map((x) => [x.id, newPartId()]))
     next.layers.forEach((l) => { l.id = ids.get(l.id) })
     next.modulators.forEach((m) => { m.id = ids.get(m.id) })
+    next.routes.forEach((r) => { ids.set(r.id, newPartId()) })
     next.routes.forEach((r) => {
-      r.id = newPartId()
+      r.id = ids.get(r.id)
       r.src = ids.get(r.src) ?? r.src
-      r.target = r.target.replace(/^layer:(\w+)\./, (all, id) => `layer:${ids.get(id) ?? id}.`)
+      r.target = r.target.replace(/^(layer|mod|route):(\w+)\./, (all, kind, id) => `${kind}:${ids.get(id) ?? id}.`)
     })
     change((p) => { Object.keys(p).forEach((k) => delete p[k]); Object.assign(p, next) })
   }

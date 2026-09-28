@@ -50,6 +50,10 @@ export const K = {
   volume: { key: 'volume', label: 'volume', min: 0, max: 1.5, def: 0.8 },
   glide: { key: 'glide', label: 'glide', min: 0, max: 1, def: 0, unit: 's' },
   gain: { key: 'gain', label: 'level', min: 0, max: 1.5, def: 1 },
+  // how much of a modulator reaches where it goes: every route from it, scaled
+  depth: { key: 'depth', label: 'depth', min: 0, max: 1, def: 1 },
+  // a route's amount, as a target of another route
+  amt: { key: 'amt', label: 'amount', min: -1, max: 1, def: 0.5, unit: 'bi', origin: 0 },
 }
 
 export const LANES = 3
@@ -246,10 +250,17 @@ const cleanEnv = (e, d) => ({
   release: num(e?.release, d.release, K.release.min, K.release.max),
 })
 
+/** A modulator's depth, kept only when it isn't all of it (so older patches read as they were). */
+function cleanDepth(m, out) {
+  const depth = num(m.depth, 1, 0, 1)
+  if (depth !== 1) out.depth = depth
+}
+
 function cleanModulator(m) {
   if (m?.kind === 'env') {
     const d = makeEnv()
     const out = { id: cleanId(m.id), kind: 'env', ...cleanEnv(m, d) }
+    cleanDepth(m, out)
     if (typeof m.name === 'string' && m.name.trim()) out.name = m.name.trim().slice(0, 24)
     return out
   }
@@ -267,6 +278,7 @@ function cleanModulator(m) {
     bars: LFO_BARS.includes(m.bars) ? m.bars : d.bars,
     hz: num(m.hz, d.hz, K.hz.min, K.hz.max),
   }
+  cleanDepth(m, out)
   if (typeof m.name === 'string' && m.name.trim()) out.name = m.name.trim().slice(0, 24)
   return out
 }
@@ -357,18 +369,85 @@ export function normalizePatch(raw) {
     }
     if ([0, 1, 2].includes(l?.out) && l.out !== i && !laneLoops(patch.lanes, i, l.out)) lane.out = l.out
   }
+  // routes: those to other routes' amounts after the rest, so what they name is there; any
+  // that would make a modulator move itself, round a loop, are dropped
   const seen = new Set()
-  for (const r of Array.isArray(raw.routes) ? raw.routes : Array.isArray(raw.mods) ? raw.mods : []) {
-    if (!r || !modulators.some((m) => m.id === r.src) || !targetSpec(patch, r.target)) continue
+  const routeIds = new Set()
+  const rawRoutes = (Array.isArray(raw.routes) ? raw.routes : Array.isArray(raw.mods) ? raw.mods : []).filter((r) => r && typeof r.target === 'string')
+  const onRoutes = (r) => r.target.startsWith('route:')
+  for (const r of [...rawRoutes.filter((x) => !onRoutes(x)), ...rawRoutes.filter(onRoutes)]) {
+    if (!modulators.some((m) => m.id === r.src) || !targetSpec(patch, r.target) || routeLoops(patch, r.src, r.target)) continue
     const key = `${r.src}>${r.target}`
     if (seen.has(key) || patch.routes.length >= MAX_ROUTES || patch.routes.filter((x) => x.src === r.src).length >= MAX_ROUTES_EACH) continue
     seen.add(key)
-    patch.routes.push({ id: cleanId(r.id), src: r.src, target: r.target, amt: num(r.amt, 0.5, -1, 1) })
+    let id = cleanId(r.id)
+    while (routeIds.has(id)) id = newPartId()
+    routeIds.add(id)
+    patch.routes.push({ id, src: r.src, target: r.target, amt: num(r.amt, 0.5, -1, 1) })
   }
   return patch
 }
 
 // ── modulation targets ───────────────────────────────────────────────────────
+
+/** What a route can move on a modulator: an lfo's rate and depth, an envelope's depth and stages. */
+export const MOD_KNOBS = ['rate', 'depth', 'attack', 'decay', 'sustain', 'release']
+export const LFO_KNOBS = ['rate', 'depth']
+export const ENV_KNOBS = ['depth', 'attack', 'decay', 'sustain', 'release']
+
+/**
+ * The modulator a target moves, if any: "mod:<id>.…" moves <id>, and a route's amount moves
+ * whatever that route moves.
+ */
+function targetMod(patch, target, depth = 0) {
+  const md = /^mod:(\w+)\./.exec(target)
+  if (md) return md[1]
+  const rt = /^route:(\w+)\.amt$/.exec(target)
+  if (!rt || depth) return null
+  const route = patch.routes.find((x) => x.id === rt[1])
+  return route ? targetMod(patch, route.target, 1) : null
+}
+
+/**
+ * Would a route from modulator `src` to `target` make a loop: a modulator moving itself
+ * (its own knobs, or the amount of one of its own routes), or round through others? Routes
+ * to another route's amount can't be moved in turn.
+ */
+export function routeLoops(patch, src, target) {
+  const rt = /^route:(\w+)\.amt$/.exec(target)
+  if (rt) {
+    const route = patch.routes.find((x) => x.id === rt[1])
+    if (!route || route.src === src || route.target.startsWith('route:')) return true
+  }
+  const to = targetMod(patch, target)
+  if (!to) return false
+  if (to === src) return true
+  // does `to` already reach `src`?
+  const seen = new Set()
+  const stack = [to]
+  while (stack.length) {
+    const at = stack.pop()
+    if (at === src) return true
+    if (seen.has(at)) continue
+    seen.add(at)
+    // what it moves (moving a route's amount moves what that route moves)
+    for (const r of patch.routes) if (r.src === at) { const next = targetMod(patch, r.target); if (next) stack.push(next) }
+  }
+  return false
+}
+
+/** Drop routes whose target has gone (a removed layer, modulator or route), and loops. */
+export function pruneRoutes(patch) {
+  const keep = []
+  const before = patch.routes
+  patch.routes = keep
+  for (const r of [...before.filter((x) => !x.target.startsWith('route:')), ...before.filter((x) => x.target.startsWith('route:'))]) {
+    if (patch.modulators.some((m) => m.id === r.src) && targetSpec(patch, r.target) && !routeLoops(patch, r.src, r.target)) keep.push(r)
+  }
+  // in the order they were
+  patch.routes = before.filter((r) => keep.includes(r))
+  return patch
+}
 
 /** A generator's letter, by its place in the stack. */
 export const layerLetter = (i) => String.fromCharCode(65 + i)
@@ -376,7 +455,9 @@ export const layerLetter = (i) => String.fromCharCode(65 + i)
 /**
  * Targets are strings: "pitch", "amp.level", "amp.<attack|decay|sustain|release>", "glide",
  * "lane:<n>.gain", "layer:<id>.<knob>", or
- * "fx:<effect id>.<knob>" (a lane effect's knob). The knob spec and a name, or null.
+ * "fx:<effect id>.<knob>" (a lane effect's knob), "mod:<modulator id>.<knob>" (an lfo's rate or
+ * depth, an envelope's depth or stages: MOD_KNOBS), or "route:<route id>.amt" (another
+ * route's amount). The knob spec and a name, or null.
  */
 export function targetSpec(patch, target) {
   if (typeof target !== 'string') return null
@@ -398,6 +479,29 @@ export function targetSpec(patch, target) {
       return { label: `${laneName(li)} ${spec.label} ${def.label}`, spec: def, fxId: fx.id, knob: def.key, lane: li, get: (p) => p.lanes[li].effects.find((e) => e.id === f[1])?.data[f[2]] ?? def.def }
     }
     return null
+  }
+  const md = /^mod:(\w+)\.(\w+)$/.exec(target)
+  if (md) {
+    const mod = patch.modulators.find((x) => x.id === md[1])
+    if (!mod || !(mod.kind === 'lfo' ? LFO_KNOBS : ENV_KNOBS).includes(md[2])) return null
+    const key = md[2] === 'rate' ? 'hz' : md[2]
+    return {
+      label: `${modName(patch, mod.id)} ${md[2]}`,
+      spec: K[key],
+      modId: mod.id,
+      knob: md[2],
+      slot: patch.modulators.indexOf(mod),
+      get: (p) => { const x = p.modulators.find((y) => y.id === md[1]); return x ? (key === 'depth' ? x.depth ?? 1 : x[key]) : undefined },
+    }
+  }
+  const rt = /^route:(\w+)\.amt$/.exec(target)
+  if (rt) {
+    const route = patch.routes.find((x) => x.id === rt[1])
+    // a route's amount, if that route doesn't itself move another route's amount
+    if (!route || route.target.startsWith('route:')) return null
+    const to = targetSpec(patch, route.target)
+    if (!to) return null
+    return { label: `${modName(patch, route.src)} → ${to.label} amount`, spec: K.amt, routeId: route.id, get: (p) => p.routes.find((x) => x.id === rt[1])?.amt }
   }
   const l = /^layer:(\w+)\.(\w+)$/.exec(target)
   if (l && LAYER_KNOBS.includes(l[2])) {
@@ -433,13 +537,44 @@ export function globalTargets(patch) {
  * in messages, never in saved patches, so they can move.
  */
 export const DEST_LAYERS = 16
-export const DEST_COUNT = DEST_LAYERS + MAX_LAYERS * LAYER_KNOBS.length
-export function destIndex(patch, target) {
+/** Then each modulator's knobs, MOD_KNOBS.length apiece, and then each route's amount. */
+export const DEST_MODS = DEST_LAYERS + MAX_LAYERS * LAYER_KNOBS.length
+export const DEST_ROUTES = DEST_MODS + MAX_MODULATORS * MOD_KNOBS.length
+export const DEST_COUNT = DEST_ROUTES + MAX_ROUTES
+/** `sent`: the routes as the message lists them, which a route's amount is numbered by. */
+export function destIndex(patch, target, sent = patch.routes) {
   const g = GLOBAL_DESTS.indexOf(target)
   if (g >= 0) return g + 1
   const t = targetSpec(patch, target)
-  if (!t?.layerId) return 0
-  return DEST_LAYERS + t.index * LAYER_KNOBS.length + LAYER_KNOBS.indexOf(t.knob)
+  if (t?.layerId) return DEST_LAYERS + t.index * LAYER_KNOBS.length + LAYER_KNOBS.indexOf(t.knob)
+  if (t?.modId) return DEST_MODS + t.slot * MOD_KNOBS.length + MOD_KNOBS.indexOf(t.knob)
+  if (t?.routeId) { const at = sent.findIndex((r) => r.id === t.routeId); return at < 0 ? 0 : DEST_ROUTES + at }
+  return 0
+}
+
+/**
+ * The order to work the modulators out in: each after every modulator that moves it (its
+ * knobs, or the amounts of the routes that reach it).
+ */
+export function modOrder(patch) {
+  const n = patch.modulators.length
+  const slot = (id) => patch.modulators.findIndex((m) => m.id === id)
+  const after = Array.from({ length: n }, () => new Set())
+  for (const r of patch.routes) {
+    const to = slot(targetMod(patch, r.target))
+    const from = slot(r.src)
+    if (to >= 0 && from >= 0 && to !== from) after[to].add(from)
+  }
+  const order = []
+  const placed = new Set()
+  while (order.length < n) {
+    const next = [...Array(n).keys()].find((j) => !placed.has(j) && [...after[j]].every((x) => placed.has(x)))
+    // a loop (normalizePatch keeps them out): the rest in their places
+    const j = next ?? [...Array(n).keys()].find((x) => !placed.has(x))
+    placed.add(j)
+    order.push(j)
+  }
+  return order
 }
 
 // ── the processor's view ─────────────────────────────────────────────────────
@@ -456,6 +591,8 @@ export const AUDIO_PARAMS = [
   { key: 'glide', min: 0, max: 1, def: 0 },
   { key: 'volume', min: 0, max: 1.5, def: 0.8 },
   { key: 'cps', min: 0.01, max: 10, def: 0.5 },
+  // added later, so on the end: each modulator's depth
+  ...Array.from({ length: MAX_MODULATORS }, (_, j) => ({ key: `d${j}_depth`, min: 0, max: 1, def: 1 })),
 ]
 
 /**
@@ -464,8 +601,11 @@ export const AUDIO_PARAMS = [
  *   lanes       [out (-1 master, or a lane), muted, summed (mixed across voices, then played
  *               through its effects outside)], and `laneOrder`, the order to mix them in
  *   modulators  { lfo: 1, mode, polarity, sync, bars, points: [[x, y, c, s]] } or { lfo: 0 }
- *   routes      [modulator slot, destination, amount]
- *   shared      [modulator slot, place in globalTargets, amount]
+ *   routes      [modulator slot, destination, amount], every route (destination 0: one only
+ *               the shared list uses); a route's amount as a destination is numbered by its
+ *               place in this list
+ *   modOrder    the modulator slots in the order to work them out (see modOrder)
+ *   shared      [place in routes, place in globalTargets]
  */
 export function patchMessage(patch) {
   return {
@@ -480,16 +620,16 @@ export function patchMessage(patch) {
     modulators: patch.modulators.map((m) => (m.kind === 'lfo'
       ? { lfo: 1, mode: LFO_MODES.indexOf(m.mode), polarity: LFO_POLARITIES.indexOf(m.polarity), sync: m.sync ? 1 : 0, bars: m.bars, points: m.points.map((p) => [p.x, p.y, p.c ?? 0, p.s ?? 0]) }
       : { lfo: 0 })),
-    routes: patch.routes
-      .map((r) => [patch.modulators.findIndex((m) => m.id === r.src), destIndex(patch, r.target), r.amt])
-      .filter(([src, dest]) => src >= 0 && dest > 0),
-    // routes to destinations outside the voices: [modulator slot, place in globalTargets, amount]
-    shared: (() => {
+    ...(() => {
+      const sent = patch.routes.filter((r) => patch.modulators.some((m) => m.id === r.src))
       const targets = globalTargets(patch)
-      return patch.routes
-        .map((r) => [patch.modulators.findIndex((m) => m.id === r.src), targets.indexOf(r.target), r.amt])
-        .filter(([src, at]) => src >= 0 && at >= 0)
+      return {
+        routes: sent.map((r) => [patch.modulators.findIndex((m) => m.id === r.src), destIndex(patch, r.target, sent), r.amt]),
+        // routes to destinations outside the voices: [place in routes, place in globalTargets]
+        shared: sent.map((r, i) => [i, targets.indexOf(r.target)]).filter(([, at]) => at >= 0),
+      }
     })(),
+    modOrder: modOrder(patch),
     mono: patch.mono ? 1 : 0,
   }
 }
@@ -501,6 +641,7 @@ export function encodePatch(patch, { cps = 0.5 } = {}) {
   patch.modulators.forEach((m, j) => {
     if (m.kind === 'lfo') out[`d${j}_hz`] = m.hz
     else for (const k of ENV_STAGES) out[`d${j}_${k}`] = m[k]
+    out[`d${j}_depth`] = m.depth ?? 1
   })
   for (const k of ENV_STAGES) out[`a_${k}`] = patch.amp[k]
   patch.lanes.forEach((n, i) => { out[`n${i}_gain`] = n.gain })
@@ -543,18 +684,18 @@ export function knobAt(patch, key) {
     const i = Number(lane[1]) - 1
     return { def: K.gain, value: patch.lanes[i].gain, label: `lane ${lane[1]} level`, set: (p, v) => { p.lanes[i].gain = v } }
   }
-  const m = /^(?:(volume|glide)|amp_(attack|decay|sustain|release)|M(\w+?)_(hz|attack|decay|sustain|release)|L(\w+?)_(level|pan|fine|pw|pos|warp|detune|spread|fm|ratio))$/.exec(k)
+  const m = /^(?:(volume|glide)|amp_(attack|decay|sustain|release)|M(\w+?)_(hz|depth|attack|decay|sustain|release)|L(\w+?)_(level|pan|fine|pw|pos|warp|detune|spread|fm|ratio))$/.exec(k)
   if (!m) return null
   if (m[1]) return { def: K[m[1]], value: patch[m[1]], label: m[1], set: (p, v) => { p[m[1]] = v } }
   if (m[2]) return { def: K[m[2]], value: patch.amp[m[2]], label: `amp ${m[2]}`, set: (p, v) => { p.amp[m[2]] = v } }
   if (m[3]) {
     const mod = patch.modulators.find((x) => x.id === m[3])
-    if (!mod || (mod.kind === 'lfo') !== (m[4] === 'hz')) return null
+    if (!mod || (m[4] !== 'depth' && (mod.kind === 'lfo') !== (m[4] === 'hz'))) return null
     return {
       def: K[m[4]],
-      value: mod[m[4]],
+      value: m[4] === 'depth' ? mod.depth ?? 1 : mod[m[4]],
       label: `${modName(patch, mod.id)} ${m[4] === 'hz' ? 'rate' : m[4]}`,
-      set: (p, v) => { const x = p.modulators.find((y) => y.id === m[3]); if (x) x[m[4]] = v },
+      set: (p, v) => { const x = p.modulators.find((y) => y.id === m[3]); if (x) { x[m[4]] = v; if (m[4] === 'depth' && v === 1) delete x.depth } },
     }
   }
   const index = patch.layers.findIndex((l) => l.id === m[5])

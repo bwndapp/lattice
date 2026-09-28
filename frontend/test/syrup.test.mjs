@@ -41,7 +41,9 @@ const OLD = {
 const old = m.normalizePatch(JSON.parse(JSON.stringify(OLD)))
 ok('an old patch normalises to itself', same(old, OLD), JSON.stringify(old))
 ok('and again', same(m.normalizePatch(old), OLD))
-ok('its knobs are the same slots', same(Object.keys(m.encodePatch(old)).sort(), [
+const enc = m.encodePatch(old)
+ok('new knobs it sends are only depths, at all of it', Object.keys(enc).filter((k) => /_depth$/.test(k)).every((k) => enc[k] === 1))
+ok('its knobs are the same slots', same(Object.keys(enc).filter((k) => !/_depth$/.test(k)).sort(), [
   ...['la', 'lb'].flatMap((_, i) => ['level', 'pan', 'fine', 'pw', 'pos', 'warp', 'detune', 'spread', 'fm', 'ratio'].map((k) => `l${i}_${k}`)),
   'd0_hz', 'd1_attack', 'd1_decay', 'd1_sustain', 'd1_release',
   'a_attack', 'a_decay', 'a_sustain', 'a_release', 'n0_gain', 'n1_gain', 'n2_gain', 'glide', 'volume', 'cps',
@@ -120,6 +122,54 @@ ok("A's semitones are the base it moves from", Math.abs(base[0] / still[0] - 2 *
   plain.control(plain.voices[0], 0)
   const c = plain.voices[0].ctl
   ok('unrouted, the amp is its knobs', c.aA === plain.k.a_attack && c.aS === plain.k.a_sustain && c.glide === 0)
+}
+
+// ── modulators moving modulators ──
+{
+  const lfo = (id, over = {}) => ({ id, kind: 'lfo', points: [{ x: 0, y: 1 }, { x: 1, y: 1 }], mode: 'retrig', polarity: 'up', sync: false, hz: 1, ...over })
+  const env = (id) => ({ id, kind: 'env', attack: 0.01, decay: 0.3, sustain: 0.5, release: 0.2 })
+  const p0 = { ...two, modulators: [lfo('a'), lfo('b'), env('c')], routes: [{ id: 'ab', src: 'a', target: 'mod:b.rate', amt: 0.5 }, { id: 'bp', src: 'b', target: 'layer:la.pitch', amt: 0.1 }] }
+  const p = m.normalizePatch(p0)
+  ok('an lfo can move another\'s rate', p.routes.length === 2 && m.targetSpec(p, 'mod:b.rate')?.label === 'lfo 2 rate', m.targetSpec(p, 'mod:b.rate')?.label)
+  ok('and depth, and an envelope\'s stages', ['mod:b.depth', 'mod:c.depth', 'mod:c.attack', 'mod:c.release'].every((t) => m.targetSpec(p, t)) && !m.targetSpec(p, 'mod:c.rate') && !m.targetSpec(p, 'mod:b.attack'))
+  ok('a modulator can\'t move itself', !m.normalizePatch({ ...p0, routes: [{ id: 'x', src: 'a', target: 'mod:a.rate', amt: 0.5 }] }).routes.length)
+  ok('nor round a loop', m.normalizePatch({ ...p0, routes: [...p0.routes, { id: 'ba', src: 'b', target: 'mod:a.depth', amt: 0.5 }] }).routes.length === 2)
+  ok('nor a longer one', m.routeLoops(m.normalizePatch({ ...p0, routes: [...p0.routes, { id: 'bc', src: 'b', target: 'mod:c.depth', amt: 0.5 }] }), 'c', 'mod:a.rate'))
+  ok('a chain without a loop is fine', !m.routeLoops(p, 'c', 'mod:a.rate') && !m.routeLoops(p, 'a', 'mod:c.decay'))
+  const amt = m.normalizePatch({ ...p0, routes: [...p0.routes, { id: 'ca', src: 'c', target: 'route:bp.amt', amt: 0.5 }] })
+  ok('a route\'s amount is a target', amt.routes.length === 3 && m.targetSpec(amt, 'route:bp.amt')?.label === 'lfo 2 → A pitch amount', m.targetSpec(amt, 'route:bp.amt')?.label)
+  ok('but not from its own source', m.routeLoops(amt, 'b', 'route:bp.amt'))
+  ok('nor from what the route moves', m.routeLoops(p, 'b', 'route:ab.amt'))
+  ok('nor another route-amount route', m.routeLoops(amt, 'a', 'route:ca.amt'))
+  ok('routes to routes load even when listed first', m.normalizePatch({ ...amt, routes: [...amt.routes].reverse() }).routes.length === 3)
+  ok('a route to a gone route is dropped', m.normalizePatch({ ...p0, routes: [...p0.routes, { id: 'z', src: 'c', target: 'route:nope.amt', amt: 1 }] }).routes.length === 2)
+  const pruned = m.pruneRoutes({ ...JSON.parse(JSON.stringify(amt)), modulators: amt.modulators.filter((x) => x.id !== 'b') })
+  ok('removing a modulator takes the routes to it and to its routes', pruned.routes.length === 0, JSON.stringify(pruned.routes))
+  ok('the order works movers out first', (() => { const o = m.modOrder(amt); return o.indexOf(0) < o.indexOf(1) })())
+  ok('including what moves the amounts of routes into it', (() => { const o = m.modOrder(m.normalizePatch({ ...p0, modulators: [lfo('b'), env('c'), lfo('a')], routes: [...p0.routes, { id: 'ca', src: 'c', target: 'route:ab.amt', amt: 0.5 }] })); return o.indexOf(1) < o.indexOf(0) && o.indexOf(2) < o.indexOf(0) })())
+  ok('depth is kept, and only when it isn\'t 1', m.normalizePatch({ ...p0, modulators: [lfo('a', { depth: 0.25 }), lfo('b', { depth: 1 })] }).modulators.map((x) => x.depth).join() === '0.25,')
+  ok('depth is automatable', m.knobAt(m.normalizePatch(p0), 'Mc_depth')?.value === 1 && m.AUDIO_PARAMS.at(-1).key === 'd15_depth')
+
+  // in the processor: lfo b pushes A's pitch; a doubles b's rate, c's env scales the amount
+  const runA = (patch, blocks = 20) => {
+    const proc = makeProc(m.normalizePatch(patch))
+    const v = proc.voices[0]
+    proc.noteOn(v, 60, 1)
+    for (let i = 0; i < blocks; i++) proc.control(v, 0)
+    return { proc, v }
+  }
+  const tri = [{ x: 0, y: 0 }, { x: 1, y: 1 }] // a ramp: its value says how far it has come
+  const slow = runA({ ...p0, modulators: [lfo('a'), lfo('b', { points: tri, hz: 1 })], routes: [] }).v.modPh[1]
+  const fast = runA({ ...p0, modulators: [lfo('a'), lfo('b', { points: tri, hz: 1 })], routes: [{ id: 'ab', src: 'a', target: 'mod:b.rate', amt: Math.log(2) / Math.log(m.K.hz.max / m.K.hz.min) }] }).v.modPh[1]
+  ok('moving an lfo\'s rate speeds it up', Math.abs(fast / slow - 2) < 0.02, `${slow} ${fast}`)
+  const deep = runA({ ...p0, modulators: [lfo('a'), lfo('b', { depth: 0 })], routes: [{ id: 'bp', src: 'b', target: 'layer:la.pitch', amt: 12 / 96 }, { id: 'ab', src: 'a', target: 'mod:b.depth', amt: 1 }] })
+  ok('depth at 0, raised by a route, lets it through', Math.abs(deep.v.ctl.layers[0].freq / still[0] - 2) < 1e-3, deep.v.ctl.layers[0].freq)
+  const none = runA({ ...p0, modulators: [lfo('a'), lfo('b', { depth: 0 })], routes: [{ id: 'bp', src: 'b', target: 'layer:la.pitch', amt: 12 / 96 }] })
+  ok('and without it nothing moves', Math.abs(none.v.ctl.layers[0].freq - still[0]) < 1e-9)
+  const scaled = runA({ ...p0, modulators: [lfo('a'), lfo('b')], routes: [{ id: 'bp', src: 'b', target: 'layer:la.pitch', amt: 0 }, { id: 'ab', src: 'a', target: 'route:bp.amt', amt: 12 / 96 / 2 }] })
+  ok('a route to an amount turns it up', Math.abs(scaled.v.ctl.layers[0].freq / still[0] - 2) < 1e-3, scaled.v.ctl.layers[0].freq)
+  const envMoved = runA({ ...p0, modulators: [lfo('a'), env('c')], routes: [{ id: 'ac', src: 'a', target: 'mod:c.sustain', amt: -0.5 }, { id: 'cp', src: 'c', target: 'layer:la.level', amt: 0.1 }] }, 1500)
+  ok('an envelope\'s sustain moves', Math.abs(envMoved.v.envs[1].v - 0) < 1e-3, envMoved.v.envs[1].v)
 }
 
 if (fails) { console.log(`${fails} failed`); process.exit(1) }

@@ -1,5 +1,5 @@
 import { knobsSource } from '../dsp.js'
-import { AUDIO_PARAMS, DEST_COUNT, GLOBAL_DESTS, DEST_LAYERS, K, LANES, LAYER_KNOBS, LAYER_PARAMS, MAX_LAYERS, MAX_MODULATORS } from './model.js'
+import { AUDIO_PARAMS, DEST_COUNT, DEST_MODS, DEST_ROUTES, GLOBAL_DESTS, MOD_KNOBS, DEST_LAYERS, K, LANES, LAYER_KNOBS, LAYER_PARAMS, MAX_LAYERS, MAX_MODULATORS } from './model.js'
 import { TABLES_SOURCE } from './tables.js'
 import { SHAPE_SOURCE } from '../curve.js'
 
@@ -50,7 +50,15 @@ const SY_LSTRIDE = ${LAYER_KNOBS.length}
 const SY_LBASE = ${DEST_LAYERS}
 const SY_LPITCH = ${LAYER_KNOBS.indexOf('pitch')}
 const SY_LN = Array.from({ length: SY_LAYERS }, (_, i) => ${JSON.stringify(LAYER_PARAMS)}.map((k) => 'l' + i + '_' + k))
-const SY_DN = Array.from({ length: SY_MODS }, (_, j) => ({ hz: 'd' + j + '_hz', a: 'd' + j + '_attack', d: 'd' + j + '_decay', s: 'd' + j + '_sustain', r: 'd' + j + '_release' }))
+const SY_DN = Array.from({ length: SY_MODS }, (_, j) => ({ hz: 'd' + j + '_hz', a: 'd' + j + '_attack', d: 'd' + j + '_decay', s: 'd' + j + '_sustain', r: 'd' + j + '_release', depth: 'd' + j + '_depth' }))
+// modulators' own knobs as destinations: MOD_KNOBS apiece from SY_DM; routes' amounts from SY_DR
+const SY_DM = ${DEST_MODS}
+const SY_MK = ${MOD_KNOBS.length}
+const SY_DR = ${DEST_ROUTES}
+const SY_ENV_SPEC = ${JSON.stringify(['attack', 'decay', 'sustain', 'release'].map(spec))}
+const SY_DEPTH_SPEC = ${JSON.stringify(spec('depth'))}
+// an lfo's rate moves on the rate knob's travel, as a factor: all of it is this many times
+const SY_RATE_SPAN = ${K.hz.max / K.hz.min}
 const SY_LFO_TABLE = 1024
 const syShape = ${SHAPE_SOURCE}
 const syPos = (v, s) => (s.log ? Math.log(v / s.min) / Math.log(s.max / s.min) : (v - s.min) / (s.max - s.min))
@@ -92,7 +100,7 @@ class SyrupProcessor extends LatticeInstrument {
   constructor(options) {
     super(options)
     // what the patch is: set by onData
-    this.cfg = { layers: [], modulators: [], routes: [], shared: [], mono: 0, lanes: [[-1, 0], [-1, 0], [-1, 0]], laneOrder: [0, 1, 2] }
+    this.cfg = { layers: [], modulators: [], routes: [], shared: [], mono: 0, lanes: [[-1, 0], [-1, 0], [-1, 0]], laneOrder: [0, 1, 2], modOrder: [], into: [], plain: [], amtBy: [] }
     this.lfoPhase = new Float64Array(SY_MODS) // the shared clocks (free lfos)
     this.lfoStart = new Float64Array(SY_MODS) // where they were at the start of this block
     this.lfoRate = new Float64Array(SY_MODS)
@@ -134,7 +142,19 @@ class SyrupProcessor extends LatticeInstrument {
   onData(data) {
     const cfg = this.cfg
     if (Array.isArray(data.layers)) cfg.layers = data.layers.slice(0, SY_LAYERS)
-    if (Array.isArray(data.routes)) cfg.routes = data.routes
+    if (Array.isArray(data.routes)) {
+      // which routes move a modulator's knobs (worked out with it), which another route's
+      // amount, and the rest
+      cfg.routes = data.routes
+      cfg.into = Array.from({ length: SY_MODS }, () => [])
+      cfg.amtBy = data.routes.map(() => [])
+      cfg.plain = []
+      data.routes.forEach(([, dest], r) => {
+        if (dest >= SY_DR) { if (cfg.amtBy[dest - SY_DR]) cfg.amtBy[dest - SY_DR].push(r) } else if (dest >= SY_DM) cfg.into[((dest - SY_DM) / SY_MK) | 0].push(r)
+        else cfg.plain.push(r)
+      })
+    }
+    if (Array.isArray(data.modOrder)) cfg.modOrder = data.modOrder
     if (Array.isArray(data.shared)) cfg.shared = data.shared
     if (data.mono !== undefined) cfg.mono = data.mono
     if (Array.isArray(data.lanes)) cfg.lanes = data.lanes
@@ -158,14 +178,23 @@ class SyrupProcessor extends LatticeInstrument {
     const mods = this.cfg.modulators
     // where the song is at the start of this block, for the lfos that follow it
     const cycle = this.songCycle()
+    let newest = null // the newest note, whose modulators move free lfos' rates
     for (let j = 0; j < mods.length; j++) {
       const m = mods[j]
       if (!m.lfo) continue
-      const rate = m.sync ? k.cps / Math.max(1 / 64, m.bars) : k[SY_DN[j].hz]
+      let rate = m.sync ? k.cps / Math.max(1 / 64, m.bars) : k[SY_DN[j].hz]
+      const into = this.cfg.into[j]
+      if (!m.mode && into && into.length && !(m.sync && cycle != null)) {
+        if (!newest) for (const v of this.voices) if (v.order && (!newest || v.order > newest.order)) newest = v
+        let by = 0
+        if (newest) for (let x = 0; x < into.length; x++) { const r = this.cfg.routes[into[x]]; if (r[1] === SY_DM + j * SY_MK) by += this.routeAmt(into[x], newest.mv) * newest.mv[r[0]] }
+        if (by) rate *= SY_RATE_SPAN ** by
+      }
       this.lfoRate[j] = rate
       if (m.sync && cycle != null) {
         // a synced lfo is *at* a place in the song rather than however far it has counted:
         // seek, loop or come back tomorrow and a one-bar sweep is still where the bar says
+        // (so routes move its rate only when the song isn't playing)
         const bars = Math.max(1 / 64, m.bars)
         this.lfoStart[j] = syWrap(cycle / bars)
         this.lfoPhase[j] = syWrap((cycle + (k.cps * frames) / sampleRate) / bars)
@@ -249,26 +278,42 @@ class SyrupProcessor extends LatticeInstrument {
     // every modulator's value for this voice, -1 … 1 or 0 … 1 as its polarity has it:
     // an envelope is 0 … 1; an lfo pushes up from its bottom (0 … 1), both ways around its
     // middle (half each way), or down from its top (-1 … 0)
+    // Modulators that move others' knobs are worked out first (modOrder), and what moves
+    // them is added as each comes up; then the depth, which scales all it sends.
     const mv = this.modVal
-    for (let j = 0; j < cfg.modulators.length; j++) {
+    const R = cfg.routes
+    const order = cfg.modOrder
+    for (let o = 0; o < order.length; o++) {
+      const j = order[o]
       const mod = cfg.modulators[j]
+      if (!mod) continue
+      const into = cfg.into[j]
+      for (let x = 0; x < into.length; x++) { const r = R[into[x]]; m[r[1]] += this.routeAmt(into[x], mv) * mv[r[0]] }
+      const N = SY_DN[j]
+      const at = SY_DM + j * SY_MK // rate, depth, attack, decay, sustain, release
+      let val
       if (!mod.lfo) {
-        const N = SY_DN[j]
-        mv[j] = this.step(voice.envs[j], SY_CONTROL, k[N.a], syDecay(k[N.d], SY_CONTROL), k[N.s], syDecay(k[N.r], SY_CONTROL))
-        continue
+        val = this.step(voice.envs[j], SY_CONTROL,
+          syMoved(k[N.a], m[at + 2], SY_ENV_SPEC[0]), syDecay(syMoved(k[N.d], m[at + 3], SY_ENV_SPEC[1]), SY_CONTROL),
+          syMoved(k[N.s], m[at + 4], SY_ENV_SPEC[2]), syDecay(syMoved(k[N.r], m[at + 5], SY_ENV_SPEC[3]), SY_CONTROL))
+      } else {
+        let p
+        // free: the shared clock at this very sample, not where the block began (that stepped)
+        if (!mod.mode) p = syWrap(this.lfoStart[j] + (this.lfoRate[j] * offset) / sampleRate)
+        else {
+          p = voice.modPh[j]
+          const rate = m[at] ? this.lfoRate[j] * SY_RATE_SPAN ** m[at] : this.lfoRate[j]
+          const next = p + (rate * SY_CONTROL) / sampleRate
+          voice.modPh[j] = mod.mode === 1 ? syWrap(next) : Math.min(1, next) // env: once, then hold
+        }
+        const v = this.lfoAt(j, p)
+        val = mod.polarity === 1 ? v * 0.5 : mod.polarity === 0 ? (v + 1) * 0.5 : (v - 1) * 0.5
       }
-      let p
-      // free: the shared clock at this very sample, not where the block began (that stepped)
-      if (!mod.mode) p = syWrap(this.lfoStart[j] + (this.lfoRate[j] * offset) / sampleRate)
-      else {
-        p = voice.modPh[j]
-        const next = p + (this.lfoRate[j] * SY_CONTROL) / sampleRate
-        voice.modPh[j] = mod.mode === 1 ? syWrap(next) : Math.min(1, next) // env: once, then hold
-      }
-      const v = this.lfoAt(j, p)
-      mv[j] = mod.polarity === 1 ? v * 0.5 : mod.polarity === 0 ? (v + 1) * 0.5 : (v - 1) * 0.5
+      const depth = syMoved(k[N.depth], m[at + 1], SY_DEPTH_SPEC)
+      mv[j] = depth === 1 ? val : val * depth
     }
-    for (const [src, dest, amt] of cfg.routes) m[dest] += amt * mv[src]
+    const plain = cfg.plain
+    for (let x = 0; x < plain.length; x++) { const r = R[plain[x]]; m[r[1]] += this.routeAmt(plain[x], mv) * mv[r[0]] }
     voice.mv.set(mv.subarray(0, cfg.modulators.length))
 
     const c = voice.ctl || (voice.ctl = { layers: Array.from({ length: SY_LAYERS }, () => ({})) })
@@ -328,6 +373,15 @@ class SyrupProcessor extends LatticeInstrument {
       }
     }
   }
+  // a route's amount, moved by the routes to it (on its travel, -1 … 1), given modulator values
+  routeAmt(r, mv) {
+    const R = this.cfg.routes
+    const by = this.cfg.amtBy[r]
+    let a = R[r][2]
+    if (!by || !by.length) return a
+    for (let x = 0; x < by.length; x++) { const q = R[by[x]]; a += q[2] * mv[q[0]] * 2 }
+    return a < -1 ? -1 : a > 1 ? 1 : a
+  }
   // the summed lanes out, after the voices' outputs; and, now and then, where the shared
   // destinations are: the newest note's modulators (free lfos from their own clock)
   endBlock(outputs) {
@@ -342,11 +396,12 @@ class SyrupProcessor extends LatticeInstrument {
         const m = mods[j]
         if (m.lfo && !m.mode) {
           const v = this.lfoAt(j, this.lfoPhase[j])
-          vals[j] = m.polarity === 1 ? v * 0.5 : m.polarity === 0 ? (v + 1) * 0.5 : (v - 1) * 0.5
+          vals[j] = (m.polarity === 1 ? v * 0.5 : m.polarity === 0 ? (v + 1) * 0.5 : (v - 1) * 0.5) * this.k[SY_DN[j].depth]
         } else vals[j] = newest ? newest.mv[j] : 0
       }
       const out = []
-      for (const [src, at, amt] of shared) out[at] = (out[at] || 0) + amt * (vals[src] || 0)
+      const R = this.cfg.routes
+      for (const [r, at] of shared) out[at] = (out[at] || 0) + this.routeAmt(r, vals) * (vals[R[r][0]] || 0)
       this.port.postMessage({ mods: out })
     }
     const base = this.voices.length
