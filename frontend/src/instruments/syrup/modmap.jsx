@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { formatValue, readoutText } from '../../Knob.jsx'
+import { parseKnobValue, snapValue } from '../../knobMath.js'
+import { KnobReadout, KnobTypeInput, RESET_HINT, useKnobControl } from '../../useKnobControl.jsx'
 import { MAX_ROUTES, MAX_ROUTES_EACH, modColor, modName, newPartId, pruneRoutes, routeLoops, targetSpec } from './model.js'
 
 /**
@@ -93,21 +96,56 @@ export function AssignGhost({ ui }) {
   )
 }
 
-/** Drag up or down to set a route's amount, from a pointer press. Shift: finer. */
-export function dragAmount(e, ui, route) {
-  e.preventDefault()
-  e.stopPropagation()
-  const y0 = e.clientY
-  const a0 = route.amt
-  const move = (ev) => setAmount(ui, route.id, a0 + ((y0 - ev.clientY) / (ev.shiftKey ? 600 : 150)) * 2)
-  const up = () => {
-    window.removeEventListener('pointermove', move)
-    window.removeEventListener('pointerup', up)
-    window.removeEventListener('pointercancel', up)
-  }
-  window.addEventListener('pointermove', move)
-  window.addEventListener('pointerup', up)
-  window.addEventListener('pointercancel', up)
+/** A route's amount as a knob sees it: -1 … +1, shown as ±100. */
+const AMOUNT = { key: 'amt', label: 'amount', min: -1, max: 1, def: 0, unit: 'bi' }
+
+/**
+ * Turning a route's amount (useKnobControl): its ring round a knob, alt-dragging the knob,
+ * or the slider in its row. Drag either way (shift: finer), scroll, double-click to type,
+ * ctrl/cmd-click or Home for none. `extra` adds to the options.
+ */
+export function useAmountControl(ui, route, extra = null) {
+  const amt = route?.amt ?? 0
+  return useKnobControl({
+    value: amt,
+    shown: amt,
+    toPos: (a) => (a + 1) / 2,
+    fromPos: (p) => p * 2 - 1,
+    snap: (a) => snapValue(a, AMOUNT),
+    onChange: (a) => { if (route) setAmount(ui, route.id, a) },
+    resetTo: 0,
+    centre: 0.5,
+    parse: (text) => parseKnobValue(text, AMOUNT),
+    format: (a) => formatValue(a, AMOUNT),
+    ...extra,
+  })
+}
+
+/** A route's amount floating by whatever is turning it. */
+export function AmountReadout({ control, amt = 0 }) {
+  return <KnobReadout control={control} text={readoutText(control.live ?? amt, AMOUNT)} />
+}
+
+/** The coloured ring a route draws round its knob: drag it (or scroll on it) to set how far it moves the knob. */
+export function AmountRing({ ui, route, d }) {
+  const control = useAmountControl(ui, route)
+  return (
+    <>
+      <path
+        ref={control.ref}
+        d={d}
+        className="sy-ring-hit"
+        onPointerEnter={control.onPointerEnter}
+        onPointerLeave={control.onPointerLeave}
+        onPointerDown={(e) => { e.stopPropagation(); control.onPointerDown(e) }}
+        // too thin to type into: its row in the list (the badge) takes typing
+        onDoubleClick={() => control.reset()}
+      >
+        <title>{`${modName(ui.patch, route.src)}: ${Math.round((control.live ?? route.amt) * 100)} · drag or scroll to set · double-click or ${RESET_HINT.replace(' or Home to reset', '')} for none`}</title>
+      </path>
+      <AmountReadout control={control} amt={route.amt} />
+    </>
+  )
 }
 
 /** A small floating box by `anchor` (an element), closed by a click outside or Escape. */
@@ -146,20 +184,46 @@ export function RouteRow({ ui, route, name }) {
     <div className="sy-route" style={{ '--sy-route': color }} data-sy-target={`route:${route.id}.amt`}>
       <span className="sy-dot" style={{ color }} aria-hidden />
       <span className="sy-route-name" title={name}>{name}</span>
-      <input
-        type="range"
-        min={-1}
-        max={1}
-        step={0.01}
-        value={route.amt}
-        aria-label={`${name} amount`}
-        title="Amount · double-click for none"
-        onChange={(e) => setAmount(ui, route.id, Number(e.target.value))}
-        onDoubleClick={() => setAmount(ui, route.id, 0)}
-      />
-      <output>{route.amt > 0.005 ? '+' : ''}{Math.round(route.amt * 100)}</output>
+      <AmountSlider ui={ui} route={route} name={name} />
       <button type="button" className="sy-x" aria-label={`Remove ${name}`} title="Remove" onClick={() => removeRoute(ui, route.id)}>×</button>
     </div>
+  )
+}
+
+/** A route's amount as a slider: the bar grows from the middle, either way. */
+function AmountSlider({ ui, route, name }) {
+  const control = useAmountControl(ui, route)
+  const amt = control.live ?? route.amt
+  return (
+    <>
+      <span
+        ref={control.ref}
+        className="sy-amt"
+        role="slider"
+        tabIndex={0}
+        aria-label={`${name} amount`}
+        aria-valuemin={-1}
+        aria-valuemax={1}
+        aria-valuenow={amt}
+        aria-valuetext={formatValue(amt, AMOUNT)}
+        title={`Amount · drag or scroll · double-click to type · ${RESET_HINT.replace(' to reset', '')} for none`}
+        onPointerEnter={control.onPointerEnter}
+        onPointerLeave={control.onPointerLeave}
+        onPointerMove={control.onPointerMove}
+        onPointerDown={control.onPointerDown}
+        onDoubleClick={() => control.startTyping()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); control.startTyping() }
+          else control.onKeyDown(e)
+        }}
+      >
+        <span className="sy-amt-bar" style={{ left: `${(Math.min(0, amt) + 1) * 50}%`, width: `${Math.abs(amt) * 50}%` }} />
+        <span className="sy-amt-thumb" style={{ left: `${(amt + 1) * 50}%` }} />
+        <KnobTypeInput control={control} label={`${name} amount`} />
+      </span>
+      <AmountReadout control={control} amt={route.amt} />
+      <output>{formatValue(amt, AMOUNT)}</output>
+    </>
   )
 }
 

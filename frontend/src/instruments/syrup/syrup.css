@@ -347,7 +347,12 @@
 .sy-route { display: grid; grid-template-columns: 6px minmax(0, 1fr) minmax(60px, 90px) 2.2em 20px; align-items: center; gap: 0 0.4rem; min-height: 22px; padding: 0 0 0 4px; margin-left: -4px; border-radius: 2px; }
 .sy-route:hover { background: rgba(255, 255, 255, 0.025); }
 .sy-route-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--paper); }
-.sy-route input[type='range'] { width: 100%; height: 14px; margin: 0; accent-color: var(--sy-route); }
+.sy-amt { position: relative; display: block; height: 14px; cursor: ew-resize; touch-action: none; outline: none; }
+.sy-amt::before { content: ''; position: absolute; left: 0; right: 0; top: 6px; height: 2px; border-radius: 1px; background: var(--line); }
+.sy-amt::after { content: ''; position: absolute; left: 50%; top: 3px; width: 1px; height: 8px; background: var(--line); }
+.sy-amt-bar { position: absolute; top: 5px; height: 4px; border-radius: 1px; background: var(--sy-route); }
+.sy-amt-thumb { position: absolute; top: 2px; width: 4px; height: 10px; margin-left: -2px; border-radius: 1px; background: var(--paper); }
+.sy-amt:focus-visible { box-shadow: 0 0 0 1px var(--acid); border-radius: 2px; }
 .sy-route output { font-size: 10px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
 .sy-route .sy-x { width: 20px; height: 20px; font: inherit; font-size: 13px; color: var(--muted); background: transparent; border: 0; cursor: pointer; padding: 0; }
 .sy-route .sy-x:hover { color: var(--paper); }

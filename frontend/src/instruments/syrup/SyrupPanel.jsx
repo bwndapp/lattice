@@ -9,7 +9,7 @@ import {
 } from './model.js'
 import { tableFrame } from './tables.js'
 import CurveEditor from '../CurveEditor.jsx'
-import { AssignGhost, AssignHandle, KnobRoutes, RouteRow, TargetPicker, addRoute, canRoute, dragAmount, setAmount, useAssign } from './modmap.jsx'
+import { AssignGhost, AssignHandle, KnobRoutes, RouteRow, TargetPicker, addRoute, canRoute, AmountReadout, AmountRing, useAmountControl, useAssign } from './modmap.jsx'
 import './syrup.css'
 
 /**
@@ -226,14 +226,16 @@ function ModKnob({ ui, route, auto, def, value, onChange }) {
     return `M ${x0} ${y0} A ${r} ${r} 0 ${Math.abs(a1 - a0) > 2 / 3 ? 1 : 0} 1 ${x1} ${y1}`
   }
   // the route alt-dragging the knob sets: the selected modulator's, or the first
-  const pick = () => routes.find((r) => r.src === ui.focus) ?? routes[0]
+  const picked = routes.find((r) => r.src === ui.focus) ?? routes[0]
+  const alt = useAmountControl(ui, picked, { clickReset: false })
   return (
     <div
       className={`sy-modknob ${state.className}`}
       style={state.style}
       data-sy-target={route || undefined}
-      onPointerDownCapture={(e) => { if (e.altKey && routes.length && e.target.closest('.knob svg')) dragAmount(e, ui, pick()) }}
+      onPointerDownCapture={(e) => { if (e.altKey && picked && e.target.closest('.knob svg')) { e.stopPropagation(); alt.onPointerDown(e) } }}
     >
+      <AmountReadout control={alt} amt={picked?.amt} />
       <Knob def={def} value={value} onChange={onChange} target={auto ? ui.target(auto) : null} />
       {routes.length > 0 && (
         <svg className="sy-rings" width="44" height="44" viewBox="0 0 44 44">
@@ -246,9 +248,7 @@ function ModKnob({ ui, route, auto, def, value, onChange }) {
             return (
               <g key={r.id}>
                 <path d={arc(clamp(a0, 0, 1), clamp(a1, 0, 1), radius)} className="sy-ring" style={{ stroke: modColor(ui.patch, r.src) }} />
-                <path d={arc(0, 1, radius)} className="sy-ring-hit" onPointerDown={(e) => dragAmount(e, ui, r)} onDoubleClick={() => setAmount(ui, r.id, 0)}>
-                  <title>{`${modName(ui.patch, r.src)}: ${Math.round(r.amt * 100)} · drag to set, double-click for none`}</title>
-                </path>
+                <AmountRing ui={ui} route={r} d={arc(0, 1, radius)} />
               </g>
             )
           })}

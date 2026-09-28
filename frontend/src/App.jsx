@@ -35,7 +35,7 @@ import { setFxParams } from './fxbus.js'
 import { setInsertParams } from './stereo.js'
 import { setEngineParams } from './instruments/host.js'
 import { knobBridge } from './knobBridge.js'
-import { NOTCH_PX, wheelPixels } from './knobMath.js'
+import { RESET_HINT, useKnobControl } from './useKnobControl.jsx'
 import { capturePatterns, parseLanes, tempoChange } from './lanes'
 import { syncEngines } from './instruments/host.js'
 import { useOctave } from './keyboard.js'
@@ -1898,112 +1898,75 @@ function applyAppParam(app, value) {
 }
 
 /**
- * BPM readout that works like a knob: drag up or down (shift for tenths), scroll, arrow keys
- * (page up/down for 10), double-click for 140. A click without dragging types a tempo.
- * Changing it rewrites setcpm/setcps in the code.
+ * BPM readout that works like a knob (useKnobControl): drag up or down (shift for tenths),
+ * scroll, arrow keys (page up/down for 10), double-click, ctrl/cmd-click or Home for 140.
+ * A click without dragging types a tempo. Changing it rewrites setcpm/setcps in the code.
  */
 function Tempo({ bpm, onChange }) {
   const MIN = 10
   const MAX = 400
+  const SPAN = MAX - MIN
   const tidy = (v) => Math.round(Math.min(MAX, Math.max(MIN, v)) * 10) / 10
-  const shown = String(tidy(bpm))
-  const [text, setText] = useState(shown)
+  const [text, setText] = useState('')
   const [editing, setEditing] = useState(false)
-  const [dragging, setDragging] = useState(false)
   const inputRef = useRef(null)
-  const boxRef = useRef(null)
-  const drag = useRef(null)
-  const bpmRef = useRef(bpm)
-  bpmRef.current = bpm
-  useEffect(() => { if (!editing) setText(shown) }, [shown, editing])
-
-  const set = useCallback((v) => {
-    const next = tidy(v)
-    if (String(next) !== String(tidy(bpmRef.current))) { bpmRef.current = next; onChange(next) }
-  }, [onChange])
-
-  // scroll to nudge, a bpm a click (a tenth with shift), once it has focus or the pointer
-  // has rested on it; a burst of scrolling is one undo step
-  const hover = useRef({ since: 0, passed: 0, at: 0 })
-  const wheel = useRef(null)
-  useEffect(() => {
-    const el = boxRef.current
-    if (!el) return
-    const onWheel = (e) => {
-      if (editing) return
-      const h = hover.current
-      const now = performance.now()
-      const meant = el.contains(document.activeElement) || now - h.at < 400 || (h.since && now - h.since >= 300 && now - h.passed >= 300)
-      if (!meant) { h.passed = now; return }
-      e.preventDefault()
-      h.at = now
-      const unit = e.shiftKey ? 0.1 : 1
-      let w = wheel.current
-      if (!w) { w = wheel.current = { from: bpmRef.current, total: 0, unit, idle: 0 }; knobBridge.begin() }
-      if (w.unit !== unit) { w.unit = unit; w.from = bpmRef.current; w.total = 0 }
-      w.total -= wheelPixels(e) / NOTCH_PX
-      set(w.from + Math.trunc(w.total) * unit)
-      clearTimeout(w.idle)
-      w.idle = setTimeout(() => { wheel.current = null; knobBridge.end() }, 300)
-    }
-    el.addEventListener('wheel', onWheel, { passive: false })
-    return () => el.removeEventListener('wheel', onWheel)
-  }, [editing, set])
-  useEffect(() => () => { if (wheel.current) { clearTimeout(wheel.current.idle); wheel.current = null; knobBridge.end() } }, [])
-
-  const commit = () => {
-    const next = Number(text.trim().replace(',', '.'))
-    if (text.trim() && Number.isFinite(next)) set(next) // out of range clamps
-    setEditing(false)
-    setText(shown)
-  }
   // focus and select once the field is editable (a frame later the label's click has
   // already put the caret at the end, so typing appended to the old tempo)
   const selectAll = useRef(false)
+  const startTyping = () => {
+    selectAll.current = true
+    setEditing(true)
+  }
+  const control = useKnobControl({
+    value: bpm,
+    shown: bpm,
+    toPos: (v) => (v - MIN) / SPAN,
+    fromPos: (p) => MIN + p * SPAN,
+    // whole bpm counted from where it was (tenths with shift): 120.5 turns to 121.5
+    snap: (v, from = v, fine = false) => {
+      const unit = fine ? 0.1 : 1
+      return tidy(tidy(from) + Math.round((v - tidy(from)) / unit) * unit)
+    },
+    onChange,
+    resetTo: 140,
+    range: SPAN * 3, // a bpm every 3 px
+    fineRange: SPAN * 30,
+    notch: 1 / SPAN,
+    fineNotch: 0.1 / SPAN,
+    keyStep: 1 / SPAN,
+    fineKeyStep: 0.1 / SPAN,
+    pageStep: 10 / SPAN,
+    focus: false,
+    disabled: editing,
+    onClick: startTyping,
+  })
+  const shown = String(tidy(control.live ?? bpm))
+  useEffect(() => { if (!editing) setText(shown) }, [shown, editing])
+
+  const commit = () => {
+    const next = Number(text.trim().replace(',', '.'))
+    if (text.trim() && Number.isFinite(next) && tidy(next) !== tidy(bpm)) onChange(tidy(next)) // out of range clamps
+    setEditing(false)
+    setText(shown)
+  }
   useLayoutEffect(() => {
     if (!editing) return
     const el = inputRef.current
     el?.focus()
     if (selectAll.current) { selectAll.current = false; el?.select() }
   }, [editing])
-  const startTyping = () => {
-    selectAll.current = true
-    setEditing(true)
-  }
 
   return (
     <label
-      ref={boxRef}
-      className={`lcd tempo ${editing ? 'editing' : ''} ${dragging ? 'dragging' : ''}`}
-      title="Tempo · drag up/down or scroll (shift: fine) · click to type · double-click for 140"
-      onPointerEnter={() => { hover.current.since = performance.now() }}
-      onPointerLeave={() => { hover.current.since = 0 }}
-      onPointerDown={(e) => {
-        if (editing || e.button !== 0) return
-        e.preventDefault()
-        e.currentTarget.setPointerCapture(e.pointerId)
-        drag.current = { y: e.clientY, from: bpmRef.current, moved: false }
-      }}
-      onPointerMove={(e) => {
-        const d = drag.current
-        if (!d) return
-        const dy = d.y - e.clientY
-        if (!d.moved && Math.abs(dy) < 3) return
-        if (!d.moved) { d.moved = true; setDragging(true) }
-        // 1 bpm per 3 px (a tenth with shift); re-anchor when shift changes so it doesn't jump
-        if (d.fine !== e.shiftKey) { d.fine = e.shiftKey; d.y = e.clientY; d.from = bpmRef.current; return }
-        set(d.from + Math.round(dy / 3) * (e.shiftKey ? 0.1 : 1))
-      }}
-      onPointerUp={() => {
-        const d = drag.current
-        drag.current = null
-        setDragging(false)
-        if (d && !d.moved) startTyping()
-      }}
+      ref={control.ref}
+      className={`lcd tempo ${editing ? 'editing' : ''} ${control.live !== null ? 'dragging' : ''}`}
+      title={`Tempo · drag or scroll (shift: fine) · click to type · double-click, ${RESET_HINT.replace(' to reset', '')} for 140`}
+      onPointerEnter={control.onPointerEnter}
+      onPointerLeave={control.onPointerLeave}
+      onPointerDown={(e) => { if (!editing) control.onPointerDown(e) }}
       // a label's click re-targets to its input and would move the caret: the field is ours
       onClick={(e) => e.preventDefault()}
-      onPointerCancel={() => { drag.current = null; setDragging(false) }}
-      onDoubleClick={() => { setEditing(false); set(140) }}
+      onDoubleClick={() => { setEditing(false); control.reset() }}
     >
       <input
         ref={inputRef}
@@ -2013,7 +1976,7 @@ function Tempo({ bpm, onChange }) {
         aria-label="Tempo in BPM"
         aria-valuemin={MIN}
         aria-valuemax={MAX}
-        aria-valuenow={tidy(bpm)}
+        aria-valuenow={tidy(control.live ?? bpm)}
         readOnly={!editing}
         tabIndex={0}
         value={editing ? text : shown}
@@ -2025,10 +1988,8 @@ function Tempo({ bpm, onChange }) {
             if (e.key === 'Escape') { setEditing(false); setText(shown); e.currentTarget.blur() }
             return
           }
-          const step = { ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1, PageUp: 10, PageDown: -10 }[e.key]
-          if (step) { e.preventDefault(); e.stopPropagation(); set(bpmRef.current + step * (e.shiftKey && Math.abs(step) === 1 ? 0.1 : 1)); return }
+          if (control.onKeyDown(e)) return
           if (e.key === 'Enter') { e.preventDefault(); startTyping() }
-          else if (e.key === 'Home') { e.preventDefault(); set(140) }
           else if (/^[0-9.,]$/.test(e.key)) { setEditing(true); setText(e.key); e.preventDefault() }
         }}
       />
