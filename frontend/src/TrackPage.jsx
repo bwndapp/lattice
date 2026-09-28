@@ -4,6 +4,7 @@ import { parseProject } from './project'
 import { changesBetween, summarise } from './history.js'
 import { previewTrack, stopPreview } from './audio'
 import BranchMark from './BranchMark.jsx'
+import { addTags, cleanTag, MAX_TAGS, MAX_TITLE } from './tags.js'
 import './TrackPage.css'
 
 const when = (s) => new Date(s * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -23,6 +24,115 @@ function facts(project) {
   ].filter(Boolean)
 }
 
+/** The track's name, which its owner can click and type over in place. */
+function TitleEdit({ title, canEdit, onSave }) {
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState(title)
+  const done = useRef(false)
+  if (!canEdit) return <h2 className="tp-title">{title}</h2>
+  const start = () => { done.current = false; setText(title); setEditing(true) }
+  const finish = (keep) => {
+    if (done.current) return
+    done.current = true
+    setEditing(false)
+    const next = text.trim().slice(0, MAX_TITLE)
+    if (keep && next && next !== title) onSave(next)
+  }
+  if (editing) {
+    return (
+      <input
+        className="tp-title tp-title-edit"
+        value={text}
+        maxLength={MAX_TITLE}
+        autoFocus
+        onFocus={(e) => e.currentTarget.select()}
+        aria-label="Track title"
+        onChange={(e) => setText(e.target.value)}
+        onBlur={() => finish(true)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') finish(true)
+          else if (e.key === 'Escape') { e.stopPropagation(); finish(false) }
+        }}
+      />
+    )
+  }
+  return (
+    <h2 className="tp-title editable">
+      <button type="button" className="tp-title-btn" onClick={start} title="Click to rename">{title}</button>
+    </h2>
+  )
+}
+
+/**
+ * Words people can find the track by. Everyone sees them and can click one to see
+ * everything else tagged the same; the owner adds them by typing (Enter or a comma) and
+ * takes them off with ×.
+ */
+function TagEdit({ tags, canEdit, onSave, onTag }) {
+  const [text, setText] = useState('')
+  const [known, setKnown] = useState([])
+  const asked = useRef(new Map())
+  const want = cleanTag(text)
+  // the tags other tracks already use, so people land on the same words
+  useEffect(() => {
+    if (!canEdit || !text) return undefined
+    if (asked.current.has(want)) { setKnown(asked.current.get(want)); return undefined }
+    let alive = true
+    const timer = setTimeout(() => {
+      api(`/tracks/tags?q=${encodeURIComponent(want)}&limit=8`)
+        .then((d) => { const got = (d.tags ?? []).map((t) => t.tag); asked.current.set(want, got); if (alive) setKnown(got) })
+        .catch(() => {})
+    }, 150)
+    return () => { alive = false; clearTimeout(timer) }
+  }, [canEdit, text, want])
+  if (!canEdit && !tags.length) return null
+  const add = (raw) => {
+    const next = addTags(tags, raw)
+    setText('')
+    if (next.length !== tags.length) onSave(next)
+  }
+  const hints = text ? known.filter((t) => !tags.includes(t) && t !== want).slice(0, 6) : []
+  return (
+    <div className="tp-tags">
+      <ul className="tp-tag-list" aria-label="Tags">
+        {tags.map((t) => (
+          <li key={t} className="tp-tag">
+            <button type="button" className="tp-tag-go" onClick={() => onTag?.(t)} data-tip={`Tracks tagged ${t}`}>#{t}</button>
+            {canEdit && <button type="button" className="tp-tag-x" onClick={() => onSave(tags.filter((x) => x !== t))} aria-label={`Remove the tag ${t}`}>×</button>}
+          </li>
+        ))}
+        {canEdit && tags.length < MAX_TAGS && (
+          <li className="tp-tag-add">
+            <input
+              value={text}
+              placeholder={tags.length ? 'add a tag' : 'add tags: dnb, ambient…'}
+              aria-label="Add a tag"
+              spellCheck={false}
+              maxLength={40}
+              onChange={(e) => {
+                const v = e.target.value
+                if (v.includes(',')) { const parts = v.split(','); add(parts.slice(0, -1)); setText(parts.at(-1)) } else setText(v)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); add(text) }
+                else if (e.key === 'Escape') { e.stopPropagation(); setText('') }
+              }}
+              onBlur={() => { if (want) add(text) }}
+            />
+          </li>
+        )}
+      </ul>
+      {hints.length > 0 && (
+        <div className="tp-tag-hints">
+          {hints.map((t) => (
+            <button key={t} type="button" className="tp-tag-hint" onMouseDown={(e) => e.preventDefault()} onClick={() => add(t)}>#{t}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /**
  * A track's own page: what it is, where it came from, and everything that's happened to it.
  *
@@ -32,7 +142,7 @@ function facts(project) {
  * somewhere else from where it was. Copies other people made hang off the same line at the
  * save they left from, so the whole page reads as one tree growing downward.
  */
-export default function TrackPage({ id, user, login, started = false, onOpen, onClose, onAuthor }) {
+export default function TrackPage({ id, user, login, started = false, onOpen, onClose, onAuthor, onTag, onChanged }) {
   const [track, setTrack] = useState(null)
   const [error, setError] = useState('')
   const [copies, setCopies] = useState([])
@@ -136,6 +246,25 @@ export default function TrackPage({ id, user, login, started = false, onOpen, on
     }
   }
 
+  /**
+   * A new name or new tags, through the same save as the studio's track menu. Only the
+   * name and tags go, never the patch, so nothing open in the studio is touched; the
+   * studio is told so it knows the new name too.
+   */
+  const change = async (what) => {
+    const before = track
+    setTrack((t) => ({ ...t, ...what }))
+    setNote('')
+    try {
+      const t = await api(`/tracks/${track.id}`, { method: 'PUT', body: what })
+      setTrack((was) => ({ ...was, title: t.title, tags: t.tags }))
+      onChanged?.(t, before)
+    } catch (e) {
+      setTrack(before)
+      setNote(`Couldn’t save that: ${e.message}`)
+    }
+  }
+
   if (error) return <section className="tp"><p className="tp-error">Couldn’t open that track: {error}</p><button type="button" className="b-button" onClick={onClose}>back</button></section>
   if (!track) return <section className="tp"><p className="tp-quiet">Loading…</p></section>
 
@@ -164,7 +293,7 @@ export default function TrackPage({ id, user, login, started = false, onOpen, on
       <header className="tp-head">
         <button type="button" className="tp-back" onClick={onClose}>← browse</button>
         <div className="tp-title-row">
-          <h2 className="tp-title">{track.title}</h2>
+          <TitleEdit key={track.title} title={track.title} canEdit={track.is_owner} onSave={(title) => change({ title })} />
           {track.visibility !== 'public' && <span className="b-tag">{track.visibility}</span>}
         </div>
         <p className="tp-by">
@@ -174,6 +303,7 @@ export default function TrackPage({ id, user, login, started = false, onOpen, on
             <> · <span className="tp-from"><BranchMark />branched off <button type="button" className="tp-link" onClick={() => onOpen(track.parent.id, true)}>{track.parent.title}</button></span></>
           )}
         </p>
+        <TagEdit tags={track.tags ?? []} canEdit={track.is_owner} onSave={(tags) => change({ tags })} onTag={onTag} />
 
         {shape && (
           <ul className="tp-facts">

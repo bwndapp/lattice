@@ -26,7 +26,7 @@ function Switch({ options, value, onChange, label, small = false }) {
   )
 }
 
-export default function Browser({ user, login, activeId, refreshKey, onPick, onNew, started = false, view = 'explore', onView, narrowTo = null, onOpenTrack }) {
+export default function Browser({ user, login, activeId, refreshKey, onPick, onNew, started = false, view = 'explore', onView, narrowTo = null, onOpenTrack, onTrackChanged }) {
   const setView = onView
   // Where you are in the browser lives in the address, so reloading keeps it, the back
   // button walks out of it, and "everything by this person" is a link you can send.
@@ -39,12 +39,14 @@ export default function Browser({ user, login, activeId, refreshKey, onPick, onN
   const [more, setMore] = useState(false)
   const [filling, setFilling] = useState(false)
   const next = useRef(0)
-  // narrowing the list to one person, or to what came out of one track
+  // narrowing the list to one person, to what came out of one track, or to one tag
   const [only, setOnly] = useState(() => (params.get('by')
     ? { author: params.get('by'), name: params.get('who') || 'this person' }
     : params.get('copies')
       ? { remixesOf: params.get('copies'), name: params.get('who') || 'copies' }
-      : null))
+      : params.get('tag')
+        ? { tag: params.get('tag'), name: `#${params.get('tag')}` }
+        : null))
 
   // hearing one from the list: the same lightweight preview the track's page uses, so it
   // costs a click and nothing you have open changes
@@ -75,6 +77,7 @@ export default function Browser({ user, login, activeId, refreshKey, onPick, onN
     const params = new URLSearchParams({ view, sort, q, limit: String(PAGE), offset: String(offset) })
     if (only?.author) params.set('author', only.author)
     if (only?.remixesOf) params.set('remixes_of', only.remixesOf)
+    if (only?.tag) params.set('tag', only.tag)
     return api(`/tracks?${params}`)
   }, [view, sort, q, only])
 
@@ -135,12 +138,16 @@ export default function Browser({ user, login, activeId, refreshKey, onPick, onN
     set('q', q)
     set('by', only?.author || '')
     set('copies', only?.remixesOf || '')
-    set('who', only?.name || '')
+    set('tag', only?.tag || '')
+    set('who', only?.tag ? '' : only?.name || '')
     set('track', page || '')
     // typing or sorting rewrites where you are; going into someone's tracks is a place you
     // can come back out of
     setParams(now, { replace: !only })
   }, [view, sort, q, only, page]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // everything tagged the same, from anywhere: the tags are about what people share
+  const byTag = (tag) => { setPage(null); setQ(''); if (view !== 'explore') setView('explore'); narrow({ tag, name: `#${tag}` }) }
 
   const heading = only?.name ? only.name
     : view === 'mine' ? 'Your tracks' : view === 'liked' ? 'Tracks you liked' : 'Shared tracks'
@@ -156,6 +163,8 @@ export default function Browser({ user, login, activeId, refreshKey, onPick, onN
           onClose={() => setPage(null)}
           onOpen={(id, asPage, title) => (asPage ? setPage(id) : onOpenTrack?.(id, title))}
           onAuthor={(author, name) => { setPage(null); narrow({ author, name }) }}
+          onTag={byTag}
+          onChanged={onTrackChanged}
         />
       </section>
     )
@@ -171,7 +180,7 @@ export default function Browser({ user, login, activeId, refreshKey, onPick, onN
         <div className="b-find">
           <label className="b-search">
             <svg viewBox="0 0 16 16" aria-hidden><circle cx="7" cy="7" r="4.6" /><path d="M10.4 10.4 14 14" /></svg>
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search tracks or people" aria-label="Search tracks or people" spellCheck={false} />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search tracks, tags or people" aria-label="Search tracks, tags or people" spellCheck={false} />
             {q && <button type="button" className="b-search-clear" onClick={() => setQ('')} aria-label="Clear the search">×</button>}
           </label>
           <Switch small label="Sort" options={SORTS} value={sort} onChange={setSort} />
@@ -241,6 +250,13 @@ export default function Browser({ user, login, activeId, refreshKey, onPick, onN
                     onClick={() => narrow({ author: t.author_id, name: t.author })}
                     data-tip={`Everything ${t.author} has shared`}
                   >{t.author}</button>
+                  {t.tags?.length > 0 && (
+                    <div className="b-card-tags">
+                      {t.tags.slice(0, 4).map((tag) => (
+                        <button key={tag} type="button" className="b-card-tag" onClick={() => byTag(tag)} data-tip={`Tracks tagged ${tag}`}>#{tag}</button>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="b-card-meta">
                   <span className={t.liked ? 'liked' : ''}>♥ {t.likes}</span>

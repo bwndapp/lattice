@@ -23,6 +23,39 @@
   font-size: clamp(24px, 3.6vw, 38px); line-height: 1.02; letter-spacing: -0.025em; color: var(--paper);
   text-wrap: balance;
 }
+/* the owner's name for it, typed over in place */
+.tp-title-btn {
+  font: inherit; color: inherit; letter-spacing: inherit; text-align: left;
+  background: none; border: 0; padding: 0; cursor: text; border-radius: 4px;
+}
+.tp-title-btn:hover { box-shadow: 0 1px 0 color-mix(in srgb, var(--paper) 35%, transparent); }
+.tp-title-edit {
+  width: 100%; min-width: 0; padding: 0; border: 0; outline: none; background: none;
+  box-shadow: 0 1px 0 var(--acid);
+}
+
+/* tags: small chips under the byline, each one a way into everything else tagged so */
+.tp-tags { display: grid; gap: 0.35rem; }
+.tp-tag-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }
+.tp-tag {
+  display: inline-flex; align-items: center; border-radius: 999px;
+  font-size: 10.5px; letter-spacing: 0.04em; color: #b8b8ad; background: rgba(255, 255, 255, 0.06);
+}
+.tp-tag-go, .tp-tag-x, .tp-tag-hint { font: inherit; color: inherit; background: none; border: 0; cursor: var(--ring); }
+.tp-tag-go { padding: 0.18rem 0.55rem; }
+.tp-tag-go:hover { color: var(--paper); }
+.tp-tag-x { padding: 0.18rem 0.5rem 0.18rem 0; opacity: 0.55; }
+.tp-tag-x:hover { opacity: 1; color: var(--danger); }
+.tp-tag-add input {
+  font: inherit; font-size: 10.5px; color: var(--paper); width: 11rem;
+  padding: 0.18rem 0.55rem; border: 0; border-radius: 999px; outline: none;
+  background: none; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+.tp-tag-add input:focus { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--acid) 60%, transparent); }
+.tp-tag-add input::placeholder { color: #66665e; }
+.tp-tag-hints { display: flex; flex-wrap: wrap; gap: 0.25rem; font-size: 10px; color: var(--muted); }
+.tp-tag-hint { padding: 0.1rem 0.45rem; border-radius: 999px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06); }
+.tp-tag-hint:hover { color: var(--paper); }
 .tp-by { margin: 0; font-size: 11.5px; line-height: 1.7; color: var(--muted); }
 .tp-author, .tp-link {
   font: inherit; color: var(--paper); background: none; border: 0; padding: 0; cursor: var(--ring);

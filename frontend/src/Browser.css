@@ -348,3 +348,13 @@ button.b-card-from b { font-weight: 700; color: #b9b9ae; overflow: hidden; text-
 button.b-card-from:hover { color: var(--paper); background: rgb(228 255 26 / 0.14); }
 button.b-card-from:hover b { color: var(--paper); }
 .b-tag.quiet { display: inline-flex; align-items: center; gap: 0.25rem; }
+
+/* a track's tags on its card: quiet, like the tempo in the corner of its picture */
+.b-card-tags { display: flex; flex-wrap: wrap; gap: 0.2rem; margin-top: 0.15rem; min-width: 0; }
+.b-card-tag {
+  position: relative; z-index: 2;
+  font: inherit; font-size: 9.5px; letter-spacing: 0.06em; color: #8a8a80;
+  background: rgba(7, 7, 6, 0.72); border: 0; border-radius: 999px; padding: 0.05rem 0.4rem;
+  cursor: var(--ring); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.b-card-tag:hover { color: var(--paper); }

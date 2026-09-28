@@ -1083,6 +1083,13 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [code, activeCode, started, shownId, previewAllowed, evaluated.forId])
 
+  // renamed or tagged on its page: the open track takes the new name, unless it's being
+  // renamed here too
+  const trackChanged = useCallback((t, before) => {
+    setTrack((was) => (was?.id === t.id ? { ...was, title: t.title, tags: t.tags } : was))
+    if (t.id === trackId) setTitle((was) => (was === before.title ? t.title : was))
+  }, [trackId])
+
   const save = useCallback(async ({ replace = false } = {}) => {
     if (busy) return
     if (!user) return login()
@@ -1097,6 +1104,9 @@ export default function App() {
     setBusy(true)
     try {
       const body = { title: title.trim() || 'untitled', code: songCodeOf(editorRef.current.code), visibility }
+      // the name only goes when it was changed here, so a rename made on the track's page
+      // (or in another tab) isn't put back by saving the patch
+      if (!isNew && track && title === track.title) delete body.title
       if (isNew) {
         const t = await api('/tracks', { method: 'POST', body })
         clearDraft(null)
@@ -1679,6 +1689,7 @@ export default function App() {
               view={browseView}
               narrowTo={browseNarrow}
               onOpenTrack={openTrack}
+              onTrackChanged={trackChanged}
               onView={setBrowseView}
               onPick={() => goView('graph')}
               onNew={(template) => newTrack(template)}
