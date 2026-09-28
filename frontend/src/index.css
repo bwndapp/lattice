@@ -423,6 +423,11 @@ body.dragging, body.dragging * { user-select: none !important; -webkit-user-sele
 .tempo.editing, .tempo.editing .lcd-value { cursor: text; user-select: text; }
 .tempo.dragging { border-color: var(--acid); }
 .tempo:not(.editing) .lcd-value::selection { background: transparent; }
+.tempo.editing { border-color: var(--acid); }
+.tempo.editing .lcd-value:focus {
+  caret-color: var(--paper); outline: 1px solid color-mix(in srgb, var(--acid) 45%, transparent); outline-offset: 2px;
+  background: color-mix(in srgb, var(--acid) 8%, transparent);
+}
 /* the octave the typing keyboard plays from: one number, next to the meter, because every
    keyboard in the app plays from it (see keyboard.js) */
 .lcd.oct { align-items: center; gap: 0.2rem; }

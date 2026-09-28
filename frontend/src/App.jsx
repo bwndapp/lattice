@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Link, useLocation, useMatch, useNavigate } from 'react-router-dom'
 import { StrudelMirror } from '@strudel/codemirror'
 import { Compartment, EditorState, StateEffect } from '@codemirror/state'
@@ -1891,14 +1891,23 @@ function Tempo({ bpm, onChange }) {
   }, [editing, set])
 
   const commit = () => {
-    const next = Number(text)
-    if (Number.isFinite(next) && next >= MIN && next <= MAX) set(next)
+    const next = Number(text.trim().replace(',', '.'))
+    if (text.trim() && Number.isFinite(next)) set(next) // out of range clamps
     setEditing(false)
     setText(shown)
   }
+  // focus and select once the field is editable (a frame later the label's click has
+  // already put the caret at the end, so typing appended to the old tempo)
+  const selectAll = useRef(false)
+  useLayoutEffect(() => {
+    if (!editing) return
+    const el = inputRef.current
+    el?.focus()
+    if (selectAll.current) { selectAll.current = false; el?.select() }
+  }, [editing])
   const startTyping = () => {
+    selectAll.current = true
     setEditing(true)
-    requestAnimationFrame(() => { inputRef.current?.focus(); inputRef.current?.select() })
   }
 
   return (
@@ -1928,6 +1937,8 @@ function Tempo({ bpm, onChange }) {
         setDragging(false)
         if (d && !d.moved) startTyping()
       }}
+      // a label's click re-targets to its input and would move the caret: the field is ours
+      onClick={(e) => e.preventDefault()}
       onPointerCancel={() => { drag.current = null; setDragging(false) }}
       onDoubleClick={() => { setEditing(false); set(120) }}
     >
@@ -1955,7 +1966,7 @@ function Tempo({ bpm, onChange }) {
           if (step) { e.preventDefault(); e.stopPropagation(); set(bpmRef.current + step * (e.shiftKey && Math.abs(step) === 1 ? 0.1 : 1)); return }
           if (e.key === 'Enter') { e.preventDefault(); startTyping() }
           else if (e.key === 'Home') { e.preventDefault(); set(120) }
-          else if (/^[0-9.]$/.test(e.key)) { setEditing(true); setText(e.key); e.preventDefault(); requestAnimationFrame(() => inputRef.current?.focus()) }
+          else if (/^[0-9.,]$/.test(e.key)) { setEditing(true); setText(e.key); e.preventDefault() }
         }}
       />
       <span className="lcd-unit" aria-hidden>bpm</span>
