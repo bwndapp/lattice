@@ -23,7 +23,7 @@ class FakeSocket {
   static instances = []
   constructor() { this.readyState = 1; FakeSocket.instances.push(this) }
   send(text) { sent.push(JSON.parse(text)) }
-  close() { this.readyState = 3; this.onclose?.() }
+  close(code = 1006) { this.readyState = 3; this.onclose?.({ code }) } // browsers always pass a CloseEvent
   arrive(msg) { this.onmessage?.({ data: JSON.stringify(msg) }) }
 }
 globalThis.WebSocket = FakeSocket
