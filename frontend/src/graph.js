@@ -767,6 +767,11 @@ export function normalizeGraph(raw, patterns) {
       data.patternId = patternIds.has(n.data?.patternId) ? n.data.patternId : [...patternIds][0] ?? null
       data.offMain = Object.fromEntries(Object.entries(n.data?.offMain ?? {}).filter(([, v]) => v === true))
     }
+    // a mixer bus's channel faders, one per input (see inputKey), aren't among its params
+    if (n.type === 'bus') {
+      const chan = Object.entries(n.data?.chan ?? {}).filter(([k, v]) => /^\w{1,64}:out(-[\w-]{1,40})?$/.test(k) && Number.isFinite(v))
+      if (chan.length) data.chan = Object.fromEntries(chan.map(([k, v]) => [k, clampNum(v, 1, 0, 1.5)]))
+    }
     if (n.type === 'arrange') data.bars = Object.fromEntries(Object.entries(n.data?.bars ?? {}).filter(([k]) => /^in-\d+$/.test(k)).map(([k, v]) => [k, Math.round(clampNum(v, 4, 1, 64))]))
     if (n.type === 'output') {
       data.muted = Object.fromEntries(Object.entries(n.data?.muted ?? {}).filter(([, v]) => v === true))
