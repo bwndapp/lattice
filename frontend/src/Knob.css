@@ -5,3 +5,15 @@
   font: inherit; font-size: 10px; text-align: center; font-variant-numeric: tabular-nums;
   color: var(--paper); background: var(--ink, #111); border: 1px solid var(--acid); border-radius: 3px; outline: none;
 }
+/* the room round a knob that still grabs it (see Knob.jsx): invisible, takes no space */
+.knob svg { overflow: visible; }
+.knob-hit { fill: transparent; stroke: none; }
+/* the value, floating above a knob while it turns */
+.knob-readout {
+  position: fixed; z-index: 10000; transform: translate(-50%, calc(-100% - 6px)); pointer-events: none;
+  padding: 2px 6px; border-radius: 3px; white-space: nowrap;
+  font-size: 11px; font-variant-numeric: tabular-nums; color: var(--paper); background: var(--ink, #111);
+  border: 1px solid var(--line); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+/* dragging where the pointer can't be locked: at least it's out of the way */
+body.knob-hide-cursor, body.knob-hide-cursor * { cursor: none !important; }

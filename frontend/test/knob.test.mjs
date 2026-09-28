@@ -1,6 +1,6 @@
 // node frontend/test/knob.test.mjs — the arithmetic knobs turn by (knobMath.js)
 import assert from 'node:assert/strict'
-import { NOTCH_PX, dragTo, parseKnobValue, pastThreshold, snapValue, startDrag, stepOf, wheelPixels, wheelTravel } from '../src/knobMath.js'
+import { NOTCH_PX, detent, dragTo, lockAxis, parseKnobValue, pastThreshold, undetent, snapValue, startDrag, stepOf, wheelPixels, wheelTravel } from '../src/knobMath.js'
 
 const near = (a, b, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} ≉ ${b}`)
 
@@ -41,6 +41,27 @@ near(dragTo(d, 100, 10, true, 0.7), 0.8)
 // and let go of shift again: no jump back to the coarse line
 near(dragTo(d, 100, 10, false, 0.8), 0.8)
 near(dragTo(d, 100, -5, false, 0.8), 0.9)
+
+// either way: whichever way the pointer set off, right or up adds
+const side = startDrag(0, 0, 0.5)
+lockAxis(side, 6, 1)
+near(dragTo(side, 30, 50, false, 0.5), 0.7) // 30px right; the drift down doesn't count
+const upward = startDrag(0, 0, 0.5)
+lockAxis(upward, 1, -6)
+near(dragTo(upward, 40, -30, false, 0.5), 0.7)
+// pushing past the end and coming back turns it straight away
+const end = startDrag(0, 0, 0.9)
+assert.equal(dragTo(end, 0, -60, false, 0.9), 1)
+near(dragTo(end, 0, -45, false, 1), 0.9)
+
+// a knob that goes either way catches gently at its centre, and still reaches both ends
+assert.equal(detent(0.52, 0.5), 0.5)
+assert.equal(detent(0.47, 0.5), 0.5)
+assert.equal(detent(1, 0.5), 1)
+assert.equal(detent(0, 0.5), 0)
+near(detent(0.6, 0.5), 0.5 + 0.06 * 0.5 / 0.46)
+near(detent(0.9, 2 / 3), detent(0.9, 2 / 3)) // off-centre origins too (a cut or boost)
+for (const c of [0.5, 2 / 3, 0.25]) for (const q of [0, 0.1, 0.3, c, 0.7, 0.95, 1]) near(detent(undetent(q, c), c), q)
 
 // typing a value: units are optional and read the way the knob shows them
 const hz = { key: 'cutoff', label: 'cutoff', min: 20, max: 20000, log: true, unit: 'hz' }

@@ -59,13 +59,23 @@ export function snapValue(v, def) {
  * pixels for the whole travel, `fineRange` with shift held.
  */
 export function startDrag(x, y, pos, fine = false, { range = 150, fineRange = 600 } = {}) {
-  return { x0: x, y0: y, x, y, from: pos, fine, moved: false, range, fineRange }
+  return { x0: x, y0: y, x, y, from: pos, fine, moved: false, axis: 'y', range, fineRange }
+}
+
+/** Has the pointer moved far enough from where it went down to be a drag, not a click? */
+export const pastThreshold = (d, x, y, px = 3) => Math.max(Math.abs(x - d.x0), Math.abs(y - d.y0)) >= px
+
+/** Once it's a drag, it works along whichever way the pointer set off: right or up adds. */
+export function lockAxis(d, x, y) {
+  d.axis = Math.abs(x - d.x0) > Math.abs(y - d.y0) ? 'x' : 'y'
+  d.moved = true
 }
 
 /**
- * Where the drag has the knob now (unclamped), the pointer at (x, y): up adds. `now` is
- * where the knob is; switching fine mode on or off re-anchors there, at the pointer, so the
- * knob carries on from where it is instead of jumping.
+ * Where the drag has the knob now (0..1), the pointer at (x, y). `now` is where the knob
+ * is; switching fine mode on or off re-anchors there, at the pointer, so the knob carries
+ * on from where it is instead of jumping. Pushing past an end moves the anchor along, so
+ * coming back turns it at once.
  */
 export function dragTo(d, x, y, fine, now) {
   if (fine !== d.fine) {
@@ -75,11 +85,26 @@ export function dragTo(d, x, y, fine, now) {
     d.from = now
     return now
   }
-  return d.from + (d.y - y) / (fine ? d.fineRange : d.range)
+  const along = d.axis === 'x' ? x - d.x : d.y - y
+  const p = d.from + along / (fine ? d.fineRange : d.range)
+  if (p > 1) { d.from -= p - 1; return 1 }
+  if (p < 0) { d.from -= p; return 0 }
+  return p
 }
 
-/** Has the pointer moved far enough from where it went down to be a drag, not a click? */
-export const pastThreshold = (d, x, y, px = 3) => Math.max(Math.abs(x - d.x0), Math.abs(y - d.y0)) >= px
+/**
+ * A gentle catch at the centre of a knob that goes either way (pan, ±, a cut or boost):
+ * `width` of the travel either side of `c` stays on `c`, and the rest is stretched so the
+ * ends are still the ends. `undetent` is the way back, for where a drag starts.
+ */
+export function detent(p, c, width = 0.04) {
+  if (Math.abs(p - c) <= width) return c
+  return p > c ? c + ((p - c - width) * (1 - c)) / (1 - c - width) : c - ((c - width - p) * c) / (c - width)
+}
+export function undetent(q, c, width = 0.04) {
+  if (q === c) return c
+  return q > c ? c + width + ((q - c) * (1 - c - width)) / (1 - c) : c - width - ((c - q) * (c - width)) / c
+}
 
 // ── typing a value ───────────────────────────────────────────────────────────
 // a knob with no unit that sets a level stores it as a gain (1 = as it was), so dB converts
