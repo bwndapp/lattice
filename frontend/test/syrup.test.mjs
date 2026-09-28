@@ -103,5 +103,24 @@ ok('and leaves B where it was', Math.abs(moved[1] - still[1]) < 1e-9, moved)
 const base = freqs(m.normalizePatch({ ...two, layers: two.layers.map((l, i) => (i ? l : { ...l, semi: 7 })) }))
 ok("A's semitones are the base it moves from", Math.abs(base[0] / still[0] - 2 ** (7 / 12)) < 1e-3)
 
+// ── the amp envelope and glide ──
+{
+  const p = m.normalizePatch({ ...two, routes: [{ id: 'a', src: 'mf', target: 'amp.attack', amt: 0.5 }, { id: 'g', src: 'mf', target: 'glide', amt: 0.5 }, { id: 's', src: 'mf', target: 'amp.sustain', amt: -0.5 }] })
+  ok('amp times and glide are targets', p.routes.length === 3 && m.targetSpec(p, 'amp.release')?.label === 'amp release' && m.targetSpec(p, 'glide')?.get(p) === 0)
+  const proc = makeProc(p)
+  const v = proc.voices[0]
+  proc.noteOn(v, 60, 1)
+  proc.control(v, 0)
+  const aSpec = m.K.attack
+  const want = aSpec.min * (aSpec.max / aSpec.min) ** (Math.log(p.amp.attack / aSpec.min) / Math.log(aSpec.max / aSpec.min) + 0.5)
+  ok('a route stretches this voice\'s attack', Math.abs(v.ctl.aA - want) < 1e-6, v.ctl.aA)
+  ok('and moves its sustain and glide', Math.abs(v.ctl.aS - 0.3) < 1e-6 && v.ctl.glide > 0)
+  const plain = makeProc(m.normalizePatch(two))
+  plain.noteOn(plain.voices[0], 60, 1)
+  plain.control(plain.voices[0], 0)
+  const c = plain.voices[0].ctl
+  ok('unrouted, the amp is its knobs', c.aA === plain.k.a_attack && c.aS === plain.k.a_sustain && c.glide === 0)
+}
+
 if (fails) { console.log(`${fails} failed`); process.exit(1) }
 console.log('all passed')

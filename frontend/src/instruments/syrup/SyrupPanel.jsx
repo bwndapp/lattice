@@ -247,11 +247,16 @@ function applySound(l, key) {
 /** The one knob that changes a layer's character most, if its sound has one. */
 const toneKnob = (l) => (l.type === 'wavetable' ? 'pos' : l.type === 'supersaw' ? 'detune' : l.type === 'analog' && l.wave === 'pulse' ? 'pw' : null)
 
+const ADSR = ['attack', 'decay', 'sustain', 'release']
+
 // ── modulation destinations ──────────────────────────────────────────────────
 
 /** Everything a modulator can move, with names a person would use. */
 function destinations(patch) {
-  const list = [['pitch', 'pitch'], ['amp.level', 'volume'], ...Array.from({ length: LANES }, (_, i) => [`lane:${i}.gain`, `lane ${laneName(i)} level`])]
+  const list = [
+    ['pitch', 'pitch'], ['amp.level', 'volume'], ...ADSR.map((k) => [`amp.${k}`, `amp ${k}`]), ['glide', 'glide'],
+    ...Array.from({ length: LANES }, (_, i) => [`lane:${i}.gain`, `lane ${laneName(i)} level`]),
+  ]
   patch.layers.forEach((l, i) => {
     const knobs = ['level', 'pan']
     const tone = toneKnob(l)
@@ -275,7 +280,7 @@ function destinations(patch) {
 }
 
 const DEST_GROUPS = [
-  ['voice', (t) => t === 'pitch' || t === 'amp.level'],
+  ['voice', (t) => t === 'pitch' || t === 'glide' || t.startsWith('amp.')],
   ['generators', (t) => t.startsWith('layer:')],
   ['lanes', (t) => t.startsWith('lane:')],
   ['lane effects', (t) => t.startsWith('fx:')],
@@ -433,8 +438,6 @@ function AddGenerator({ ui }) {
   )
 }
 
-const ADSR = ['attack', 'decay', 'sustain', 'release']
-
 /** The amp envelope: every generator goes out through it. */
 function AmpOut({ ui }) {
   const amp = ui.patch.amp
@@ -448,7 +451,7 @@ function AmpOut({ ui }) {
         <EnvScope env={amp} />
         <div className="sy-knobs tight">
           {ADSR.map((k) => (
-            <ModKnob key={k} ui={ui} auto={`amp_${k}`} def={K[k]} value={amp[k]} onChange={(v) => ui.edit((p) => { p.amp[k] = v })} />
+            <ModKnob key={k} ui={ui} route={`amp.${k}`} auto={`amp_${k}`} def={K[k]} value={amp[k]} onChange={(v) => ui.edit((p) => { p.amp[k] = v })} />
           ))}
         </div>
       </div>
@@ -792,7 +795,7 @@ export default function SyrupPanel({ data, change, target, watch, cps = 0.5 }) {
         <span className="spacer" />
         <div className="sy-voicing">
           <Segmented label="Voicing" value={patch.mono ? 'mono' : 'poly'} options={['poly', 'mono']} onChange={(v) => change((p) => { p.mono = v === 'mono' })} />
-          <Knob def={K.glide} value={patch.glide} onChange={(v) => change((p) => { p.glide = v })} target={target('glide')} />
+          <ModKnob ui={ui} route="glide" auto="glide" def={K.glide} value={patch.glide} onChange={(v) => change((p) => { p.glide = v })} />
         </div>
         <div className="sy-volume"><ModKnob ui={ui} route="amp.level" auto="volume" def={K.volume} value={patch.volume} onChange={(v) => change((p) => { p.volume = v })} /></div>
       </div>

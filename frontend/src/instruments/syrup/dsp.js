@@ -1,5 +1,5 @@
 import { knobsSource } from '../dsp.js'
-import { AUDIO_PARAMS, DEST_COUNT, DEST_LAYERS, K, LANES, LAYER_KNOBS, LAYER_PARAMS, MAX_LAYERS, MAX_MODULATORS } from './model.js'
+import { AUDIO_PARAMS, DEST_COUNT, GLOBAL_DESTS, DEST_LAYERS, K, LANES, LAYER_KNOBS, LAYER_PARAMS, MAX_LAYERS, MAX_MODULATORS } from './model.js'
 import { TABLES_SOURCE } from './tables.js'
 import { SHAPE_SOURCE } from '../curve.js'
 
@@ -39,6 +39,13 @@ const SY_MODS = ${MAX_MODULATORS}
 const SY_LANES = ${LANES}
 const SY_NN = Array.from({ length: SY_LANES }, (_, i) => 'n' + i + '_gain')
 const SY_LANE_SPEC = ${JSON.stringify(spec('gain'))}
+// the amp envelope's and glide's destinations, and their knobs' specs
+const SY_AMP_DEST = ${GLOBAL_DESTS.indexOf('amp.attack') + 1}
+const SY_AMP_SPEC = ${JSON.stringify(['attack', 'decay', 'sustain', 'release'].map(spec))}
+const SY_GLIDE_DEST = ${GLOBAL_DESTS.indexOf('glide') + 1}
+const SY_GLIDE_SPEC = ${JSON.stringify(spec('glide'))}
+// a knob moved by what routes add, on its travel
+const syMoved = (base, by, s) => (by ? syVal(syPos(base, s) + by, s) : base)
 const SY_LSTRIDE = ${LAYER_KNOBS.length}
 const SY_LBASE = ${DEST_LAYERS}
 const SY_LPITCH = ${LAYER_KNOBS.indexOf('pitch')}
@@ -265,9 +272,16 @@ class SyrupProcessor extends LatticeInstrument {
     voice.mv.set(mv.subarray(0, cfg.modulators.length))
 
     const c = voice.ctl || (voice.ctl = { layers: Array.from({ length: SY_LAYERS }, () => ({})) })
-    if (c.adT !== k.a_decay) { c.adT = k.a_decay; c.ad = syDecay(k.a_decay, 1) }
-    if (c.arT !== k.a_release) { c.arT = k.a_release; c.ar = syDecay(k.a_release, 1) }
-    c.glide = k.glide > 0.0005 ? Math.exp(-SY_CONTROL / (k.glide / 3 * sampleRate)) : 0
+    // the amp envelope, where routes move it too (decay and release as how much is left
+    // after a sample, worked out again only when they move)
+    c.aA = syMoved(k.a_attack, m[SY_AMP_DEST], SY_AMP_SPEC[0])
+    c.aS = syMoved(k.a_sustain, m[SY_AMP_DEST + 2], SY_AMP_SPEC[2])
+    const aD = syMoved(k.a_decay, m[SY_AMP_DEST + 1], SY_AMP_SPEC[1])
+    const aR = syMoved(k.a_release, m[SY_AMP_DEST + 3], SY_AMP_SPEC[3])
+    if (c.adT !== aD) { c.adT = aD; c.ad = syDecay(aD, 1) }
+    if (c.arT !== aR) { c.arT = aR; c.ar = syDecay(aR, 1) }
+    const glide = syMoved(k.glide, m[SY_GLIDE_DEST], SY_GLIDE_SPEC)
+    c.glide = glide > 0.0005 ? Math.exp(-SY_CONTROL / (glide / 3 * sampleRate)) : 0
     const semis = m[1] * 24
     c.ampFrom = c.amp === undefined ? null : c.amp
     c.amp = Math.min(1.5, Math.max(0, 1 + m[2])) * k.volume * 0.35
@@ -376,7 +390,7 @@ class SyrupProcessor extends LatticeInstrument {
       const amp = this.ampBuf
       let ended = n
       for (let j = 0; j < n; j++) {
-        amp[j] = this.step(voice.amp, 1, k.a_attack, c.ad, k.a_sustain, c.ar) * (aStart + aStep * j)
+        amp[j] = this.step(voice.amp, 1, c.aA, c.ad, c.aS, c.ar) * (aStart + aStep * j)
         if (voice.amp.stage === 0) { ended = j + 1; break }
       }
       for (let q = 0; q < SY_LANES; q++) {

@@ -201,8 +201,8 @@ export const LAYER_KNOBS = ['level', 'pan', 'fine', 'pw', 'pos', 'warp', 'detune
 export const LAYER_PARAMS = LAYER_KNOBS.slice(0, 10)
 /** A layer's pitch, in semitones, before its routes move it. */
 export const layerPitch = (l) => l.oct * 12 + l.semi
-/** Patch-wide destinations, numbered from 1 (0 is "nowhere"). */
-export const GLOBAL_DESTS = ['pitch', 'amp.level', 'lane:0.gain', 'lane:1.gain', 'lane:2.gain']
+/** Patch-wide destinations, numbered from 1 (0 is "nowhere"); new ones go on the end. */
+export const GLOBAL_DESTS = ['pitch', 'amp.level', 'lane:0.gain', 'lane:1.gain', 'lane:2.gain', 'amp.attack', 'amp.decay', 'amp.sustain', 'amp.release', 'glide']
 
 // ── patches ──────────────────────────────────────────────────────────────────
 
@@ -374,13 +374,17 @@ export function normalizePatch(raw) {
 export const layerLetter = (i) => String.fromCharCode(65 + i)
 
 /**
- * Targets are strings: "pitch", "amp.level", "lane:<n>.gain", "layer:<id>.<knob>", or
+ * Targets are strings: "pitch", "amp.level", "amp.<attack|decay|sustain|release>", "glide",
+ * "lane:<n>.gain", "layer:<id>.<knob>", or
  * "fx:<effect id>.<knob>" (a lane effect's knob). The knob spec and a name, or null.
  */
 export function targetSpec(patch, target) {
   if (typeof target !== 'string') return null
   if (target === 'pitch') return { label: 'pitch', spec: { min: -24, max: 24 } }
   if (target === 'amp.level') return { label: 'volume', spec: { min: 0, max: 1 } }
+  const a = /^amp\.(attack|decay|sustain|release)$/.exec(target)
+  if (a) return { label: `amp ${a[1]}`, spec: K[a[1]], get: (p) => p.amp[a[1]] }
+  if (target === 'glide') return { label: 'glide', spec: K.glide, get: (p) => p.glide }
   const n = /^lane:([012])\.gain$/.exec(target)
   if (n) return { label: `lane ${laneName(Number(n[1]))} level`, spec: K.gain, get: (p) => p.lanes[n[1]].gain }
   const f = /^fx:(\w+)\.(\w+)$/.exec(target)
