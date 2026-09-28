@@ -1,5 +1,5 @@
 /**
- * The knife (shift + drag across wires): which wires a line crosses, what can go inline on
+ * The knife (shift + right-drag across wires): which wires a line crosses, what can go inline on
  * them, and the rewiring. One wire takes an insert; several into one node take a bus that
  * gathers them; a one-input effect goes on each wire. No loops, other lanes untouched.
  *
@@ -63,6 +63,29 @@ const cuts = m.knifeCuts({ x: 50, y: -20 }, { x: 50, y: 100 }, paths)
 ok('a line crosses the wires it passes over, nearest first', cuts.map((c) => c.id).join() === 'w1,w2', JSON.stringify(cuts))
 ok('where it crosses them', cuts[0].x === 50 && cuts[0].y === 0 && Math.abs(cuts[1].y - 60) < 1e-9)
 ok('a line alongside a wire crosses nothing', m.knifeCuts({ x: 0, y: 100 }, { x: 100, y: 100 }, paths).length === 0)
+
+// real wires are curves: sample one the way WireEdge draws it (two cubics through a low middle)
+const cubic = (p0, p1, p2, p3, n = 200) => Array.from({ length: n + 1 }, (_, i) => {
+  const t = i / n, u = 1 - t
+  return { x: u * u * u * p0.x + 3 * u * u * t * p1.x + 3 * u * t * t * p2.x + t * t * t * p3.x,
+    y: u * u * u * p0.y + 3 * u * u * t * p1.y + 3 * u * t * t * p2.y + t * t * t * p3.y }
+})
+const wire = (id, s, e, sag = 40) => {
+  const mid = { x: (s.x + e.x) / 2, y: (s.y + e.y) / 2 + sag }
+  const reach = Math.max(34, Math.abs(e.x - s.x) * 0.28)
+  return { id, points: [...cubic(s, { x: s.x + reach, y: s.y }, { x: mid.x - reach, y: mid.y }, mid),
+    ...cubic(mid, { x: mid.x + reach, y: mid.y }, { x: e.x - reach, y: e.y }, e).slice(1)] }
+}
+const curved = [wire('c1', { x: 0, y: 0 }, { x: 400, y: 0 }), wire('c2', { x: 0, y: 100 }, { x: 400, y: 100 })]
+// c1 hangs to y = 40 at x = 200; its straight chord (y = 0) is not where it is drawn
+ok('a curved wire is cut where it is drawn, not along its chord', m.knifeCuts({ x: 200, y: 20 }, { x: 200, y: 60 }, curved).map((c) => c.id).join() === 'c1')
+ok('and the cut sits on the curve', Math.abs(m.knifeCuts({ x: 200, y: 20 }, { x: 200, y: 60 }, curved)[0].y - 40) < 0.5)
+ok('a line across the chord but short of the sag misses it', m.knifeCuts({ x: 200, y: -10 }, { x: 200, y: 25 }, curved).length === 0)
+ok('a line 10px beside a wire misses it', m.knifeCuts({ x: 190, y: 50 }, { x: 210, y: 50 }, curved).length === 0)
+ok('a line stopping 3px short of a wire still cuts it', m.knifeCuts({ x: 200, y: 80 }, { x: 200, y: 43 }, curved).map((c) => c.id).join() === 'c1')
+ok('a line stopping 10px short does not', m.knifeCuts({ x: 200, y: 80 }, { x: 200, y: 50 }, curved).length === 0)
+ok('one line down through both curves cuts both, nearest first', m.knifeCuts({ x: 200, y: -20 }, { x: 200, y: 200 }, curved).map((c) => c.id).join() === 'c1,c2')
+ok('the tolerance can be tightened', m.knifeCuts({ x: 200, y: 80 }, { x: 200, y: 43 }, curved, 2).length === 0)
 
 // one wire: an insert
 let p = patch([['s', 'sound'], ['o', 'output', 600]], [['s', 'o', 'in-0']])

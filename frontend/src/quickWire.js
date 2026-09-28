@@ -97,8 +97,8 @@ export function quickWire(p, selId, newId) {
 }
 
 /*
- * The knife: shift + drag a line across wires, then pick something to sit inline on all of
- * them. One wire takes it as an insert. Several wires take a bus (anything that takes many)
+ * The knife: shift + right-drag a line across wires, then pick something to sit inline on all
+ * of them. One wire takes it as an insert. Several wires take a bus (anything that takes many)
  * as one node gathering them, but only when they all end on the same input side of one node;
  * a one-input effect goes on each wire as its own copy.
  */
@@ -113,15 +113,41 @@ function crossing(a, b, c, d) {
   return t >= 0 && t <= 1 && u >= 0 && u <= 1 ? { x: a.x + t * rx, y: a.y + t * ry, t } : null
 }
 
+/** The point on segment cd nearest p, and how far it is. */
+function nearest(p, c, d) {
+  const sx = d.x - c.x, sy = d.y - c.y
+  const len = sx * sx + sy * sy
+  const u = len ? Math.max(0, Math.min(1, ((p.x - c.x) * sx + (p.y - c.y) * sy) / len)) : 0
+  const x = c.x + u * sx, y = c.y + u * sy
+  return { x, y, d: Math.hypot(p.x - x, p.y - y) }
+}
+
 /**
- * The wires a line from a to b crosses, given each wire drawn as a polyline ([{ id, points }]).
- * One cut per wire, where the line first meets it, nearest a first.
+ * The wires a line from a to b crosses, given each wire as the polyline of its drawn curve
+ * ([{ id, points }], sampled finely, all in screen pixels). A wire counts when the line truly
+ * crosses it, or when an end of the line rests on it (within `tol` px, about a wire's
+ * thickness); passing close by is not a cut. One cut per wire, where the line first meets it,
+ * nearest a first.
  */
-export function knifeCuts(a, b, paths) {
+export function knifeCuts(a, b, paths, tol = 6) {
   const cuts = []
   for (const { id, points } of paths) {
     let hit = null
-    for (let i = 1; i < points.length && !hit; i++) hit = crossing(a, b, points[i - 1], points[i])
+    for (let i = 1; i < points.length; i++) {
+      const c = crossing(a, b, points[i - 1], points[i])
+      if (c && (!hit || c.t < hit.t)) hit = c
+    }
+    if (!hit) {
+      // no crossing: the line may stop on the wire (its start or its end within tol of it)
+      for (const [end, t] of [[a, 0], [b, 1]]) {
+        let best = null
+        for (let i = 1; i < points.length; i++) {
+          const n = nearest(end, points[i - 1], points[i])
+          if (!best || n.d < best.d) best = n
+        }
+        if (best && best.d <= tol && (!hit || t < hit.t)) hit = { x: best.x, y: best.y, t }
+      }
+    }
     if (hit) cuts.push({ id, x: hit.x, y: hit.y, t: hit.t })
   }
   return cuts.sort((m, n) => m.t - n.t).map(({ t, ...c }) => c)

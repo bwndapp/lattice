@@ -62,7 +62,10 @@ function wireAt(box, skip = null) {
   return null
 }
 
-/** Every drawn wire as a screen-space polyline ([{ id, points }]), for the knife. */
+/**
+ * Every drawn wire as a screen-space polyline ([{ id, points }]), for the knife: the curve
+ * React Flow actually draws, sampled every couple of screen pixels whatever the zoom.
+ */
 function wirePaths() {
   const out = []
   for (const el of document.querySelectorAll('.graph-canvas .react-flow__edge')) {
@@ -71,8 +74,9 @@ function wirePaths() {
     const ctm = path?.getScreenCTM()
     if (!id || !path || !ctm) continue
     const length = path.getTotalLength()
+    const step = 2 / (Math.hypot(ctm.a, ctm.b) || 1) // 2px on screen, in the path's own units
     const points = []
-    for (let t = 0; t <= length + 8; t += 8) {
+    for (let t = 0; t < length + step; t += step) {
       const p = path.getPointAtLength(Math.min(t, length))
       points.push({ x: ctm.a * p.x + ctm.c * p.y + ctm.e, y: ctm.b * p.x + ctm.d * p.y + ctm.f })
     }
@@ -1348,18 +1352,18 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
     const sel = new Set(prev.filter((e) => e.selected).map((e) => e.id))
     return rfEdges.map((e) => ({ ...e, selected: sel.has(e.id) }))
   }), [rfEdges])
-  const edgesRef = useRef(edges)
-  edgesRef.current = edges
 
-  // The knife (as in Blender): shift + drag from empty canvas draws a line, and every wire it
-  // crosses lights up. Let go over wires and the add menu offers what can sit inline on all of
-  // them (see knifeInsert in quickWire.js). Shift + drag is also the selection box, so the two
-  // run together: if the line crossed no wire it was only a box; if it did, the box hides and
-  // the selection goes back to what it was.
+  // The knife (as in Blender's reroute): shift + right-drag from empty canvas (or a wire)
+  // draws a line, and every wire it crosses lights up. Let go over wires and the add menu
+  // offers what can sit inline on all of them (see knifeInsert in quickWire.js). It's the right
+  // button so it never meets shift + left-drag, which is only ever the selection box. A right
+  // click that doesn't move still opens the add menu as always.
+  const paneMenuRef = useRef(null) // the right-click handlers, to replay one the knife held back
   useEffect(() => {
     const el = wrapRef.current
     if (!el) return undefined
     let drag = null
+    let swallow = 0 // a contextmenu that arrives after the knife let go (Windows fires it on release)
     const draw = (b) => {
       const line = knifeLine.current
       if (!line) return
@@ -1374,41 +1378,41 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
     const stop = () => {
       draw(null)
       drag = null
-      el.classList.remove('knifing')
       setKnifeHits((h) => (h.size ? new Set() : h))
     }
     const onDown = (e) => {
-      if (!e.shiftKey || e.button !== 0 || !e.target.classList?.contains('react-flow__pane')) return
-      drag = {
-        a: { x: e.clientX, y: e.clientY },
-        paths: wirePaths(), // the wires don't move while you draw
-        nodes: new Set(nodesRef.current.filter((n) => n.selected).map((n) => n.id)),
-        edges: new Set(edgesRef.current.filter((x) => x.selected).map((x) => x.id)),
-        cuts: [],
-      }
+      if (!e.shiftKey || e.button !== 2) return
+      const onPane = e.target.classList?.contains('react-flow__pane')
+      const edge = e.target.closest?.('.react-flow__edge')
+      if (!onPane && !edge) return
+      drag = { a: { x: e.clientX, y: e.clientY }, paths: null, cuts: [], moved: false, menu: null }
     }
     const onMove = (e) => {
       if (!drag) return
       const b = { x: e.clientX, y: e.clientY }
+      if (!drag.moved) {
+        if (Math.hypot(b.x - drag.a.x, b.y - drag.a.y) < 5) return
+        drag.moved = true
+        drag.paths = wirePaths() // the wires don't move while you draw
+      }
       const cuts = knifeCuts(drag.a, b, drag.paths)
       const same = cuts.length === drag.cuts.length && cuts.every((c, i) => c.id === drag.cuts[i].id)
       drag.cuts = cuts
       draw(b)
-      if (same) return
-      el.classList.toggle('knifing', cuts.length > 0)
-      setKnifeHits(new Set(cuts.map((c) => c.id)))
+      if (!same) setKnifeHits(new Set(cuts.map((c) => c.id)))
     }
     const onUp = (e) => {
-      if (!drag) return
-      const { nodes: had, edges: hadEdges } = drag
+      if (!drag || e.button !== 2) return
+      const { moved, menu: held } = drag
       const cuts = drag.cuts.map((c) => ({ id: c.id, ...flow.screenToFlowPosition({ x: c.x, y: c.y }) }))
       stop()
+      if (!moved) {
+        // only a click: the right-click menu it held back opens now, as it would have anyway
+        if (held) paneMenuRef.current?.(held)
+        return
+      }
+      if (!held) swallow = performance.now() + 500
       if (!cuts.length) return
-      // the box drawn alongside selected things: put the selection back once it lets go
-      requestAnimationFrame(() => {
-        setNodes((ns) => ns.map((n) => (!!n.selected === had.has(n.id) ? n : { ...n, selected: had.has(n.id) })))
-        setEdges((es) => es.map((x) => (!!x.selected === hadEdges.has(x.id) ? x : { ...x, selected: hadEdges.has(x.id) })))
-      })
       const p = projectRef.current
       const allowed = new Set(Object.keys(NODE_TYPES).filter((type) => knifeMode(p, cuts, type)))
       if (!allowed.size) return
@@ -1416,18 +1420,42 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
       const hint = cuts.length === 1 ? '→ on this wire' : `→ on ${cuts.length} wires · ${gathers ? 'a bus gathers them, ' : ''}an effect goes on each`
       setMenu({ x: e.clientX, y: e.clientY, at: flow.screenToFlowPosition({ x: e.clientX - 20, y: e.clientY - 20 }), wire: null, knife: { cuts, allowed, hint } })
     }
+    const onMenu = (e) => {
+      // mid-knife (Linux and macOS fire this on press): hold it until we know it was a click
+      if (drag) {
+        e.preventDefault()
+        e.stopPropagation()
+        drag.menu ??= { clientX: e.clientX, clientY: e.clientY, target: e.target, preventDefault() {} }
+      } else if (swallow > performance.now()) {
+        e.preventDefault()
+        e.stopPropagation()
+        swallow = 0
+      }
+    }
     const onKey = (e) => { if (drag && e.key === 'Escape') stop() }
     el.addEventListener('pointerdown', onDown, true)
+    el.addEventListener('contextmenu', onMenu, true)
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
     window.addEventListener('keydown', onKey)
     return () => {
       el.removeEventListener('pointerdown', onDown, true)
+      el.removeEventListener('contextmenu', onMenu, true)
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
       window.removeEventListener('keydown', onKey)
     }
   }, [flow])
+
+  // right-click empty canvas (or a wire): add something here, into the wire under the pointer if any
+  const paneMenu = useCallback((e) => {
+    e.preventDefault()
+    const edge = e.target?.closest?.('.react-flow__edge')
+    const r = 10
+    const wire = edge?.getAttribute('data-id') ?? wireAt({ left: e.clientX - r, right: e.clientX + r, top: e.clientY - r, bottom: e.clientY + r })
+    setMenu({ x: e.clientX, y: e.clientY, at: flow.screenToFlowPosition({ x: e.clientX - 20, y: e.clientY - 20 }), wire })
+  }, [flow])
+  paneMenuRef.current = paneMenu
 
   const updateNode = useCallback((id, fn) => onUpdateProject((p) => {
     const n = p.nodes.find((x) => x.id === id)
@@ -1906,13 +1934,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
               pointerAt('graph', at.x, at.y)
             }}
             onPointerLeave={pointerGone}
-            onPaneContextMenu={(e) => {
-              // right-click empty canvas: add something here (into the wire under the pointer, if any)
-              e.preventDefault()
-              const r = 10
-              const wire = wireAt({ left: e.clientX - r, right: e.clientX + r, top: e.clientY - r, bottom: e.clientY + r })
-              setMenu({ x: e.clientX, y: e.clientY, at: flow.screenToFlowPosition({ x: e.clientX - 20, y: e.clientY - 20 }), wire })
-            }}
+            onPaneContextMenu={paneMenu}
             onEdgeContextMenu={(e, edge) => {
               e.preventDefault()
               setMenu({ x: e.clientX, y: e.clientY, at: flow.screenToFlowPosition({ x: e.clientX - 20, y: e.clientY - 20 }), wire: edge.id })
@@ -2059,7 +2081,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
               ? <>auditioning <b>{nodeTitle(project.nodes.find((n) => n.id === solo), project)}</b> · <button className="linkish" onClick={() => onSolo(null)}>back to the output</button></>
               : frameSel && project.frames?.find((f) => f.id === frameSel)?.collapsed ? <>collapsed frame · <b>▸</b> or a double-click on the bar opens it · drag it to move what it holds · <b>delete</b> removes the frame and shows its nodes again</>
               : frameSel ? <>frame · <b>▾</b> collapses it · drag its title to move it and what's in it · double-click the title to rename · <b>delete</b> removes the frame, not its nodes</>
-              : selectedCount > 1 ? <><b>ctrl/cmd + F</b> frames them · <b>ctrl/cmd + G</b> folds effects into one fx rack · <b>ctrl/cmd + D</b> duplicates · <b>shift + drag</b> across wires puts a node inline on them</>
+              : selectedCount > 1 ? <><b>ctrl/cmd + F</b> frames them · <b>ctrl/cmd + G</b> folds effects into one fx rack · <b>ctrl/cmd + D</b> duplicates · <b>shift + right-drag</b> across wires puts a node inline on them</>
               : selected ? (
                 <>
                   {NODE_TYPES[selected.type]?.blurb}
