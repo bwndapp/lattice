@@ -7,16 +7,23 @@ import { holdInPatch } from './audio'
  * instrument whose notes are open, and the patch for a pattern node holding a single
  * instrument. A note lasts while its key is down; - and = move an octave.
  *
- * Only one of these should be armed at a time, or a key would play twice.
+ * Only one of these should be armed at a time, or a key would play twice. `onHeld` hears
+ * the MIDI notes down right now, as a Set, whenever that changes, so the roll can light them.
  */
-export function useTypingKeys({ enabled, project, pattern, channel, octave, onOctave }) {
+export function useTypingKeys({ enabled, project, pattern, channel, octave, onOctave, onHeld }) {
   const at = useRef(null)
-  at.current = { project, pattern, channel, octave, onOctave }
+  at.current = { project, pattern, channel, octave, onOctave, onHeld }
 
   useEffect(() => {
     if (!enabled || !pattern || !channel) return undefined
-    const down = new Map() // key code → let go of its note
-    const letGo = () => { for (const release of down.values()) release(); down.clear() }
+    const down = new Map() // key code → { note, release }
+    const tell = () => at.current.onHeld?.(new Set([...down.values()].map((d) => d.note)))
+    const letGo = () => {
+      if (!down.size) return
+      for (const d of down.values()) d.release()
+      down.clear()
+      tell()
+    }
     const onKey = (e) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return
       // wherever you type text, the letters are text
@@ -28,9 +35,10 @@ export function useTypingKeys({ enabled, project, pattern, channel, octave, onOc
       e.stopPropagation() // the letters belong to the keyboard while it's armed
       if (hit.octave) return now.onOctave(Math.min(8, Math.max(0, now.octave + hit.octave)))
       if (e.repeat || down.has(e.code)) return
-      down.set(e.code, holdInPatch(now.project, now.pattern.id, now.channel, { note: hit.note }))
+      down.set(e.code, { note: hit.note, release: holdInPatch(now.project, now.pattern.id, now.channel, { note: hit.note }) })
+      tell()
     }
-    const onUp = (e) => { const release = down.get(e.code); if (release) { release(); down.delete(e.code) } }
+    const onUp = (e) => { const d = down.get(e.code); if (d) { d.release(); down.delete(e.code); tell() } }
     window.addEventListener('keydown', onKey, true)
     window.addEventListener('keyup', onUp, true)
     window.addEventListener('blur', letGo)

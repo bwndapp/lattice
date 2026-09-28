@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { TICK, isBlackKey, midiToNote, noteToMidi, stepCount } from './project'
 import { pointerAt, pointerGone, selectionIs, useHolders } from './collab.js'
 import PeerCursors from './PeerCursors.jsx'
@@ -87,7 +87,7 @@ function fitCanvas(canvas, w, h, { keepCss = false } = {}) {
  * shows every bar with a draggable view box, middle-drag pans, follow keeps the playhead
  * in view, and the roll can be dragged taller or opened full screen.
  */
-export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPreview, cursorRef, onSeek, fill = false }) {
+export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPreview, cursorRef, onSeek, held, fill = false }) {
   const scrollRef = useRef(null)
   const gridRef = useRef(null)
   const keysRef = useRef(null)
@@ -107,6 +107,10 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
   // what the others have hold of, by the same key the selection uses. The notes are drawn
   // on a canvas rather than laid out as elements, so an outline is painted, not styled.
   const peerNotes = useHolders(room)
+  // notes being played right now, from the typing keys or a press on the key strip, lit
+  // on the strip and along their rows for as long as they're down
+  const [pressed, setPressed] = useState(null)
+  const lit = useMemo(() => new Set([...(held ?? []), ...(pressed == null ? [] : [pressed])]), [held, pressed])
   const [marquee, setMarquee] = useState(null) // { x0, y0, x1, y1 } in grid px while box-selecting
   const pasteAt = useRef(null) // where the next paste lands, so repeated pastes line up
   const dragRef = useRef(null)
@@ -230,6 +234,7 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
         ctx.fillStyle = black ? '#111' : '#d9d6ca'
         ctx.fillRect(0, r * rowH, black ? KEY_W * 0.62 : KEY_W, rowH - 1)
         if (black) { ctx.fillStyle = '#d9d6ca'; ctx.fillRect(KEY_W * 0.62, r * rowH, KEY_W * 0.38, rowH - 1) }
+        if (lit.has(midi)) { ctx.fillStyle = acid; ctx.fillRect(0, r * rowH, KEY_W, rowH - 1) }
         if (midi % 12 === 0 && rowH >= 8) {
           ctx.fillStyle = '#000'
           ctx.font = `${Math.min(9, rowH - 2)}px "Martian Mono", ui-monospace, monospace`
@@ -269,6 +274,7 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
       ctx.fillStyle = isBlackKey(midi) ? '#070707' : '#111110'
       ctx.fillRect(0, r * rowH, gridW, rowH)
       if (midi % 12 === 0) { ctx.fillStyle = line; ctx.fillRect(0, (r + 1) * rowH - 1, gridW, 1) }
+      if (lit.has(midi)) { ctx.fillStyle = acid; ctx.globalAlpha = 0.08; ctx.fillRect(0, r * rowH, gridW, rowH); ctx.globalAlpha = 1 }
     }
     // The grid is whatever notes snap to, so choosing triplets redraws the lines as
     // triplets rather than marking them over the steps. Bars and beats are always there
@@ -326,7 +332,7 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
       ctx.setLineDash([])
     }
     drawOverview()
-  }, [notes, selection, peerNotes, marquee, total, colW, rowH, pattern.stepsPerBar, stepsPerBeat, snapBeats, snapSteps, drawOverview])
+  }, [notes, selection, peerNotes, lit, marquee, total, colW, rowH, pattern.stepsPerBar, stepsPerBeat, snapBeats, snapSteps, drawOverview])
 
   useEffect(() => { draw() }, [draw])
 
@@ -778,8 +784,13 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
               ref={keysRef}
               onPointerDown={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect()
-                onPreview(clamp(HIGH - Math.floor((e.clientY - rect.top) / rowH), LOW, HIGH))
+                const midi = clamp(HIGH - Math.floor((e.clientY - rect.top) / rowH), LOW, HIGH)
+                setPressed(midi)
+                onPreview(midi)
               }}
+              onPointerUp={() => setPressed(null)}
+              onPointerLeave={() => setPressed(null)}
+              onPointerCancel={() => setPressed(null)}
             />
             <div className="pr-grid-wrap" data-surface-own={room}>
               <canvas

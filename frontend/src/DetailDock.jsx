@@ -40,6 +40,8 @@ export default function DetailDock({ project, at, transport, started, height, on
   const [octave, shiftOctave] = useOctave() // shared with the patch and with instrument windows
   useEffect(() => writePref(KEYS_KEY, keysOn), [keysOn])
 
+  const [held, setHeld] = useState(() => new Set()) // MIDI notes typed and still down, lit on the roll
+
   const cursorRef = useRef(() => -1)
   cursorRef.current = () => (pattern ? exactStepAt(project, pattern, transport.position()) : -1)
 
@@ -52,6 +54,7 @@ export default function DetailDock({ project, at, transport, started, height, on
     channel,
     octave,
     onOctave: shiftOctave,
+    onHeld: setHeld,
   })
 
   // Esc closes the dock wherever you are, as long as nothing in front of it used the key
@@ -157,6 +160,7 @@ export default function DetailDock({ project, at, transport, started, height, on
           pattern={pattern}
           beats={project.beats}
           cursorRef={cursorRef}
+          held={held}
           fill
           onSeek={(bars, { fine } = {}) => {
             // the pattern repeats, so land in the repetition that's playing now
