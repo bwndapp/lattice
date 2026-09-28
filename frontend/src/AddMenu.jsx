@@ -10,7 +10,7 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
  *
  * `items` and `score` come from the add pane, so both always offer the same things; where the
  * menu was opened (`context`) narrows them to what can go there. `hint` says where the pick will
- * be wired when Shift + A was pressed with a node selected.
+ * be wired when Shift + A was pressed with a node selected, or which wires the knife crossed.
  */
 export default function AddMenu({ x, y, items, groups, score, onPick, onClose, context = null, hint = null }) {
   const ref = useRef(null)
@@ -130,7 +130,7 @@ export default function AddMenu({ x, y, items, groups, score, onPick, onClose, c
     >
       <div className="am-main">
         <div className="am-head">
-          <span className="am-title">add{context === 'wire' ? ' into this wire' : context === 'after' ? ' onto this wire' : context === 'before' ? ' into this input' : ''}<kbd className="am-kbd">shift A</kbd></span>
+          <span className="am-title">add{context === 'wire' ? ' into this wire' : context === 'after' ? ' onto this wire' : context === 'before' ? ' into this input' : context === 'knife' ? ' inline' : ''}<kbd className="am-kbd">shift A</kbd></span>
           {hint && <span className="am-hint">{hint}</span>}
           <input
             ref={searchRef}

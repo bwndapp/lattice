@@ -17,7 +17,7 @@ import AddMenu from './AddMenu.jsx'
 import CodeBox from './CodeBox.jsx'
 import { ADD_INTO_WIRE, EDGE_TYPES } from './WireEdge.jsx'
 import { copyNodes, pasteNodes, readClipboard, writeClipboard } from './nodeClipboard'
-import { canQuickWire, firstInput, quickSide, quickWire, spliceInto, splicable } from './quickWire.js'
+import { canQuickWire, firstInput, knifeCuts, knifeInsert, knifeMode, quickSide, quickWire, spliceInto, splicable } from './quickWire.js'
 import { onSoundsChange, previewSound, soundCatalog } from './audio'
 import { flowPaths, setFlowPaths, startFlow, stopFlow } from './flow.js'
 import { colorFor, inkFor, nodeSrc, rgbOf } from './clipColors.js'
@@ -60,6 +60,25 @@ function wireAt(box, skip = null) {
     }
   }
   return null
+}
+
+/** Every drawn wire as a screen-space polyline ([{ id, points }]), for the knife. */
+function wirePaths() {
+  const out = []
+  for (const el of document.querySelectorAll('.graph-canvas .react-flow__edge')) {
+    const id = el.getAttribute('data-id') ?? el.dataset.id
+    const path = el.querySelector('path.react-flow__edge-path')
+    const ctm = path?.getScreenCTM()
+    if (!id || !path || !ctm) continue
+    const length = path.getTotalLength()
+    const points = []
+    for (let t = 0; t <= length + 8; t += 8) {
+      const p = path.getPointAtLength(Math.min(t, length))
+      points.push({ x: ctm.a * p.x + ctm.c * p.y + ctm.e, y: ctm.b * p.x + ctm.d * p.y + ctm.f })
+    }
+    out.push({ id, points })
+  }
+  return out
 }
 
 /**
@@ -1204,8 +1223,10 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
     if (menu?.to) return all.filter((it) => it.kind === 'instrument' || it.key !== 'output')
     // shift + A with one node selected: only what can be wired on that side of it
     if (menu?.quick) return all.filter((it) => canQuickWire(it.kind === 'instrument' ? 'pattern' : it.key, menu.quick.side))
+    // the knife: only what can sit inline on every wire it crossed
+    if (menu?.knife) return all.filter((it) => it.kind === 'node' && menu.knife.allowed.has(it.key))
     return all
-  }, [menu?.wire, menu?.from, menu?.to, menu?.quick])
+  }, [menu?.wire, menu?.from, menu?.to, menu?.quick, menu?.knife])
   const closeMenu = useCallback(() => setMenu(null), [])
   const toRef = useRef(null) // a free input pulled backwards, waiting for something to feed it
   const pointerRef = useRef(null) // last pointer position over the canvas, for shift + A
@@ -1303,6 +1324,8 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
   useEffect(() => { try { localStorage.setItem('lattice:wire-slack', String(tension)) } catch { /* storage unavailable */ } }, [tension])
   const [spliceTarget, setSpliceTarget] = useState(null) // wire a dragged node would drop into
   const [detaching, setDetaching] = useState(null) // wire being pulled off its input (for its look)
+  const [knifeHits, setKnifeHits] = useState(() => new Set()) // wires the knife is across now
+  const knifeLine = useRef(null) // its line, drawn straight onto the svg (no render per move)
   const detachRef = useRef(null) // the same, for the drop handler, which must not read stale state
   const spliceRef = useRef(null)
   const fromRef = useRef(null) // the port a wire is being pulled out of
@@ -1316,15 +1339,95 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
     data: { tension },
     style: wireTint.get(e.id) ? { '--wire': wireTint.get(e.id) } : undefined,
     animated: started,
-    className: e.id === spliceTarget ? 'splice-target' : e.id === detaching ? 'detaching' : '',
+    className: e.id === spliceTarget || knifeHits.has(e.id) ? 'splice-target' : e.id === detaching ? 'detaching' : '',
     domAttributes: { 'data-touches': `${e.source} ${e.target}` },
     ...routeEdge(e, frameHosts),
-  })), [project.edges, started, spliceTarget, detaching, tension, wireTint, frameHosts])
+  })), [project.edges, started, spliceTarget, detaching, tension, wireTint, frameHosts, knifeHits])
   const [edges, setEdges] = useState(rfEdges)
   useEffect(() => setEdges((prev) => {
     const sel = new Set(prev.filter((e) => e.selected).map((e) => e.id))
     return rfEdges.map((e) => ({ ...e, selected: sel.has(e.id) }))
   }), [rfEdges])
+  const edgesRef = useRef(edges)
+  edgesRef.current = edges
+
+  // The knife (as in Blender): shift + drag from empty canvas draws a line, and every wire it
+  // crosses lights up. Let go over wires and the add menu offers what can sit inline on all of
+  // them (see knifeInsert in quickWire.js). Shift + drag is also the selection box, so the two
+  // run together: if the line crossed no wire it was only a box; if it did, the box hides and
+  // the selection goes back to what it was.
+  useEffect(() => {
+    const el = wrapRef.current
+    if (!el) return undefined
+    let drag = null
+    const draw = (b) => {
+      const line = knifeLine.current
+      if (!line) return
+      const r = line.parentNode.parentNode.getBoundingClientRect()
+      line.parentNode.style.display = b ? '' : 'none'
+      if (!b) return
+      line.setAttribute('x1', drag.a.x - r.left)
+      line.setAttribute('y1', drag.a.y - r.top)
+      line.setAttribute('x2', b.x - r.left)
+      line.setAttribute('y2', b.y - r.top)
+    }
+    const stop = () => {
+      draw(null)
+      drag = null
+      el.classList.remove('knifing')
+      setKnifeHits((h) => (h.size ? new Set() : h))
+    }
+    const onDown = (e) => {
+      if (!e.shiftKey || e.button !== 0 || !e.target.classList?.contains('react-flow__pane')) return
+      drag = {
+        a: { x: e.clientX, y: e.clientY },
+        paths: wirePaths(), // the wires don't move while you draw
+        nodes: new Set(nodesRef.current.filter((n) => n.selected).map((n) => n.id)),
+        edges: new Set(edgesRef.current.filter((x) => x.selected).map((x) => x.id)),
+        cuts: [],
+      }
+    }
+    const onMove = (e) => {
+      if (!drag) return
+      const b = { x: e.clientX, y: e.clientY }
+      const cuts = knifeCuts(drag.a, b, drag.paths)
+      const same = cuts.length === drag.cuts.length && cuts.every((c, i) => c.id === drag.cuts[i].id)
+      drag.cuts = cuts
+      draw(b)
+      if (same) return
+      el.classList.toggle('knifing', cuts.length > 0)
+      setKnifeHits(new Set(cuts.map((c) => c.id)))
+    }
+    const onUp = (e) => {
+      if (!drag) return
+      const { nodes: had, edges: hadEdges } = drag
+      const cuts = drag.cuts.map((c) => ({ id: c.id, ...flow.screenToFlowPosition({ x: c.x, y: c.y }) }))
+      stop()
+      if (!cuts.length) return
+      // the box drawn alongside selected things: put the selection back once it lets go
+      requestAnimationFrame(() => {
+        setNodes((ns) => ns.map((n) => (!!n.selected === had.has(n.id) ? n : { ...n, selected: had.has(n.id) })))
+        setEdges((es) => es.map((x) => (!!x.selected === hadEdges.has(x.id) ? x : { ...x, selected: hadEdges.has(x.id) })))
+      })
+      const p = projectRef.current
+      const allowed = new Set(Object.keys(NODE_TYPES).filter((type) => knifeMode(p, cuts, type)))
+      if (!allowed.size) return
+      const gathers = [...allowed].some((type) => knifeMode(p, cuts, type) === 'gather')
+      const hint = cuts.length === 1 ? '→ on this wire' : `→ on ${cuts.length} wires · ${gathers ? 'a bus gathers them, ' : ''}an effect goes on each`
+      setMenu({ x: e.clientX, y: e.clientY, at: flow.screenToFlowPosition({ x: e.clientX - 20, y: e.clientY - 20 }), wire: null, knife: { cuts, allowed, hint } })
+    }
+    const onKey = (e) => { if (drag && e.key === 'Escape') stop() }
+    el.addEventListener('pointerdown', onDown, true)
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      el.removeEventListener('pointerdown', onDown, true)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [flow])
 
   const updateNode = useCallback((id, fn) => onUpdateProject((p) => {
     const n = p.nodes.find((x) => x.id === id)
@@ -1358,7 +1461,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
     if (gone.has(solo)) onSolo(null)
   }, [onUpdateProject, solo, onSolo])
 
-  const addNode = useCallback((type, position, instrument, intoWire = null, fromPort = null, toPort = null, quick = null) => {
+  const addNode = useCallback((type, position, instrument, intoWire = null, fromPort = null, toPort = null, quick = null, knifeAt = null) => {
     const id = `${type}${newId().slice(-5)}`
     const rect = wrapRef.current?.getBoundingClientRect()
     let at = position
@@ -1372,6 +1475,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
     // A sound goes into the output; an effect or transform goes after the selected node,
     // taking over that node's wires, so clicking effects one by one builds a chain.
     const clicked = !position && !intoWire && !fromPort && !toPort
+    let made = null // what the knife put in, to select
     const selectedIds = nodesRef.current.filter((n) => n.selected).map((n) => n.id)
     const after = clicked && selectedIds.length === 1 && splicable(type) ? project.nodes.find((n) => n.id === selectedIds[0] && n.type !== 'output') : null
     const output = project.nodes.find((n) => n.type === 'output')
@@ -1398,6 +1502,8 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
       p.nodes.push({ id, type, x: Math.round(at.x), y: Math.round(at.y), data })
       if (intoWire) spliceInto(p, intoWire, id)
       if (quick) quickWire(p, quick, id) // placed beside the selected node and wired to it
+      // inline on the wires the knife crossed (one per wire for a one-input effect)
+      if (knifeAt) made = knifeInsert(p, knifeAt, id, () => `${type}${newId().slice(-5)}`)
       // dragged out of a port and dropped on nothing: the wire you were pulling lands here
       if (fromPort && NODE_TYPES[type]?.inputs) {
         p.edges.push({ source: fromPort.nodeId, sourceHandle: fromPort.handleId ?? 'out', target: id, targetHandle: firstInput(type) })
@@ -1420,6 +1526,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
       }
     })
     if (clicked || quick) selectNext.current = id // so shift + A again carries on the chain
+    if (knifeAt) selectNext.current = made ?? id
     return id
   }, [flow, onUpdateProject, project.nodes])
 
@@ -1946,12 +2053,13 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
             <Controls showInteractive={false} />
             <MiniMap pannable zoomable nodeColor={(n) => (n.type === 'frame' ? 'rgba(163, 163, 154, 0.15)' : ({ source: '#e4ff1a', output: '#e4ff1a', transform: '#f2f0e6', effect: '#a3a39a', mixing: '#a3a39a', combine: '#6b6b63' })[NODE_TYPES[project.nodes.find((x) => x.id === n.id)?.type]?.group] ?? '#555')} maskColor="rgba(0,0,0,0.6)" />
           </ReactFlow>
+          <svg className="knife-line" style={{ display: 'none' }} aria-hidden="true"><line ref={knifeLine} /></svg>
           <div className="graph-tip" aria-live="polite">
             {solo
               ? <>auditioning <b>{nodeTitle(project.nodes.find((n) => n.id === solo), project)}</b> · <button className="linkish" onClick={() => onSolo(null)}>back to the output</button></>
               : frameSel && project.frames?.find((f) => f.id === frameSel)?.collapsed ? <>collapsed frame · <b>▸</b> or a double-click on the bar opens it · drag it to move what it holds · <b>delete</b> removes the frame and shows its nodes again</>
               : frameSel ? <>frame · <b>▾</b> collapses it · drag its title to move it and what's in it · double-click the title to rename · <b>delete</b> removes the frame, not its nodes</>
-              : selectedCount > 1 ? <><b>ctrl/cmd + F</b> frames them · <b>ctrl/cmd + G</b> folds effects into one fx rack · <b>ctrl/cmd + D</b> duplicates</>
+              : selectedCount > 1 ? <><b>ctrl/cmd + F</b> frames them · <b>ctrl/cmd + G</b> folds effects into one fx rack · <b>ctrl/cmd + D</b> duplicates · <b>shift + drag</b> across wires puts a node inline on them</>
               : selected ? (
                 <>
                   {NODE_TYPES[selected.type]?.blurb}
@@ -1973,9 +2081,10 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
           items={menuItems}
           groups={PAL_GROUPS}
           score={matchScore}
-          context={menu.wire ? 'wire' : menu.from ? 'after' : menu.to ? 'before' : null}
-          hint={menu.quick?.hint}
+          context={menu.wire ? 'wire' : menu.from ? 'after' : menu.to ? 'before' : menu.knife ? 'knife' : null}
+          hint={menu.quick?.hint ?? menu.knife?.hint}
           onPick={(item) => {
+            if (menu.knife) return addNode(item.key, menu.at, null, null, null, null, null, menu.knife.cuts)
             if (menu.quick) return addNode(item.kind === 'instrument' ? 'pattern' : item.key, menu.at, item.kind === 'instrument' ? item.key : null, null, null, null, menu.quick.id)
             if (item.kind === 'instrument') return addNode('pattern', menu.at, item.key, null, menu.from, menu.to)
             if (menu.from || menu.to) return addNode(item.key, menu.at, null, null, menu.from, menu.to)

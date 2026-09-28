@@ -1381,3 +1381,8 @@ button.chan-synth:hover span { color: var(--acid); }
   opacity: 0.55; translate: -120% -120%; cursor: nwse-resize;
 }
 .react-flow__resize-control.handle.frame-resize:hover { opacity: 1; }
+
+/* the knife: shift + drag across wires (see Graph.jsx); while it's across one, no selection box */
+.graph-canvas .knife-line { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; overflow: visible; }
+.graph-canvas .knife-line line { stroke: var(--acid); stroke-width: 1.5; stroke-dasharray: 6 4; }
+.graph.knifing .react-flow__selection { display: none; }
