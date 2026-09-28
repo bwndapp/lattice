@@ -24,6 +24,21 @@
  */
 export const NEWS = [
   {
+    id: '2026-09-28',
+    date: '2026-09-28',
+    version: '0.3.0',
+    title: 'Frames, faster wiring, and tags',
+    items: [
+      '**Frames**: ctrl/cmd + F boxes the selected nodes',
+      '**Fold a frame** down to its title bar',
+      '**Shift + A** with one node selected adds the new one already wired in',
+      '**Shift + drag** a node across a wire to drop it inline',
+      '**Click the tempo** to type it',
+      '**New tracks start at 140 BPM**',
+      '**Rename and tag a track** from its page; search finds tags, click one to find more',
+    ],
+  },
+  {
     id: '2026-09-26-5',
     date: '2026-09-26',
     version: '0.2.5',
