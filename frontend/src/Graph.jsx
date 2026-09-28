@@ -17,6 +17,7 @@ import AddMenu from './AddMenu.jsx'
 import CodeBox from './CodeBox.jsx'
 import { ADD_INTO_WIRE, EDGE_TYPES } from './WireEdge.jsx'
 import { copyNodes, pasteNodes, readClipboard, writeClipboard } from './nodeClipboard'
+import { canQuickWire, firstInput, quickSide, quickWire, spliceInto, splicable } from './quickWire.js'
 import { onSoundsChange, previewSound, soundCatalog } from './audio'
 import { flowPaths, setFlowPaths, startFlow, stopFlow } from './flow.js'
 import { colorFor, inkFor, nodeSrc, rgbOf } from './clipColors.js'
@@ -36,10 +37,6 @@ const SOURCE_TYPES = new Set(Object.entries(NODE_TYPES).filter(([, s]) => s.grou
 
 const FLOW_KEY = 'strudel.flow'
 const flowWanted = () => { try { return localStorage.getItem(FLOW_KEY) !== 'off' } catch { return true } }
-
-/** Can this kind of node be dropped into the middle of a wire? It needs an input and an output. */
-const splicable = (type) => !!NODE_TYPES[type]?.inputs && type !== 'output'
-const firstInput = (type) => (NODE_TYPES[type]?.inputs === 1 ? 'in' : 'in-0')
 
 /**
  * The wire under a screen rectangle (or near a point), found by sampling each rendered
@@ -63,17 +60,6 @@ function wireAt(box, skip = null) {
     }
   }
   return null
-}
-
-/** Rewire A → B into A → node → B. Mutates the project draft. */
-function spliceInto(p, edgeId, nodeId) {
-  const wire = p.edges.find((e) => e.id === edgeId)
-  const node = p.nodes.find((n) => n.id === nodeId)
-  if (!wire || !node || !splicable(node.type) || wire.source === nodeId || wire.target === nodeId) return false
-  p.edges = p.edges.filter((e) => e !== wire && e.source !== nodeId && e.target !== nodeId)
-  p.edges.push({ source: wire.source, sourceHandle: wire.sourceHandle, target: nodeId, targetHandle: firstInput(node.type) })
-  p.edges.push({ source: nodeId, target: wire.target, targetHandle: wire.targetHandle })
-  return true
 }
 
 /**
@@ -1216,13 +1202,16 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
     if (menu?.from) return all.filter((it) => it.kind === 'node' && !!NODE_TYPES[it.key]?.inputs)
     // pulled backwards out of an input: anything that plays out (the output plays nowhere)
     if (menu?.to) return all.filter((it) => it.kind === 'instrument' || it.key !== 'output')
+    // shift + A with one node selected: only what can be wired on that side of it
+    if (menu?.quick) return all.filter((it) => canQuickWire(it.kind === 'instrument' ? 'pattern' : it.key, menu.quick.side))
     return all
-  }, [menu?.wire, menu?.from, menu?.to])
+  }, [menu?.wire, menu?.from, menu?.to, menu?.quick])
   const closeMenu = useCallback(() => setMenu(null), [])
   const toRef = useRef(null) // a free input pulled backwards, waiting for something to feed it
   const pointerRef = useRef(null) // last pointer position over the canvas, for shift + A
 
-  // Shift + A (as in Blender): the add menu at the pointer, ready to search
+  // Shift + A (as in Blender): the add menu at the pointer, ready to search. With one node
+  // selected, what you pick goes beside it, already wired in (see quickWire.js)
   useEffect(() => {
     const onMove = (e) => { pointerRef.current = { x: e.clientX, y: e.clientY } }
     const onKey = (e) => {
@@ -1236,7 +1225,11 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
       const x = inside ? p.x : r.left + r.width / 2
       const y = inside ? p.y : r.top + r.height / 2
       e.preventDefault()
-      setMenu({ x, y, at: flow.screenToFlowPosition({ x: x - 20, y: y - 20 }), wire: null })
+      const picked = nodesRef.current.filter((n) => n.selected && n.type !== 'frame')
+      const sel = picked.length === 1 ? projectRef.current.nodes.find((n) => n.id === picked[0].id) : null
+      const side = quickSide(sel)
+      const quick = side && { id: sel.id, side, hint: `→ ${side} ${nodeTitle(sel, projectRef.current)}` }
+      setMenu({ x, y, at: flow.screenToFlowPosition({ x: x - 20, y: y - 20 }), wire: null, quick })
     }
     const el = wrapRef.current
     el?.addEventListener('pointermove', onMove)
@@ -1365,7 +1358,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
     if (gone.has(solo)) onSolo(null)
   }, [onUpdateProject, solo, onSolo])
 
-  const addNode = useCallback((type, position, instrument, intoWire = null, fromPort = null, toPort = null) => {
+  const addNode = useCallback((type, position, instrument, intoWire = null, fromPort = null, toPort = null, quick = null) => {
     const id = `${type}${newId().slice(-5)}`
     const rect = wrapRef.current?.getBoundingClientRect()
     let at = position
@@ -1404,6 +1397,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
       }
       p.nodes.push({ id, type, x: Math.round(at.x), y: Math.round(at.y), data })
       if (intoWire) spliceInto(p, intoWire, id)
+      if (quick) quickWire(p, quick, id) // placed beside the selected node and wired to it
       // dragged out of a port and dropped on nothing: the wire you were pulling lands here
       if (fromPort && NODE_TYPES[type]?.inputs) {
         p.edges.push({ source: fromPort.nodeId, sourceHandle: fromPort.handleId ?? 'out', target: id, targetHandle: firstInput(type) })
@@ -1425,7 +1419,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
         }
       }
     })
-    if (clicked) selectNext.current = id
+    if (clicked || quick) selectNext.current = id // so shift + A again carries on the chain
     return id
   }, [flow, onUpdateProject, project.nodes])
 
@@ -1980,7 +1974,9 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
           groups={PAL_GROUPS}
           score={matchScore}
           context={menu.wire ? 'wire' : menu.from ? 'after' : menu.to ? 'before' : null}
+          hint={menu.quick?.hint}
           onPick={(item) => {
+            if (menu.quick) return addNode(item.kind === 'instrument' ? 'pattern' : item.key, menu.at, item.kind === 'instrument' ? item.key : null, null, null, null, menu.quick.id)
             if (item.kind === 'instrument') return addNode('pattern', menu.at, item.key, null, menu.from, menu.to)
             if (menu.from || menu.to) return addNode(item.key, menu.at, null, null, menu.from, menu.to)
             const into = menu.wire && splicable(item.key) ? project.edges.find((e) => e.id === menu.wire) : null
