@@ -20,7 +20,7 @@ export function useTypingKeys({ enabled, project, pattern, channel, octave, onOc
     const onKey = (e) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return
       // wherever you type text, the letters are text
-      if (e.target.closest?.('input:not([type=range]), textarea, select, [contenteditable="true"], .synth-window')) return
+      if (e.target.closest?.('input:not([type=range]), textarea, select, [contenteditable="true"], [contenteditable=""], .synth-window')) return
       const now = at.current
       const hit = keyNote(e.key, now.octave)
       if (!hit) return

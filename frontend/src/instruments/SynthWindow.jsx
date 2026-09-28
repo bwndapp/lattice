@@ -10,6 +10,9 @@ import KickPanel from './KickPanel.jsx'
 import SyrupPanel from './syrup/SyrupPanel.jsx'
 import './SynthWindow.css'
 
+// where a key is text, not a note
+const TEXT_FIELD = 'input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=button]), textarea, select, [contenteditable="true"], [contenteditable=""]'
+
 /** Engines with a face of their own; the rest get their knobs in groups. */
 const PANELS = { kick: KickPanel, syrup: SyrupPanel }
 
@@ -133,9 +136,14 @@ export default function SynthWindow({ project, patternId, channelId, order, fron
       onPointerDownCapture={() => raiseSynth(channelId)}
       onFocusCapture={() => raiseSynth(channelId)}
       onKeyDown={(e) => {
-        if (e.key === 'Escape') { e.stopPropagation(); close(); return }
         // keys stay in here: Delete on a knob must not delete nodes behind the window
         e.stopPropagation()
+        // wherever you type text, the letters are text; Esc leaves the field, not the window
+        if (e.target.closest?.(TEXT_FIELD)) {
+          if (e.key === 'Escape' && !e.defaultPrevented) e.target.blur()
+          return
+        }
+        if (e.key === 'Escape') { close(); return }
         if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return
         const hit = keyNote(e.key, octave)
         if (!hit) return
