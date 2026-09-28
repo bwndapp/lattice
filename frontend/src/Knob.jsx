@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAutoLive, useAutomation } from './autoLive.js'
 import { KnobMenu } from './KnobMenu.jsx'
+import './Knob.css'
 import { knobBridge } from './knobBridge.js'
-import { clamp, dragTo, fromPos, pastThreshold, snapValue, startDrag, stepOf, toPos, wheelPixels, wheelTravel } from './knobMath.js'
+import { clamp, dragTo, fromPos, parseKnobValue, pastThreshold, snapValue, startDrag, stepOf, toPos, wheelPixels, wheelTravel } from './knobMath.js'
 
 
 export function formatValue(v, def) {
@@ -19,8 +20,14 @@ export function formatValue(v, def) {
   return `${Math.round(v * 100)}`
 }
 
+// reset is cmd-click on a Mac (ctrl-click there is a right-click), ctrl-click elsewhere; alt-click on both
+const MAC = typeof navigator !== 'undefined' && /Mac|iP(hone|ad|od)/.test(navigator.platform || navigator.userAgent)
+const resetClick = (e) => e.altKey || (MAC ? e.metaKey : e.ctrlKey || e.metaKey)
+const RESET_HINT = `${MAC ? 'cmd' : 'ctrl'}-click or Home to reset`
+
 /**
- * A knob: drag up/down (shift for fine), scroll, arrow keys, double-click to reset.
+ * A knob: drag up/down (shift for fine), scroll, arrow keys, double-click (or Enter) to
+ * type a value, ctrl/cmd-click, alt-click or Home to reset.
  * While it turns, only the knob redraws and the sound follows at once where the app can
  * move it directly (knobBridge.js); the project is written at most once a frame (or ten
  * times a second when the sound already follows), and once more when you let go, so a
@@ -36,6 +43,8 @@ export default function Knob({ def, value, onChange, target = null }) {
   const automated = !!target && !!automation?.automated.has(target)
   const following = useAutoLive(automated ? target : null) // where its curve has it, while playing
   const [menu, setMenu] = useState(null)
+  const [typing, setTyping] = useState(null) // the text while typing a value
+  const typed = useRef(false) // Enter or Escape already dealt with it (then the field blurs)
   const closeMenu = useCallback(() => setMenu(null), [])
   // a knob in steps shows the step it's on, whatever an old project stored
   const shown = def.choices ? snapValue(live ?? following ?? value, def) : live ?? following ?? value
@@ -102,6 +111,25 @@ export default function Knob({ def, value, onChange, target = null }) {
   }
   useEffect(() => () => finish(), []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const reset = () => { finish(); onChange(def.def) }
+  const startTyping = () => {
+    finish()
+    typed.current = false
+    setTyping(formatValue(shown, def))
+  }
+  /** The typed value, if it reads as one (clamped and snapped like a turn); else as it was. */
+  const endTyping = (apply) => {
+    if (typed.current) return
+    typed.current = true
+    const v = apply ? parseKnobValue(typing, def) : null
+    setTyping(null)
+    ref.current?.focus({ preventScroll: true })
+    if (v !== null && Number.isFinite(v)) {
+      const next = snapValue(v, def)
+      if (next !== value) onChange(next)
+    }
+  }
+
   // The wheel only turns a knob you mean: one that has focus (you clicked it), or that the
   // pointer has rested on for a moment. Scrolling past it scrolls the page or zooms the canvas.
   const hover = useRef({ since: 0, passed: 0, at: 0 })
@@ -139,7 +167,7 @@ export default function Knob({ def, value, onChange, target = null }) {
   return (
     <div
       className={`knob ${changed ? 'changed' : ''} ${automated ? 'automated' : ''} ${following !== undefined ? 'following' : ''}`}
-      title={`${def.label}: ${formatValue(shown, def)}${automated ? ' · automated in the song' : ''} · drag, scroll, double-click to reset${target && automation ? ' · right-click to automate' : ''}`}
+      title={`${def.label}: ${formatValue(shown, def)}${automated ? ' · automated in the song' : ''} · drag, scroll, double-click to type · ${RESET_HINT}${target && automation ? ' · right-click to automate' : ''}`}
       onContextMenu={(e) => {
         if (!target || !automation) return
         e.preventDefault()
@@ -176,17 +204,23 @@ export default function Knob({ def, value, onChange, target = null }) {
           d.moved = true
           set(dragTo(d, e.clientX, e.clientY, e.shiftKey, turn.current?.pos ?? d.from))
         }}
-        onPointerUp={() => { drag.current = null; finish() }}
+        onPointerUp={(e) => {
+          const d = drag.current
+          drag.current = null
+          if (d && !d.moved && resetClick(e)) { reset(); return }
+          finish()
+        }}
         onPointerCancel={() => { drag.current = null; finish() }}
         // let go outside the window, or the capture was taken away: it still lands
         onLostPointerCapture={() => { if (drag.current) { drag.current = null; finish() } }}
-        onDoubleClick={() => { finish(); onChange(def.def) }}
+        onDoubleClick={(e) => { e.stopPropagation(); startTyping() }}
         onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); startTyping(); return }
           const by = step || (e.shiftKey ? 0.01 : 0.05)
           const from = turn.current?.pos ?? toPos(shown, def)
           if (e.key === 'ArrowUp' || e.key === 'ArrowRight') set(from + by)
           else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') set(from - by)
-          else if (e.key === 'Home' || e.key === 'Delete' || e.key === 'Backspace') { finish(); onChange(def.def) }
+          else if (e.key === 'Home' || e.key === 'Delete' || e.key === 'Backspace') reset()
           else return
           e.preventDefault()
           finishSoon()
@@ -196,6 +230,24 @@ export default function Knob({ def, value, onChange, target = null }) {
         {Math.abs(pos - origin) > 0.004 && <path d={pos > origin ? arc(origin, pos) : arc(pos, origin)} className="knob-value" />}
         <line x1="18" y1="18" x2={hx} y2={hy} className="knob-hand" />
       </svg>
+      {typing !== null && (
+        <input
+          className="knob-type nodrag"
+          autoFocus
+          value={typing}
+          spellCheck={false}
+          aria-label={`${def.label} value`}
+          onFocus={(e) => e.currentTarget.select()}
+          onChange={(e) => setTyping(e.target.value)}
+          onBlur={() => endTyping(true)}
+          onKeyDown={(e) => {
+            e.stopPropagation() // typing isn't playing notes or shortcuts
+            if (e.key === 'Enter') { e.preventDefault(); endTyping(true) }
+            else if (e.key === 'Escape') { e.preventDefault(); endTyping(false) }
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+        />
+      )}
       <span className="knob-label">{live !== null || following !== undefined ? formatValue(shown, def) : def.label}</span>
       {automated && <span className="knob-auto-mark" aria-hidden />}
       {menu && (

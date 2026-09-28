@@ -1,6 +1,6 @@
 // node frontend/test/knob.test.mjs — the arithmetic knobs turn by (knobMath.js)
 import assert from 'node:assert/strict'
-import { NOTCH_PX, dragTo, pastThreshold, snapValue, startDrag, stepOf, wheelPixels, wheelTravel } from '../src/knobMath.js'
+import { NOTCH_PX, dragTo, parseKnobValue, pastThreshold, snapValue, startDrag, stepOf, wheelPixels, wheelTravel } from '../src/knobMath.js'
 
 const near = (a, b, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} ≉ ${b}`)
 
@@ -41,5 +41,39 @@ near(dragTo(d, 100, 10, true, 0.7), 0.8)
 // and let go of shift again: no jump back to the coarse line
 near(dragTo(d, 100, 10, false, 0.8), 0.8)
 near(dragTo(d, 100, -5, false, 0.8), 0.9)
+
+// typing a value: units are optional and read the way the knob shows them
+const hz = { key: 'cutoff', label: 'cutoff', min: 20, max: 20000, log: true, unit: 'hz' }
+assert.equal(parseKnobValue('2k', hz), 2000)
+assert.equal(parseKnobValue('2 kHz', hz), 2000)
+assert.equal(parseKnobValue('2khz', hz), 2000)
+assert.equal(parseKnobValue('440', hz), 440)
+assert.equal(parseKnobValue('440ms', hz), null)
+const db = { key: 'gain', label: 'gain', min: -36, max: 24, unit: 'db' }
+assert.equal(parseKnobValue('-6db', db), -6)
+assert.equal(parseKnobValue('-6 dB', db), -6)
+const level = { key: 'gain', label: 'level', min: 0, max: 1.5 } // stored as a gain
+near(parseKnobValue('-6 dB', level), 10 ** (-6 / 20))
+near(parseKnobValue('0db', level), 1)
+assert.equal(parseKnobValue('-6db', { key: 'cutoff', label: 'tone', min: 0, max: 1 }), null) // not a level
+const time = { key: 'release', label: 'release', min: 0.001, max: 2, unit: 's' }
+assert.equal(parseKnobValue('250ms', time), 0.25)
+assert.equal(parseKnobValue('1.5s', time), 1.5)
+assert.equal(parseKnobValue('1,5 s', time), 1.5)
+assert.equal(parseKnobValue('250', time), 0.25) // more than it goes to: ms
+const unit = { key: 'mix', label: 'mix', min: 0, max: 1 }
+assert.equal(parseKnobValue('40%', unit), 0.4)
+assert.equal(parseKnobValue('40', unit), 0.4) // a 0…1 knob shows 40 for 0.4
+assert.equal(parseKnobValue('-25%', { key: 'amt', label: 'amount', min: -1, max: 1, unit: 'bi' }), -0.25)
+const pan = { key: 'pan', label: 'pan', min: 0, max: 1 }
+assert.equal(parseKnobValue('C', pan), 0.5)
+assert.equal(parseKnobValue('L50', pan), 0.25)
+assert.equal(parseKnobValue('r100', pan), 1)
+assert.equal(parseKnobValue('-50', pan), 0.25)
+assert.equal(parseKnobValue('tube', { key: 'dtype', label: 'type', min: 0, max: 4, choices: ['soft', 'hard', 'tube'] }), 2)
+assert.equal(parseKnobValue('4/16', { key: 'time', label: 'time', min: 0, max: 1, unit: 'bar' }), 0.25)
+assert.equal(parseKnobValue('4:1', { key: 'ratio', label: 'ratio', min: 1, max: 20, unit: 'ratio' }), 4)
+assert.equal(parseKnobValue('', unit), null)
+assert.equal(parseKnobValue('loud', unit), null)
 
 console.log('knob ok')

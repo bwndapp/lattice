@@ -1,0 +1,7 @@
+/* typing a value into a knob: a small field over it (double-click, or Enter when it has focus) */
+.knob-type {
+  position: absolute; top: 50%; left: 50%; z-index: 3; transform: translate(-50%, -50%);
+  width: 56px; height: 18px; padding: 0 3px; box-sizing: border-box;
+  font: inherit; font-size: 10px; text-align: center; font-variant-numeric: tabular-nums;
+  color: var(--paper); background: var(--ink, #111); border: 1px solid var(--acid); border-radius: 3px; outline: none;
+}
