@@ -44,6 +44,7 @@ import { MyFace } from './BotFace.jsx'
 import { canEdit as roomTakesEdits, jamIs, join as joinRoom, leave as leaveRoom, onDoc, onJam, onPlay, onRole, openToOthers, sendOps, sendPlay, viewIs } from './collab.js'
 import { applyOps, diffOps, docHash, invertOps } from './docsync.js'
 import PeerTray from './PeerTray.jsx'
+import { whatToOpen, whenLoadFails } from './start.js'
 import { AppCursors, watchPointer } from './surfaces.jsx'
 
 function readPref(key, fallback) {
@@ -59,7 +60,7 @@ function songCodeOf(text) {
 }
 
 /**
- * What the scratch pad at / opens with: your unsaved patch, or a fresh starter patch.
+ * What the scratch pad at / opens with: your unsaved patch, or a new blank project.
  * Hand-written code left in the scratch pad (from before patches) is kept aside rather
  * than opened, so a new track always starts as a patch.
  */
@@ -71,7 +72,7 @@ function scratchCode() {
     if (old && !localStorage.getItem('strudel:scratch-code')) localStorage.setItem('strudel:scratch-code', old)
     localStorage.removeItem('strudel:code')
   } catch { /* storage unavailable */ }
-  return generateCode(demoProject())
+  return generateCode(blankProject())
 }
 
 /** What was open last in this browser: a track id, or 'scratch'. Opening the site goes back to it. */
@@ -135,14 +136,18 @@ export default function App() {
   useEffect(() => {
     if (reopened.current) return
     // only as the page loads (this effect runs once): a refresh counts, clicks inside the app don't
-    if (trackId || location.state?.fresh) { reopened.current = true; return }
-    const scratchWins = store.get(LAST_OPEN) === 'scratch' && store.get(SCRATCH_WORK) === 'yes' && hadScratch.current
-    if (scratchWins) { reopened.current = true; return } // you were last working on the scratch pad
-    const last = lastTrack()
-    if (last) { reopened.current = true; navigate(`/t/${last}`, { replace: true }); return }
-    if (userLoading) return // wait to know who's here
+    const open = whatToOpen({
+      trackId,
+      fresh: !!location.state?.fresh,
+      scratchWins: store.get(LAST_OPEN) === 'scratch' && store.get(SCRATCH_WORK) === 'yes' && hadScratch.current,
+      lastTrack: lastTrack(),
+      userLoading,
+      signedIn: !!user,
+    })
+    if (open === 'wait') return // wait to know who's here
     reopened.current = true
-    if (!user) return
+    if (open.track) { navigate(`/t/${open.track}`, { replace: true }); return }
+    if (open !== 'latest') return
     api('/tracks?view=mine&sort=new&limit=1')
       .then((d) => {
         const latest = d?.tracks?.[0]
@@ -166,7 +171,6 @@ export default function App() {
 
   const [code, setCode] = useState('')
   const [track, setTrack] = useState(null)
-  const [loadError, setLoadError] = useState('')
   const [title, setTitle] = useState('')
   // A track starts private. Sharing is a thing you choose, not a thing you discover has
   // already happened — and the people most likely to be caught out are exactly the ones
@@ -1015,7 +1019,6 @@ export default function App() {
   useEffect(() => {
     let alive = true
     loadedIdRef.current = undefined
-    setLoadError('')
     if (!trackId) {
       setTrack(null)
       setTitle('')
@@ -1057,11 +1060,14 @@ export default function App() {
       })
       .catch((e) => {
         if (!alive) return
-        if (lastTrack() === trackId) store.set(LAST_TRACK, null) // don't keep reopening a track that's gone
-        setLoadError(e.status === 404 ? 'This track doesn’t exist, or it’s private.' : e.message)
+        // never an empty studio: back to the scratch pad (your draft there, or a blank project)
+        const failed = whenLoadFails(e.status)
+        if (failed.forget && lastTrack() === trackId) store.set(LAST_TRACK, null) // don't keep reopening a track that's gone
+        flash(failed.message)
+        navigate('/', { replace: true })
       })
     return () => { alive = false }
-  }, [trackId, fresh, freshTemplate, user?.id, putCode, play])
+  }, [trackId, fresh, freshTemplate, user?.id, putCode, play, flash, navigate])
 
   // Keep unsaved edits per track in this browser, so nothing is lost on navigation or sign-in.
   useEffect(() => {
@@ -1582,9 +1588,7 @@ export default function App() {
         </button>
         <div className="bar-side right">
         <span className="track" role="group" aria-label="Track">
-          {loadError ? (
-            <span className="meta track-status" title={loadError}>{loadError} <Link className="linkish" to="/">new track</Link></span>
-          ) : trackId && !track ? (
+          {trackId && !track ? (
             <span className="meta track-status">Loading…</span>
           ) : canEdit ? (
             <>
