@@ -251,50 +251,49 @@ const ADSR = ['attack', 'decay', 'sustain', 'release']
 
 // ── modulation destinations ──────────────────────────────────────────────────
 
-/** Everything a modulator can move, with names a person would use. */
+/**
+ * Everything a modulator can move, with names a person would use: [target, label, group],
+ * grouped as the picker shows them — each generator (A, B, C …), then the lanes and their
+ * effects, then the modulators, then what moves the whole voice.
+ */
 function destinations(patch) {
-  const list = [
-    ['pitch', 'pitch'], ['amp.level', 'volume'], ...ADSR.map((k) => [`amp.${k}`, `amp ${k}`]), ['glide', 'glide'],
-    ...Array.from({ length: LANES }, (_, i) => [`lane:${i}.gain`, `lane ${laneName(i)} level`]),
-  ]
+  const list = []
   patch.layers.forEach((l, i) => {
+    const group = `generator ${layerLetter(i)}`
     const knobs = ['level', 'pan']
+    if (l.type !== 'noise') knobs.push('pitch', 'fine')
     const tone = toneKnob(l)
-    if (tone) knobs.unshift(tone)
-    if (l.type === 'wavetable') knobs.push('warp', 'detune', 'spread')
-    if (l.type === 'supersaw') knobs.push('spread')
-    if (l.type !== 'noise') knobs.push('pitch', 'fine', 'fm', 'ratio')
-    for (const k of new Set(knobs)) list.push([`layer:${l.id}.${k}`, `${layerLetter(i)} ${K[k].label}`])
+    if (tone) knobs.push(tone)
+    if (l.type === 'wavetable') knobs.push('warp')
+    if (l.type === 'wavetable' || l.type === 'supersaw') knobs.push('detune', 'spread')
+    if (l.type !== 'noise') knobs.push('fm', 'ratio')
+    for (const k of new Set(knobs)) list.push([`layer:${l.id}.${k}`, `${layerLetter(i)} ${K[k].label}`, group])
   })
-  // every modulator's knobs, and every route's amount
-  patch.modulators.forEach((m) => {
-    for (const k of m.kind === 'lfo' ? LFO_KNOBS : ENV_KNOBS) list.push([`mod:${m.id}.${k}`, `${modName(patch, m.id)} ${k}`])
-  })
-  for (const r of patch.routes) {
-    const t = !r.target.startsWith('route:') && targetSpec(patch, `route:${r.id}.amt`)
-    if (t) list.push([`route:${r.id}.amt`, t.label])
-  }
-  // every knob on every lane effect
+  // each lane's level and every knob on its effects
   const catalog = laneFxCatalog()
   patch.lanes.forEach((lane, li) => {
+    list.push([`lane:${li}.gain`, `lane ${laneName(li)} level`, 'lanes & effects'])
     for (const fx of lane.effects) {
       const spec = catalog?.spec(fx.type)
       for (const def of spec?.params ?? []) {
-        if (def.type === 'knob') list.push([`fx:${fx.id}.${def.key}`, `${laneName(li)} · ${spec.label} ${def.label}`])
+        if (def.type === 'knob') list.push([`fx:${fx.id}.${def.key}`, `lane ${laneName(li)} · ${spec.label} ${def.label}`, 'lanes & effects'])
       }
     }
   })
+  // every modulator's knobs, and every route's amount
+  patch.modulators.forEach((m) => {
+    for (const k of m.kind === 'lfo' ? LFO_KNOBS : ENV_KNOBS) list.push([`mod:${m.id}.${k}`, `${modName(patch, m.id)} ${k}`, 'modulators'])
+  })
+  for (const r of patch.routes) {
+    const t = !r.target.startsWith('route:') && targetSpec(patch, `route:${r.id}.amt`)
+    if (t) list.push([`route:${r.id}.amt`, t.label, 'route amounts'])
+  }
+  list.push(['pitch', 'pitch', 'global'], ['amp.level', 'volume', 'global'], ...ADSR.map((k) => [`amp.${k}`, `amp ${k}`, 'global']), ['glide', 'glide', 'global'])
   return list
 }
 
-const DEST_GROUPS = [
-  ['voice', (t) => t === 'pitch' || t === 'glide' || t.startsWith('amp.')],
-  ['generators', (t) => t.startsWith('layer:')],
-  ['lanes', (t) => t.startsWith('lane:')],
-  ['lane effects', (t) => t.startsWith('fx:')],
-  ['modulators', (t) => t.startsWith('mod:')],
-  ['route amounts', (t) => t.startsWith('route:')],
-]
+/** The groups, in order, as they come. */
+const destGroups = (options) => [...new Set(options.map(([, , g]) => g))]
 
 const AMOUNT = K.amt
 
@@ -319,14 +318,11 @@ function Destinations({ ui, src }) {
             onChange={(e) => edit((p) => { const x = p.routes.find((y) => y.id === r.id); if (x && !p.routes.some((y) => y.src === src && y.target === e.target.value)) { x.target = e.target.value; pruneRoutes(p) } })}
           >
             {!options.some(([t]) => t === r.target) && <option value={r.target}>{targetSpec(patch, r.target)?.label ?? 'gone'}</option>}
-            {DEST_GROUPS.map(([name, test]) => {
-              const items = options.filter(([t]) => test(t))
-              return items.length ? (
-                <optgroup key={name} label={name}>
-                  {items.map(([t, label]) => <option key={t} value={t} disabled={t !== r.target && (routes.some((x) => x.target === t) || loops.has(t))}>{label}</option>)}
-                </optgroup>
-              ) : null
-            })}
+            {destGroups(options).map((name) => (
+              <optgroup key={name} label={name}>
+                {options.filter(([, , g]) => g === name).map(([t, label]) => <option key={t} value={t} disabled={t !== r.target && (routes.some((x) => x.target === t) || loops.has(t))}>{label}</option>)}
+              </optgroup>
+            ))}
           </select>
           <div className="sy-dest-amt">
             <ModKnob ui={ui} route={`route:${r.id}.amt`} def={AMOUNT} value={r.amt} onChange={(v) => edit((p) => { const x = p.routes.find((y) => y.id === r.id); if (x) x.amt = v })} />
