@@ -2,18 +2,39 @@
 
 *September 2026. Planning only; no app code changed. Builds on `docs/research/plugin-engine.md` (commit ce6aa94).*
 
-**In one line:** lattice has about 35 ways to change a sound, built five different ways and spread across six places. First tidy what users see (Phase 0). Then put every effect and instrument on one plugin spec (Phase 1). Then add a Faust runtime (Phase 2) and a node editor where users build their own plugins (Phase 3), which they can then share (Phase 4).
+**In one line:** lattice has about 35 ways to change a sound, built five different ways and spread across six places. First build a safety net (Phase S) and tidy what users see (Phase 0), with no change to any saved track's sound. Then put every effect and instrument on one plugin spec (Phase 1). Then add a Faust runtime (Phase 2) and a node editor where users build their own plugins (Phase 3), which they can then share (Phase 4).
 
 ---
 
-## 1. Decisions the user needs to make
+## 1. How we avoid new bugs
+
+Lattice works today. This plan must not trade that for a wave of regressions. Six rules apply to every phase:
+
+1. **Evolve, don't replace.** Each phase extends a seam that already exists:
+   - the instrument engine spec (`instruments/index.js`);
+   - the bus-unit contract `{input, output, set, dispose}` (`stereo.js`, `fxbus.js`);
+   - `NODE_TYPES` (`graph.js`);
+   - `Knob`/`useKnobControl`, `automation.js`, `quickWire.js`, frames, `collab`/`docsync`, and `exportAudio.js`.
+
+   The UI, gestures and look stay. New surfaces reuse what is there: floating windows like `SynthWindow`, the same knobs, the add menu, and undo/collab through `onUpdateProject`. Every place the plan diverges is marked **⚠ diverges** with the reason.
+2. **Safety net first.** Phase S (below) lands before anything touches audio:
+   - golden-audio renders of every built-in effect and instrument;
+   - load-and-render tests over every saved track;
+   - a fully green test suite.
+3. **One effect per commit, behind a fallback.** Each migrated unit keeps its old implementation reachable by a per-unit flag until it has passed the golden check and been tried on /preview/. A regression is reverted alone. There are no big-bang rewrites.
+4. **Saved params never change meaning.** No stored value is rescaled or reinterpreted. Old node types stay valid forever as aliases that render with their original code. Old tracks sound identical, checked by the goldens. Anything that would change the sound of an old track (a new compressor, smoother automation) is opt-in or its own decision below.
+5. **Each phase names what it puts at risk** (automation curves, Syrup's modulation rings, knife and heal-on-delete, racks, frames, export, collab sync, the kick and syrup panels) and how each is protected.
+6. **Small steps, shipped to /preview/.** Every task ends deployable to /preview/ for the user to try. Nothing goes live until the user asks.
+
+## 2. Decisions the user needs to make
 
 | # | Decision | Recommendation |
 |---|---|---|
 | D1 | **Per-note Strudel effects** (the instrument's cutoff, reso, low cut, drive, crush, attack, release, pitch knobs): keep them, or fold them into bus effects? | **Keep them, renamed "sound" knobs.** They are cheap, exact per note, and they survive in pasted Strudel code. Everything placed on a wire or in a rack becomes an "effect", and effects always run on the bus. |
-| D2 | Old duplicate nodes (`space`, `drive`, `level`, `clipper`/`softclip`): hide them or migrate them? | **Hide them in Phase 0** (old tracks still load and play). **Migrate them automatically in Phase 1**, with tests. |
-| D3 | **Pan and gain ranges**: pan is 0–1 today and gain is linear 0–1.5. Change the stored values (to −1…1 and dB), or only change how they are shown? | **Show-only in Phase 0** (L/C/R, dB readout). Change the stored values in Phase 1 through the project migration. |
-| D4 | The **compressor** moves from the browser's black box to a worklet with a sidechain input. Old tracks will sound slightly different. | Accept it, and keep the browser version as the `classic` mode for old tracks. |
+| D2 | Old duplicate nodes (`space`, `drive`, `level`, `clipper`/`softclip`): hide them or convert them? | **Hide them from the add menu only.** They stay as aliases, rendered by their original code, forever. A node is never converted to another type unless its golden render is identical. |
+| D3 | **Pan and gain ranges** (pan 0–1, gain linear 0–1.5) | **Display only** (L/C/R, a dB readout). Stored values keep their meaning, as rule 4 requires. |
+| D4 | A new worklet **compressor** with a sidechain input sounds slightly different from the browser's. | Add it as a new `mode` (default for **new** nodes only). Existing nodes keep the browser compressor. |
+| D4b | **Sample-accurate automation** replaces the ~60 Hz steps, so automated bus knobs in old tracks get smoother (and slightly different). | Ship it behind a flag; the user listens on /preview/ and decides whether old tracks switch or stay stepped. |
 | D5 | The **shared reverb/delay** (the `g_rv`/`g_dl` sends behind every instrument's reverb and delay knobs) is invisible and can't be set. | Show it as a "send" bus with its own settings in Phase 1. |
 | D6 | **Faust bundle** is about 6 MB (the compiler), loaded only when someone opens the editor or a track that uses a user plugin. Host it ourselves or use a CDN? | **Host it ourselves**, loaded on demand. Built-ins never need it. |
 | D7 | Does the editor ship **before or after** the migration? | **After the Phase 1 core only**: spec, host, automation and 3–4 migrated effects. The rest of the migration can continue alongside Phases 2 and 3. |
@@ -21,11 +42,11 @@
 
 ---
 
-## 2. Inventory: everything a user can reach today
+## 3. Inventory: everything a user can reach today
 
 **Legend.** *Where it runs:* **note** = superdough per-note param (a fresh chain for every note); **insert** = a lattice bus unit from `stereo.js` `UNITS` on an orbit rack; **send** = a `fxbus.js` reverb/delay; **worklet** = a custom AudioWorklet; **engine** = an instrument engine (`instruments/`). *Auto* = can follow an automation lane: *rAF* means it is pushed at about 60 Hz through `APP_PARAMS`, *code* means it is evaluated per note in the generated code. *Mod* = can be modulated (only inside Syrup today). Every item below renders in export (`exportAudio.js` awaits `prepareInserts`/`prepareInstruments`) unless marked otherwise.
 
-### 2.1 Patch nodes (`graph.js` `NODE_TYPES`, add menu)
+### 3.1 Patch nodes (`graph.js` `NODE_TYPES`, add menu)
 
 | Shown as (key) | Group | Where it runs / impl | St | Auto | Rack | Lane | Quirks |
 |---|---|---|---|---|---|---|---|
@@ -55,17 +76,16 @@
 | echo (`echo`) | transform | Strudel pattern echo (repeats notes) | — | code | ✗ | ✗ | Search "delay" finds it next to the real delay |
 | every / sometimes → "bitcrush" (`APPLY.crush`) | transform | per-note `crush(4)` | — | — | — | — | A third crush |
 
-### 2.2 Instrument "sound" knobs (`project.js` `PARAMS`, per channel)
+### 3.2 Instrument "sound" knobs (`project.js` `PARAMS`, per channel)
 
 vol, pan, **cutoff, reso, low cut** (note filters), **reverb, delay** (sends to the shared `g_rv`/`g_dl`, fixed settings), pitch (drums: `speed`), attack/release (synths), **drive** (`shape`), **crush**. All are per note, automatable per note (`c:` targets), and can't be modulated. Every channel also has a free-text `fx` string of raw Strudel (`project.js:330`), so any superdough effect (phaser, vowel, coarse, …) is reachable per note in code, and code nodes reach all of them.
 
-### 2.3 Instruments
+### 3.3 Instruments
 
 | Shown as | Where | Impl | Notes |
 |---|---|---|---|
 | kick, snare, clap, hat, open hat, rim, tom, crash | add menu "instruments", Rack | samples, with kit banks (`BANKS`) | |
-| bass, lead, pad, pluck | add menu | superdough oscillators + note params | Presets are defined as raw `fx` strings |
-| piano | add menu | soundfont | |
+| bass, lead, pad, pluck, piano | add menu | superdough oscillators / soundfont + note params | Some presets rely on raw `fx` strings |
 | **kick synth** | add menu; sound picker "engines" (drum) | engine `kick`: worklet, 4 voices, 25 params, own panel | Has its own drive group, a fourth drive |
 | **syrup** | add menu; sound picker "engines" (synth) | engine `syrup`: 8 voices, 8 layers, 16 mods, **3 lanes of bus fx** (`laneFx.js`, `LANE_FX_CATALOG`) | Lane fx are app units driven by `postMessage` modulation; the `K` param table is its own format |
 | code | add menu | code channel | |
@@ -75,7 +95,7 @@ The piano roll and the detail dock have no effects of their own; they edit notes
 
 ---
 
-## 3. The mess
+## 4. The mess
 
 1. **Same effect, many forms.**
    - *Filter:* a per-note knob, a bus node, and a lane effect. The labels are identical, but they behave differently: per note, the filter is fixed at the note's start.
@@ -105,9 +125,27 @@ The piano roll and the detail dock have no effects of their own; they edit notes
 
 ---
 
-## 4. Phases
+## 5. Phases
 
 Hot files that force tasks to run **one after another**: `graph.js`, `Graph.jsx`, `automation.js`, `App.jsx`, `stereo.js`, `fxbus.js`. Tasks marked **∥** touch none of them, or only new files, and can run in parallel. Tests go in `frontend/test/*.test.mjs` (run with `node --test`).
+
+### Phase S: safety net (before Phase 1; **M**)
+
+**Goal:** any change to how lattice sounds or loads is caught automatically, before it ships.
+
+**After it, users can:** nothing new. That is the point: everything after it is checked.
+
+| Task | Files | Order |
+|---|---|---|
+| S.1 Make the suite green: fix `collab.client.test.mjs` (today it fails with `TypeError: Cannot read properties of undefined (reading 'code')`; the 11 other files pass). Add one `npm test` script that runs `node --test test/` | `frontend/test/collab.client.test.mjs` (or the code it exposes), `package.json` | ∥ |
+| S.2 Golden-audio renders: a reference set (one patch per built-in effect at defaults and at extreme settings; the kick and syrup with several patches; racks, lanes, bus, sidechain, sends; automation on bus and note params), rendered offline through `exportAudio.js`. Each is compared with stored fingerprints (RMS and peak per 50 ms, a spectrum per band, a null test against stored audio where it is deterministic) within tolerances. One command runs it in headless Chromium, and a `/preview/?golden` page shows the diffs | new `tools/golden/`, `frontend/test/golden/fixtures/*.json`, a small hook in `exportAudio.js` | ∥ |
+| S.3 Track corpus tests: dump every track in `data-draft.db`, plus a snapshot of the public live tracks from `GET /api/tracks` (read-only), into a fixtures folder. Test that each one loads, normalises (`normalizeGraph`, `normalizeEngine`), generates **byte-identical code** to the snapshot, and renders within golden tolerance | new `tools/golden/corpus.mjs`, `frontend/test/corpus.test.mjs` | after S.2 |
+| S.4 Guard tests for fragile features that have no tests yet: automation targets resolve (`resolveTarget`, `appParam`), racks (`groupIntoRack` round-trip), heal-on-delete, export tail length | `frontend/test/*.test.mjs` | ∥ |
+| S.5 Per-unit feature flags: `useNewUnit(kind)`, read from `localStorage`/URL, defaulting to the old code. Old implementations stay callable by name | new `frontend/src/flags.js` | ∥ |
+
+**Rule from here on:** every commit that touches audio runs S.1–S.3. A golden diff is either fixed or explicitly approved, with the new fingerprint committed in the same commit and a note saying why.
+
+**Risks:** audio is non-deterministic (noise, random IRs, `Math.random` in patterns). Mitigate with seeded fixtures, fingerprints instead of exact samples where needed, and tolerances tuned once. **Acceptance:** `npm test` is fully green; the goldens cover every `NODE_TYPES` effect and both engines; every saved track passes S.3; a deliberate one-line change to a unit (for example, the eq's Q) makes the goldens fail.
 
 ### Phase 0: quick-win tidy (days, **S–M**)
 
@@ -124,7 +162,7 @@ Hot files that force tasks to run **one after another**: `graph.js`, `Graph.jsx`
 
 | Task | Files | Order |
 |---|---|---|
-| 0.1 Verify and fix the automation gaps: add `APP_PARAMS` rows for distortion, pitch and freqshift, plus a test that every knob of every `BUS_NODES` type has a row | `automation.js`, test | seq (automation.js) |
+| 0.1 Verify and fix the automation gaps: add `APP_PARAMS` rows for distortion, pitch and freqshift, plus a test that every knob of every `BUS_NODES` type has a row. **Waits for S.2**, because it changes playback of tracks that already have such lanes (their lanes start working) | `automation.js`, test | seq, after S.2 |
 | 0.2 Add a `cat` field to effect types: filter & eq, drive & crush, space (reverb/delay), modulation, dynamics, stereo & utility, pitch. Rename the groups: sources · instruments · pattern tools · effects · routing · output | `graph.js` | seq |
 | 0.3 Add-menu flyout with category sub-headings; hide types marked `hidden: true` (`space`, `drive`, `level`) from the menu and search while old tracks still load them; put the clippers next to each other | `AddMenu.jsx`, `AddMenu.css`, `Graph.jsx` (`SEARCH_WORDS`, `paletteItems`) | seq after 0.2 |
 | 0.4 Label pass: "mix" for every wet/dry knob; key and label aligned (`punch`: "transient shaper"); "echo" → "note echo"; blurbs say "per note" or "on the bus" | `graph.js`, `project.js` (`PARAMS` labels only) | seq after 0.2 |
@@ -135,7 +173,15 @@ Hot files that force tasks to run **one after another**: `graph.js`, `Graph.jsx`
 | 0.9 Dead code ∥: delete `live.js`; add a consistency test that `FX_UNITS` ⊇ `LANE_FX`, every `STEREO_TYPES` entry has `code.insert` or is `bus`, and every `NODE_TYPES` knob has min<def<max and a known unit | `live.js`, `test/fxcatalog.test.mjs` | ∥ |
 | 0.10 Changelog line when published | `changelog.js` | last |
 
-**Risks:** hiding nodes might confuse people who already use them (mitigation: they stay on existing tracks, and search still finds them with a "(older)" tag). **Acceptance:** every existing track plays unchanged (the same code is generated: snapshot test on the demo projects in `project.js`); the add menu has ≤7 top groups; every effect has a category; distortion, pitch and freqshift lanes move the sound.
+**Risks:** hiding nodes might confuse people who already use them (mitigation: they stay on existing tracks, and search still finds them with a "(older)" tag).
+
+**At risk, and how it's protected:**
+- *Generated code:* labels and categories change, but keys never do. A code-snapshot test over all saved tracks (S.3) must be byte-identical.
+- *Knob gestures:* `fmt` changes only the readout in `Knob`, never `useKnobControl` or the stored value. `knob.test.mjs` stays green.
+- *Add menu and quick-wire:* `quickwire.test.mjs`, plus a manual pass on /preview/.
+- *Racks:* the grouped picker writes the same `{type, data}` units.
+
+**Acceptance:** every existing track plays unchanged (the same code is generated: snapshot test on the demo projects in `project.js`); the add menu has ≤7 top groups; every effect has a category; distortion, pitch and freqshift lanes move the sound.
 
 ### Phase 1: one lattice plugin spec (**L–XL**)
 
@@ -150,12 +196,11 @@ Hot files that force tasks to run **one after another**: `graph.js`, `Graph.jsx`
 |---|---|---|
 | 1.1 Spec, validator, registry and adapters that *generate* `NODE_TYPES` effect entries, `FX_UNITS`, `LANE_FX` and `APP_PARAMS` rows from specs | new `plugins/spec.js`, `plugins/index.js`, test | ∥ (new files) |
 | 1.2 Host: `makeUnit(spec, ac)` → `{input, output, param(id), set, dispose}` for `graph` and `worklet` kinds; the generalised `prepare*()` barrier | new `plugins/host.js`; thin hooks in `stereo.js` `makeInsert` and `fxbus.js` `makeSendEffect` | seq (stereo/fxbus) |
-| 1.3 Null-test harness: render fixture tracks with `exportAudio` in a dev page (`/preview/?nulltest`) and compare against stored RMS/peak and spectrum fingerprints, pass/fail in one click | new `tools/nulltest/`, `exportAudio.js` hook | ∥ |
-| 1.4 Sample-accurate automation: schedule curves ahead (`setValueCurveAtTime`, 100 ms lookahead) via `param(id)`; retire the rAF push and the export `suspend()` stepping behind a flag | new `plugins/automate.js`, `App.jsx`, `exportAudio.js`, `automation.js` | seq |
-| 1.5 Project migration: `project.version`, and `migrate(raw)` maps `space`→reverb+delay nodes, `drive`→saturator(+lofi), `level`→utility, `clipper`/`softclip`→`clipper{knee}`, pan 0–1→−1…1, and linear gains→dB (D3). Nodes gain `data.plugin = {id, version}` | new `project-migrate.js`, `project.js` (load path), `test/migrate.test.mjs` with 10+ fixture tracks | seq after 1.1 |
-| 1.6a–n Migrate the units one per session, each with a null test (see the order below) | the unit moves from `stereo.js`/`fxbus.js` into `plugins/builtin/<id>.js` | seq in pairs (stereo.js) |
+| 1.4 Sample-accurate automation: schedule curves ahead (`setValueCurveAtTime`, 100 ms lookahead) via `param(id)`, behind a flag (D4b). The rAF push and the export `suspend()` stepping stay as the fallback, and are removed only after the user signs off | new `plugins/automate.js`, `App.jsx`, `exportAudio.js`, `automation.js` | seq |
+| 1.5 Project migration, **additive only**: `project.version`, and nodes gain `data.plugin = {id, version}`, derived from their type. Old types (`space`, `drive`, `level`, `clipper`, `softclip`) resolve through an alias table to their original implementations. No value is rescaled (rule 4). Tested against the S.3 corpus | new `project-migrate.js`, `project.js` (load path), `test/migrate.test.mjs` | seq after 1.1 |
+| 1.6a–n Migrate the units **one per commit** (order below). Each one: copy the unit, don't rewrite it, into `plugins/builtin/<id>.js`; flag it on (S.5); goldens must match; ship to /preview/ for the user; only then delete the old code, in a later commit | `plugins/builtin/<id>.js`; `stereo.js`/`fxbus.js` delegate | seq (stereo.js) |
 | 1.7 One send path: shared (`g_rv`), per-node (`rv_<id>`) and lane (dry + wet) all come from `role: 'send'`; the shared sends become a visible "send" in the mixer (D5) | `fxbus.js`, `laneFx.js`, `graph.js` | seq, after reverb/delay migrate |
-| 1.8 Worklet compressor with `key` input (a sidechain wire on the node), lookahead and a `classic` mode (D4); the `sidechain` node is renamed "duck (note-triggered)" | `plugins/builtin/compressor.js`, `graph.js`, `Graph.jsx` (second port) | seq |
+| 1.8 Worklet compressor as a new `mode` with a `key` input (a sidechain wire on the node) and lookahead; existing nodes stay on the browser compressor (D4); the `sidechain` node's *label* becomes "duck (note-triggered)" | `plugins/builtin/compressor.js`, `graph.js`, `Graph.jsx` (second port) | seq |
 | 1.9 Instruments: `kick` onto the spec (`role: instrument`, `worklet` dsp), then `syrup` (`state.extra` = layers/mods/routes; the `K` table becomes spec params; lanes host any `insert` plugin) | `instruments/kick.js`, `instruments/index.js`, `instruments/host.js`, `syrup/*` | seq; syrup last |
 | 1.10 Lanes for every engine (the kick gets lanes) and presets per plugin (save/load/rename, stored per user) | `instruments/laneFx.js`, new `plugins/presets.js`, `src/api/presets.py` | ∥ after 1.2 |
 | 1.11 (optional, M) A patch-level `lfo` node that can target any `modulatable` param as an offset | `graph.js`, `Graph.jsx`, `plugins/automate.js` | seq, last |
@@ -172,20 +217,31 @@ Hot files that force tasks to run **one after another**: `graph.js`, `Graph.jsx`
 9. limiter (report latency)
 10. compressor (1.8)
 11. reverb, delay (1.7)
-12. `punch`: a new bus transient worklet; the per-note version is kept only for old tracks via migration
+12. `punch`: a new bus transient worklet, offered as a new node; the existing per-note `punch` keeps working unchanged
 13. kick
 14. syrup
 
 **Per-note effects (D1):** they stay as instrument "sound" knobs and in code. They don't become plugins. The spec gains a `noteParams` hint so the UI can say "per note".
 
 **Saved tracks stay compatible:**
-- `migrate()` runs on every load, before `normalizeGraph`, and is idempotent.
-- Old keys map through a `WAS_CALLED`-style table.
-- `node.type` names stay valid forever as aliases.
-- Tests load every fixture, migrate it, and check the generated code and the null-test fingerprints.
-- Collab peers on older builds get a version bump notice instead of silently corrupting the document.
+- `migrate()` runs on every load, before `normalizeGraph`. It is idempotent and only adds fields.
+- `node.type` names stay valid forever. Aliases render with their original code.
+- The S.3 corpus (every draft track, plus the live snapshot) must produce identical code and pass the goldens after each step.
+- An older collab peer's `normalizeGraph` would drop the added fields if it wrote back, so a minimum-version check makes stale builds reload before they can edit, with a two-client test.
 
-**Dependencies:** Phase 0. **Risks:** a refactor of working audio (mitigated by the null tests and one unit per commit); two sessions editing `stereo.js` at once (serialise); Syrup's rig timing. **Open questions:** do we keep the `bmod`-style glide for per-note knobs? Do presets live per user or per track? **Acceptance:** all built-ins are registered from specs; `APP_PARAMS` is deleted; the old tracks' null tests pass within −60 dB (or documented changes for D3/D4); automation in export matches live playback; any insert can sit in a kick or Syrup lane.
+**Cohesion.** The spec is the existing engine spec plus the `NODE_TYPES` param fields; nothing is renamed. `NODE_TYPES` stays the catalogue; its effect entries are generated from specs. `stereoCode`/`declareInsert`/`commitInserts` and the `{input, output, set, dispose}` contract stay, and gain `param(id)`. **⚠ diverges:** `APP_PARAMS` is eventually generated rather than hand-written. Reason: it is the list that already drifted (mess item 5).
+
+**At risk, and how it's protected:**
+- *Automation curves:* targets (`n:`/`u:`/`c:`/`e:`) never change. The new scheduler is flagged, with `resolveTarget` tests (S.4) and automation goldens.
+- *Syrup modulation rings:* `knobAt` and route targets stay; Syrup migrates last; `syrup.test.mjs` plus Syrup goldens; the panel is checked on /preview/.
+- *Racks:* a unit keeps its `{id, type, on, data}` shape; `u:` targets are untouched; there is a rack round-trip test.
+- *Knife and heal-on-delete:* no change to edges or node types; `knife.test.mjs`.
+- *Frames:* untouched; `frames.test.mjs`.
+- *Export:* the generalised `prepare()` barrier; every golden is an offline render.
+- *Collab sync:* only additive JSON fields; `docsync`/`collab` tests.
+- *Kick and syrup panels:* `KickPanel` keeps running `KickDrive` from the same source; panels read params through a shim with the old field names.
+
+**Dependencies:** Phase S (Phase 0 can run alongside). **Risks:** a refactor of working audio (mitigated by the goldens, flags and one unit per commit); two sessions editing `stereo.js` at once (serialise); Syrup's rig timing. **Open questions:** do we keep the `bmod`-style glide for per-note knobs? Do presets live per user or per track? **Acceptance:** all built-ins are registered from specs; the corpus and goldens are unchanged (apart from flagged opt-ins); automation in export matches live playback; any insert can sit in a kick or Syrup lane; every step was tried on /preview/.
 
 ### Phase 2: Faust runtime (**L**)
 
@@ -204,6 +260,14 @@ Hot files that force tasks to run **one after another**: `graph.js`, `Graph.jsx`
 | 2.7 CPU budget: benchmark each build offline (render 2 s, time it) → cost; a per-track budget; an over-budget plugin is bypassed with a badge; worklet-side underrun counter where available | new `plugins/budget.js`, badge in node UI | ∥ |
 | 2.8 Parity proof: `eq3` rewritten in Faust (`plugins/builtin/eq3.dsp`), compared with the built-in by frequency response (±0.2 dB, 20 Hz–20 kHz) and on the null-test fixtures | test + `tools/nulltest` | after 2.4 |
 | 2.9 Denormal guard and templates (gain, filter, delay, synth voice) with `ma.EPSILON` idioms | `plugins/faust/templates/` | ∥ |
+
+**Cohesion. ⚠ diverges:** Faust is a new runtime. Reason: nothing today can compile user DSP safely (see the research, §2.5). It plugs into the same unit contract, the same worklet/Blob-URL loading and the same export barrier, so the rest of lattice sees just another unit.
+
+**At risk, and how it's protected:**
+- *Existing audio:* the Faust code only loads when a Faust node exists, so the goldens for built-ins must be unchanged.
+- *Export:* a Faust fixture is added to the goldens.
+- *Worklet scope:* each build gets a unique processor name, and nothing is shared with the built-in processors.
+- *Load time:* the compiler is never fetched for tracks without Faust; the bundle size is checked in CI.
 
 **Dependencies:** 1.1, 1.2 and 1.4 (it doesn't need the full migration). **Risks:** compile latency on big DSP; Safari's worklet WASM quirks; a 6 MB first load. **Open questions:** do we allow the Faust `soundfile` primitive (no, at first)? **Acceptance:** a Faust effect runs live and in export with an identical render; editing re-compiles in <1 s for small DSP without a click; `eq3.dsp` matches the built-in within tolerance; an over-budget plugin is bypassed, not glitching.
 
@@ -233,6 +297,16 @@ Hot files that force tasks to run **one after another**: `graph.js`, `Graph.jsx`
 | 3.9 Presets and templates, and add-menu entries: "new plugin…" and "my plugins" | `AddMenu.jsx`, `plugins/presets.js` | seq (after 0.3) |
 | 3.10 Instrument role: a poly grid becomes a channel engine (the sound picker lists "my synths") | `instruments/index.js`, `SoundPicker.jsx` | after 1.9 |
 
+**Cohesion.** It reuses `SynthWindow`/`windows.js` for the window, `Knob` and `useKnobControl` for every knob, the `quickWire.js` and knife gestures, `CodeBox` for the Faust node, the add menu for blocks, and `onUpdateProject` for undo and collab. **⚠ diverges:** there is a second React Flow canvas, inside the window. Reason: the rule that synth modules are self-contained. It copies the patcher's patterns, but doesn't share `Graph.jsx` state, so the patcher can't break.
+
+**At risk, and how it's protected:**
+- *Graph.jsx:* only 3.8 and 3.9 touch it. They add a `plugin` node type through the same `NODE_TYPES` path, with corpus tests.
+- *Undo and collab:* all edits go through `onUpdateProject`; add a collab test with two clients editing one plugin.
+- *Track size:* a cap on `project.plugins`, with a test.
+- *Export:* a grid-plugin golden.
+
+Ship order on /preview/: first the window with blocks and no audio, then codegen with sound, then exposing knobs, then save.
+
 **Dependencies:** Phase 2. 3.1, 3.2 and 3.4 can start during Phase 2. **Risks:** UX scope (keep to 20 blocks); compile lag while patching; per-voice vs shared confusion (MVP: the whole grid is one voice-type). **Open questions:** do plugins nest inside plugins (later)? How do Grid control signals (0–1 vs Hz) convert (a VCV-style convention: control is 0–1, pitch is Hz)? **Acceptance:** a user builds a filtered-saw synth and a feedback delay without writing code; the codegen tests pass; the plugin plays identically after a reload, in export and for a collab peer; a Faust error shows on the right block and the sound keeps playing.
 
 ### Phase 4: sharing and a library (**L**)
@@ -249,20 +323,26 @@ Hot files that force tasks to run **one after another**: `graph.js`, `Graph.jsx`
 | 4.4 Version pinning in tracks: `plugin:{id, version, hash}`, source embedded when private ("freeze"), an "update available" chip | `project.js`, `project-migrate.js` | seq |
 | 4.5 Safety: Faust-only for shared plugins; CPU guard badge; report/hide; a "verified" flag that unlocks custom panels (D8) | `plugins/budget.js`, API | after 4.1 |
 
+**At risk, and how it's protected:**
+- *Track storage and API:* the plugins API is a new route with its own table. `tracks.py` is unchanged apart from reading pins.
+- *Old tracks:* they have no plugin pins, so their path is untouched (corpus test).
+- *Collab:* embedded source is plain JSON, capped in size.
+
 **Risks:** abuse and review load; runaway CPU in shared tracks. **Acceptance:** a track using a shared plugin plays for a logged-out visitor with the pinned version; unpublishing doesn't break tracks (the source is embedded).
 
 ### Phase 5 (optional): WAM2 (**M**)
 
-Host curated, pinned WAM2 URLs only (`dsp.kind: 'wam'`: params, state, automation events, notes as MIDI), and export Faust-based lattice plugins as WAM2 via faustwasm's generator. Only after Phase 4's safety model exists.
+Host curated, pinned WAM2 URLs only (`dsp.kind: 'wam'`: params, state, automation events, notes as MIDI), and export Faust-based lattice plugins as WAM2 via faustwasm's generator. Only after Phase 4's safety model exists. **⚠ diverges:** WAMs are arbitrary JS. Reason: interop. They are protected by the curated list, per-WAM export tests and goldens, and they are never loaded from a shared track's URL.
 
 ---
 
-## 5. Summary of effort and order
+## 6. Summary of effort and order
 
 | Phase | Effort | Can start when | Runs in parallel with |
 |---|---|---|---|
-| 0 Tidy | S–M (days) | now | — |
-| 1 Plugin spec + migration | L–XL | Phase 0 | the tail of 1.6 alongside 2 and 3 |
+| S Safety net | M | now | 0 (UI-only tasks) |
+| 0 Tidy | S–M (days) | now (0.1 after S.2) | S |
+| 1 Plugin spec + migration | L–XL | Phase S | the tail of 1.6 alongside 2 and 3 |
 | 2 Faust runtime | L | 1.1, 1.2, 1.4 | the rest of 1.6–1.10 |
 | 3 Node editor MVP | XL | 2.2–2.5 (3.1, 3.2, 3.4 earlier) | 1.9, 4.1 |
 | 4 Sharing | L | 3.8 | — |
