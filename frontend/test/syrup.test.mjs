@@ -39,11 +39,13 @@ const OLD = {
   volume: 0.8,
 }
 const old = m.normalizePatch(JSON.parse(JSON.stringify(OLD)))
-ok('an old patch normalises to itself', same(old, OLD), JSON.stringify(old))
-ok('and again', same(m.normalizePatch(old), OLD))
+// what's new on it: the version, and each layer's unison blend at "all alike"
+const OLD_NOW = { ...OLD, v: 4, layers: OLD.layers.map((l) => Object.fromEntries(Object.entries(l).flatMap(([k, v]) => (k === 'spread' ? [[k, v], ['blend', 0.5]] : [[k, v]])))) }
+ok('an old patch normalises to itself, plus the new defaults', same(old, OLD_NOW), JSON.stringify(old))
+ok('and again', same(m.normalizePatch(old), OLD_NOW))
 const enc = m.encodePatch(old)
-ok('new knobs it sends are only depths, at all of it', Object.keys(enc).filter((k) => /_depth$/.test(k)).every((k) => enc[k] === 1))
-ok('its knobs are the same slots', same(Object.keys(enc).filter((k) => !/_depth$/.test(k)).sort(), [
+ok('new knobs it sends are only depths and blends, at their neutral values', Object.keys(enc).filter((k) => /_(depth|blend)$/.test(k)).every((k) => enc[k] === (/depth/.test(k) ? 1 : 0.5)))
+ok('its knobs are the same slots', same(Object.keys(enc).filter((k) => !/_(depth|blend)$/.test(k)).sort(), [
   ...['la', 'lb'].flatMap((_, i) => ['level', 'pan', 'fine', 'pw', 'pos', 'warp', 'detune', 'spread', 'fm', 'ratio'].map((k) => `l${i}_${k}`)),
   'd0_hz', 'd1_attack', 'd1_decay', 'd1_sustain', 'd1_release',
   'a_attack', 'a_decay', 'a_sustain', 'a_release', 'n0_gain', 'n1_gain', 'n2_gain', 'glide', 'volume', 'cps',
@@ -148,7 +150,7 @@ ok("A's semitones are the base it moves from", Math.abs(base[0] / still[0] - 2 *
   ok('the order works movers out first', (() => { const o = m.modOrder(amt); return o.indexOf(0) < o.indexOf(1) })())
   ok('including what moves the amounts of routes into it', (() => { const o = m.modOrder(m.normalizePatch({ ...p0, modulators: [lfo('b'), env('c'), lfo('a')], routes: [...p0.routes, { id: 'ca', src: 'c', target: 'route:ab.amt', amt: 0.5 }] })); return o.indexOf(1) < o.indexOf(0) && o.indexOf(2) < o.indexOf(0) })())
   ok('depth is kept, and only when it isn\'t 1', m.normalizePatch({ ...p0, modulators: [lfo('a', { depth: 0.25 }), lfo('b', { depth: 1 })] }).modulators.map((x) => x.depth).join() === '0.25,')
-  ok('depth is automatable', m.knobAt(m.normalizePatch(p0), 'Mc_depth')?.value === 1 && m.AUDIO_PARAMS.at(-1).key === 'd15_depth')
+  ok('depth is automatable', m.knobAt(m.normalizePatch(p0), 'Mc_depth')?.value === 1 && m.AUDIO_PARAMS.some((x) => x.key === 'd15_depth'))
 
   // in the processor: lfo b pushes A's pitch; a doubles b's rate, c's env scales the amount
   const runA = (patch, blocks = 20) => {
@@ -170,6 +172,49 @@ ok("A's semitones are the base it moves from", Math.abs(base[0] / still[0] - 2 *
   ok('a route to an amount turns it up', Math.abs(scaled.v.ctl.layers[0].freq / still[0] - 2) < 1e-3, scaled.v.ctl.layers[0].freq)
   const envMoved = runA({ ...p0, modulators: [lfo('a'), env('c')], routes: [{ id: 'ac', src: 'a', target: 'mod:c.sustain', amt: -0.5 }, { id: 'cp', src: 'c', target: 'layer:la.level', amt: 0.1 }] }, 1500)
   ok('an envelope\'s sustain moves', Math.abs(envMoved.v.envs[1].v - 0) < 1e-3, envMoved.v.envs[1].v)
+}
+
+// ── supersaws become analog saws with unison ──
+{
+  const saw = { id: 'ss', type: 'supersaw', on: true, level: 0.7, pan: 0.5, oct: 0, semi: 0, fine: 0, wave: 'sine', pw: 0.5, table: 'basic', pos: 0, warp: 0, warpmode: 'none', unison: 9, detune: 0.45, spread: 0.8, fm: 0, ratio: 1, fmwave: 'sine', color: 'pink', lane: 0 }
+  const oldSaw = { ...OLD, layers: [saw, { ...OLD.layers[0], unison: 5 }], routes: [{ id: 'r1', src: 'm1', target: 'layer:ss.detune', amt: 0.3 }, { id: 'r2', src: 'm1', target: 'layer:ss.spread', amt: 0.2 }] }
+  const p = m.normalizePatch(JSON.parse(JSON.stringify(oldSaw)))
+  const L = p.layers[0]
+  ok('an old supersaw loads as an analog saw', L.type === 'analog' && L.wave === 'sawtooth' && L.id === 'ss')
+  ok('with its voices, detune and spread', L.unison === 9 && L.detune === 0.45 && L.spread === 0.8 && L.blend === 0.5 && L.level === 0.7)
+  ok('its routes still reach it', p.routes.length === 2 && p.routes.every((r) => m.targetSpec(p, r.target)))
+  ok('an old analog layer stays one voice', p.layers[1].unison === 1)
+  ok('a new one keeps its voices', m.normalizePatch(p).layers[0].unison === 9 && m.normalizePatch({ ...p, layers: [{ ...p.layers[1], unison: 5 }] }).layers[0].unison === 5)
+  const bare = m.normalizePatch({ layers: [{ type: 'supersaw' }] }).layers[0]
+  ok('a bare supersaw gets a supersaw\'s defaults', bare.unison === 7 && bare.detune === 0.18 && bare.type === 'analog')
+  ok('supersaw is no longer a type to add', !m.LAYER_TYPES.includes('supersaw'))
+  ok('the presets have none', m.PRESETS.every((x) => x.layers.every((l) => l.type !== 'supersaw')))
+  ok('blend is a target', m.targetSpec(p, 'layer:ss.blend')?.label === 'A blend')
+
+  // and it sounds the same: the old supersaw's message against the new analog one
+  const render = (msg) => {
+    const patch = m.normalizePatch({ ...oldSaw, routes: [] })
+    const proc = makeProc(patch)
+    proc.onData(msg)
+    let seed = 1
+    const rnd = Math.random
+    Math.random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
+    const v = proc.voices[0]
+    proc.noteOn(v, 48, 1)
+    Math.random = rnd
+    const outL = new Float32Array(512)
+    const outR = new Float32Array(512)
+    proc.render(v, outL, outR, 0, 512)
+    return [...outL, ...outR]
+  }
+  const patch = m.normalizePatch({ ...oldSaw, routes: [] })
+  const now = m.patchMessage(patch)
+  const was = JSON.parse(JSON.stringify(now))
+  was.layers[0][1] = 1 // the processor's old supersaw
+  was.layers[1][8] = 1
+  const a = render(now)
+  const b = render(was)
+  ok('an old supersaw sounds exactly as it did', a.every((x, i) => x === b[i]) && a.some((x) => x !== 0))
 }
 
 if (fails) { console.log(`${fails} failed`); process.exit(1) }

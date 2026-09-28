@@ -85,7 +85,7 @@ function LayerScope({ layer }) {
           const q = wrap(p + (fm / (2 * Math.PI)) * fmw(wrap(p * layer.ratio)))
           if (frame) return frame[Math.floor(q * frame.length) % frame.length]
           if (layer.type === 'analog' && layer.wave === 'pulse') return q < layer.pw ? 1 : -1
-          return (WAVE_FN[layer.type === 'supersaw' ? 'sawtooth' : layer.wave] ?? WAVE_FN.sine)(q)
+          return (WAVE_FN[layer.wave] ?? WAVE_FN.sine)(q)
         }
         const alpha = layer.on ? 1 : 0.35
         if (layer.type === 'noise') {
@@ -99,7 +99,7 @@ function LayerScope({ layer }) {
           ctx.globalAlpha = 1
           return
         }
-        const voices = layer.type === 'supersaw' || (layer.type === 'wavetable' && layer.unison > 1) ? Math.min(layer.unison, 5) : 1
+        const voices = layer.unison > 1 ? Math.min(layer.unison, 5) : 1
         for (let v = 0; v < voices; v++) {
           const off = voices > 1 ? (v / (voices - 1) - 0.5) * layer.detune * 0.12 : 0
           const values = Float32Array.from({ length: n }, (_, i) => sample(wrap(((i / n) * 2) * (1 + off) + v * 0.13)))
@@ -275,27 +275,28 @@ function ModZone({ ui, route, className = '', children }) {
 
 // ── what a layer sounds like ─────────────────────────────────────────────────
 
-/** One menu for a layer's sound: every analog wave, supersaw, each wavetable, each noise. */
+/** One menu for a layer's sound: every analog wave, each wavetable, each noise. */
 const SOUND_GROUPS = [
   ['analog', [['analog:sawtooth', 'saw'], ['analog:square', 'square'], ['analog:triangle', 'triangle'], ['analog:sine', 'sine'], ['analog:pulse', 'pulse']]],
-  ['stacked', [['supersaw:', 'supersaw']]],
   ['wavetable', TABLE_NAMES.map((t) => [`wavetable:${t}`, `${t} table`])],
   ['noise', NOISES.map((c) => [`noise:${c}`, `${c} noise`])],
 ]
-const soundOf = (l) => (l.type === 'analog' ? `analog:${l.wave}` : l.type === 'supersaw' ? 'supersaw:' : l.type === 'wavetable' ? `wavetable:${l.table}` : `noise:${l.color}`)
+const soundOf = (l) => (l.type === 'analog' ? `analog:${l.wave}` : l.type === 'wavetable' ? `wavetable:${l.table}` : `noise:${l.color}`)
 function applySound(l, key) {
   const [type, variant] = key.split(':')
-  if (type !== l.type) {
+  // analog and wavetable both stack voices: going between them keeps the stack
+  if (type !== l.type && (type === 'noise' || l.type === 'noise')) {
     const fresh = makeLayer(type)
-    Object.assign(l, { type, unison: fresh.unison, detune: fresh.detune })
+    Object.assign(l, { unison: fresh.unison, detune: fresh.detune })
   }
+  l.type = type
   if (type === 'analog') l.wave = variant
   if (type === 'wavetable') l.table = variant
   if (type === 'noise') l.color = variant
 }
 
 /** The one knob that changes a layer's character most, if its sound has one. */
-const toneKnob = (l) => (l.type === 'wavetable' ? 'pos' : l.type === 'supersaw' ? 'detune' : l.type === 'analog' && l.wave === 'pulse' ? 'pw' : null)
+const toneKnob = (l) => (l.type === 'wavetable' ? 'pos' : l.type === 'analog' && l.wave === 'pulse' ? 'pw' : null)
 
 const ADSR = ['attack', 'decay', 'sustain', 'release']
 
@@ -315,7 +316,7 @@ function destinations(patch) {
     const tone = toneKnob(l)
     if (tone) knobs.push(tone)
     if (l.type === 'wavetable') knobs.push('warp')
-    if (l.type === 'wavetable' || l.type === 'supersaw') knobs.push('detune', 'spread')
+    if (l.type !== 'noise' && l.unison > 1) knobs.push('detune', 'spread', 'blend')
     if (l.type !== 'noise') knobs.push('fm', 'ratio')
     for (const k of new Set(knobs)) list.push([`layer:${l.id}.${k}`, `${layerLetter(i)} ${K[k].label}`, group])
   })
@@ -396,7 +397,7 @@ function Generator({ ui, layer, index }) {
   )
   const tone = toneKnob(layer)
   const full = ui.patch.layers.length >= MAX_LAYERS
-  const stacked = layer.type === 'supersaw' || layer.type === 'wavetable'
+  const stacked = layer.type !== 'noise' // analog and wavetable layers stack unison voices
   const pitched = layer.type !== 'noise'
   const open = !layer.collapsed
   return (
@@ -437,8 +438,9 @@ function Generator({ ui, layer, index }) {
             {knob('pan')}
             {tone && knob(tone)}
             {pitched && knob('fine')}
-            {layer.type === 'wavetable' && layer.unison > 1 && knob('detune')}
-            {stacked && (layer.type === 'supersaw' || layer.unison > 1) && knob('spread')}
+            {stacked && layer.unison > 1 && knob('detune')}
+            {stacked && layer.unison > 1 && knob('spread')}
+            {stacked && layer.unison > 2 && knob('blend')}
             {layer.type === 'wavetable' && knob('warp')}
             {pitched && knob('fm')}
             {pitched && layer.fm > 0 && knob('ratio')}
@@ -468,7 +470,6 @@ function AddGenerator({ ui }) {
       {!ui.patch.layers.length && <span className="sy-small-label">no sound yet · add a generator</span>}
       <div className="sy-add-list">
         <button type="button" onClick={() => add('analog', { wave: 'sawtooth' })}>analog</button>
-        <button type="button" onClick={() => add('supersaw')}>supersaw</button>
         <button type="button" onClick={() => add('wavetable')}>wavetable</button>
         <button type="button" onClick={() => add('noise')}>noise</button>
       </div>

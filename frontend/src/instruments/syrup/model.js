@@ -2,7 +2,7 @@
  * Syrup's patch: what the window edits and the track saves, laid out the way Phase Plant
  * is. A patch is
  *
- *   layers      generators stacked top to bottom (analog, supersaw, wavetable, noise), up to 8,
+ *   layers      generators stacked top to bottom (analog, wavetable, noise), up to 8,
  *               each playing into one of the three lanes
  *   amp         the envelope every voice goes out through
  *   lanes       three effect lanes, as Phase Plant has: { out, gain, mute, effects } — out is
@@ -40,6 +40,8 @@ export const K = {
   spread: { key: 'spread', label: 'spread', min: 0, max: 1, def: 0.6 },
   fm: { key: 'fm', label: 'fm', min: 0, max: 8, def: 0 },
   ratio: { key: 'ratio', label: 'ratio', min: 0.25, max: 8, def: 1, log: true, unit: 'x' },
+  // unison: how loud the middle voice is against the rest (0 middle only, ½ all alike, 1 the sides)
+  blend: { key: 'blend', label: 'blend', min: 0, max: 1, def: 0.5 },
   // a layer's pitch in semitones: set by its octave and semi steppers, moved by routes
   pitch: { key: 'pitch', label: 'pitch', min: -48, max: 48, def: 0, unit: 'st', origin: 0 },
   attack: { key: 'attack', label: 'attack', min: 0.001, max: 4, def: 0.005, log: true, unit: 's' },
@@ -109,7 +111,13 @@ export function laneOrder(lanes) {
   return order
 }
 
-export const LAYER_TYPES = ['analog', 'supersaw', 'wavetable', 'noise']
+/**
+ * The generators you can add. Analog and wavetable layers stack unison voices (a supersaw is
+ * an analog saw with a few); a 'supersaw' layer from an older patch loads as just that.
+ */
+export const LAYER_TYPES = ['analog', 'wavetable', 'noise']
+/** Layer types as the processor numbers them (1 was the supersaw, and stays free). */
+const LAYER_KINDS = ['analog', 'supersaw', 'wavetable', 'noise']
 export const WAVES = ['sine', 'triangle', 'sawtooth', 'square', 'pulse']
 export const NOISES = ['white', 'pink', 'brown']
 export const FM_WAVES = ['sine', 'triangle', 'sawtooth', 'square']
@@ -197,12 +205,14 @@ export const TABLES = {
 export const TABLE_NAMES = Object.keys(TABLES)
 
 /** Layer knobs a modulator can move, in the order the processor numbers them. */
-export const LAYER_KNOBS = ['level', 'pan', 'fine', 'pw', 'pos', 'warp', 'detune', 'spread', 'fm', 'ratio', 'pitch']
+export const LAYER_KNOBS = ['level', 'pan', 'fine', 'pw', 'pos', 'warp', 'detune', 'spread', 'fm', 'ratio', 'pitch', 'blend']
 /**
  * The layer knobs that are AudioParams (l<layer>_<knob>). Pitch isn't one: its base is the
- * layer's octave and semitones, which come with the message.
+ * layer's octave and semitones, which come with the message. The first ten are the slots
+ * patches have always had; blend came later, so its slots are at the end of AUDIO_PARAMS.
  */
-export const LAYER_PARAMS = LAYER_KNOBS.slice(0, 10)
+const FIRST_LAYER_PARAMS = LAYER_KNOBS.slice(0, 10)
+export const LAYER_PARAMS = [...FIRST_LAYER_PARAMS, 'blend']
 /** A layer's pitch, in semitones, before its routes move it. */
 export const layerPitch = (l) => l.oct * 12 + l.semi
 /** Patch-wide destinations, numbered from 1 (0 is "nowhere"); new ones go on the end. */
@@ -214,11 +224,13 @@ export function makeLayer(type = 'analog', over = {}) {
   return {
     id: newPartId(), type, on: true, level: 0.8, pan: 0.5, oct: 0, semi: 0, fine: 0,
     wave: 'sawtooth', pw: 0.5, table: 'basic', pos: 0, warp: 0, warpmode: 'none',
-    unison: type === 'supersaw' ? 7 : 1, detune: type === 'supersaw' ? 0.18 : 0.1, spread: 0.6,
+    unison: 1, detune: 0.1, spread: 0.6, blend: 0.5,
     fm: 0, ratio: 1, fmwave: 'sine', color: 'pink', lane: 0,
     ...over,
   }
 }
+/** A supersaw, as it's made now: an analog saw, seven voices. */
+export const makeSupersaw = (over = {}) => makeLayer('analog', { wave: 'sawtooth', unison: 7, detune: 0.18, ...over })
 
 export function makeLfo(over = {}) {
   return { id: newPartId(), kind: 'lfo', points: presetPoints('sine'), mode: 'free', polarity: 'bi', sync: true, bars: 1 / 4, hz: 2, grid: 8, ...over }
@@ -229,7 +241,7 @@ export function makeEnv(over = {}) {
 
 export function initPatch() {
   return {
-    v: 3,
+    v: 4,
     name: 'init',
     layers: [], // blank: you add the sounds you want
     amp: { attack: 0.005, decay: 0.3, sustain: 0.8, release: 0.2 },
@@ -287,10 +299,16 @@ function cleanModulator(m) {
 export function normalizePatch(raw) {
   const base = initPatch()
   if (!raw || typeof raw !== 'object') return base
+  // before version 4 an analog layer was always one voice, and a supersaw a type of its own
+  const older = !(Number(raw.v) >= 4)
   const layers = (Array.isArray(raw.layers) ? raw.layers : [])
-    .filter((l) => l && LAYER_TYPES.includes(l.type))
+    .filter((l) => l && (LAYER_TYPES.includes(l.type) || l.type === 'supersaw'))
     .slice(0, MAX_LAYERS)
-    .map((l) => {
+    .map((given) => {
+      // a supersaw is an analog saw with its unison, detune and spread (its knobs keep their
+      // names, so routes to them hold)
+      const l = given.type === 'supersaw' ? { ...given, type: 'analog', wave: 'sawtooth', unison: given.unison ?? 7, detune: given.detune ?? 0.18 }
+        : older && given.type === 'analog' ? { ...given, unison: 1 } : given
       const d = makeLayer(l.type)
       const out = {
         id: cleanId(l.id),
@@ -310,6 +328,7 @@ export function normalizePatch(raw) {
         unison: Math.round(num(l.unison, d.unison, 1, 16)),
         detune: num(l.detune, d.detune, 0, 1),
         spread: num(l.spread, d.spread, 0, 1),
+        blend: num(l.blend, d.blend, 0, 1),
         fm: num(l.fm, 0, K.fm.min, K.fm.max),
         ratio: num(l.ratio, 1, K.ratio.min, K.ratio.max),
         fmwave: pick(l.fmwave, FM_WAVES, 'sine'),
@@ -340,7 +359,7 @@ export function normalizePatch(raw) {
   }
 
   const patch = {
-    v: 3,
+    v: 4,
     name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.slice(0, 40) : base.name,
     layers,
     amp: cleanEnv(raw.amp, base.amp),
@@ -584,7 +603,7 @@ const envParams = (prefix) => ENV_STAGES.map((k) => ({ key: `${prefix}_${k}`, mi
 
 /** The knobs the processor reads, in fixed slots: one AudioParam each. */
 export const AUDIO_PARAMS = [
-  ...Array.from({ length: MAX_LAYERS }, (_, i) => LAYER_PARAMS.map((k) => ({ key: `l${i}_${k}`, min: K[k].min, max: K[k].max, def: K[k].def }))).flat(),
+  ...Array.from({ length: MAX_LAYERS }, (_, i) => FIRST_LAYER_PARAMS.map((k) => ({ key: `l${i}_${k}`, min: K[k].min, max: K[k].max, def: K[k].def }))).flat(),
   ...Array.from({ length: MAX_MODULATORS }, (_, j) => [{ key: `d${j}_hz`, min: K.hz.min, max: K.hz.max, def: K.hz.def }, ...envParams(`d${j}`)]).flat(),
   ...envParams('a'),
   ...Array.from({ length: LANES }, (_, i) => ({ key: `n${i}_gain`, min: K.gain.min, max: K.gain.max, def: 1 })),
@@ -593,6 +612,8 @@ export const AUDIO_PARAMS = [
   { key: 'cps', min: 0.01, max: 10, def: 0.5 },
   // added later, so on the end: each modulator's depth
   ...Array.from({ length: MAX_MODULATORS }, (_, j) => ({ key: `d${j}_depth`, min: 0, max: 1, def: 1 })),
+  // and each layer's unison blend
+  ...Array.from({ length: MAX_LAYERS }, (_, i) => ({ key: `l${i}_blend`, min: K.blend.min, max: K.blend.max, def: K.blend.def })),
 ]
 
 /**
@@ -610,9 +631,9 @@ export const AUDIO_PARAMS = [
 export function patchMessage(patch) {
   return {
     layers: patch.layers.map((l) => [
-      l.on ? 1 : 0, LAYER_TYPES.indexOf(l.type), WAVES.indexOf(l.wave), TABLE_NAMES.indexOf(l.table), NOISES.indexOf(l.color),
+      l.on ? 1 : 0, LAYER_KINDS.indexOf(l.type), WAVES.indexOf(l.wave), TABLE_NAMES.indexOf(l.table), NOISES.indexOf(l.color),
       WARP_MODES.indexOf(l.warpmode), FM_WAVES.indexOf(l.fmwave), layerPitch(l),
-      l.type === 'analog' || l.type === 'noise' ? 1 : l.unison, // analog layers are one voice; the others stack
+      l.type === 'noise' ? 1 : l.unison, // noise is one voice; the others stack
       l.lane,
     ]),
     lanes: (() => { const summed = lanesSummed(patch.lanes); return patch.lanes.map((n, i) => [n.out === 'master' ? -1 : n.out, n.mute ? 1 : 0, summed[i] ? 1 : 0]) })(),
@@ -684,7 +705,7 @@ export function knobAt(patch, key) {
     const i = Number(lane[1]) - 1
     return { def: K.gain, value: patch.lanes[i].gain, label: `lane ${lane[1]} level`, set: (p, v) => { p.lanes[i].gain = v } }
   }
-  const m = /^(?:(volume|glide)|amp_(attack|decay|sustain|release)|M(\w+?)_(hz|depth|attack|decay|sustain|release)|L(\w+?)_(level|pan|fine|pw|pos|warp|detune|spread|fm|ratio))$/.exec(k)
+  const m = /^(?:(volume|glide)|amp_(attack|decay|sustain|release)|M(\w+?)_(hz|depth|attack|decay|sustain|release)|L(\w+?)_(level|pan|fine|pw|pos|warp|detune|spread|blend|fm|ratio))$/.exec(k)
   if (!m) return null
   if (m[1]) return { def: K[m[1]], value: patch[m[1]], label: m[1], set: (p, v) => { p[m[1]] = v } }
   if (m[2]) return { def: K[m[2]], value: patch.amp[m[2]], label: `amp ${m[2]}`, set: (p, v) => { p.amp[m[2]] = v } }
@@ -737,7 +758,7 @@ export const PRESETS = [
     p.glide = 0.04
   }),
   preset('reese', (p, route) => {
-    p.layers = [makeLayer('supersaw', { unison: 7, detune: 0.32, spread: 0.3, level: 0.7 }), makeLayer('analog', { wave: 'sine', oct: -1, level: 0.6 })]
+    p.layers = [makeSupersaw({ unison: 7, detune: 0.32, spread: 0.3, level: 0.7 }), makeLayer('analog', { wave: 'sine', oct: -1, level: 0.6 })]
     p.amp = { attack: 0.01, decay: 0.3, sustain: 1, release: 0.15 }
     const lfo = makeLfo({ bars: 1 / 2 })
     p.modulators = [lfo]
@@ -751,7 +772,7 @@ export const PRESETS = [
     route(env, 1, 'level', 0.6)
   }),
   preset('hoover lead', (p, route) => {
-    p.layers = [makeLayer('supersaw', { unison: 9, detune: 0.45, spread: 0.8 }), makeLayer('analog', { wave: 'pulse', pw: 0.25, oct: -1, level: 0.5 })]
+    p.layers = [makeSupersaw({ unison: 9, detune: 0.45, spread: 0.8 }), makeLayer('analog', { wave: 'pulse', pw: 0.25, oct: -1, level: 0.5 })]
     const env = makeEnv({ attack: 0.08, decay: 0.3, sustain: 0, release: 0.1 })
     const vib = makeLfo({ sync: false, hz: 5.5 })
     p.modulators = [env, vib]

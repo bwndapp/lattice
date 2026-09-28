@@ -13,7 +13,7 @@ registerLaneFx(LANE_FX_CATALOG)
 export default {
   type: 'syrup',
   label: 'syrup',
-  blurb: 'A layered synth: analog, supersaw, wavetable and noise, with envelopes and LFOs to move it',
+  blurb: 'A layered synth: analog and wavetable oscillators with unison, and noise, with envelopes and LFOs to move it',
   kinds: ['synth'],
   processor: 'lattice-syrup',
   voices: 8,

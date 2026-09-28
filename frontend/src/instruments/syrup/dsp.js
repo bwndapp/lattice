@@ -49,6 +49,8 @@ const syMoved = (base, by, s) => (by ? syVal(syPos(base, s) + by, s) : base)
 const SY_LSTRIDE = ${LAYER_KNOBS.length}
 const SY_LBASE = ${DEST_LAYERS}
 const SY_LPITCH = ${LAYER_KNOBS.indexOf('pitch')}
+const SY_LBLEND = ${LAYER_KNOBS.indexOf('blend')} // on the routes' numbering
+const SY_NBLEND = ${LAYER_PARAMS.indexOf('blend')} // among the slots' names
 const SY_LN = Array.from({ length: SY_LAYERS }, (_, i) => ${JSON.stringify(LAYER_PARAMS)}.map((k) => 'l' + i + '_' + k))
 const SY_DN = Array.from({ length: SY_MODS }, (_, j) => ({ hz: 'd' + j + '_hz', a: 'd' + j + '_attack', d: 'd' + j + '_decay', s: 'd' + j + '_sustain', r: 'd' + j + '_release', depth: 'd' + j + '_depth' }))
 // modulators' own knobs as destinations: MOD_KNOBS apiece from SY_DM; routes' amounts from SY_DR
@@ -357,6 +359,7 @@ class SyrupProcessor extends LatticeInstrument {
       L.spread = syMod(m, lm, 7, k[N[7]])
       L.fm = syMod(m, lm, 8, k[N[8]])
       L.ratio = syMod(m, lm, 9, k[N[9]])
+      L.blend = syMod(m, lm, SY_LBLEND, k[N[SY_NBLEND]])
       L.unison = Math.max(1, Math.min(16, conf[8] | 0))
       // the layer's own pitch (its octave and semitones), moved by its routes, and its fine
       L.freq = syMtof(voice.pitch + syMod(m, lm, SY_LPITCH, conf[7]) + syMod(m, lm, 2, k[N[2]]) / 100 + semis)
@@ -502,7 +505,10 @@ class SyrupProcessor extends LatticeInstrument {
   }
   // one layer's sound for n samples, added into the buffers
   layer(st, L, bufL, bufR, n) {
-    const N = L.type === 1 || L.type === 2 ? L.unison : 1
+    const N = L.unison
+    // the blend: the middle voice (or two) against the sides; at ½ all alike
+    const mid = N < 3 ? 1 : Math.min(1, 2 - 2 * L.blend)
+    const side = N < 3 ? 1 : Math.min(1, 2 * L.blend)
     const dt0 = L.freq / sampleRate
     // noise: one source, panned
     if (L.type === 3) {
@@ -564,8 +570,9 @@ class SyrupProcessor extends LatticeInstrument {
       const at = N === 1 ? 0 : (u / (N - 1)) * 2 - 1
       const dt = dt0 * 2 ** ((at * L.detune * 100) / 1200)
       const pan = Math.max(-1, Math.min(1, L.pan + at * L.spread * (u % 2 ? -1 : 1) * (N > 1 ? 1 : 0)))
-      const gl1 = Math.cos(((pan + 1) * Math.PI) / 4) * L.level * L.norm
-      const gr1 = Math.sin(((pan + 1) * Math.PI) / 4) * L.level * L.norm
+      const bl = N < 3 ? 1 : Math.abs(at) * (N - 1) < 1.01 ? mid : side
+      const gl1 = Math.cos(((pan + 1) * Math.PI) / 4) * L.level * L.norm * bl
+      const gr1 = Math.sin(((pan + 1) * Math.PI) / 4) * L.level * L.norm * bl
       let gl = st.warm ? st.gl[u] : gl1
       let gr = st.warm ? st.gr[u] : gr1
       const sl = (gl1 - gl) / n
