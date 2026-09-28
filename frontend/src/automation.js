@@ -64,6 +64,9 @@ const APP_PARAMS = {
   flanger: { prefix: '', where: 'insert', keys: { rate: 'rate', depth: 'depth', feedback: 'feedback', mix: 'mix' } },
   tremolo: { prefix: '', where: 'insert', keys: { rate: 'rate', depth: 'depth' } },
   lofi: { prefix: '', where: 'insert', keys: { coarse: 'coarse' } },
+  distortion: { prefix: '', where: 'insert', keys: { drive: 'drive', tighten: 'tighten', tone: 'tone', bias: 'bias', mix: 'mix', out: 'out' } },
+  pitch: { prefix: '', where: 'insert', keys: { semitones: 'semitones', fine: 'fine', grain: 'grain', mix: 'mix' } },
+  freqshift: { prefix: '', where: 'insert', keys: { hz: 'hz', spread: 'spread', mix: 'mix' } },
 }
 
 export function appParam(project, target) {
