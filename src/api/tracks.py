@@ -5,6 +5,7 @@ and forking need a blue wind sign-in. Ownership is keyed on the SSO `sub`.
 """
 import hashlib
 import json
+import re
 import secrets
 import time
 
@@ -17,6 +18,8 @@ router = APIRouter()
 
 MAX_CODE = 500_000  # a pasted song lands twice: in the header, and in the code under it
 MAX_TITLE = 80
+MAX_TAG = 24
+MAX_TAGS = 8
 VISIBILITIES = ("public", "unlisted", "private")
 SORTS = {
     "new": "t.updated_at DESC",
@@ -81,6 +84,9 @@ def _conn():
                 conn.execute("UPDATE tracks SET author_id = ? WHERE owner_sub = ?",
                              (_author_id(row["owner_sub"]), row["owner_sub"]))
             conn.execute("CREATE INDEX IF NOT EXISTS tracks_author ON tracks(author_id)")
+        # words people can find a track by, as a JSON list; tracks from before have none
+        if "tags" not in cols:
+            conn.execute("ALTER TABLE tracks ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'")
         conn.commit()
         _ready.add(path)
     return conn
@@ -203,8 +209,35 @@ def _shape(code):
     }
 
 
+def _tag(raw):
+    """One tag as it's kept: lowercase letters, numbers, spaces and dashes, no leading #."""
+    t = str(raw or "").strip().lower().lstrip("#")
+    t = re.sub(r"[^\w -]|_", "", t)
+    t = re.sub(r"\s+", " ", t).strip(" -")
+    return t[:MAX_TAG].strip(" -")
+
+
+def _tags(raw):
+    """A list of tags, cleaned, without repeats, and no more than MAX_TAGS of them."""
+    out = []
+    for r in raw:
+        t = _tag(r)
+        if t and t not in out:
+            out.append(t)
+    return out[:MAX_TAGS]
+
+
+def _tags_of(value):
+    try:
+        got = json.loads(value or "[]")
+    except ValueError:
+        return []
+    return got if isinstance(got, list) else []
+
+
 def _public(row, user=None, liked=False, with_code=True):
     t = dict(row)
+    t["tags"] = _tags_of(t.get("tags"))
     t["is_owner"] = bool(user and user.get("sub") == t["owner_sub"])
     t["liked"] = bool(liked)
     t["author_id"] = _author_id(t.get("owner_sub"))
@@ -236,16 +269,21 @@ def _validate(body, partial=False):
         if vis not in VISIBILITIES:
             return None, "visibility must be public, unlisted or private"
         out["visibility"] = vis
+    if "tags" in body or not partial:
+        tags = body.get("tags") or []
+        if not isinstance(tags, list):
+            return None, "tags must be a list"
+        out["tags"] = json.dumps(_tags(tags), ensure_ascii=False)
     return out, None
 
 
 @router.get("")
 def list_tracks(request: Request, q: str = "", sort: str = "new", view: str = "explore",
-                limit: int = 50, offset: int = 0, author: str = "", remixes_of: str = ""):
+                limit: int = 50, offset: int = 0, author: str = "", remixes_of: str = "", tag: str = ""):
     """view: explore (public), mine (all of yours), liked (tracks you liked).
 
     `author` narrows to one person's public tracks (their handle from _author_id), and
-    `remixes_of` to what came out of one track. Both work with any view and sort.
+    `remixes_of` to what came out of one track. Both work with any view and sort, and so does `tag` (only tracks tagged with it).
     """
     user = sso_user(request)
     limit = max(1, min(limit, 100))
@@ -272,10 +310,14 @@ def list_tracks(request: Request, q: str = "", sort: str = "new", view: str = "e
     if remixes_of.strip():
         where.append("t.forked_from = ?")
         params.append(remixes_of.strip()[:40])
+    if _tag(tag):
+        # tags are kept as a JSON list of cleaned words, so a quoted one matches it whole
+        where.append("t.tags LIKE ?")
+        params.append(f'%{json.dumps(_tag(tag), ensure_ascii=False)}%')
     if q.strip():
-        where.append("(t.title LIKE ? OR t.author LIKE ?)")
+        where.append("(t.title LIKE ? OR t.author LIKE ? OR t.tags LIKE ?)")
         like = f"%{q.strip()[:80]}%"
-        params += [like, like]
+        params += [like, like, f"%{_tag(q) or q.strip()[:80]}%"]
     my_like = "EXISTS(SELECT 1 FROM likes l WHERE l.track_id = t.id AND l.sub = ?)"
     # what it was made from, so a copy can point back to it without a second request
     came_from = "LEFT JOIN tracks par ON par.id = t.forked_from AND par.visibility != 'private'"
@@ -302,6 +344,25 @@ def list_tracks(request: Request, q: str = "", sort: str = "new", view: str = "e
         "more": more,
         "offset": offset + min(len(rows), limit),
     }
+
+
+@router.get("/tags")
+def popular_tags(q: str = "", limit: int = 12):
+    """The tags on shared tracks, most used first, to suggest while someone types one."""
+    start = _tag(q)
+    conn = _conn()
+    try:
+        rows = conn.execute(
+            "SELECT tags FROM tracks WHERE visibility = 'public' AND tags != '[]'").fetchall()
+    finally:
+        conn.close()
+    counts = {}
+    for r in rows:
+        for t in _tags_of(r["tags"]):
+            if isinstance(t, str) and t.startswith(start):
+                counts[t] = counts.get(t, 0) + 1
+    top = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:max(1, min(limit, 50))]
+    return {"tags": [{"tag": t, "n": n} for t, n in top]}
 
 
 @router.get("/{track_id}")
@@ -357,10 +418,10 @@ async def create_track(request: Request):
             if not parent:
                 forked_from = None
         conn.execute(
-            "INSERT INTO tracks (id, owner_sub, author, author_id, title, code, visibility, forked_from, forked_at, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO tracks (id, owner_sub, author, author_id, title, code, visibility, tags, forked_from, forked_at, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (track_id, user["sub"], _author(user), _author_id(user["sub"]), data["title"], data["code"],
-             data["visibility"], forked_from, forked_at or now, now, now),
+             data["visibility"], data["tags"], forked_from, forked_at or now, now, now),
         )
         _keep_version(conn, track_id)
         conn.commit()
@@ -386,7 +447,10 @@ async def update_track(track_id: str, request: Request):
         if row["owner_sub"] != user["sub"]:
             return _err("not your track", 403)
         data["author"] = _author(user)
-        data["updated_at"] = int(time.time())
+        # a new name or tags isn't a new save: leave the time alone, so unsaved work on the
+        # track (kept against the save it was made from) doesn't look out of date
+        if "code" in data:
+            data["updated_at"] = int(time.time())
         sets = ", ".join(f"{k} = ?" for k in data)
         _keep_version(conn, track_id)  # the version being replaced (tracks saved before history existed)
         conn.execute(f"UPDATE tracks SET {sets} WHERE id = ?", [*data.values(), track_id])
