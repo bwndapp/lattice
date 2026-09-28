@@ -211,7 +211,7 @@ export function normalizeProject(raw) {
   if (typeof raw.prelude === 'string' && raw.prelude.trim()) project.prelude = raw.prelude.slice(0, 100_000)
   if (!nodes.some((n) => n.type === 'output')) project.nodes.push({ id: 'out', type: 'output', x: 700, y: 200, data: { muted: {}, solo: null } })
   if (raw.song) project.song = normalizeSong(raw.song, project)
-  const frames = normalizeFrames(raw.frames)
+  const frames = normalizeFrames(raw.frames, new Set(project.nodes.map((n) => n.id)))
   if (frames.length) project.frames = frames
   return project
 }
@@ -219,15 +219,19 @@ export function normalizeProject(raw) {
 /**
  * Frames: labelled boxes drawn behind nodes on the patch, purely to organise it. They live
  * apart from the nodes so nothing that plays the patch ever sees them. Which nodes a frame
- * holds isn't stored: it's whatever sits inside it.
+ * holds isn't stored: it's whatever sits inside it. Except while it's collapsed: then it's
+ * only a title bar, so what it held is kept on it (`members`, node and frame ids) until
+ * it opens again. A frame without the flag is open.
  */
-function normalizeFrames(list) {
+function normalizeFrames(list, nodeIds) {
   const out = []
   const ids = new Set()
-  for (const f of Array.isArray(list) ? list : []) {
-    if (!f || typeof f.id !== 'string' || ids.has(f.id)) continue
+  const all = Array.isArray(list) ? list.filter((f) => f && typeof f.id === 'string') : []
+  const known = new Set([...nodeIds, ...all.map((f) => f.id)])
+  for (const f of all) {
+    if (ids.has(f.id)) continue
     ids.add(f.id)
-    out.push({
+    const frame = {
       id: f.id,
       x: Math.round(num(f.x, 0, -1e6, 1e6)),
       y: Math.round(num(f.y, 0, -1e6, 1e6)),
@@ -235,7 +239,12 @@ function normalizeFrames(list) {
       h: Math.round(num(f.h, 200, 60, 20000)),
       title: String(f.title ?? 'frame').slice(0, 60),
       color: typeof f.color === 'string' && /^[a-z]{1,12}$/.test(f.color) ? f.color : 'stone',
-    })
+    }
+    if (f.collapsed === true) {
+      frame.collapsed = true
+      frame.members = [...new Set((Array.isArray(f.members) ? f.members : []).filter((id) => typeof id === 'string' && id !== f.id && known.has(id)))]
+    }
+    out.push(frame)
   }
   return out
 }

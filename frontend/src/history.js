@@ -137,6 +137,7 @@ export function changesBetween(before, after) {
     const was = wasFrames.get(f.id)
     if (!was) out.push(`framed ${f.title}`)
     else if (was.title !== f.title) out.push(`frame ${was.title} renamed ${f.title}`)
+    if (was && !was.collapsed !== !f.collapsed) out.push(`${f.collapsed ? 'collapsed' : 'opened'} the ${f.title} frame`)
   }
   for (const f of before.frames ?? []) if (!nowFrames.has(f.id)) out.push(`removed the ${f.title} frame`)
 

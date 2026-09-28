@@ -78,9 +78,14 @@ export function pasteNodes(p, clip, at) {
   for (const e of clip.edges ?? []) {
     if (nodeIds.has(e.source) && nodeIds.has(e.target)) p.edges.push({ source: nodeIds.get(e.source), target: nodeIds.get(e.target), targetHandle: e.targetHandle })
   }
+  // a collapsed frame stays collapsed, holding the pasted copies of what it held
+  const frameIds = new Map((clip.frames ?? []).map((f) => [f.id, `frame${newId().slice(-5)}`]))
   for (const f of clip.frames ?? []) {
     p.frames ??= []
-    p.frames.push({ ...clone(f), id: `frame${newId().slice(-5)}`, x: Math.round(at.x + f.x), y: Math.round(at.y + f.y) })
+    const frame = { ...clone(f), id: frameIds.get(f.id), x: Math.round(at.x + f.x), y: Math.round(at.y + f.y) }
+    if (frame.collapsed) frame.members = (f.members ?? []).map((id) => nodeIds.get(id) ?? frameIds.get(id)).filter(Boolean)
+    else delete frame.members
+    p.frames.push(frame)
   }
   return [...nodeIds.values()]
 }

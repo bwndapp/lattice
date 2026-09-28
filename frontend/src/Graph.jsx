@@ -8,6 +8,7 @@ import { APPLY, BUS_NODES, CHANNEL_FADER, FX_UNITS, GROUPS, NODE_TYPES, channelG
 import { ENGINES } from './instruments/index.js'
 import { openCode, openSynth } from './instruments/windows.js'
 import { INSTRUMENTS, INSTRUMENT_MIME, instrumentChannel, makePattern, newId } from './project'
+import { FRAME_BAR_H, collapseFrame, collapsedHosts, expandFrame, heldBy, removeFrame as dropFrame, rfSize, routeEdge } from './frames'
 import Knob from './Knob.jsx'
 import { canAutomate, nodeTarget, unitTarget } from './automation.js'
 import SoundPicker from './SoundPicker.jsx'
@@ -706,6 +707,9 @@ function StudioNode({ id, selected }) {
  * patch sees them. What a frame holds isn't stored either: it's whatever sits inside it
  * (a node's middle within its box), found fresh each time the frame is dragged or copied,
  * so dropping a node in or out of a frame is all it takes to change what it holds.
+ * Collapsed (the chevron, or a double-click on the bar), it's just its title bar: what it
+ * held is kept on it and hidden, and their wires to the rest leave from its edges (see
+ * frames.js). The patch plays the same either way.
  */
 const FRAME_COLORS = {
   stone: '#6b6b63',
@@ -718,19 +722,6 @@ const FRAME_COLORS = {
 }
 const FRAME_PAD = 28 // around the nodes it's made from
 const FRAME_BAR = 30 // room for the title above them
-const rfSize = (n) => ({ w: n.measured?.width ?? n.width ?? 250, h: n.measured?.height ?? n.height ?? 120 })
-
-/** The nodes (and smaller frames) inside a frame, from React Flow's nodes. */
-function insideFrame(frame, rfNodes) {
-  const inBox = (x, y) => x >= frame.x && x <= frame.x + frame.w && y >= frame.y && y <= frame.y + frame.h
-  return rfNodes.filter((n) => {
-    if (n.id === frame.id) return false
-    const { w, h } = rfSize(n)
-    if (n.type === 'frame') return inBox(n.position.x, n.position.y) && inBox(n.position.x + w, n.position.y + h)
-    return inBox(n.position.x + w / 2, n.position.y + h / 2)
-  })
-}
-
 /** A frame made to fit these React Flow nodes, with room around them and for its title. */
 function frameAround(rfNodes) {
   const left = Math.min(...rfNodes.map((n) => n.position.x))
@@ -755,19 +746,33 @@ function FrameNode({ id }) {
   const [picking, setPicking] = useState(false)
   if (!frame) return null
   const on = ctx.frameSel === id
+  const shut = !!frame.collapsed
+  const nodeIds = new Set(ctx.project.nodes.map((n) => n.id))
+  const count = shut ? (frame.members ?? []).filter((m) => nodeIds.has(m)).length : 0
   const rename = (text) => {
     setEditing(false)
     const title = text.trim().slice(0, 60) || 'frame'
     if (title !== frame.title) ctx.updateFrame(id, (f) => { f.title = title })
   }
   return (
-    <div className={`gframe ${on ? 'selected' : ''}`} style={{ '--frame': FRAME_COLORS[frame.color] ?? FRAME_COLORS.stone }}>
+    <div className={`gframe ${on ? 'selected' : ''} ${shut ? 'collapsed' : ''}`} style={{ '--frame': FRAME_COLORS[frame.color] ?? FRAME_COLORS.stone }}>
       <div
         className="frame-bar"
-        title="Drag to move the frame and what's in it · double-click to rename"
+        title="Drag to move the frame and what's in it · double-click the title to rename, the bar to fold"
         onClick={() => ctx.selectFrame(id)}
-        onDoubleClick={() => setEditing(true)}
+        onDoubleClick={(e) => {
+          if (e.target.closest('.frame-title')) setEditing(true)
+          else if (!e.target.closest('button, input')) ctx.toggleFrame(id)
+        }}
       >
+        <button
+          type="button"
+          className="frame-btn frame-fold nodrag"
+          title={shut ? 'Open the frame' : 'Collapse the frame to its title'}
+          aria-label={shut ? 'Open the frame' : 'Collapse the frame'}
+          aria-expanded={!shut}
+          onClick={(e) => { e.stopPropagation(); setPicking(false); ctx.toggleFrame(id) }}
+        >{shut ? '▸' : '▾'}</button>
         {editing ? (
           <input
             className="frame-name nodrag"
@@ -783,6 +788,8 @@ function FrameNode({ id }) {
             }}
           />
         ) : <span className="frame-title">{frame.title}</span>}
+        {shut && !editing && <span className="frame-count">{count} {count === 1 ? 'node' : 'nodes'}</span>}
+        <span className="frame-fill" />
         <button
           type="button"
           className="frame-btn frame-swatch nodrag"
@@ -814,13 +821,18 @@ function FrameNode({ id }) {
           ))}
         </div>
       )}
-      <NodeResizeControl
-        position="bottom-right"
-        className="frame-resize"
-        minWidth={120}
-        minHeight={80}
-        onResizeEnd={(_, r) => ctx.updateFrame(id, (f) => { f.x = Math.round(r.x); f.y = Math.round(r.y); f.w = Math.round(r.width); f.h = Math.round(r.height) })}
-      />
+      {/* where the wires of its hidden nodes leave and arrive while it's collapsed */}
+      <Handle type="target" position={Position.Left} id="frame-in" className="frame-port" isConnectable={false} />
+      <Handle type="source" position={Position.Right} id="frame-out" className="frame-port" isConnectable={false} />
+      {!shut && (
+        <NodeResizeControl
+          position="bottom-right"
+          className="frame-resize"
+          minWidth={120}
+          minHeight={80}
+          onResizeEnd={(_, r) => ctx.updateFrame(id, (f) => { f.x = Math.round(r.x); f.y = Math.round(r.y); f.w = Math.round(r.width); f.h = Math.round(r.height) })}
+        />
+      )}
     </div>
   )
 }
@@ -1244,18 +1256,23 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
   // canvas on every knob turn. Only a moved position makes a new object.
   const toRf = useCallback((prev) => {
     const old = new Map(prev.map((n) => [n.id, n]))
+    // what a collapsed frame holds is hidden, and never selected (so Delete can't reach it)
+    const hosts = collapsedHosts(project.frames)
     // frames first and far down, so they sit behind the wires and nodes; they're picked by
     // their title bar (our own selection, so a box drawn across one doesn't take it too)
     const frames = (project.frames ?? []).map((f) => {
       const was = old.get(f.id)
-      if (was && (was.dragging || (was.position.x === f.x && was.position.y === f.y && was.width === f.w && was.height === f.h))) return was
+      const h = f.collapsed ? FRAME_BAR_H : f.h
+      const hidden = hosts.has(f.id)
+      if (was && !!was.hidden === hidden && (was.dragging || (was.position.x === f.x && was.position.y === f.y && was.width === f.w && was.height === h))) return was
       return {
         ...(was ?? {}),
         id: f.id,
         type: 'frame',
         position: { x: f.x, y: f.y },
         width: f.w,
-        height: f.h,
+        height: h,
+        hidden,
         data: {},
         className: 'frame-node',
         dragHandle: '.frame-bar',
@@ -1266,8 +1283,10 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
     })
     return frames.concat(project.nodes.map((n) => {
       const was = old.get(n.id)
+      const hidden = hosts.has(n.id)
       // no dragHandle: grab a node anywhere; its controls opt out with the nodrag class
-      if (!was) return { id: n.id, type: 'studio', position: { x: n.x, y: n.y }, data: {}, selected: false }
+      if (!was) return { id: n.id, type: 'studio', position: { x: n.x, y: n.y }, data: {}, selected: false, hidden }
+      if (!!was.hidden !== hidden) return { ...was, position: { x: n.x, y: n.y }, hidden, selected: hidden ? false : was.selected }
       if (was.dragging || (was.position.x === n.x && was.position.y === n.y)) return was
       return { ...was, position: { x: n.x, y: n.y } }
     }))
@@ -1279,7 +1298,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
     const pick = selectNext.current == null ? null : new Set([].concat(selectNext.current)) // an id, or ids (a paste)
     if (!pick || !next.some((n) => pick.has(n.id))) return next
     selectNext.current = null
-    return next.map((n) => (n.selected === pick.has(n.id) ? n : { ...n, selected: pick.has(n.id) }))
+    return next.map((n) => { const on = pick.has(n.id) && !n.hidden; return n.selected === on ? n : { ...n, selected: on } })
   }), [toRf])
   const nodesRef = useRef(nodes)
   nodesRef.current = nodes
@@ -1295,6 +1314,8 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
   const spliceRef = useRef(null)
   const fromRef = useRef(null) // the port a wire is being pulled out of
   const joinedRef = useRef(false) // that pull found somewhere to land
+  // a wire to or from a node hidden in a collapsed frame is drawn to the frame's edge instead
+  const frameHosts = useMemo(() => collapsedHosts(project.frames), [project.frames])
   const rfEdges = useMemo(() => project.edges.map((e) => ({
     ...e,
     type: 'wire', // with a + in the middle to add a node into it
@@ -1304,7 +1325,8 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
     animated: started,
     className: e.id === spliceTarget ? 'splice-target' : e.id === detaching ? 'detaching' : '',
     domAttributes: { 'data-touches': `${e.source} ${e.target}` },
-  })), [project.edges, started, spliceTarget, detaching, tension, wireTint])
+    ...routeEdge(e, frameHosts),
+  })), [project.edges, started, spliceTarget, detaching, tension, wireTint, frameHosts])
   const [edges, setEdges] = useState(rfEdges)
   useEffect(() => setEdges((prev) => {
     const sel = new Set(prev.filter((e) => e.selected).map((e) => e.id))
@@ -1431,9 +1453,14 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
     if (f) fn(f)
   }), [onUpdateProject])
   const removeFrame = useCallback((id) => {
-    onUpdateProject((p) => { p.frames = (p.frames ?? []).filter((f) => f.id !== id) })
+    onUpdateProject((p) => dropFrame(p, id))
     setFrameSel((was) => (was === id ? null : was))
   }, [onUpdateProject])
+  const toggleFrame = useCallback((id) => onUpdateProject((p) => {
+    const f = p.frames?.find((x) => x.id === id)
+    if (f?.collapsed) expandFrame(p, id)
+    else if (f) collapseFrame(p, id, nodesRef.current)
+  }), [onUpdateProject])
   // selecting a node lets go of the frame
   useEffect(() => { if (frameSel && nodes.some((n) => n.selected)) setFrameSel(null) }, [nodes, frameSel])
   // a frame that's gone (undone, or removed by someone else) isn't selected any more
@@ -1479,10 +1506,20 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
     const onKey = (e) => {
       if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return
       const key = e.key.toLowerCase()
-      if (!['c', 'x', 'v', 'd', 'g', 'f'].includes(key)) return
+      if (!['c', 'x', 'v', 'd', 'g', 'f', 'a'].includes(key)) return
       if (e.target.closest?.('input, textarea, select, [contenteditable="true"], dialog, [role="dialog"], .pattern-pop, .add-menu')) return
       if (key === 'c' && window.getSelection()?.toString()) return // copying text on the page
       let selected = nodesRef.current.filter((n) => n.selected).map((n) => n.id)
+      if (key === 'a') {
+        // every node in view: never what a collapsed frame hides. Only with the pointer or
+        // focus on the patch, so select-all everywhere else is left alone.
+        const wrap = wrapRef.current
+        if (!wrap || !(wrap.matches(':hover') || wrap.contains(e.target))) return
+        e.preventDefault()
+        setFrameSel(null)
+        setNodes((ns) => ns.map((n) => { const on = n.type !== 'frame' && !n.hidden; return n.selected === on ? n : { ...n, selected: on } }))
+        return
+      }
       if (key === 'f') {
         e.preventDefault() // (the browser's find otherwise)
         const picked = nodesRef.current.filter((n) => n.selected && n.type !== 'frame')
@@ -1510,15 +1547,17 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
       const allFrames = projectRef.current.frames ?? []
       let frames = []
       const picked = allFrames.find((f) => f.id === frameSelRef.current)
+      const isFrame = new Set(allFrames.map((f) => f.id))
       if (picked && !selected.length) {
-        const inside = insideFrame(picked, nodesRef.current)
-        selected = inside.filter((n) => n.type !== 'frame').map((n) => n.id)
-        frames = [picked, ...allFrames.filter((f) => inside.some((n) => n.id === f.id))]
+        // (a collapsed one brings what it holds, and stays collapsed)
+        const inside = heldBy(picked, nodesRef.current, allFrames)
+        selected = [...inside].filter((id) => !isFrame.has(id))
+        frames = [picked, ...allFrames.filter((f) => inside.has(f.id))]
       } else if (selected.length) {
         const chosen = new Set(selected)
         frames = allFrames.filter((f) => {
-          const held = insideFrame(f, nodesRef.current).filter((n) => n.type !== 'frame')
-          return held.length && held.every((n) => chosen.has(n.id))
+          const held = [...heldBy(f, nodesRef.current, allFrames)].filter((id) => !isFrame.has(id))
+          return held.length && held.every((id) => chosen.has(id))
         })
       }
       const clip = copyNodes(projectRef.current, selected, frames)
@@ -1555,6 +1594,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
     selectFrame,
     updateFrame,
     removeFrame,
+    toggleFrame,
     editPattern: (patternId) => dock?.open(patternId, null, 'rack'),
     // with the dock already open, one click on another pattern moves it there: opening it
     // is the thing that takes two, changing which one you're looking at shouldn't
@@ -1577,7 +1617,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
       })
       dock?.open(patternId, null, 'rack')
     },
-  }), [project, heard, solo, onSolo, laneSolo, onLaneSolo, updateNode, removeNodes, frameSel, selectFrame, updateFrame, removeFrame, onUpdateProject, automation, dock])
+  }), [project, heard, solo, onSolo, laneSolo, onLaneSolo, updateNode, removeNodes, frameSel, selectFrame, updateFrame, removeFrame, toggleFrame, onUpdateProject, automation, dock])
 
   // what we have selected, so the others see it ringed on their canvas
   useEffect(() => { selectionIs('graph', nodes.filter((n) => n.selected && n.type !== 'frame').map((n) => n.id)) }, [nodes])
@@ -1783,7 +1823,10 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
               if (project.patterns.some((p) => p.id === node.data.patternId)) ctx.editPattern(node.data.patternId, e)
               else ctx.newPatternFor(node.id)
             }}
-            onNodesChange={(changes) => setNodes((ns) => applyNodeChanges(changes.filter((c) => c.type !== 'remove'), ns))}
+            onNodesChange={(changes) => setNodes((ns) => {
+              const hidden = new Set(ns.filter((n) => n.hidden).map((n) => n.id))
+              return applyNodeChanges(changes.filter((c) => c.type !== 'remove' && !(c.type === 'select' && c.selected && hidden.has(c.id))), ns)
+            })}
             onEdgesChange={(changes) => setEdges((es) => applyEdgeChanges(changes.filter((c) => c.type !== 'remove'), es))}
             onDelete={({ nodes: deletedNodes, edges: deletedEdges }) => {
               // one handler for both: the wires React Flow deletes along with nodes must still be
@@ -1796,11 +1839,12 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
             onPaneClick={() => setFrameSel(null)}
             onNodeDragStart={(_, node, dragged) => {
               if (node.type !== 'frame') return
-              // what the frame carries: whatever sits in it now (React Flow moves anything
-              // selected itself, so that's left to it)
+              // what the frame carries: whatever sits in it now, or all it held when it was
+              // collapsed (React Flow moves anything selected itself, so that's left to it)
               const f = project.frames?.find((x) => x.id === node.id)
               const own = new Set(dragged.map((d) => d.id))
-              const carried = f ? insideFrame(f, nodesRef.current).filter((n) => !own.has(n.id)) : []
+              const held = f ? heldBy(f, nodesRef.current, project.frames) : new Set()
+              const carried = nodesRef.current.filter((n) => held.has(n.id) && !own.has(n.id))
               frameDrag.current = { id: node.id, from: { ...node.position }, carried: new Map(carried.map((n) => [n.id, { ...n.position }])) }
             }}
             onNodeDrag={(_, node, dragged) => {
@@ -1911,7 +1955,8 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
           <div className="graph-tip" aria-live="polite">
             {solo
               ? <>auditioning <b>{nodeTitle(project.nodes.find((n) => n.id === solo), project)}</b> · <button className="linkish" onClick={() => onSolo(null)}>back to the output</button></>
-              : frameSel ? <>frame · drag its title to move it and what's in it · double-click the title to rename · <b>delete</b> removes the frame, not its nodes</>
+              : frameSel && project.frames?.find((f) => f.id === frameSel)?.collapsed ? <>collapsed frame · <b>▸</b> or a double-click on the bar opens it · drag it to move what it holds · <b>delete</b> removes the frame and shows its nodes again</>
+              : frameSel ? <>frame · <b>▾</b> collapses it · drag its title to move it and what's in it · double-click the title to rename · <b>delete</b> removes the frame, not its nodes</>
               : selectedCount > 1 ? <><b>ctrl/cmd + F</b> frames them · <b>ctrl/cmd + G</b> folds effects into one fx rack · <b>ctrl/cmd + D</b> duplicates</>
               : selected ? (
                 <>

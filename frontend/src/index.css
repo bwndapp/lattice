@@ -1339,7 +1339,15 @@ button.chan-synth:hover span { color: var(--acid); }
   color: var(--paper); font-family: var(--display); font-weight: 800; font-size: 12px;
 }
 .react-flow__node.dragging .frame-bar { cursor: grabbing; }
-.frame-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: none; }
+.frame-title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: none; cursor: text; }
+.frame-fill { flex: 1; align-self: stretch; }
+.frame-count { flex: none; font-family: var(--mono, monospace); font-weight: 400; font-size: 10px; opacity: 0.7; white-space: nowrap; }
+.frame-fold { margin-left: -0.45rem; font-size: 11px; }
+/* collapsed: just the bar; the wires of what it hides meet its left and right edges */
+.gframe.collapsed { overflow: visible; }
+.gframe.collapsed .frame-bar { border-radius: 9px; }
+.gframe .react-flow__handle.frame-port { visibility: hidden; pointer-events: none; width: 7px; height: 7px; min-width: 0; min-height: 0; border: none; background: color-mix(in srgb, var(--frame) 60%, var(--paper)); }
+.gframe.collapsed .react-flow__handle.frame-port { visibility: visible; }
 .frame-name {
   flex: 1; min-width: 0; font: inherit; color: var(--paper);
   background: var(--ink); border: 1px solid var(--acid); border-radius: 3px; padding: 0 0.3rem;
