@@ -101,6 +101,13 @@ const code = m.graphCode(project, {})
 const text = code.lines.join('\n')
 ok('it still plays through all three', ['// space', '// drive', '// level'].every((c) => text.includes(c)) && code.lanes.length === 1 && /const n_lv = n_dr/.test(text), text)
 
+// ---- the lists that have to agree
+ok('every lane effect can sit in a rack', m.LANE_FX.every((t) => m.FX_UNITS.includes(t)))
+ok('every rack effect is a node type', m.FX_UNITS.every((t) => NODE_TYPES[t]))
+ok('every stereo insert says what it is on the bus (or is the mixer bus)',
+  [...m.BUS_NODES].filter((t) => t !== 'reverb' && t !== 'delay').every((t) => t === 'bus' || NODE_TYPES[t].code.insert),
+  [...m.BUS_NODES].filter((t) => t !== 'reverb' && t !== 'delay' && t !== 'bus' && !NODE_TYPES[t].code.insert))
+
 // ---- labels and units
 const knobs = Object.entries(NODE_TYPES).flatMap(([t, s]) => s.params.filter((p) => p.type === 'knob').map((p) => ({ t, ...p })))
 const UNITS = [undefined, 'hz', 'ct', 'st', 'x', 'bar', 's', 'c', 'db', 'ratio', 'bi']

@@ -36,7 +36,7 @@ export const DELAY_DIVISIONS = {
 export const GLOBAL_REVERB = 'g_rv'
 export const GLOBAL_DELAY = 'g_dl'
 
-const ROUTER_BASE = 20_000_000 // bus ids for routers (live.js uses 1M–9M)
+const ROUTER_BASE = 20_000_000 // bus ids for routers
 let declared = new Map() // key → { kind, params } from the latest generated code
 const instances = new Map() // `${key}@${orbit}` → effect
 const routers = new Map() // bus id → { orbit, sends, node, at }
