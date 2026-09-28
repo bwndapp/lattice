@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Knob from '../../Knob.jsx'
 import { drawCurve, drawWave, fitCanvas } from '../scope.js'
 import {
   ENV_KNOBS, FM_WAVES, K, LANES, LFO_KNOBS, LFO_BARS, LFO_MODES, LFO_POLARITIES, LFO_PRESETS, MAX_LAYERS, MAX_MODULATORS, MAX_ROUTES, MAX_ROUTES_EACH,
   NOISES, PRESETS, TABLES, TABLE_NAMES, WARP_MODES, barsLabel, layerKnobKey, layerLetter, makeEnv, makeLayer, makeLfo,
-  MAX_LANE_FX, fxKnobKey, laneFxCatalog, laneLoops, laneName, lanesSummed, makeLaneFx, modColor, modKnobKey, modName, newPartId, normalizePatch, pruneRoutes, routeLoops, targetSpec,
+  MAX_LANE_FX, fxKnobKey, laneFxCatalog, laneLoops, laneName, lanesSummed, makeLaneFx, modColor, modKnobKey, modName, newPartId, normalizePatch, pruneRoutes, targetSpec,
 } from './model.js'
 import { tableFrame } from './tables.js'
 import CurveEditor from '../CurveEditor.jsx'
+import { AssignGhost, AssignHandle, KnobRoutes, RouteRow, TargetPicker, addRoute, canRoute, dragAmount, setAmount, useAssign } from './modmap.jsx'
 import './syrup.css'
 
 /**
@@ -180,11 +181,41 @@ function Segmented({ label, value, options, onChange, format = (o) => o }) {
 }
 
 /**
+ * How a modulation target looks to what's going on: while a modulator is being dragged,
+ * whether it takes it ('over', 'ok' or 'no'); and whether the selected modulator moves it.
+ */
+function useTargetState(ui, route, routes) {
+  const a = ui.assign
+  const drop = a && route ? (a.over === route ? 'over' : canRoute(ui.patch, a.src, route) ? 'ok' : 'no') : ''
+  const lit = !!ui.focus && routes.some((r) => r.src === ui.focus)
+  const [menu, setMenu] = useState(null) // the badge its routes are listed from
+  const closeMenu = useCallback(() => setMenu(null), [])
+  return {
+    className: `${drop ? `drop-${drop}` : ''} ${lit ? 'lit' : ''}`,
+    style: lit ? { '--sy-lit': modColor(ui.patch, ui.focus) } : undefined,
+    menu,
+    open: (el) => setMenu(el),
+    closeMenu,
+  }
+}
+
+/** The badge on a modulated target: a dot per route; click for the list. */
+function RouteBadge({ ui, routes, open }) {
+  return (
+    <button type="button" className="sy-badge" title={`moved by ${routes.map((r) => modName(ui.patch, r.src)).join(', ')} · click for amounts`} aria-label="Its modulation" onClick={(e) => open(e.currentTarget)}>
+      {routes.slice(0, 4).map((r) => <span key={r.id} className="sy-badge-dot" style={{ background: modColor(ui.patch, r.src) }} />)}
+    </button>
+  )
+}
+
+/**
  * A knob with a coloured ring for each route moving it. `route` is its name as a
- * modulation destination, `auto` its automation key.
+ * modulation destination, `auto` its automation key. Drop a modulator on it to route it;
+ * drag a ring (or alt-drag the knob) to set that route's amount, double-click a ring for none.
  */
 function ModKnob({ ui, route, auto, def, value, onChange }) {
   const routes = route ? ui.patch.routes.filter((r) => r.target === route) : []
+  const state = useTargetState(ui, route, routes)
   const pos = (v) => (def.log ? Math.log(v / def.min) / Math.log(def.max / def.min) : (v - def.min) / (def.max - def.min))
   const at = clamp(pos(value), 0, 1)
   const arc = (a0, a1, r) => {
@@ -194,32 +225,51 @@ function ModKnob({ ui, route, auto, def, value, onChange }) {
     const [x1, y1] = p(Math.max(a0, a1))
     return `M ${x0} ${y0} A ${r} ${r} 0 ${Math.abs(a1 - a0) > 2 / 3 ? 1 : 0} 1 ${x1} ${y1}`
   }
+  // the route alt-dragging the knob sets: the selected modulator's, or the first
+  const pick = () => routes.find((r) => r.src === ui.focus) ?? routes[0]
   return (
-    <div className="sy-modknob" title={routes.length ? `moved by ${routes.map((r) => modName(ui.patch, r.src)).join(', ')}` : undefined}>
+    <div
+      className={`sy-modknob ${state.className}`}
+      style={state.style}
+      data-sy-target={route || undefined}
+      onPointerDownCapture={(e) => { if (e.altKey && routes.length && e.target.closest('.knob svg')) dragAmount(e, ui, pick()) }}
+    >
       <Knob def={def} value={value} onChange={onChange} target={auto ? ui.target(auto) : null} />
       {routes.length > 0 && (
-        <svg className="sy-rings" width="44" height="44" viewBox="0 0 44 44" aria-hidden>
+        <svg className="sy-rings" width="44" height="44" viewBox="0 0 44 44">
           {routes.slice(0, 4).map((r, i) => {
             // a bipolar lfo swings either side of the knob; envelopes and up or down lfos push one way
             const mod = ui.patch.modulators.find((m) => m.id === r.src)
             const pol = mod?.kind === 'lfo' ? mod.polarity : 'up'
             const [a0, a1] = pol === 'bi' ? [at - Math.abs(r.amt) / 2, at + Math.abs(r.amt) / 2] : [at, at + (pol === 'down' ? -r.amt : r.amt)]
-            return <path key={r.id} d={arc(clamp(a0, 0, 1), clamp(a1, 0, 1), 20 - i * 3)} className="sy-ring" style={{ stroke: modColor(ui.patch, r.src) }} />
+            const radius = 20 - i * 3
+            return (
+              <g key={r.id}>
+                <path d={arc(clamp(a0, 0, 1), clamp(a1, 0, 1), radius)} className="sy-ring" style={{ stroke: modColor(ui.patch, r.src) }} />
+                <path d={arc(0, 1, radius)} className="sy-ring-hit" onPointerDown={(e) => dragAmount(e, ui, r)} onDoubleClick={() => setAmount(ui, r.id, 0)}>
+                  <title>{`${modName(ui.patch, r.src)}: ${Math.round(r.amt * 100)} · drag to set, double-click for none`}</title>
+                </path>
+              </g>
+            )
           })}
         </svg>
       )}
+      {routes.length > 0 && <RouteBadge ui={ui} routes={routes} open={state.open} />}
+      {state.menu && <KnobRoutes ui={ui} route={route} anchor={state.menu} onClose={state.closeMenu} />}
     </div>
   )
 }
 
-/** A dot for each route moving a setting that isn't a knob (a layer's pitch, say). */
-function ModDots({ ui, route }) {
+/** A modulation target that isn't a knob (a layer's pitch steppers, a synced lfo's rate). */
+function ModZone({ ui, route, className = '', children }) {
   const routes = ui.patch.routes.filter((r) => r.target === route)
-  if (!routes.length) return null
+  const state = useTargetState(ui, route, routes)
   return (
-    <span className="sy-moddots" title={`moved by ${routes.map((r) => modName(ui.patch, r.src)).join(', ')}`}>
-      {routes.map((r) => <span key={r.id} className="sy-dot" style={{ color: modColor(ui.patch, r.src) }} aria-hidden />)}
-    </span>
+    <div className={`sy-modzone ${className} ${state.className}`} style={state.style} data-sy-target={route}>
+      {children}
+      {routes.length > 0 && <RouteBadge ui={ui} routes={routes} open={state.open} />}
+      {state.menu && <KnobRoutes ui={ui} route={route} anchor={state.menu} onClose={state.closeMenu} />}
+    </div>
   )
 }
 
@@ -292,48 +342,25 @@ function destinations(patch) {
   return list
 }
 
-/** The groups, in order, as they come. */
-const destGroups = (options) => [...new Set(options.map(([, , g]) => g))]
-
-const AMOUNT = K.amt
-
-/** Where one modulator goes: a destination and an amount each. */
+/**
+ * Where one modulator goes: a row a target, with its amount and ×; more by dragging the
+ * modulator's handle onto a knob, or from a searchable list.
+ */
 function Destinations({ ui, src }) {
-  const { patch, edit } = ui
+  const { patch } = ui
   const routes = patch.routes.filter((r) => r.src === src)
-  const options = destinations(patch)
-  // a target this modulator can't reach without a loop isn't offered
-  const loops = new Set(options.filter(([t]) => routeLoops(patch, src, t)).map(([t]) => t))
-  const free = options.filter(([t]) => !routes.some((r) => r.target === t) && !loops.has(t))
-  const color = modColor(patch, src)
+  const [picker, setPicker] = useState(null)
+  const close = useCallback(() => setPicker(null), [])
   const room = routes.length < MAX_ROUTES_EACH && patch.routes.length < MAX_ROUTES
+  const options = picker ? destinations(patch).filter(([t]) => canRoute(patch, src, t)) : []
   return (
     <div className="sy-dests">
-      {routes.map((r) => (
-        <div key={r.id} className="sy-dest">
-          <span className="sy-dot" style={{ color }} aria-hidden />
-          <select
-            value={r.target}
-            aria-label={`${modName(patch, src)} destination`}
-            onChange={(e) => edit((p) => { const x = p.routes.find((y) => y.id === r.id); if (x && !p.routes.some((y) => y.src === src && y.target === e.target.value)) { x.target = e.target.value; pruneRoutes(p) } })}
-          >
-            {!options.some(([t]) => t === r.target) && <option value={r.target}>{targetSpec(patch, r.target)?.label ?? 'gone'}</option>}
-            {destGroups(options).map((name) => (
-              <optgroup key={name} label={name}>
-                {options.filter(([, , g]) => g === name).map(([t, label]) => <option key={t} value={t} disabled={t !== r.target && (routes.some((x) => x.target === t) || loops.has(t))}>{label}</option>)}
-              </optgroup>
-            ))}
-          </select>
-          <div className="sy-dest-amt">
-            <ModKnob ui={ui} route={`route:${r.id}.amt`} def={AMOUNT} value={r.amt} onChange={(v) => edit((p) => { const x = p.routes.find((y) => y.id === r.id); if (x) x.amt = v })} />
-          </div>
-          <button type="button" className="sy-x" aria-label="Remove destination" onClick={() => edit((p) => { p.routes = p.routes.filter((x) => x.id !== r.id); pruneRoutes(p) })}>×</button>
-        </div>
-      ))}
-      {free.length > 0 && room && (
-        <button type="button" className="sy-add" onClick={() => edit((p) => { p.routes.push({ id: newPartId(), src, target: free[0][0], amt: 0.5 }) })}>+ destination</button>
-      )}
-      {!routes.length && !free.length && <span className="sy-small-label">add a generator to have something to move</span>}
+      {routes.map((r) => <RouteRow key={r.id} ui={ui} route={r} name={targetSpec(patch, r.target)?.label ?? 'gone'} />)}
+      <div className="sy-dests-foot">
+        {room && <button type="button" className="sy-add" onClick={(e) => setPicker(picker ? null : e.currentTarget)}>+ target</button>}
+        {!routes.length && <span className="sy-small-label">or drag its ⌖ onto a knob</span>}
+      </div>
+      {picker && <TargetPicker anchor={picker} options={options} pick={(t) => addRoute(ui, src, t)} onClose={close} />}
     </div>
   )
 }
@@ -397,9 +424,12 @@ function Generator({ ui, layer, index }) {
         <div className="sy-gen-body">
           <LayerScope layer={layer} />
           <div className="sy-gen-steps">
-            {pitched && <Stepper label="octave" value={layer.oct} min={-3} max={3} onChange={(v) => set((l) => { l.oct = v })} format={(v) => (v > 0 ? `+${v}` : v)} />}
-            {pitched && <Stepper label="semi" value={layer.semi} min={-12} max={12} onChange={(v) => set((l) => { l.semi = v })} format={(v) => (v > 0 ? `+${v}` : v)} />}
-            {pitched && <ModDots ui={ui} route={`layer:${layer.id}.pitch`} />}
+            {pitched && (
+              <ModZone ui={ui} route={`layer:${layer.id}.pitch`} className="sy-pitch-zone">
+                <Stepper label="octave" value={layer.oct} min={-3} max={3} onChange={(v) => set((l) => { l.oct = v })} format={(v) => (v > 0 ? `+${v}` : v)} />
+                <Stepper label="semi" value={layer.semi} min={-12} max={12} onChange={(v) => set((l) => { l.semi = v })} format={(v) => (v > 0 ? `+${v}` : v)} />
+              </ModZone>
+            )}
             {stacked && <Stepper label="voices" value={layer.unison} min={1} max={16} onChange={(v) => set((l) => { l.unison = v })} />}
           </div>
           <div className="sy-gen-knobs">
@@ -683,9 +713,12 @@ function LfoBody({ ui, mod, slot }) {
         <div className="sy-rate">
           <Segmented label="Rate mode" value={mod.sync ? 'bars' : 'hz'} options={['bars', 'hz']} onChange={(v) => set((m) => { m.sync = v === 'bars' })} />
           {mod.sync
-            ? <select className="sy-rate-select" aria-label="Every" value={String(mod.bars)} onChange={(e) => set((m) => { m.bars = Number(e.target.value) })}>{LFO_BARS.map((b) => <option key={b} value={String(b)}>{barsLabel(b)}</option>)}</select>
+            ? (
+              <ModZone ui={ui} route={`mod:${mod.id}.rate`}>
+                <select className="sy-rate-select" aria-label="Every" value={String(mod.bars)} onChange={(e) => set((m) => { m.bars = Number(e.target.value) })}>{LFO_BARS.map((b) => <option key={b} value={String(b)}>{barsLabel(b)}</option>)}</select>
+              </ModZone>
+            )
             : <ModKnob ui={ui} route={`mod:${mod.id}.rate`} auto={modKnobKey(mod.id, 'hz')} def={K.hz} value={mod.hz} onChange={(v) => set((m) => { m.hz = v })} />}
-          {mod.sync && <ModDots ui={ui} route={`mod:${mod.id}.rate`} />}
         </div>
         <Segmented label="Polarity" value={mod.polarity} options={LFO_POLARITIES} format={(v) => ({ up: '+', bi: '±', down: '−' })[v]} onChange={(v) => set((m) => { m.polarity = v })} />
         <DepthKnob ui={ui} mod={mod} />
@@ -731,8 +764,13 @@ function Modulator({ ui, mod, slot }) {
   const color = modColor(ui.patch, mod.id)
   const set = (fn) => ui.edit((p) => { const m = p.modulators.find((x) => x.id === mod.id); if (m) fn(m) })
   return (
-    <section className={`sy-mod ${mod.kind}`} style={{ '--sy-ink': color }} aria-label={modName(ui.patch, mod.id)}>
-      <header className="sy-mod-head">
+    <section className={`sy-mod ${mod.kind} ${ui.focus === mod.id ? 'focused' : ''}`} style={{ '--sy-ink': color }} aria-label={modName(ui.patch, mod.id)}>
+      <header
+        className="sy-mod-head"
+        title="Click to light up what it moves"
+        onClick={(e) => { if (!e.target.closest('button, select, input')) ui.setFocus(ui.focus === mod.id ? null : mod.id) }}
+      >
+        <AssignHandle ui={ui} src={mod.id} />
         <span className="sy-mod-kind">{mod.kind === 'lfo' ? 'lfo' : 'env'}</span>
         <h3>{modName(ui.patch, mod.id)}</h3>
         <span className="spacer" />
@@ -771,7 +809,12 @@ export default function SyrupPanel({ data, change, target, watch, cps = 0.5 }) {
   // what the processor last said about its LFOs, and when (see dsp.js report)
   const live = useRef({ t: -Infinity, lfo: [], voices: [] })
   useEffect(() => watch?.((report) => { live.current = { ...report, t: performance.now() } }), []) // eslint-disable-line react-hooks/exhaustive-deps
-  const ui = { patch, edit: change, target, cps, live }
+  // the modulator whose knobs are lit, and dragging one onto a knob (modmap.jsx)
+  const [focus, setFocus] = useState(null)
+  const ui = { patch, edit: change, target, cps, live, focus: patch.modulators.some((m) => m.id === focus) ? focus : null, setFocus }
+  const assigner = useAssign(ui)
+  ui.assign = assigner.assign
+  ui.startAssign = assigner.start
   const fxDrag = useFxDrag(ui)
 
   const allPresets = [
@@ -805,7 +848,7 @@ export default function SyrupPanel({ data, change, target, watch, cps = 0.5 }) {
   }
 
   return (
-    <div className="sy-panel">
+    <div className={`sy-panel ${ui.assign ? 'assigning' : ''}`}>
       <div className="sy-top">
         <div className="sy-preset">
           <button type="button" className="sy-arrow" onClick={() => stepPreset(-1)} aria-label="Previous preset">‹</button>
@@ -842,6 +885,7 @@ export default function SyrupPanel({ data, change, target, watch, cps = 0.5 }) {
         </Section>
       </div>
 
+      <AssignGhost ui={ui} />
       {fxDrag.drag?.moved && createPortal(
         <div className="sy-fx-ghost" style={{ left: fxDrag.drag.px, top: fxDrag.drag.py }} aria-hidden>
           {fxDrag.drag.label}

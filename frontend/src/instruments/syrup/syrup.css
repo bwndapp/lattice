@@ -268,7 +268,8 @@
 .sy-lfo-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.4rem; padding: 0.6rem 0.7rem 0.3rem; }
 .sy-rate { display: flex; align-items: flex-end; gap: 0.35rem; }
 
-.sy-dests { display: grid; gap: 0.3rem; padding: 0.5rem 0.7rem 0.7rem; margin-top: auto; border-top: 1px solid var(--sy-line); }
+.sy-dests { display: grid; gap: 0.2rem; padding: 0.5rem 0.7rem 0.7rem; margin-top: auto; border-top: 1px solid var(--sy-line); }
+.sy-dests-foot { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.15rem; }
 .sy-dest { display: grid; grid-template-columns: 6px minmax(0, 1fr) auto 24px; align-items: center; gap: 0 0.4rem; padding: 2px 0 2px 4px; margin-left: -4px; border-radius: 2px; }
 .sy-dest:hover { background: rgba(255, 255, 255, 0.025); }
 .sy-dest select { width: 100%; }
@@ -314,4 +315,55 @@
 .sy-panel .knob:hover .knob-label { color: var(--paper); }
 .sy-panel .knob:hover .knob-track { stroke: #2a2a24; }
 .sy-fx-params .sy-rings { left: 4px; }
-.sy-moddots { display: flex; gap: 3px; align-self: center; }
+
+/* ── mapping: drag a modulator onto a knob ───────── */
+.sy-mod-head { cursor: pointer; }
+.sy-mod.focused .sy-mod-head { background: color-mix(in srgb, var(--sy-ink) 10%, transparent); }
+.sy-assign {
+  display: grid; place-items: center; width: 20px; height: 20px; padding: 0; flex: none;
+  color: var(--sy-ink); background: transparent; border: 1px solid color-mix(in srgb, var(--sy-ink) 45%, transparent); border-radius: 50%;
+  cursor: grab; touch-action: none;
+}
+.sy-assign:hover, .sy-assign.held { background: color-mix(in srgb, var(--sy-ink) 18%, transparent); }
+.sy-assign.held { cursor: grabbing; }
+.sy-panel.assigning, .sy-panel.assigning * { cursor: grabbing !important; }
+.sy-assign-ghost { color: #0a0a09; }
+.sy-modknob, .sy-modzone { border-radius: 4px; transition: box-shadow 0.1s, opacity 0.1s; }
+.sy-modzone { position: relative; display: flex; align-items: flex-end; gap: 0.35rem; }
+.sy-pitch-zone { grid-column: 1 / -1; }
+.sy-panel.assigning .drop-no { opacity: 0.35; }
+.sy-panel.assigning .drop-ok { box-shadow: 0 0 0 1px color-mix(in srgb, var(--acid, #e4ff1a) 55%, transparent); }
+.sy-panel.assigning .drop-over { box-shadow: 0 0 0 2px var(--acid, #e4ff1a), 0 0 12px color-mix(in srgb, var(--acid, #e4ff1a) 40%, transparent); }
+.sy-modknob.lit, .sy-modzone.lit { box-shadow: 0 0 0 1px var(--sy-lit), 0 0 10px color-mix(in srgb, var(--sy-lit) 45%, transparent); }
+.sy-ring-hit { fill: none; stroke: transparent; stroke-width: 5; pointer-events: stroke; cursor: ns-resize; }
+.sy-badge {
+  position: absolute; right: -3px; top: -5px; display: flex; gap: 1px; padding: 2px 3px; z-index: 1;
+  background: var(--sy-well); border: 1px solid var(--sy-line-strong); border-radius: 6px; cursor: pointer;
+}
+.sy-modzone .sy-badge { position: static; align-self: center; }
+.sy-badge:hover { border-color: var(--paper); }
+.sy-badge-dot { width: 5px; height: 5px; border-radius: 50%; }
+
+.sy-route { display: grid; grid-template-columns: 6px minmax(0, 1fr) minmax(60px, 90px) 2.2em 20px; align-items: center; gap: 0 0.4rem; min-height: 22px; padding: 0 0 0 4px; margin-left: -4px; border-radius: 2px; }
+.sy-route:hover { background: rgba(255, 255, 255, 0.025); }
+.sy-route-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--paper); }
+.sy-route input[type='range'] { width: 100%; height: 14px; margin: 0; accent-color: var(--sy-route); }
+.sy-route output { font-size: 10px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.sy-route .sy-x { width: 20px; height: 20px; font: inherit; font-size: 13px; color: var(--muted); background: transparent; border: 0; cursor: pointer; padding: 0; }
+.sy-route .sy-x:hover { color: var(--paper); }
+.sy-panel.assigning .sy-route.drop-ok, .sy-panel.assigning .sy-route[data-sy-target] { border-radius: 2px; }
+
+/* popovers: a knob's routes, and the target finder (outside the panel, so its own colours) */
+.sy-pop {
+  position: fixed; z-index: 450; display: grid; gap: 0.3rem; min-width: 220px; max-width: 320px; padding: 0.5rem 0.6rem;
+  font-size: 11px; color: var(--paper, #f2f0e6); background: #0e0e0c; border: 1px solid #3b3b33; border-radius: 3px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7);
+  --sy-well: #050504; --sy-line: #25251f; --sy-line-strong: #3b3b33;
+}
+.sy-pop .sy-small-label { font-size: 9px; color: var(--muted, #8a887e); letter-spacing: 0.06em; text-transform: uppercase; }
+.sy-picker { width: 260px; }
+.sy-picker-search { font: inherit; font-size: 11px; height: 24px; padding: 0 0.45rem; color: inherit; background: #050504; border: 1px solid #3b3b33; border-radius: 2px; }
+.sy-picker-list { display: grid; gap: 0.35rem; max-height: 300px; overflow-y: auto; scrollbar-width: thin; }
+.sy-picker-group { display: grid; }
+.sy-picker-group button { font: inherit; font-size: 11px; text-align: left; padding: 3px 0.4rem; color: inherit; background: transparent; border: 0; border-radius: 2px; cursor: pointer; }
+.sy-picker-group button:hover, .sy-picker-group button.on { background: rgba(228, 255, 26, 0.12); color: var(--acid, #e4ff1a); }
