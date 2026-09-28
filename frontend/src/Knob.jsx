@@ -2,13 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAutoLive, useAutomation } from './autoLive.js'
 import { KnobMenu } from './KnobMenu.jsx'
 import { knobBridge } from './knobBridge.js'
-import { wheelPixels, wheelTravel } from './knobMath.js'
+import { clamp, dragTo, fromPos, pastThreshold, snapValue, startDrag, stepOf, toPos, wheelPixels, wheelTravel } from './knobMath.js'
 
-const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
-
-/** 0..1 position of a value on a (possibly logarithmic) range, and back. */
-const toPos = (v, { min, max, log }) => (log ? Math.log(v / min) / Math.log(max / min) : (v - min) / (max - min))
-const fromPos = (t, { min, max, log }) => (log ? min * (max / min) ** t : min + t * (max - min))
 
 export function formatValue(v, def) {
   if (def.choices) return def.choices[Math.round(v)] ?? ''
@@ -42,7 +37,9 @@ export default function Knob({ def, value, onChange, target = null }) {
   const following = useAutoLive(automated ? target : null) // where its curve has it, while playing
   const [menu, setMenu] = useState(null)
   const closeMenu = useCallback(() => setMenu(null), [])
-  const shown = live ?? following ?? value
+  // a knob in steps shows the step it's on, whatever an old project stored
+  const shown = def.choices ? snapValue(live ?? following ?? value, def) : live ?? following ?? value
+  const step = stepOf(def)
   const pos = clamp(toPos(shown, def), 0, 1)
   const changed = Math.abs(shown - def.def) > 1e-9
 
@@ -67,8 +64,7 @@ export default function Knob({ def, value, onChange, target = null }) {
     t.timer = 0
   }
   const set = (p) => {
-    const next = fromPos(clamp(p, 0, 1), def)
-    const rounded = def.log ? Math.round(next * 100) / 100 : Math.round(next * 1000) / 1000
+    const rounded = snapValue(fromPos(clamp(p, 0, 1), def), def)
     let t = turn.current
     if (!t) {
       t = turn.current = { pos: 0, value: null, pending: null, timer: 0, raf: false, wrote: 0, idle: 0 }
@@ -121,7 +117,7 @@ export default function Knob({ def, value, onChange, target = null }) {
       e.stopPropagation()
       h.at = now
       const from = turn.current?.pos ?? toPos(shown, def)
-      set(from + wheelTravel(wheelPixels(e), { fine: e.shiftKey }))
+      set(from + wheelTravel(wheelPixels(e), { fine: e.shiftKey, step }))
       finishSoon()
     }
     el.addEventListener('wheel', onWheel, { passive: false })
@@ -167,14 +163,18 @@ export default function Knob({ def, value, onChange, target = null }) {
         onPointerEnter={() => { hover.current.since = performance.now() }}
         onPointerLeave={() => { hover.current.since = 0 }}
         onPointerDown={(e) => {
+          if (e.button !== 0) return
           e.currentTarget.focus({ preventScroll: true })
           e.currentTarget.setPointerCapture(e.pointerId)
-          drag.current = { y: e.clientY, t: toPos(value, def) }
+          // from where it shows (a curve's value, while it follows one), so grabbing it doesn't jump
+          drag.current = startDrag(e.clientX, e.clientY, turn.current?.pos ?? toPos(shown, def), e.shiftKey)
         }}
         onPointerMove={(e) => {
           const d = drag.current
           if (!d) return
-          set(d.t + (d.y - e.clientY) / (e.shiftKey ? 600 : 150))
+          if (!d.moved && !pastThreshold(d, e.clientX, e.clientY)) return // a click isn't a drag
+          d.moved = true
+          set(dragTo(d, e.clientX, e.clientY, e.shiftKey, turn.current?.pos ?? d.from))
         }}
         onPointerUp={() => { drag.current = null; finish() }}
         onPointerCancel={() => { drag.current = null; finish() }}
@@ -182,10 +182,10 @@ export default function Knob({ def, value, onChange, target = null }) {
         onLostPointerCapture={() => { if (drag.current) { drag.current = null; finish() } }}
         onDoubleClick={() => { finish(); onChange(def.def) }}
         onKeyDown={(e) => {
-          const step = e.shiftKey ? 0.01 : 0.05
+          const by = step || (e.shiftKey ? 0.01 : 0.05)
           const from = turn.current?.pos ?? toPos(shown, def)
-          if (e.key === 'ArrowUp' || e.key === 'ArrowRight') set(from + step)
-          else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') set(from - step)
+          if (e.key === 'ArrowUp' || e.key === 'ArrowRight') set(from + by)
+          else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') set(from - by)
           else if (e.key === 'Home' || e.key === 'Delete' || e.key === 'Backspace') { finish(); onChange(def.def) }
           else return
           e.preventDefault()
