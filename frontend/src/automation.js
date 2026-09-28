@@ -245,6 +245,54 @@ export function curveAt(auto, x) {
   return makeCurve(0, auto.bars, [], auto.points.map((p) => [p.x, p.y, p.c ?? 0])).at(x)
 }
 
+/**
+ * Editing points (the editor's gestures, kept here so they're tested). Each returns new
+ * points, sorted by x as the curve reads them; a point keeps its bend as it moves.
+ */
+const byX = (list) => list.map((p, i) => ({ p, i })).sort((a, b) => a.p.x - b.p.x || a.i - b.i)
+
+/** A new point at (x, y), after any others at the same x. Returns { points, index }. */
+export function addPoint(points, x, y) {
+  let index = points.findIndex((p) => p.x > x)
+  if (index < 0) index = points.length
+  const next = [...points]
+  next.splice(index, 0, { x, y: Math.round(y * 10000) / 10000 })
+  return { points: next, index }
+}
+
+/** Points without those at `indices`; the first one stays if they'd all go. */
+export function removePoints(points, indices) {
+  const gone = new Set(indices)
+  const next = points.filter((_, i) => !gone.has(i))
+  return next.length ? next : points.slice(0, 1)
+}
+
+/**
+ * The points at `indices` moved together by dx bars and dy of travel, held inside
+ * 0 … bars and 0 … 1 as a group (copy: the originals stay). Returns { points, indices }:
+ * where the moved points are now.
+ */
+export function movePoints(points, indices, dx, dy, bars, copy = false) {
+  const group = [...new Set(indices)].filter((i) => points[i])
+  if (!group.length) return { points, indices: [] }
+  const xs = group.map((i) => points[i].x)
+  const ys = group.map((i) => points[i].y)
+  dx = Math.min(bars - Math.max(...xs), Math.max(-Math.min(...xs), dx))
+  dy = Math.min(1 - Math.max(...ys), Math.max(-Math.min(...ys), dy))
+  const moving = new Set(group)
+  const list = copy ? points.map((p) => ({ ...p, moved: false })) : points.map((p, i) => ({ ...p, moved: moving.has(i) }))
+  for (const i of group) {
+    const p = points[i]
+    const q = { ...p, x: Math.round((p.x + dx) * 256) / 256, y: Math.round((p.y + dy) * 10000) / 10000, moved: true }
+    if (copy) { delete q.c; list.push(q) } else list[i] = q
+  }
+  const sorted = byX(list).map(({ p }) => p)
+  return {
+    points: sorted.map(({ moved, ...p }) => p), // eslint-disable-line no-unused-vars
+    indices: sorted.flatMap((p, i) => (p.moved ? [i] : [])),
+  }
+}
+
 const tidy = (v) => String(Math.round(v * 10000) / 10000)
 export const autoVar = (id) => `a_${id}`
 
