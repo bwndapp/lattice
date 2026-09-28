@@ -3,12 +3,15 @@ import { onSoundsChange, previewSound, soundCatalog } from './audio'
 import { enginesFor } from './instruments/index.js'
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
+// what each tab is called: "instruments" are soundfonts (the add menu's instruments are
+// channels), and engines are the synths lattice builds itself
+const TAB_LABELS = { instruments: 'soundfonts', engines: 'lattice synths' }
 
 /**
  * Browse every loaded sound and pick one. Clicking a sound plays it and puts it on the
  * channel straight away; Enter or a click outside closes. Drum channels browse kits and
- * samples; synth channels browse synths, instruments and (pitched) samples. Both can pick
- * an engine: an instrument the app builds itself, with a window of its own.
+ * samples; synth channels browse synths, soundfonts and (pitched) samples. Both can pick
+ * an engine ("lattice synths"): an instrument the app builds itself, with a window of its own.
  */
 export default function SoundPicker({ kind, sound, bank, engine = null, anchor, onPick, onClose }) {
   const ref = useRef(null)
@@ -68,7 +71,7 @@ export default function SoundPicker({ kind, sound, bank, engine = null, anchor, 
           aria-label="Search sounds"
         />
         <span className="seg">
-          {tabs.map((t) => <button key={t} className={`btn ${tab === t ? 'on' : ''}`} aria-pressed={tab === t} onClick={() => setTab(t)}>{t}</button>)}
+          {tabs.map((t) => <button key={t} className={`btn ${tab === t ? 'on' : ''}`} aria-pressed={tab === t} onClick={() => setTab(t)}>{TAB_LABELS[t] ?? t}</button>)}
         </span>
         <button className="btn ghost" onClick={onClose}>done</button>
       </div>
