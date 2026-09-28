@@ -76,7 +76,7 @@ export function appParam(project, target) {
   const param = spec?.keys[key]
   if (!param) return null
   const id = parts[0] === 'u' ? `${parts[1]}_${parts[2]}` : parts[1]
-  const cps = (Number(project.bpm) || 120) / (Number(project.beats) || 4) / 60
+  const cps = (Number(project.bpm) || 140) / (Number(project.beats) || 4) / 60
   // the space node's delay time is in bars
   const scale = type === 'space' && key === 'delaytime' ? 1 / cps : 1
   return { where: spec.where, key: `${spec.prefix}${id}`, param, scale }

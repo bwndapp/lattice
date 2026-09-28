@@ -15,7 +15,7 @@ import { declareEngines } from './instruments/host.js'
  * runs as Strudel. Nobody has to read the code; it's how a track travels.
  *
  *   // @project {"v":3,...}
- *   setcpm(120/4)
+ *   setcpm(140/4)
  *   const p_beat = stack(s("bd ~ ~ ~ …").bank("RolandTR909").room(0.2), …)
  *   const n_filter = p_bass.lpf(1200).lpq(8)
  *   out_in0: n_filter
@@ -121,7 +121,7 @@ export function normalizeProject(raw) {
   if (!raw || typeof raw !== 'object') return null
   const project = {
     v: 3,
-    bpm: num(raw.bpm, 120, 10, 400),
+    bpm: num(raw.bpm, 140, 10, 400),
     beats: Math.round(num(raw.beats, 4, 2, 8)),
     patterns: [],
   }
@@ -499,7 +499,7 @@ function graphFromTracks(tracks, patternIds) {
 
 /** An empty project: nothing but the output, for starting from scratch. */
 export function blankProject() {
-  return normalizeProject({ v: 3, bpm: 120, beats: 4, patterns: [], nodes: [{ id: 'out', type: 'output', x: 640, y: 200, data: { muted: {}, solo: null } }], edges: [] })
+  return normalizeProject({ v: 3, bpm: 140, beats: 4, patterns: [], nodes: [{ id: 'out', type: 'output', x: 640, y: 200, data: { muted: {}, solo: null } }], edges: [] })
 }
 
 /** A starter project: a beat and a bassline, patched through a few effects. */
@@ -578,7 +578,7 @@ const TEMPO = { setcpm: 'cpm', setCpm: 'cpm', setcps: 'cps', setCps: 'cps' }
  * else (samples(), consts, helpers) is kept as setup that runs first, and the tempo is
  * read from setcpm / setcps. Returns { project, parts } or { error } naming a line.
  */
-export function projectFromCode(code, { bpm: fallbackBpm = 120, beats = 4 } = {}) {
+export function projectFromCode(code, { bpm: fallbackBpm = 140, beats = 4 } = {}) {
   const src = String(code ?? '')
   let ast
   try {

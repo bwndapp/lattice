@@ -76,7 +76,7 @@ const yieldTask = () => new Promise((resolve) => { const c = new MessageChannel(
  * reverbs and delays room to ring out after the last note.
  */
 export async function renderProject(project, { from = 0, to = 4, tail = 2, sampleRate = 48000, onStage } = {}) {
-  const cps = (Number(project.bpm) || 120) / (Number(project.beats) || 4) / 60
+  const cps = (Number(project.bpm) || 140) / (Number(project.beats) || 4) / 60
   const seconds = (to - from) / cps + Math.max(0, tail)
   if (!(seconds > 0)) throw new Error('nothing to render')
 

@@ -923,7 +923,7 @@ export default function App() {
   // room. On your own it costs nothing: there's nobody to tell and nobody telling us.
   const following = useRef(null) // the last thing we heard: { on, pos, cps, at }
   const settingRef = useRef(false) // true while we're acting on what we heard, so we don't echo
-  const cpsOf = useCallback((p) => (Number(p?.bpm) || 120) / (Number(p?.beats) || 4) / 60, [])
+  const cpsOf = useCallback((p) => (Number(p?.bpm) || 140) / (Number(p?.beats) || 4) / 60, [])
   const tellRoom = useCallback((on) => {
     // nobody to tell is the common case, and working out where we are means parsing the
     // whole project: ask the cheap question first
@@ -1854,7 +1854,7 @@ export default function App() {
 
 /**
  * BPM readout that works like a knob: drag up or down (shift for tenths), scroll, arrow keys
- * (page up/down for 10), double-click for 120. A click without dragging types a tempo.
+ * (page up/down for 10), double-click for 140. A click without dragging types a tempo.
  * Changing it rewrites setcpm/setcps in the code.
  */
 function Tempo({ bpm, onChange }) {
@@ -1914,7 +1914,7 @@ function Tempo({ bpm, onChange }) {
     <label
       ref={boxRef}
       className={`lcd tempo ${editing ? 'editing' : ''} ${dragging ? 'dragging' : ''}`}
-      title="Tempo · drag up/down or scroll (shift: fine) · click to type · double-click for 120"
+      title="Tempo · drag up/down or scroll (shift: fine) · click to type · double-click for 140"
       onPointerDown={(e) => {
         if (editing || e.button !== 0) return
         e.preventDefault()
@@ -1940,7 +1940,7 @@ function Tempo({ bpm, onChange }) {
       // a label's click re-targets to its input and would move the caret: the field is ours
       onClick={(e) => e.preventDefault()}
       onPointerCancel={() => { drag.current = null; setDragging(false) }}
-      onDoubleClick={() => { setEditing(false); set(120) }}
+      onDoubleClick={() => { setEditing(false); set(140) }}
     >
       <input
         ref={inputRef}
@@ -1965,7 +1965,7 @@ function Tempo({ bpm, onChange }) {
           const step = { ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1, PageUp: 10, PageDown: -10 }[e.key]
           if (step) { e.preventDefault(); e.stopPropagation(); set(bpmRef.current + step * (e.shiftKey && Math.abs(step) === 1 ? 0.1 : 1)); return }
           if (e.key === 'Enter') { e.preventDefault(); startTyping() }
-          else if (e.key === 'Home') { e.preventDefault(); set(120) }
+          else if (e.key === 'Home') { e.preventDefault(); set(140) }
           else if (/^[0-9.,]$/.test(e.key)) { setEditing(true); setText(e.key); e.preventDefault() }
         }}
       />
@@ -1994,7 +1994,7 @@ function Position({ transport, started, bpm, songBars }) {
   const [mode, setMode] = useState(() => (POSITION_MODES.includes(readPref('strudel:position-mode', 'bars')) ? readPref('strudel:position-mode', 'bars') : 'bars'))
   useEffect(() => writePref('strudel:position-mode', mode), [mode])
   // a bar takes this many seconds, so bars turn into minutes and seconds
-  const barSeconds = (60 / Math.max(1, Number(bpm) || 120)) * Math.max(1, transport.beats)
+  const barSeconds = (60 / Math.max(1, Number(bpm) || 140)) * Math.max(1, transport.beats)
   const cycle = () => setMode((m) => POSITION_MODES[(POSITION_MODES.indexOf(m) + 1) % POSITION_MODES.length])
   const modeRef = useRef(mode)
   modeRef.current = mode

@@ -228,7 +228,7 @@ export async function previewTrack(project, { cycles = 8, onEnd, cut = false } =
   const code = generateCode(project, { audition: true }).replace(/^setcpm\(.*$/gm, '')
   const { pattern } = await evaluate(stackLanes(code), transpiler)
   if (run !== previewRun || !pattern?.queryArc) return
-  const cps = (Number(project.bpm) || 120) / (Number(project.beats) || 4) / 60
+  const cps = (Number(project.bpm) || 140) / (Number(project.beats) || 4) / 60
   const ac = getAudioContext()
   const start = ac.currentTime + 0.12
   // an eighth of a cycle at a time: far enough ahead to stay smooth, close enough that
@@ -285,7 +285,7 @@ export async function previewInPatch(project, patternId, ch, { note, n, pitched 
     ensureAudio()
     const { pattern } = await evaluate(code, transpiler)
     if ((hold == null && run !== auditionRun) || !pattern?.queryArc) return // a newer audition took over
-    const cps = (Number(project.bpm) || 120) / (Number(project.beats) || 4) / 60
+    const cps = (Number(project.bpm) || 140) / (Number(project.beats) || 4) / 60
     const ac = getAudioContext()
     const t0 = ac.currentTime + 0.03
     for (const hap of pattern.queryArc(0, 1)) {

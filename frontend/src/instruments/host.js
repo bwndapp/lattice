@@ -47,7 +47,7 @@ const declared = new Map() // instrument (channel) id → { type, data, cps }
 /** Every instrument's engine settings, from a project (called as its code is generated). */
 export function declareEngines(project) {
   const beats = Number(project?.beats) || 4
-  const cps = (Number(project?.bpm) || 120) / beats / 60
+  const cps = (Number(project?.bpm) || 140) / beats / 60
   for (const pattern of project?.patterns ?? []) {
     for (const ch of pattern.channels) {
       const type = engineType(ch.engine?.type)

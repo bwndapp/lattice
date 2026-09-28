@@ -46,7 +46,7 @@ export default function ExportDialog({ project, title, transport, onClose, onFla
   const range = what === 'song' ? { from: 0, to: Math.max(1, song) }
     : what === 'loop' ? { from: transport.loop.from, to: transport.loop.to }
       : { from: 0, to: Math.max(1, bars) }
-  const cps = (Number(project.bpm) || 120) / (Number(project.beats) || 4) / 60
+  const cps = (Number(project.bpm) || 140) / (Number(project.beats) || 4) / 60
   const seconds = (range.to - range.from) / cps + Number(tail)
   const spec = formats.find((f) => f.key === format) ?? formats[0]
   const bytes = spec?.bitrates ? (seconds * bitrate * 1000) / 8 : seconds * rate * 2 * (spec?.codec === 'pcm-s24' ? 3 : 2)

@@ -861,7 +861,7 @@ export function graphCode(project, { solo = null, song = null, audition = false,
   const lines = []
   // each sidechain gets its own audio bus; bus 1 is where everything else plays
   const sidechains = nodes.filter((n) => n.type === 'sidechain').map((n) => n.id)
-  const cps = (Number(project.bpm) || 120) / (Number(project.beats) || 4) / 60
+  const cps = (Number(project.bpm) || 140) / (Number(project.beats) || 4) / 60
   // stereo inserts: a bus each, numbered in patch order so the numbers stay put
   const stereoKeys = []
   for (const n of nodes) {
