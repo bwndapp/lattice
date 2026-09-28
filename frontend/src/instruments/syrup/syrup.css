@@ -314,3 +314,4 @@
 .sy-panel .knob:hover .knob-label { color: var(--paper); }
 .sy-panel .knob:hover .knob-track { stroke: #2a2a24; }
 .sy-fx-params .sy-rings { left: 4px; }
+.sy-moddots { display: flex; gap: 3px; align-self: center; }

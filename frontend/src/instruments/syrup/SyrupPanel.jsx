@@ -212,6 +212,17 @@ function ModKnob({ ui, route, auto, def, value, onChange }) {
   )
 }
 
+/** A dot for each route moving a setting that isn't a knob (a layer's pitch, say). */
+function ModDots({ ui, route }) {
+  const routes = ui.patch.routes.filter((r) => r.target === route)
+  if (!routes.length) return null
+  return (
+    <span className="sy-moddots" title={`moved by ${routes.map((r) => modName(ui.patch, r.src)).join(', ')}`}>
+      {routes.map((r) => <span key={r.id} className="sy-dot" style={{ color: modColor(ui.patch, r.src) }} aria-hidden />)}
+    </span>
+  )
+}
+
 // ── what a layer sounds like ─────────────────────────────────────────────────
 
 /** One menu for a layer's sound: every analog wave, supersaw, each wavetable, each noise. */
@@ -247,7 +258,7 @@ function destinations(patch) {
     if (tone) knobs.unshift(tone)
     if (l.type === 'wavetable') knobs.push('warp', 'detune', 'spread')
     if (l.type === 'supersaw') knobs.push('spread')
-    if (l.type !== 'noise') knobs.push('fm', 'ratio', 'fine')
+    if (l.type !== 'noise') knobs.push('pitch', 'fine', 'fm', 'ratio')
     for (const k of new Set(knobs)) list.push([`layer:${l.id}.${k}`, `${layerLetter(i)} ${K[k].label}`])
   })
   // every knob on every lane effect
@@ -375,6 +386,7 @@ function Generator({ ui, layer, index }) {
           <div className="sy-gen-steps">
             {pitched && <Stepper label="octave" value={layer.oct} min={-3} max={3} onChange={(v) => set((l) => { l.oct = v })} format={(v) => (v > 0 ? `+${v}` : v)} />}
             {pitched && <Stepper label="semi" value={layer.semi} min={-12} max={12} onChange={(v) => set((l) => { l.semi = v })} format={(v) => (v > 0 ? `+${v}` : v)} />}
+            {pitched && <ModDots ui={ui} route={`layer:${layer.id}.pitch`} />}
             {stacked && <Stepper label="voices" value={layer.unison} min={1} max={16} onChange={(v) => set((l) => { l.unison = v })} />}
           </div>
           <div className="sy-gen-knobs">

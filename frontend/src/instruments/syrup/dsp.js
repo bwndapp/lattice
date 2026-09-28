@@ -1,5 +1,5 @@
 import { knobsSource } from '../dsp.js'
-import { AUDIO_PARAMS, K, LANES, LAYER_KNOBS, MAX_LAYERS, MAX_MODULATORS } from './model.js'
+import { AUDIO_PARAMS, DEST_COUNT, DEST_LAYERS, K, LANES, LAYER_KNOBS, LAYER_PARAMS, MAX_LAYERS, MAX_MODULATORS } from './model.js'
 import { TABLES_SOURCE } from './tables.js'
 import { SHAPE_SOURCE } from '../curve.js'
 
@@ -39,7 +39,10 @@ const SY_MODS = ${MAX_MODULATORS}
 const SY_LANES = ${LANES}
 const SY_NN = Array.from({ length: SY_LANES }, (_, i) => 'n' + i + '_gain')
 const SY_LANE_SPEC = ${JSON.stringify(spec('gain'))}
-const SY_LN = Array.from({ length: SY_LAYERS }, (_, i) => ${JSON.stringify(LAYER_KNOBS)}.map((k) => 'l' + i + '_' + k))
+const SY_LSTRIDE = ${LAYER_KNOBS.length}
+const SY_LBASE = ${DEST_LAYERS}
+const SY_LPITCH = ${LAYER_KNOBS.indexOf('pitch')}
+const SY_LN = Array.from({ length: SY_LAYERS }, (_, i) => ${JSON.stringify(LAYER_PARAMS)}.map((k) => 'l' + i + '_' + k))
 const SY_DN = Array.from({ length: SY_MODS }, (_, j) => ({ hz: 'd' + j + '_hz', a: 'd' + j + '_attack', d: 'd' + j + '_decay', s: 'd' + j + '_sustain', r: 'd' + j + '_release' }))
 const SY_LFO_TABLE = 1024
 const syShape = ${SHAPE_SOURCE}
@@ -90,7 +93,7 @@ class SyrupProcessor extends LatticeInstrument {
     this.modVal = new Float32Array(SY_MODS)
     this.notes = 0 // counts notes, to know the newest voice
     this.sharedTicks = 0
-    this.mods = new Float32Array(100)
+    this.mods = new Float32Array(${DEST_COUNT})
     this.bufL = new Float32Array(SY_CONTROL) // the voice's mix, out of the lanes
     this.bufR = new Float32Array(SY_CONTROL)
     // the summed lanes, this block, across every voice
@@ -278,7 +281,7 @@ class SyrupProcessor extends LatticeInstrument {
       L.on = conf[0] > 0
       if (!L.on) continue
       const N = SY_LN[i]
-      const lm = 10 + i * 10
+      const lm = SY_LBASE + i * SY_LSTRIDE
       L.lane = conf[9] > 0 && conf[9] < SY_LANES ? conf[9] : 0
       L.type = conf[1]
       L.wave = conf[2]
@@ -296,7 +299,8 @@ class SyrupProcessor extends LatticeInstrument {
       L.fm = syMod(m, lm, 8, k[N[8]])
       L.ratio = syMod(m, lm, 9, k[N[9]])
       L.unison = Math.max(1, Math.min(16, conf[8] | 0))
-      L.freq = syMtof(voice.pitch + conf[7] + syMod(m, lm, 2, k[N[2]]) / 100 + semis)
+      // the layer's own pitch (its octave and semitones), moved by its routes, and its fine
+      L.freq = syMtof(voice.pitch + syMod(m, lm, SY_LPITCH, conf[7]) + syMod(m, lm, 2, k[N[2]]) / 100 + semis)
       L.norm = 1 / Math.sqrt(L.unison)
       if (L.type === 2) {
         // the richest copy of the table whose harmonics all fit under the top of the band

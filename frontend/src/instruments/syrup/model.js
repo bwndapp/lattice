@@ -40,6 +40,8 @@ export const K = {
   spread: { key: 'spread', label: 'spread', min: 0, max: 1, def: 0.6 },
   fm: { key: 'fm', label: 'fm', min: 0, max: 8, def: 0 },
   ratio: { key: 'ratio', label: 'ratio', min: 0.25, max: 8, def: 1, log: true, unit: 'x' },
+  // a layer's pitch in semitones: set by its octave and semi steppers, moved by routes
+  pitch: { key: 'pitch', label: 'pitch', min: -48, max: 48, def: 0, unit: 'st', origin: 0 },
   attack: { key: 'attack', label: 'attack', min: 0.001, max: 4, def: 0.005, log: true, unit: 's' },
   decay: { key: 'decay', label: 'decay', min: 0.01, max: 4, def: 0.3, log: true, unit: 's' },
   sustain: { key: 'sustain', label: 'sustain', min: 0, max: 1, def: 0.8 },
@@ -191,7 +193,14 @@ export const TABLES = {
 export const TABLE_NAMES = Object.keys(TABLES)
 
 /** Layer knobs a modulator can move, in the order the processor numbers them. */
-export const LAYER_KNOBS = ['level', 'pan', 'fine', 'pw', 'pos', 'warp', 'detune', 'spread', 'fm', 'ratio']
+export const LAYER_KNOBS = ['level', 'pan', 'fine', 'pw', 'pos', 'warp', 'detune', 'spread', 'fm', 'ratio', 'pitch']
+/**
+ * The layer knobs that are AudioParams (l<layer>_<knob>). Pitch isn't one: its base is the
+ * layer's octave and semitones, which come with the message.
+ */
+export const LAYER_PARAMS = LAYER_KNOBS.slice(0, 10)
+/** A layer's pitch, in semitones, before its routes move it. */
+export const layerPitch = (l) => l.oct * 12 + l.semi
 /** Patch-wide destinations, numbered from 1 (0 is "nowhere"). */
 export const GLOBAL_DESTS = ['pitch', 'amp.level', 'lane:0.gain', 'lane:1.gain', 'lane:2.gain']
 
@@ -390,7 +399,10 @@ export function targetSpec(patch, target) {
   if (l && LAYER_KNOBS.includes(l[2])) {
     const index = patch.layers.findIndex((x) => x.id === l[1])
     if (index < 0) return null
-    return { label: `${layerLetter(index)} ${K[l[2]].label}`, spec: K[l[2]], layerId: l[1], knob: l[2], index, get: (p) => p.layers.find((x) => x.id === l[1])?.[l[2]] }
+    const get = l[2] === 'pitch'
+      ? (p) => { const x = p.layers.find((y) => y.id === l[1]); return x ? layerPitch(x) : undefined }
+      : (p) => p.layers.find((x) => x.id === l[1])?.[l[2]]
+    return { label: `${layerLetter(index)} ${K[l[2]].label}`, spec: K[l[2]], layerId: l[1], knob: l[2], index, get }
   }
   return null
 }
@@ -411,13 +423,19 @@ export function globalTargets(patch) {
   return list
 }
 
-/** Where a route goes, as the processor numbers it: 1 pitch, 2 volume, 3 … 5 lane levels, 10 + layer × 10 + knob. */
-function destIndex(patch, target) {
+/**
+ * Where a route goes, as the processor numbers it: 1 … the patch-wide ones (GLOBAL_DESTS),
+ * then from DEST_LAYERS each layer's knobs, LAYER_KNOBS.length apiece. The numbers only live
+ * in messages, never in saved patches, so they can move.
+ */
+export const DEST_LAYERS = 16
+export const DEST_COUNT = DEST_LAYERS + MAX_LAYERS * LAYER_KNOBS.length
+export function destIndex(patch, target) {
   const g = GLOBAL_DESTS.indexOf(target)
   if (g >= 0) return g + 1
   const t = targetSpec(patch, target)
   if (!t?.layerId) return 0
-  return 10 + t.index * 10 + LAYER_KNOBS.indexOf(t.knob)
+  return DEST_LAYERS + t.index * LAYER_KNOBS.length + LAYER_KNOBS.indexOf(t.knob)
 }
 
 // ── the processor's view ─────────────────────────────────────────────────────
@@ -427,7 +445,7 @@ const envParams = (prefix) => ENV_STAGES.map((k) => ({ key: `${prefix}_${k}`, mi
 
 /** The knobs the processor reads, in fixed slots: one AudioParam each. */
 export const AUDIO_PARAMS = [
-  ...Array.from({ length: MAX_LAYERS }, (_, i) => LAYER_KNOBS.map((k) => ({ key: `l${i}_${k}`, min: K[k].min, max: K[k].max, def: K[k].def }))).flat(),
+  ...Array.from({ length: MAX_LAYERS }, (_, i) => LAYER_PARAMS.map((k) => ({ key: `l${i}_${k}`, min: K[k].min, max: K[k].max, def: K[k].def }))).flat(),
   ...Array.from({ length: MAX_MODULATORS }, (_, j) => [{ key: `d${j}_hz`, min: K.hz.min, max: K.hz.max, def: K.hz.def }, ...envParams(`d${j}`)]).flat(),
   ...envParams('a'),
   ...Array.from({ length: LANES }, (_, i) => ({ key: `n${i}_gain`, min: K.gain.min, max: K.gain.max, def: 1 })),
@@ -449,7 +467,7 @@ export function patchMessage(patch) {
   return {
     layers: patch.layers.map((l) => [
       l.on ? 1 : 0, LAYER_TYPES.indexOf(l.type), WAVES.indexOf(l.wave), TABLE_NAMES.indexOf(l.table), NOISES.indexOf(l.color),
-      WARP_MODES.indexOf(l.warpmode), FM_WAVES.indexOf(l.fmwave), l.oct * 12 + l.semi,
+      WARP_MODES.indexOf(l.warpmode), FM_WAVES.indexOf(l.fmwave), layerPitch(l),
       l.type === 'analog' || l.type === 'noise' ? 1 : l.unison, // analog layers are one voice; the others stack
       l.lane,
     ]),
@@ -475,7 +493,7 @@ export function patchMessage(patch) {
 /** The patch's knobs as the processor's numbers. `cps`: the track's tempo, for synced LFOs. */
 export function encodePatch(patch, { cps = 0.5 } = {}) {
   const out = {}
-  patch.layers.forEach((l, i) => { for (const k of LAYER_KNOBS) out[`l${i}_${k}`] = l[k] })
+  patch.layers.forEach((l, i) => { for (const k of LAYER_PARAMS) out[`l${i}_${k}`] = l[k] })
   patch.modulators.forEach((m, j) => {
     if (m.kind === 'lfo') out[`d${j}_hz`] = m.hz
     else for (const k of ENV_STAGES) out[`d${j}_${k}`] = m[k]
