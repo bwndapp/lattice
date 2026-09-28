@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAutoLive, useAutomation } from './autoLive.js'
 import { KnobMenu } from './KnobMenu.jsx'
+import { knobBridge } from './knobBridge.js'
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 
@@ -24,14 +25,17 @@ export function formatValue(v, def) {
 
 /**
  * A knob: drag up/down (shift for fine), scroll, arrow keys, double-click to reset.
- * Calls `onChange` as it turns and `onCommit` when you let go. With a `target` (see
- * automation.js), right-click offers to automate it; an automated knob wears a mark and,
- * while the song plays, turns with its curve.
+ * While it turns, only the knob redraws and the sound follows at once where the app can
+ * move it directly (knobBridge.js); the project is written at most once a frame (or ten
+ * times a second when the sound already follows), and once more when you let go, so a
+ * whole turn is one undo step and the others in the room get where it ended. With a
+ * `target` (see automation.js), right-click offers to automate it; an automated knob
+ * wears a mark and, while the song plays, turns with its curve.
  */
 export default function Knob({ def, value, onChange, target = null }) {
   const ref = useRef(null)
   const drag = useRef(null)
-  const [live, setLive] = useState(null) // value while dragging, so the knob moves smoothly
+  const [live, setLive] = useState(null) // value while turning, so the knob moves smoothly
   const automation = useAutomation()
   const automated = !!target && !!automation?.automated.has(target)
   const following = useAutoLive(automated ? target : null) // where its curve has it, while playing
@@ -41,21 +45,72 @@ export default function Knob({ def, value, onChange, target = null }) {
   const pos = clamp(toPos(shown, def), 0, 1)
   const changed = Math.abs(shown - def.def) > 1e-9
 
-  const set = (t) => {
-    const next = fromPos(clamp(t, 0, 1), def)
-    const rounded = def.log ? Math.round(next * 100) / 100 : Math.round(next * 1000) / 1000
-    setLive(rounded)
-    onChange(rounded)
+  // one turn: a drag, a burst of scrolling or key presses
+  const turn = useRef(null)
+  const props = useRef(null)
+  props.current = { onChange, target }
+  const flush = () => {
+    const t = turn.current
+    if (!t) return
+    t.timer = 0
+    if (t.pending === null) return
+    const v = t.pending
+    t.pending = null
+    t.wrote = performance.now()
+    props.current.onChange(v)
   }
+  const cancelFlush = (t) => {
+    if (!t.timer) return
+    if (t.raf) cancelAnimationFrame(t.timer)
+    else clearTimeout(t.timer)
+    t.timer = 0
+  }
+  const set = (p) => {
+    const next = fromPos(clamp(p, 0, 1), def)
+    const rounded = def.log ? Math.round(next * 100) / 100 : Math.round(next * 1000) / 1000
+    let t = turn.current
+    if (!t) {
+      t = turn.current = { value: null, pending: null, timer: 0, raf: false, wrote: 0, idle: 0 }
+      knobBridge.begin()
+    }
+    if (rounded === t.value) return
+    t.value = rounded
+    setLive(rounded)
+    t.pending = rounded
+    // heard straight away where the app can move the sound itself; then the project only
+    // needs to keep up for the display and the room, so ten times a second is plenty
+    const heard = knobBridge.live(props.current.target, rounded)
+    if (t.timer) return
+    t.raf = !heard
+    t.timer = heard ? setTimeout(flush, Math.max(0, 100 - (performance.now() - t.wrote))) : requestAnimationFrame(flush)
+  }
+  /** Let go: the value it ended on lands in the project (one undo step for the turn). */
+  const finish = () => {
+    const t = turn.current
+    if (!t) return
+    cancelFlush(t)
+    clearTimeout(t.idle)
+    flush()
+    turn.current = null
+    knobBridge.end()
+    setLive(null)
+  }
+  /** Scrolling and keys have no letting go: the turn ends when they stop for a moment. */
+  const finishSoon = () => {
+    const t = turn.current
+    if (!t) return
+    clearTimeout(t.idle)
+    t.idle = setTimeout(finish, 300)
+  }
+  useEffect(() => () => finish(), []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const el = ref.current
     if (!el) return
     const onWheel = (e) => {
       e.preventDefault()
-      set(toPos(live ?? value, def) - Math.sign(e.deltaY) * (e.shiftKey ? 0.01 : 0.04))
-      clearTimeout(onWheel.t)
-      onWheel.t = setTimeout(() => setLive(null), 300)
+      set(toPos(turn.current?.value ?? value, def) - Math.sign(e.deltaY) * (e.shiftKey ? 0.01 : 0.04))
+      finishSoon()
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
@@ -106,17 +161,20 @@ export default function Knob({ def, value, onChange, target = null }) {
           if (!d) return
           set(d.t + (d.y - e.clientY) / (e.shiftKey ? 600 : 150))
         }}
-        onPointerUp={() => { drag.current = null; setLive(null) }}
-        onPointerCancel={() => { drag.current = null; setLive(null) }}
-        onDoubleClick={() => { setLive(null); onChange(def.def) }}
+        onPointerUp={() => { drag.current = null; finish() }}
+        onPointerCancel={() => { drag.current = null; finish() }}
+        // let go outside the window, or the capture was taken away: it still lands
+        onLostPointerCapture={() => { if (drag.current) { drag.current = null; finish() } }}
+        onDoubleClick={() => { finish(); onChange(def.def) }}
         onKeyDown={(e) => {
           const step = e.shiftKey ? 0.01 : 0.05
-          if (e.key === 'ArrowUp' || e.key === 'ArrowRight') set(toPos(value, def) + step)
-          else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') set(toPos(value, def) - step)
-          else if (e.key === 'Home' || e.key === 'Delete' || e.key === 'Backspace') onChange(def.def)
+          const from = toPos(turn.current?.value ?? value, def)
+          if (e.key === 'ArrowUp' || e.key === 'ArrowRight') set(from + step)
+          else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') set(from - step)
+          else if (e.key === 'Home' || e.key === 'Delete' || e.key === 'Backspace') { finish(); onChange(def.def) }
           else return
           e.preventDefault()
-          setTimeout(() => setLive(null), 200)
+          finishSoon()
         }}
       >
         <path d={arc(0, 1)} className="knob-track" />

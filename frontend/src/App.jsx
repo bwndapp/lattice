@@ -34,6 +34,7 @@ import { AUTO_PREFIX, activeAutos, appParam, autoValueFn, resolveTarget, toPos }
 import { setFxParams } from './fxbus.js'
 import { setInsertParams } from './stereo.js'
 import { setEngineParams } from './instruments/host.js'
+import { knobBridge } from './knobBridge.js'
 import { capturePatterns, parseLanes, tempoChange } from './lanes'
 import { syncEngines } from './instruments/host.js'
 import { useOctave } from './keyboard.js'
@@ -677,12 +678,15 @@ export default function App() {
     const h = historyRef.current
     const now = Date.now()
     const real = JSON.stringify(next) !== before
-    if (real && now - h.lastAt > 500) {
+    // a knob gesture (a drag, a burst of scrolling) is one step however long it takes
+    const gesture = knobBridge.current
+    if (real && (gesture ? h.gesture !== gesture : now - h.lastAt > 500)) {
       h.past.push(step(before, []))
       if (h.past.length > 200) h.past.shift()
       h.future = []
       setHistoryTick((n) => n + 1)
     }
+    if (real) h.gesture = gesture
     // everything in this burst belongs to the step it started
     if (real && h.past.at(-1)?.ops) h.past.at(-1).ops.push(...diffOps(base, next))
     h.lastAt = now
@@ -829,18 +833,22 @@ export default function App() {
     // reverb, delay and stereo knobs are the app's own: it moves them as the curve goes
     return fn && { target: a.target, fn, app: appParam(project, a.target), base: resolveTarget(project, a.target)?.value }
   }).filter(Boolean) : []), [project])
+  // a knob the app moves itself is heard the moment it turns, before the project catches up
+  const projectNow = useRef(project)
+  projectNow.current = project
+  useEffect(() => knobBridge.onLive((target, value) => {
+    const app = projectNow.current && appParam(projectNow.current, target)
+    if (!app) return false
+    applyAppParam(app, value)
+    return true
+  }), [])
   useEffect(() => {
     if (!started || !autoFns.length) { autoLive.clear(); return }
     const apply = (a, value) => {
-      const v = value * (a.app.scale ?? 1)
-      // a reverb's room is rebuilt when its size changes, so only move in steps
-      const stepped = ['size', 'tone', 'width'].includes(a.app.param) ? Math.round(v * 40) / 40 : v
+      const stepped = appParamValue(a.app, value)
       if (a.last === stepped) return
       a.last = stepped
-      const patch = { [a.app.param]: stepped }
-      if (a.app.where === 'fx') setFxParams(a.app.key, patch)
-      else if (a.app.where === 'engine') setEngineParams(a.app.key, patch)
-      else setInsertParams(a.app.key, patch)
+      applyAppParam(a.app, value)
     }
     let raf = 0
     let last = 0
@@ -1873,6 +1881,19 @@ export default function App() {
       )}
     </div>
   )
+}
+
+/** What an app-moved knob (see automation.js `appParam`) sets its parameter to. */
+function appParamValue(app, value) {
+  const v = value * (app.scale ?? 1)
+  // a reverb's room is rebuilt when its size changes, so only move in steps
+  return ['size', 'tone', 'width'].includes(app.param) ? Math.round(v * 40) / 40 : v
+}
+function applyAppParam(app, value) {
+  const patch = { [app.param]: appParamValue(app, value) }
+  if (app.where === 'fx') setFxParams(app.key, patch)
+  else if (app.where === 'engine') setEngineParams(app.key, patch)
+  else setInsertParams(app.key, patch)
 }
 
 /**
