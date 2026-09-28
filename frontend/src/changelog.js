@@ -24,6 +24,22 @@
  */
 export const NEWS = [
   {
+    id: '2026-09-28-2',
+    date: '2026-09-28',
+    version: '0.4.0',
+    title: 'Better knobs, a deeper syrup',
+    items: [
+      '**Knobs turn smoothly**: double-click to type a value like 2k or -6dB, ctrl/cmd-click to reset',
+      '**Syrup modulates more**: each oscillator\'s pitch, envelope times, glide, even other modulators',
+      '**Drag an LFO onto a knob** in Syrup to map it',
+      '**Unison on every oscillator**, with a blend knob, in place of supersaw',
+      '**The knife on several wires** puts one effect on them all through a bus',
+      '**Delete a node** and the wires around it join back up',
+      '**A tidier mixer bus**, and its input levels now work',
+      '**Smaller things**: no banner when you save, typing a name in a synth no longer plays notes, a blank track instead of a blank screen',
+    ],
+  },
+  {
     id: '2026-09-28',
     date: '2026-09-28',
     version: '0.3.0',
