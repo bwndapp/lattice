@@ -262,3 +262,75 @@ export function knifeInsert(p, cuts, nodeId, makeId = (i, type) => `${nodeId}-${
   })
   return ids.length ? ids : null
 }
+
+/*
+ * Taking nodes out heals the line around them (like Blender's dissolve): whatever fed a
+ * removed pass-through node now feeds what it fed. Sources and the output have nothing to
+ * pass on, so they just go.
+ */
+
+/** The inputs of a node that pass its sound on: all of them, or a sidechain's sound side only. */
+const passes = (type, handle) => !Array.isArray(NODE_TYPES[type]?.inputs) || slotOf(handle) <= 0
+
+/**
+ * Remove the nodes `ids` and their wires, healing around them: each wire out of a removed
+ * node to one that stays gets whatever fed the removed node (through any other removed nodes
+ * in a row), in lane order. Into a node that takes many, the first feed takes the wire's lane
+ * and the others the next free lanes after it, so a bus the knife gathered gives the lanes
+ * back as they were. An input that takes one wire takes the first; the rest go back to lanes
+ * of the first node further down that takes many (deleting only a knife's bus: the first
+ * sound goes through the effect, the others back to their own lanes). Never a loop, a
+ * duplicate, or a wire over one that's there. Mutates the draft.
+ */
+export function healOnRemove(p, ids) {
+  const gone = new Set(ids)
+  const byId = new Map(p.nodes.map((n) => [n.id, n]))
+  const feeds = (id, seen = new Set()) => {
+    if (seen.has(id)) return []
+    seen.add(id)
+    const type = byId.get(id)?.type
+    return p.edges.filter((e) => e.target === id && passes(type, e.targetHandle))
+      .sort((a, b) => slotOf(a.targetHandle) - slotOf(b.targetHandle))
+      .flatMap((e) => (gone.has(e.source) ? feeds(e.source, seen) : [{ source: e.source, sourceHandle: e.sourceHandle }]))
+  }
+  const outs = p.edges.filter((e) => gone.has(e.source) && !gone.has(e.target))
+    .map((e) => ({ target: e.target, targetHandle: e.targetHandle, from: feeds(e.source) }))
+  p.nodes = p.nodes.filter((n) => !gone.has(n.id))
+  p.edges = p.edges.filter((e) => !gone.has(e.source) && !gone.has(e.target))
+
+  const taken = (t, h) => p.edges.some((e) => e.target === t && e.targetHandle === h)
+  const put = (f, target, targetHandle) => {
+    if (f.source === target || makesCycle(p.edges, f.source, target)) return false
+    if (p.edges.some((e) => e.source === f.source && (e.sourceHandle ?? 'out') === (f.sourceHandle ?? 'out') && e.target === target)) return true
+    p.edges.push({ source: f.source, sourceHandle: f.sourceHandle, target, targetHandle })
+    return true
+  }
+  // lay feeds into a node from lane `h` on: the lane itself, then the free ones after it
+  const intoLanes = (fs, target, h) => {
+    let slot = slotOf(h)
+    fs.forEach((f, i) => {
+      let lane = h
+      if (i || taken(target, h)) { while (taken(target, `in-${slot}`)) slot++; lane = `in-${slot}` }
+      put(f, target, lane)
+    })
+  }
+  // the first node down the line from `id` that takes many, and the lane it comes in on
+  const downMany = (id, seen = new Set()) => {
+    if (seen.has(id)) return null
+    seen.add(id)
+    const out = p.edges.filter((e) => e.source === id)
+    if (out.length !== 1) return null
+    const to = byId.get(out[0].target)
+    return NODE_TYPES[to?.type]?.inputs === 'many' ? out[0] : downMany(out[0].target, seen)
+  }
+  for (const { target, targetHandle, from } of outs) {
+    if (!from.length) continue
+    const spec = NODE_TYPES[byId.get(target)?.type]
+    if (spec?.inputs === 'many') { intoLanes(from, target, targetHandle); continue }
+    if (spec?.many?.includes(targetHandle)) { from.forEach((f) => put(f, target, targetHandle)); continue }
+    const [first, ...rest] = from
+    if (!taken(target, targetHandle)) put(first, target, targetHandle)
+    const down = rest.length && downMany(target)
+    if (down) intoLanes(rest, down.target, `in-${slotOf(down.targetHandle) + 1}`)
+  }
+}

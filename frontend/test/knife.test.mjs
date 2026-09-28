@@ -176,5 +176,49 @@ p = patch([['s', 'sound', 0, 0], ['o', 'output', 600, 0], ['z', 'filter', 300, 0
 add(p, ['s-o-in-0'], 'n', 'delay', 300, 0)
 ok('the new node is nudged off the one it landed on', Math.abs(p.nodes.find((n) => n.id === 'n').y) >= 120)
 
+// deleting what the knife put in heals the line back
+const heal = (p, ids) => { m.healOnRemove(p, ids); return p }
+p = patch([['s', 'sound'], ['o', 'output', 600]], [['s', 'o', 'in-0']])
+add(p, ['s-o-in-0'], 'f', 'filter')
+heal(p, ['f'])
+ok('splice an effect, delete it: the wire is back', wires(p) === 's>o' && has(p, 's', 'o', 'in-0'), wires(p))
+
+const lanes3 = () => patch([['a', 'sound'], ['b', 'sound', 0, 200], ['c', 'sound', 0, 400], ['o', 'output', 900]], [['a', 'o', 'in-0'], ['b', 'o', 'in-1'], ['c', 'o', 'in-2']])
+p = lanes3()
+add(p, ['a-o-in-0', 'b-o-in-1'], 'rv', 'reverb', 300)
+bus = busOf(p, 'rv')
+heal(p, [bus, 'rv'])
+ok('knife 2 wires into bus + effect, delete both: both wires back in their lanes', wires(p) === 'a>o b>o c>o' && has(p, 'a', 'o', 'in-0') && has(p, 'b', 'o', 'in-1') && has(p, 'c', 'o', 'in-2'), JSON.stringify(p.edges))
+
+p = lanes3()
+add(p, ['a-o-in-0', 'b-o-in-1', 'c-o-in-2'], 'b1', 'bus', 300)
+heal(p, ['b1'])
+ok('delete a bus that gathered three: the three lanes come back', has(p, 'a', 'o', 'in-0') && has(p, 'b', 'o', 'in-1') && has(p, 'c', 'o', 'in-2') && p.edges.length === 3, JSON.stringify(p.edges))
+
+p = lanes3()
+add(p, ['a-o-in-0', 'b-o-in-1'], 'rv', 'reverb', 300)
+bus = busOf(p, 'rv')
+heal(p, [bus])
+ok('delete only the bus: the first sound goes through the effect, the other back to its lane', has(p, 'a', 'rv', 'in') && has(p, 'rv', 'o', 'in-0') && has(p, 'b', 'o', 'in-1') && has(p, 'c', 'o', 'in-2') && p.edges.length === 4, wires(p))
+ok('no loop after healing', acyclic(p))
+
+p = patch([['a', 'sound'], ['f', 'filter', 300], ['g', 'delay', 600]], [['a', 'f', 'in'], ['f', 'g', 'in'], ['g', 'f', 'in']])
+p.edges = p.edges.filter((e) => e.id !== 'g-f-in')
+p.edges.push({ id: 'loop', source: 'a', target: 'g', targetHandle: 'in' })
+heal(p, ['f'])
+ok('a heal that would duplicate a wire doesn\'t', p.edges.filter((e) => e.source === 'a' && e.target === 'g').length === 1, wires(p))
+
+p = patch([['x', 'filter'], ['y', 'delay', 300], ['z', 'reverb', 600]], [['x', 'y', 'in'], ['y', 'z', 'in'], ['z', 'x', 'in']])
+heal(p, ['y'])
+ok('a heal never closes a loop', acyclic(p), wires(p))
+
+p = patch([['s', 'sound'], ['k', 'sound', 0, 200], ['sc', 'sidechain', 300], ['o', 'output', 600]], [['s', 'sc', 'in-0'], ['k', 'sc', 'in-1'], ['sc', 'o', 'in-0']])
+heal(p, ['sc'])
+ok('a deleted sidechain passes on its sound, not its trigger', wires(p) === 's>o', wires(p))
+
+p = patch([['s', 'sound'], ['f', 'filter', 300], ['o', 'output', 600]], [['s', 'f', 'in'], ['f', 'o', 'in-0']])
+heal(p, ['s'])
+ok('a deleted source just goes', wires(p) === 'f>o', wires(p))
+
 if (fails) { console.log(`\n${fails} failed`); process.exit(1) }
 console.log('\nall passed')

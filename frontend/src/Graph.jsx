@@ -17,7 +17,7 @@ import AddMenu from './AddMenu.jsx'
 import CodeBox from './CodeBox.jsx'
 import { ADD_INTO_WIRE, EDGE_TYPES } from './WireEdge.jsx'
 import { copyNodes, pasteNodes, readClipboard, writeClipboard } from './nodeClipboard'
-import { canQuickWire, firstInput, knifeCuts, knifeHint, knifeInsert, knifeMode, quickSide, quickWire, spliceInto, splicable } from './quickWire.js'
+import { canQuickWire, firstInput, healOnRemove, knifeCuts, knifeHint, knifeInsert, knifeMode, quickSide, quickWire, spliceInto, splicable } from './quickWire.js'
 import { onSoundsChange, previewSound, soundCatalog } from './audio'
 import { flowPaths, setFlowPaths, startFlow, stopFlow } from './flow.js'
 import { colorFor, inkFor, nodeSrc, rgbOf } from './clipColors.js'
@@ -1482,26 +1482,8 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
   const removeNodes = useCallback((ids) => {
     const gone = new Set(ids)
     onUpdateProject((p) => {
-      // Taking a node out of a line keeps the line: whatever fed it now feeds what it fed.
-      // Only for a node with a single wire in (through any other removed nodes in a row);
-      // a node mixing several inputs has no one thing to pass on, so its wires just go.
-      const feed = (id, seen = new Set()) => {
-        if (seen.has(id)) return null
-        seen.add(id)
-        const ins = p.edges.filter((e) => e.target === id)
-        if (ins.length !== 1) return null
-        return gone.has(ins[0].source) ? feed(ins[0].source, seen) : ins[0].source
-      }
-      const bridges = p.edges
-        .filter((e) => gone.has(e.source) && !gone.has(e.target))
-        .map((e) => { const from = feed(e.source); return { source: from, sourceHandle: p.edges.find((x) => x.source === from && gone.has(x.target))?.sourceHandle, target: e.target, targetHandle: e.targetHandle } })
-        .filter((b) => b.source)
-      p.nodes = p.nodes.filter((n) => !gone.has(n.id))
-      p.edges = p.edges.filter((e) => !gone.has(e.source) && !gone.has(e.target))
-      for (const b of bridges) {
-        const taken = p.edges.some((e) => e.target === b.target && e.targetHandle === b.targetHandle)
-        if (!taken && !makesCycle(p.edges, b.source, b.target)) p.edges.push(b)
-      }
+      // taking nodes out of a line keeps the line: whatever fed them feeds what they fed
+      healOnRemove(p, ids)
     })
     if (gone.has(solo)) onSolo(null)
   }, [onUpdateProject, solo, onSolo])
