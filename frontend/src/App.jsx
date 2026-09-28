@@ -346,6 +346,14 @@ export default function App() {
     clearTimeout(toastTimer.current)
     toastTimer.current = setTimeout(() => setToast(null), action ? 9000 : 2200) // time to reach an undo
   }, [])
+  // a routine save gets no banner: the save button says so for a moment, then settles
+  const [justSaved, setJustSaved] = useState(false)
+  const savedTimer = useRef(null)
+  const markSaved = useCallback(() => {
+    setJustSaved(true)
+    clearTimeout(savedTimer.current)
+    savedTimer.current = setTimeout(() => setJustSaved(false), 1600)
+  }, [])
 
   // whether anyone else in the room may change this track: the owner's call, kept on the
   // track itself, and answered by the server the moment it's flipped
@@ -579,9 +587,8 @@ export default function App() {
     // somebody was already working on it: theirs is the one that counts
     doc: (project) => {
       const p = normalizeProject(project)
-      const had = shared.current
       applyShared(p)
-      if (had && JSON.stringify(had) !== JSON.stringify(p)) flash('Caught up with the shared version of this track')
+      // quiet: this happens on its own whenever the room resyncs, nothing to act on
     },
     // one edit from someone else; false means we've drifted and want the whole track
     ops: (ops, hash) => {
@@ -1125,13 +1132,13 @@ export default function App() {
         clearDraft(trackId)
       }
       setRefreshKey((k) => k + 1)
-      flash('Saved')
+      markSaved()
     } catch (e) {
       flash(`Couldn’t save: ${e.message}`)
     } finally {
       setBusy(false)
     }
-  }, [canEdit, busy, user, login, title, visibility, isNew, trackId, navigate, flash, track, codeChanged]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [canEdit, busy, user, login, title, visibility, isNew, trackId, navigate, flash, markSaved, track, codeChanged]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * Why saving over the open track might wipe work, or null: a new name on a changed patch
@@ -1173,7 +1180,8 @@ export default function App() {
       if (from) clearDraft(from.id) // its unsaved changes live on in the new track
       navigate(`/t/${t.id}`)
       setRefreshKey((k) => k + 1)
-      flash(from ? `Saved as a new track · “${from.title}” is unchanged` : 'Saved')
+      if (from) flash(`Saved as a new track · “${from.title}” is unchanged`)
+      else markSaved()
     } catch (e) {
       flash(`Couldn’t save: ${e.message}`)
     } finally {
@@ -1592,8 +1600,8 @@ export default function App() {
             <span className="meta track-status">Loading…</span>
           ) : canEdit ? (
             <>
-              <button className={`btn save ${dirty || !user ? 'primary' : ''} ${user ? '' : 'signed-out'}`} onClick={() => save()} disabled={busy || (!!user && !dirty)} title={!user ? 'Sign in to save this track' : dirty ? (isNew ? 'Save as a track (ctrl/cmd + S)' : `Save “${track?.title}” (ctrl/cmd + S)`) : 'Everything is saved'}>
-                {busy ? 'saving…' : !user || dirty ? 'save' : 'saved'}
+              <button className={`btn save ${dirty || !user ? 'primary' : ''} ${user ? '' : 'signed-out'} ${justSaved && !dirty ? 'just-saved' : ''}`} onClick={() => save()} disabled={busy || (!!user && !dirty)} title={!user ? 'Sign in to save this track' : dirty ? (isNew ? 'Save as a track (ctrl/cmd + S)' : `Save “${track?.title}” (ctrl/cmd + S)`) : 'Everything is saved'}>
+                {busy ? 'saving…' : !user || dirty ? 'save' : justSaved ? 'saved ✓' : 'saved'}
               </button>
             </>
           ) : track ? (

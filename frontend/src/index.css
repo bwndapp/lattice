@@ -347,6 +347,8 @@ body.dragging, body.dragging * { user-select: none !important; -webkit-user-sele
 /* save and its menu: save, save as a new track, new track (the file menu of a DAW) */
 .save-split { display: inline-flex; align-items: stretch; }
 .save-split .btn.save { border-right-width: 0; }
+.btn.save { transition: color 0.5s, border-color 0.5s, opacity 0.5s; }
+.btn.save.just-saved:disabled { color: var(--acid); border-color: var(--acid); opacity: 1; }
 .btn.save-more { padding-inline: 0.4rem; font-size: 10px; line-height: 1; }
 .btn.save-more.primary { background: var(--acid); border-color: var(--acid); color: var(--ink); border-left: 1px solid rgba(0, 0, 0, 0.35); }
 .btn.new-track-btn { font-weight: 700; }
