@@ -5,6 +5,7 @@ import { automationCode, channelTarget } from './automation.js'
 import { GLOBAL_DELAY, GLOBAL_REVERB } from './fxbus.js'
 import { engineSound, normalizeEngine } from './instruments/index.js'
 import { declareEngines } from './instruments/host.js'
+import { codeCommitted } from './autoDrive.js'
 
 /**
  * A project is what the UI edits: a library of patterns (instruments with steps or notes,
@@ -475,6 +476,8 @@ export function generateCode(project, { solo = null, laneSolo = null, audition =
   lines.push('', ...graph.lines.map((l) => (l.startsWith('// ') ? `// ${commentText(l.slice(3))}` : l)))
   if (patternSolo) lines.push('', '// auditioning one pattern', ...graph.lanes.map((l) => `_${l.replace(/^_/, '')}`), `solo: ${patternVar(solo.slice(8))}`)
   else lines.push('', solo ? '// auditioning one node' : '// output', ...(graph.lanes.length ? graph.lanes : ['$: silence']))
+  // that put the app's automated knobs back where they're set: the song puts them back on their curves
+  if (!audition) codeCommitted()
   return `${lines.join('\n')}\n`
 }
 

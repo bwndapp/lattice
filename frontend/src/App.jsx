@@ -30,10 +30,8 @@ import SynthWindows from './instruments/SynthWindows.jsx'
 import { openSynths, subscribeSynths } from './instruments/windows.js'
 import { RollContext } from './rollDock.js'
 import { AutomationContext, autoLive } from './autoLive.js'
-import { AUTO_PREFIX, activeAutos, appParam, autoValueFn, resolveTarget, toPos } from './automation.js'
-import { setFxParams } from './fxbus.js'
-import { setInsertParams } from './stereo.js'
-import { setEngineParams } from './instruments/host.js'
+import { AUTO_PREFIX, appParam, resolveTarget, toPos } from './automation.js'
+import { applyAppParam, autoDriver, autoTargets } from './autoDrive.js'
 import { knobBridge } from './knobBridge.js'
 import { RESET_HINT, useKnobControl } from './useKnobControl.jsx'
 import { capturePatterns, parseLanes, tempoChange } from './lanes'
@@ -828,12 +826,8 @@ export default function App() {
     }
   }, [project, updateProject, transport, flash]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // automated knobs turn with their curves while the song plays
-  const autoFns = useMemo(() => (project ? activeAutos(project).map((a) => {
-    const fn = autoValueFn(project, a)
-    // reverb, delay and stereo knobs are the app's own: it moves them as the curve goes
-    return fn && { target: a.target, fn, app: appParam(project, a.target), base: resolveTarget(project, a.target)?.value }
-  }).filter(Boolean) : []), [project])
+  // automated knobs turn with their curves while the song plays (autoDrive.js)
+  const autoFns = useMemo(() => autoTargets(project), [project])
   // a knob the app moves itself is heard the moment it turns, before the project catches up
   const projectNow = useRef(project)
   projectNow.current = project
@@ -843,42 +837,30 @@ export default function App() {
     applyAppParam(app, value)
     return true
   }), [])
+  // an edit while playing hands over to the next driver without the knobs going back first
+  const startedNow = useRef(started)
+  startedNow.current = started
+  const autoFnsNow = useRef(autoFns)
+  autoFnsNow.current = autoFns
   useEffect(() => {
     if (!started || !autoFns.length) { autoLive.clear(); return }
-    const apply = (a, value) => {
-      const stepped = appParamValue(a.app, value)
-      if (a.last === stepped) return
-      a.last = stepped
-      applyAppParam(a.app, value)
-    }
+    const driver = autoDriver(autoFns, () => transport.position())
+    autoLive.set(driver.now())
     let raf = 0
     let last = 0
     const tick = (now) => {
       raf = requestAnimationFrame(tick)
       if (now - last < 40) return // 25 times a second is plenty for a knob
       last = now
-      const at = transport.position()
-      const values = new Map()
-      for (const a of autoFns) {
-        const value = a.fn(at)
-        values.set(a.target, value)
-        if (a.app) apply(a, value)
-      }
-      autoLive.set(values)
+      autoLive.set(driver.tick())
     }
     raf = requestAnimationFrame(tick)
     return () => {
       cancelAnimationFrame(raf)
-      autoLive.clear()
-      // stopped: the app's own knobs go back to where they're set
-      for (const a of autoFns) {
-        if (!a.app || a.base === undefined) continue
-        a.last = undefined
-        const patch = { [a.app.param]: a.base * (a.app.scale ?? 1) }
-        if (a.app.where === 'fx') setFxParams(a.app.key, patch)
-        else if (a.app.where === 'engine') setEngineParams(a.app.key, patch)
-        else setInsertParams(a.app.key, patch)
-      }
+      // stopped (or the automation went): the app's own knobs go back to where they're set
+      const still = startedNow.current ? new Set(autoFnsNow.current.map((a) => a.target)) : new Set()
+      if (!still.size) autoLive.clear()
+      driver.stop(still)
     }
   }, [started, autoFns, transport])
 
@@ -1882,19 +1864,6 @@ export default function App() {
       )}
     </div>
   )
-}
-
-/** What an app-moved knob (see automation.js `appParam`) sets its parameter to. */
-function appParamValue(app, value) {
-  const v = value * (app.scale ?? 1)
-  // a reverb's room is rebuilt when its size changes, so only move in steps
-  return ['size', 'tone', 'width'].includes(app.param) ? Math.round(v * 40) / 40 : v
-}
-function applyAppParam(app, value) {
-  const patch = { [app.param]: appParamValue(app, value) }
-  if (app.where === 'fx') setFxParams(app.key, patch)
-  else if (app.where === 'engine') setEngineParams(app.key, patch)
-  else setInsertParams(app.key, patch)
 }
 
 /**
