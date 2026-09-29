@@ -61,6 +61,22 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
     return () => { document.removeEventListener('keydown', onKey); window.removeEventListener('pointerdown', onDown) }
   }, [onClose])
 
+  // the whole window on screen: when it opens, and when the browser window shrinks
+  useLayoutEffect(() => {
+    const fit = () => {
+      const r = ref.current?.getBoundingClientRect()
+      if (!r) return
+      setPos((p) => {
+        const left = clamp(p.left, 8, Math.max(8, window.innerWidth - r.width - 8))
+        const top = clamp(p.top, 8, Math.max(8, window.innerHeight - r.height - 8))
+        return left === p.left && top === p.top ? p : { left, top }
+      })
+    }
+    fit()
+    window.addEventListener('resize', fit)
+    return () => window.removeEventListener('resize', fit)
+  }, [!!auto]) // eslint-disable-line react-hooks/exhaustive-deps
+
   useLayoutEffect(() => {
     const el = graphRef.current
     if (!el) return
@@ -362,7 +378,7 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
       </div>
 
       <div className="auto-foot">
-        <span className="auto-hint">click: add · drag: move · right-click or right-drag: delete · shift-click: select · ctrl/shift-drag: box · drag a diamond: bend · alt: off the grid</span>
+        <span className="auto-hint">click adds · drag moves · right-drag deletes · shift-click or ctrl-drag selects · drag a diamond to bend · alt: off grid</span>
         <span className="spacer" />
         <span className="auto-meta">{clips ? `${clips} clip${clips === 1 ? '' : 's'} on the timeline` : 'not on the timeline yet'}</span>
         {onShowTimeline && <button type="button" className="btn" onClick={onShowTimeline}>show timeline</button>}
