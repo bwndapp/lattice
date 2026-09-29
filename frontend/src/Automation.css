@@ -61,7 +61,7 @@
 .auto-field .select { border-radius: 999px; padding: 0.2rem 0.5rem; background: #121210; border-color: #2e2e2a; }
 .auto-head .btn { border-radius: 999px; }
 
-.auto-graph { position: relative; padding: 0.4rem 0; background: #0b0b0a; touch-action: none; user-select: none; cursor: crosshair; }
+.auto-graph { position: relative; padding: 0.4rem 0; background: #0b0b0a; touch-action: none; user-select: none; cursor: crosshair; outline: none; }
 .auto-graph svg { display: block; }
 .auto-grid { stroke: rgba(255, 255, 255, 0.035); stroke-width: 1; }
 .auto-grid.bar { stroke: rgba(255, 255, 255, 0.1); }
@@ -70,10 +70,13 @@
 .auto-now { stroke: rgba(242, 240, 230, 0.28); stroke-width: 1; stroke-dasharray: 3 4; }
 .auto-area { fill: rgba(228, 255, 26, 0.1); }
 .auto-line { fill: none; stroke: var(--acid); stroke-width: 2; stroke-linejoin: round; }
-.auto-point { fill: var(--panel); stroke: var(--acid); stroke-width: 2; cursor: grab; transition: r 0.1s ease; }
-.auto-point:hover, .auto-point.active { fill: var(--acid); }
-.auto-bend { fill: #0b0b0a; stroke: rgba(228, 255, 26, 0.55); stroke-width: 1.5; cursor: ns-resize; }
-.auto-bend:hover, .auto-bend.bent { stroke: var(--acid); fill: rgba(228, 255, 26, 0.25); }
+.auto-point { fill: var(--panel); stroke: var(--acid); stroke-width: 2; transition: r 0.1s ease; }
+.auto-point.selected { fill: var(--acid); stroke: var(--paper); }
+.auto-bend { fill: #0b0b0a; stroke: rgba(228, 255, 26, 0.55); stroke-width: 1.5; }
+.auto-bend.bent { stroke: var(--acid); fill: rgba(228, 255, 26, 0.25); }
+.auto-bend.hot { stroke: var(--paper); fill: var(--acid); }
+.auto-marquee { fill: rgba(228, 255, 26, 0.08); stroke: rgba(228, 255, 26, 0.6); stroke-width: 1; stroke-dasharray: 3 3; }
+.auto-tip { position: absolute; transform: translate(-50%, calc(-100% - 12px)); margin-top: 0.4rem; padding: 0.1rem 0.4rem; border-radius: 6px; font-size: 11px; color: var(--ink); background: var(--acid); font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none; }
 .auto-readout { position: absolute; top: 0.55rem; right: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 11px; color: var(--paper); background: rgba(18, 18, 16, 0.9); border: 1px solid #2e2e2a; font-variant-numeric: tabular-nums; pointer-events: none; }
 
 .auto-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem 0.7rem; padding: 0.5rem 0.75rem; border-top: 1px solid var(--line); }
