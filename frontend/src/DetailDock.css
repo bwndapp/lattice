@@ -21,9 +21,9 @@
 }
 .dd-name:hover, .dd-name:focus { border-bottom-color: var(--acid); outline: none; }
 .dd-field { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 11px; color: var(--muted); }
-.dd-field .select { padding: 0.15rem 0.35rem; font-size: 11px; border-radius: 999px; background: #121210; border-color: #2e2e2a; }
+.dd-field .select { padding: 0.15rem 0.35rem; font-size: 11px; border-radius: 999px; background: var(--canvas); border-color: var(--line); }
 .dd-uses { font-size: 10px; color: var(--muted); }
-.dd-tabs { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid #2e2e2a; border-radius: 999px; background: #121210; max-width: min(40vw, 34rem); overflow-x: auto; }
+.dd-tabs { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 999px; background: var(--canvas); max-width: min(40vw, 34rem); overflow-x: auto; }
 .dd-tabs.instruments { border-color: rgba(255, 255, 255, 0.07); }
 .dd-tab {
   font: inherit; font-size: 11px; white-space: nowrap;
@@ -32,10 +32,10 @@
 }
 .dd-tab:hover { color: var(--paper); }
 .dd-tab.on { color: var(--ink); background: var(--paper); }
-.dd-tab:disabled { color: #4d4d47; cursor: var(--dot); }
+.dd-tab:disabled { color: var(--dim); cursor: var(--dot); }
 .dd-spacer { flex: 1; }
 /* the computer keyboard as a piano, and which octave it plays */
-.dd-keys { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid #2e2e2a; border-radius: 999px; background: #121210; }
+.dd-keys { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 999px; background: var(--canvas); }
 .dd-keys-on {
   font: inherit; font-size: 10px; letter-spacing: 0.07em; text-transform: uppercase;
   padding: 0.18rem 0.6rem; border: 0; border-radius: 999px;
@@ -45,9 +45,9 @@
 .dd-keys-on.on { color: var(--ink); background: var(--acid); }
 .dd-oct { width: 1.3rem; font: inherit; font-size: 12px; line-height: 1; padding: 0.1rem 0; color: var(--paper); background: none; border: 0; border-radius: 999px; cursor: var(--ring); }
 .dd-oct:hover:not(:disabled) { color: var(--acid); }
-.dd-oct:disabled { color: #4d4d47; cursor: var(--dot); }
+.dd-oct:disabled { color: var(--dim); cursor: var(--dot); }
 .dd-oct-at { min-width: 4rem; text-align: center; font-size: 10.5px; color: var(--paper); font-variant-numeric: tabular-nums; }
-.dd-oct-at.off { color: #5a5a53; }
+.dd-oct-at.off { color: var(--dim); }
 .detail-dock .node-btn { color: var(--paper); border-color: var(--line); opacity: 1; }
 .detail-dock .node-btn:hover { border-color: var(--acid); color: var(--acid); }
 

@@ -7,13 +7,13 @@
   color: var(--paper);
   background:
     repeating-linear-gradient(45deg, rgba(242, 240, 230, 0.03) 0 1px, transparent 1px 7px),
-    linear-gradient(150deg, #14140f, #0a0a09 60%);
-  border: 1px solid #3a3a33;
+    linear-gradient(150deg, var(--canvas), var(--well) 60%);
+  border: 1px solid var(--line);
   border-radius: 6px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   outline: none;
 }
-.synth-window.front { border-color: #5a5a4f; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.07); }
+.synth-window.front { border-color: var(--dim); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.07); }
 .synth-window:not(.front) .sw-title { color: var(--muted); }
 /* a big synth's window can be pulled larger from its corner */
 .synth-window.wide { resize: both; min-width: min(760px, calc(100vw - 32px)); min-height: 320px; }
@@ -50,9 +50,9 @@
   height: 26px; padding: 0 0.35rem 0 0.5rem; border: 1px solid var(--line); border-radius: 2px;
   cursor: default;
 }
-.synth-window:focus-within .sw-keys { color: var(--paper); border-color: #4a4a40; }
-.sw-keys-led { width: 6px; height: 6px; border-radius: 50%; background: #3a3a33; }
-.synth-window:focus-within .sw-keys-led { background: #6f7a18; }
+.synth-window:focus-within .sw-keys { color: var(--paper); border-color: var(--dim); }
+.sw-keys-led { width: 6px; height: 6px; border-radius: 50%; background: var(--line); }
+.synth-window:focus-within .sw-keys-led { background: var(--muted); }
 .sw-keys.lit .sw-keys-led { background: var(--acid); box-shadow: 0 0 6px var(--acid); }
 .sw-oct {
   width: 18px; height: 18px; padding: 0; border-radius: 2px;
@@ -92,13 +92,13 @@
   cursor: var(--ring); text-align: left;
 }
 .kick-tab:hover { color: var(--paper); }
-.kick-tab.on { color: var(--paper); background: #151513; border-left-color: var(--acid); }
+.kick-tab.on { color: var(--paper); background: var(--canvas); border-left-color: var(--acid); }
 .kick-tab-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--acid); }
 .kick-display { position: relative; min-height: 230px; }
 .kick-shape {
   position: absolute; inset: 0;
   display: block; width: 100%; height: 100%;
-  background: #050504;
+  background: var(--well);
   border: 1px solid var(--line);
   border-radius: 3px;
 }
@@ -118,14 +118,14 @@
 .kick-pick { width: 64px; }
 .kick-pick select {
   width: 100%; height: 22px; margin: 7px 0; padding: 0 0.25rem;
-  font: inherit; font-size: 10px; color: var(--paper); background: #0b0b0a;
+  font: inherit; font-size: 10px; color: var(--paper); background: var(--well);
   border: 1px solid var(--line); border-radius: 2px; cursor: var(--ring);
 }
-.kick-pick select:hover { border-color: #4a4a40; }
+.kick-pick select:hover { border-color: var(--dim); }
 .kick-pick select:focus-visible { outline: 1px solid var(--acid); outline-offset: 1px; }
-.kick-pick.changed select { border-color: #6f7a18; }
+.kick-pick.changed select { border-color: var(--muted); }
 .kick-pick.changed .knob-label, .kick-choice.changed .knob-label { color: var(--paper); }
-.kick-seg { display: flex; height: 22px; margin: 7px 0; border: 1px solid var(--line); border-radius: 2px; background: #0b0b0a; }
+.kick-seg { display: flex; height: 22px; margin: 7px 0; border: 1px solid var(--line); border-radius: 2px; background: var(--well); }
 .kick-seg button { font: inherit; font-size: 10px; color: var(--muted); background: transparent; border: 0; padding: 0 0.4rem; cursor: var(--ring); white-space: nowrap; }
 .kick-seg button + button { border-left: 1px solid var(--line); }
 .kick-seg button:hover { color: var(--paper); }
@@ -137,4 +137,4 @@
 .sound-btn.engine .sound-name { flex: 1; text-align: left; padding: 0.3rem 0.45rem; font-weight: 600; }
 .sound-btn.engine .sound-name::after { content: ' ↗'; color: var(--muted); font-weight: 400; }
 .sound-btn.engine .sound-caret { padding: 0 0.5rem; border-left: 1px solid var(--line); }
-.sound-btn.engine button:hover { color: var(--paper); background: #151513; }
+.sound-btn.engine button:hover { color: var(--paper); background: var(--canvas); }

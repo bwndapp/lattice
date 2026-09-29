@@ -7,8 +7,8 @@
   min-width: 13rem;
   padding: 0.3rem;
   display: grid;
-  background: #121210;
-  border: 1px solid #34342e;
+  background: var(--canvas);
+  border: 1px solid var(--line);
   border-radius: 10px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.04);
   font-family: var(--mono);
@@ -30,7 +30,7 @@
 .knob-menu-item:hover, .knob-menu-item:focus-visible { background: rgba(255, 255, 255, 0.07); outline: none; }
 .knob-menu-item.accent { color: var(--acid); }
 .knob-menu-item.danger:hover { color: var(--danger); }
-.knob-menu-line { margin: 0.25rem 0.3rem; border: 0; border-top: 1px solid #2a2a25; }
+.knob-menu-line { margin: 0.25rem 0.3rem; border: 0; border-top: 1px solid var(--sunk); }
 
 /* an automated knob: a small acid mark, and its readout while it follows the curve */
 .knob { position: relative; }
@@ -46,7 +46,7 @@
   display: flex;
   flex-direction: column;
   background: var(--panel);
-  border: 1px solid #3a3a33;
+  border: 1px solid var(--line);
   border-radius: 12px;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.04);
   overflow: hidden;
@@ -58,26 +58,26 @@
 .auto-target b { color: var(--paper); font-weight: 600; }
 .auto-gone { color: var(--danger); }
 .auto-field { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 11px; color: var(--muted); cursor: var(--dot); }
-.auto-field .select { border-radius: 999px; padding: 0.2rem 0.5rem; background: #121210; border-color: #2e2e2a; }
+.auto-field .select { border-radius: 999px; padding: 0.2rem 0.5rem; background: var(--canvas); border-color: var(--line); }
 .auto-head .btn { border-radius: 999px; }
 
-.auto-graph { position: relative; padding: 0.4rem 0; background: #0b0b0a; touch-action: none; user-select: none; cursor: crosshair; outline: none; }
+.auto-graph { position: relative; padding: 0.4rem 0; background: var(--well); touch-action: none; user-select: none; cursor: crosshair; outline: none; }
 .auto-graph svg { display: block; }
 .auto-grid { stroke: rgba(255, 255, 255, 0.035); stroke-width: 1; }
 .auto-grid.bar { stroke: rgba(255, 255, 255, 0.1); }
 .auto-grid.edge { stroke: rgba(255, 255, 255, 0.12); }
-.auto-axis { fill: #6f6f67; font-family: var(--mono); font-size: 10px; font-variant-numeric: tabular-nums; }
+.auto-axis { fill: var(--muted); font-family: var(--mono); font-size: 10px; font-variant-numeric: tabular-nums; }
 .auto-now { stroke: rgba(242, 240, 230, 0.28); stroke-width: 1; stroke-dasharray: 3 4; }
 .auto-area { fill: rgba(228, 255, 26, 0.1); }
 .auto-line { fill: none; stroke: var(--acid); stroke-width: 2; stroke-linejoin: round; }
 .auto-point { fill: var(--panel); stroke: var(--acid); stroke-width: 2; transition: r 0.1s ease; }
 .auto-point.selected { fill: var(--acid); stroke: var(--paper); }
-.auto-bend { fill: #0b0b0a; stroke: rgba(228, 255, 26, 0.55); stroke-width: 1.5; }
+.auto-bend { fill: var(--well); stroke: rgba(228, 255, 26, 0.55); stroke-width: 1.5; }
 .auto-bend.bent { stroke: var(--acid); fill: rgba(228, 255, 26, 0.25); }
 .auto-bend.hot { stroke: var(--paper); fill: var(--acid); }
 .auto-marquee { fill: rgba(228, 255, 26, 0.08); stroke: rgba(228, 255, 26, 0.6); stroke-width: 1; stroke-dasharray: 3 3; }
 .auto-tip { position: absolute; transform: translate(-50%, calc(-100% - 12px)); margin-top: 0.4rem; padding: 0.1rem 0.4rem; border-radius: 6px; font-size: 11px; color: var(--ink); background: var(--acid); font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none; }
-.auto-readout { position: absolute; top: 0.55rem; right: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 11px; color: var(--paper); background: rgba(18, 18, 16, 0.9); border: 1px solid #2e2e2a; font-variant-numeric: tabular-nums; pointer-events: none; }
+.auto-readout { position: absolute; top: 0.55rem; right: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 11px; color: var(--paper); background: rgba(18, 18, 16, 0.9); border: 1px solid var(--line); font-variant-numeric: tabular-nums; pointer-events: none; }
 
 .auto-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem 0.7rem; padding: 0.5rem 0.75rem; border-top: 1px solid var(--line); }
 .auto-hint { font-size: 10px; color: var(--muted); }

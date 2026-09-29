@@ -1,7 +1,7 @@
 /* the small code editor inside a node, and the window it opens into (see CodeBox.jsx) */
 .codebox {
   position: relative;
-  background: #0b0b0a;
+  background: var(--well);
   border: 1px solid var(--line);
   border-radius: 3px;
   overflow: hidden;
@@ -21,7 +21,7 @@
   position: absolute; top: 3px; right: 3px; z-index: 2;
   width: 18px; height: 18px; padding: 0;
   font-size: 11px; line-height: 1; color: var(--muted);
-  background: color-mix(in srgb, #0b0b0a 85%, transparent); border: 1px solid var(--line); border-radius: 3px;
+  background: color-mix(in srgb, var(--well) 85%, transparent); border: 1px solid var(--line); border-radius: 3px;
   cursor: var(--ring); opacity: 0;
   transition: opacity 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
@@ -31,7 +31,7 @@
 /* ── the window: the same panel an engine gets (see instruments/SynthWindow.css) ── */
 .synth-window.code-window { width: min(880px, calc(100vw - 32px)); resize: both; min-width: 380px; min-height: 260px; height: 26rem; }
 .cw-body { display: flex; min-height: 0; padding: 0.6rem; }
-.cw-body .codebox { flex: 1; min-height: 0; display: flex; background: var(--ink); }
+.cw-body .codebox { flex: 1; min-height: 0; display: flex; background: var(--canvas); }
 .cw-body .codebox-cm { flex: 1; min-height: 0; max-height: none; }
 .cw-body .codebox-cm .cm-content { padding: 0.5rem 0; font-size: 13px; }
-.cw-keys { font-size: 9.5px; color: #6f6f67; white-space: nowrap; }
+.cw-keys { font-size: 9.5px; color: var(--muted); white-space: nowrap; }

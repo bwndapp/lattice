@@ -7,7 +7,7 @@
   font-size: 11px;
   line-height: 1.45;
   color: var(--paper);
-  background: #161614;
+  background: var(--canvas);
   border: 1px solid var(--line);
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
   pointer-events: none;

@@ -2097,7 +2097,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
             <PeerLayer />
             <Background gap={24} size={1.2} color="#34342f" />
             <Controls showInteractive={false} />
-            <MiniMap pannable zoomable nodeColor={(n) => (n.type === 'frame' ? 'rgba(163, 163, 154, 0.15)' : ({ source: '#e4ff1a', output: '#e4ff1a', transform: '#f2f0e6', effect: '#a3a39a', mixing: '#a3a39a', combine: '#6b6b63' })[NODE_TYPES[project.nodes.find((x) => x.id === n.id)?.type]?.group] ?? '#555')} maskColor="rgba(0,0,0,0.6)" />
+            <MiniMap pannable zoomable nodeColor={(n) => (n.type === 'frame' ? 'rgba(163, 163, 154, 0.15)' : ({ source: '#ffcb2e', output: '#ffcb2e', transform: '#f2f2f0', effect: '#b6b6b2', mixing: '#b6b6b2', combine: '#8d8d8a' })[NODE_TYPES[project.nodes.find((x) => x.id === n.id)?.type]?.group] ?? '#6a6a6e')} maskColor="rgba(0,0,0,0.45)" />
           </ReactFlow>
           <svg className="knife-line" style={{ display: 'none' }} aria-hidden="true"><line ref={knifeLine} /></svg>
           <div className="graph-tip" aria-live="polite">

@@ -15,28 +15,28 @@ import './CodeBox.css'
  * around them stays quiet.
  */
 const paint = HighlightStyle.define([
-  { tag: tags.string, color: '#e4ff1a' },
-  { tag: tags.number, color: '#f2f0e6' },
+  { tag: tags.string, color: '#ffcb2e' },
+  { tag: tags.number, color: '#f2f2f0' },
   { tag: [tags.keyword, tags.operatorKeyword, tags.modifier], color: '#c8a2ff' },
   { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: '#86d8cc' },
   { tag: [tags.propertyName, tags.attributeName], color: '#b9c96a' },
-  { tag: [tags.variableName, tags.definition(tags.variableName)], color: '#f2f0e6' },
-  { tag: [tags.comment, tags.lineComment, tags.blockComment], color: '#6f6f67', fontStyle: 'italic' },
-  { tag: [tags.punctuation, tags.bracket, tags.operator], color: '#a3a39a' },
+  { tag: [tags.variableName, tags.definition(tags.variableName)], color: '#f2f2f0' },
+  { tag: [tags.comment, tags.lineComment, tags.blockComment], color: '#8d8d8a', fontStyle: 'italic' },
+  { tag: [tags.punctuation, tags.bracket, tags.operator], color: '#b6b6b2' },
   { tag: tags.bool, color: '#ffb347' },
 ])
 
 const look = EditorView.theme({
-  '&': { color: '#f2f0e6', backgroundColor: 'transparent', fontSize: '12px' },
-  '.cm-content': { fontFamily: 'var(--mono)', padding: '0.4rem 0', caretColor: '#e4ff1a', lineHeight: '1.55' },
+  '&': { color: '#f2f2f0', backgroundColor: 'transparent', fontSize: '12px' },
+  '.cm-content': { fontFamily: 'var(--mono)', padding: '0.4rem 0', caretColor: '#ffcb2e', lineHeight: '1.55' },
   '.cm-line': { padding: '0 0.55rem' },
   '&.cm-focused': { outline: 'none' },
-  '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e4ff1a', borderLeftWidth: '2px' },
-  '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': { backgroundColor: 'rgba(228, 255, 26, 0.22)' },
-  '.cm-activeLine': { backgroundColor: 'rgba(242, 240, 230, 0.03)' },
-  '.cm-gutters': { backgroundColor: 'transparent', color: '#45453b', border: 'none', fontFamily: 'var(--mono)', fontSize: '10px' },
-  '.cm-activeLineGutter': { backgroundColor: 'transparent', color: '#8a8a80' },
-  '.cm-matchingBracket, &.cm-focused .cm-matchingBracket': { backgroundColor: 'rgba(228, 255, 26, 0.18)', outline: 'none', color: 'inherit' },
+  '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#ffcb2e', borderLeftWidth: '2px' },
+  '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': { backgroundColor: 'rgba(255, 203, 46, 0.22)' },
+  '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.05)' },
+  '.cm-gutters': { backgroundColor: 'transparent', color: '#6e6e6c', border: 'none', fontFamily: 'var(--mono)', fontSize: '10px' },
+  '.cm-activeLineGutter': { backgroundColor: 'transparent', color: '#b6b6b2' },
+  '.cm-matchingBracket, &.cm-focused .cm-matchingBracket': { backgroundColor: 'rgba(255, 203, 46, 0.2)', outline: 'none', color: 'inherit' },
   '.cm-scroller': { overflow: 'auto' },
 }, { dark: true })
 

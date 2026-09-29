@@ -61,7 +61,7 @@
   line-height: 1.6;
   letter-spacing: 0.01em;
   white-space: nowrap;
-  color: #0b0b0f;
+  color: var(--well);
   background: var(--face-ink, #fff);
   border-radius: 4px;
   opacity: 0;

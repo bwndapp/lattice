@@ -17,8 +17,8 @@
   height: 26px;
   margin-left: -9px;          /* the overlap */
   border-radius: 50%;
-  background: #0b0b0f;
-  box-shadow: 0 0 0 1.5px #0b0b0f, 0 2px 6px rgba(0, 0, 0, 0.5);
+  background: var(--well);
+  box-shadow: 0 0 0 1.5px var(--well), 0 2px 6px rgba(0, 0, 0, 0.5);
 }
 .live-bot:first-child { margin-left: 0; }
 
@@ -28,7 +28,7 @@
   font-size: 9px;
   font-weight: 700;
   line-height: 18px;
-  color: #0b0b0f;
+  color: var(--well);
   background: var(--paper, #e9ebec);
   border-radius: 9px;
 }

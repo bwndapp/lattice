@@ -9,7 +9,7 @@
   background:
     repeating-linear-gradient(45deg, rgba(242, 240, 230, 0.05) 0 1px, transparent 1px 6px),
     repeating-linear-gradient(-45deg, rgba(242, 240, 230, 0.05) 0 1px, transparent 1px 6px),
-    linear-gradient(145deg, #070706, #10100e);
+    linear-gradient(145deg, var(--well), var(--canvas));
   box-shadow: inset 2px 2px 6px rgba(0, 0, 0, 0.85), inset -2px -2px 5px rgba(255, 255, 255, 0.04), 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 .gswitch-thumb {
@@ -42,16 +42,16 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   white-space: nowrap;
-  color: #6f6f67;
+  color: var(--muted);
   background: none;
   border: 0;
   border-radius: 999px;
   cursor: var(--ring);
   transition: color 0.25s ease;
 }
-.gswitch-opt:hover:not(.on) { color: #a3a39a; }
+.gswitch-opt:hover:not(.on) { color: var(--muted); }
 .gswitch-opt.on { color: var(--paper); }
 .gswitch-opt:focus-visible { outline: 1px solid var(--acid); outline-offset: -3px; }
 .gswitch.sm .gswitch-opt { padding: 0.22rem 0.55rem; font-size: 0.62rem; letter-spacing: 0.05em; }
 @media (prefers-reduced-motion: reduce) { .gswitch-thumb, .gswitch-opt { transition: none; } }
-@media (prefers-reduced-transparency: reduce) { .gswitch-thumb, .gswitch-thumb.refracting { backdrop-filter: none; background: #24241f; } }
+@media (prefers-reduced-transparency: reduce) { .gswitch-thumb, .gswitch-thumb.refracting { backdrop-filter: none; background: var(--sunk); } }
