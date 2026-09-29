@@ -21,6 +21,8 @@ export const autoLive = {
   },
   clear() { this.set(new Map()) },
 }
+/** Every automated knob where it is right now (empty when the song isn't playing). */
+export const liveKnobs = () => new Map(liveValues)
 const subscribe = (fn) => { listeners.add(fn); return () => listeners.delete(fn) }
 /** Where an automated knob is right now while the song plays (undefined otherwise). */
 export function useAutoLive(target) {

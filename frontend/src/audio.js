@@ -2,6 +2,7 @@ import { getAudioContext, getSampleBuffer, getSampleInfo, getSound, getSuperdoug
 import { getFontBufferSource } from '@strudel/soundfonts'
 import { getSoundIndex } from '@strudel/core'
 import { auditionCode, generateCode, paramValue, paramsFor } from './project'
+import { liveKnobs } from './autoLive.js'
 import { stackLanes } from './exportAudio.js'
 import { GLOBAL_DELAY, GLOBAL_REVERB, routeVoice, silenceFx } from './fxbus.js'
 import { evaluate } from '@strudel/core'
@@ -277,7 +278,7 @@ export function silenceNow() {
  */
 let auditionRun = 0
 export async function previewInPatch(project, patternId, ch, { note, n, pitched = false, hold = null } = {}) {
-  const code = project && patternId && auditionCode(project, patternId, ch?.id, { midi: note ?? 48, pitched })
+  const code = project && patternId && auditionCode(project, patternId, ch?.id, { midi: note ?? 48, pitched, live: liveKnobs() })
   if (!code) return previewChannel(ch, { note, n, hold })
   // held notes each play (a chord is several keys); a plain hit gives way to a newer one
   const run = hold != null ? auditionRun : ++auditionRun
