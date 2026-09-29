@@ -1,6 +1,6 @@
 import { parse } from 'acorn'
 import { defaultData, demoGraph, graphCode, normalizeGraph, patternChanVar, patternVar, splitPatternIds } from './graph.js'
-import { normalizeSong, songActive, songExpr } from './song.js'
+import { normalizeSong, shiftedAuto, songActive, songExpr } from './song.js'
 import { automationCode, channelTarget } from './automation.js'
 import { GLOBAL_DELAY, GLOBAL_REVERB } from './fxbus.js'
 import { engineSound, normalizeEngine } from './instruments/index.js'
@@ -426,15 +426,17 @@ export function generateCode(project, { solo = null, laneSolo = null, audition =
   ]
   if (project.prelude) lines.push('// setup, kept from the original code', project.prelude, '')
   // the song decides when each part plays (not while auditioning one thing)
-  const song = songActive(project) && !solo ? (src, expr) => songExpr(project, src, expr) : null
+  const song = songActive(project) && !solo ? (src, at) => songExpr(project, src, at) : null
   if (song) lines.push('// song: each part plays inside its clips on the timeline', '')
   // knobs that follow automation clips (also not while auditioning)
   const automation = solo ? null : automationCode(project)
   if (automation?.lines.length) lines.push(...automation.lines)
   const auto = automation?.lines.length ? automation.lookup : null
-  const patternExpr = (pattern) => {
+  // inside a clip moved `shift` bars later, the automations read song time (song.js)
+  const autoAt = (shift) => auto && ((target) => shiftedAuto(auto(target), shift))
+  const patternExpr = (pattern, shift = 0) => {
     const live = pattern.channels.filter((c) => !c.mute)
-    return live.length ? `stack(\n${live.map((c) => `  ${channelCode(c, pattern, auto)},`).join('\n')}\n)` : 'silence'
+    return live.length ? `stack(\n${live.map((c) => `  ${channelCode(c, pattern, autoAt(shift))},`).join('\n')}\n)` : 'silence'
   }
   // patterns whose instruments leave their node one by one get a variable each
   const split = splitPatternIds(project)
@@ -448,8 +450,7 @@ export function generateCode(project, { solo = null, laneSolo = null, audition =
         const own = [pattern, ...variations].map((p) => {
           const c = p === pattern ? ch : p.channels[i]
           if (!c || c.mute) return 'silence'
-          const expr = channelCode(c, p, auto)
-          return song ? song(`pattern:${p.id}`, expr) : expr
+          return song ? song(`pattern:${p.id}`, (shift) => channelCode(c, p, autoAt(shift))) : channelCode(c, p, auto)
         }).filter((x) => x !== 'silence')
         const name = patternChanVar(pattern.id, ch.id)
         names.push(own.length ? name : null)
@@ -461,10 +462,10 @@ export function generateCode(project, { solo = null, laneSolo = null, audition =
     }
     lines.push(`// pattern: ${commentText(pattern.name)} (${pattern.bars} bar${pattern.bars === 1 ? '' : 's'})${pattern.parent ? `, a variation of ${commentText(project.patterns.find((x) => x.id === pattern.parent)?.name)}` : ''}${variations.length ? ` + ${variations.length} variation${variations.length === 1 ? '' : 's'} in the song` : ''}`)
     const expr = patternExpr(pattern)
-    let value = song && expr !== 'silence' ? song(`pattern:${pattern.id}`, expr) : expr
+    let value = song && expr !== 'silence' ? song(`pattern:${pattern.id}`, (shift) => patternExpr(pattern, shift)) : expr
     // in the song, an original's node also plays its variations, each inside its own clips
     if (song && variations.length) {
-      const parts = [value, ...variations.map((v) => { const e = patternExpr(v); return e === 'silence' ? 'silence' : song(`pattern:${v.id}`, e) })].filter((x) => x !== 'silence')
+      const parts = [value, ...variations.map((v) => { const e = patternExpr(v); return e === 'silence' ? 'silence' : song(`pattern:${v.id}`, (shift) => patternExpr(v, shift)) })].filter((x) => x !== 'silence')
       value = parts.length === 0 ? 'silence' : parts.length === 1 ? parts[0] : `stack(\n${parts.join(',\n')}\n)`
     }
     lines.push(`const ${patternVar(pattern.id)} = ${value}`)

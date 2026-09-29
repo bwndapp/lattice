@@ -949,7 +949,12 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     const inputKeys = wires.filter((w) => exprs.get(w.source)).map((w) => inputKey(w))
     // a single input passes its bus on; mixing several inputs lands back on the main bus
     const route = { orbit: inputs.length === 1 && spec.inputs !== 'many' ? inputOrbits[0] : null }
-    const autoOf = auto ? (key) => auto(`n:${id}:${key}`) : null
+    // a source making sound on its own plays when the song says (patterns are handled where
+    // they're defined); its automations are marked in its code, to be read in song time
+    // inside each clip (song.js)
+    const songPart = song && spec.group === 'source' && node.type !== 'pattern' && !wires.length
+    const nodeAuto = auto && songPart ? (target) => { const a = auto(target); return a && `\u0001${a}\u0001` } : auto
+    const autoOf = nodeAuto ? (key) => nodeAuto(`n:${id}:${key}`) : null
     // Wiring an instrument's own port is a copy: it still goes out the main one as well,
     // because a wire shouldn't silently take a sound out of the mix. Taking it off the main
     // is a separate thing you ask for, instrument by instrument.
@@ -957,10 +962,9 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     const mixChannels = (pid) => (off.size
       ? channelsOf(pid).filter((c) => !off.has(c.id)).map((c) => patternChanVar(pid, c.id))
       : null)
-    let expr = spec.code(node.data, inputs, { patternIds, mixChannels, slots, inputKeys, nodeId: id, orbit: 2 + sidechains.indexOf(id), cps, beats, route, inputOrbits, stereoOrbit, declare, routeBus, auto, autoOf, declareFx: (key, kind, params) => declareFx(fx, key, kind, params) })
+    let expr = spec.code(node.data, inputs, { patternIds, mixChannels, slots, inputKeys, nodeId: id, orbit: 2 + sidechains.indexOf(id), cps, beats, route, inputOrbits, stereoOrbit, declare, routeBus, auto: nodeAuto, autoOf, declareFx: (key, kind, params) => declareFx(fx, key, kind, params) })
     if (!expr) { exprs.set(id, null); return null }
-    // a source making sound on its own plays when the song says (patterns are handled where they're defined)
-    if (song && spec.group === 'source' && node.type !== 'pattern' && !wires.length) expr = song(`node:${id}`, expr)
+    if (songPart) { const marked = expr; expr = song(`node:${id}`, (shift, read) => marked.replace(/\u0001(\w+)\u0001/g, (_, a) => read(a))) }
     if (spec.group === 'source') expr = fromNode(expr, id)
     if (route.orbit != null) orbitOf.set(id, route.orbit)
     const name = nodeVar(id)

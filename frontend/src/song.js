@@ -141,13 +141,16 @@ function maskMini(spans, total, beats) {
 const tidy = (v) => String(Math.round(v * 10000) / 10000)
 
 /**
- * The expression for part `src` playing along the song, given its looping expression
- * `expr`. A clip plays the part from `offset` bars in, starting at its start; clips that
- * line up the same way share one copy of the part.
+ * The expression for part `src` playing along the song. A clip plays the part from
+ * `offset` bars in, starting at its start; clips that line up the same way share one copy
+ * of the part. `at(shift, read)` is the part's looping code for a copy moved `shift` bars
+ * later: a knob following automation `name` reads `read(name)` there, the signal moved
+ * `.early(shift)`, so the curve keeps to song time instead of starting again at each clip.
+ * Copies whose code comes out the same (no automation in it) still share one expression.
  */
-export function songExpr(project, src, expr) {
+export function songExpr(project, src, at) {
   const song = project.song
-  if (src.startsWith('node:') && triggerOnly(project, src.slice(5))) return expr
+  if (src.startsWith('node:') && triggerOnly(project, src.slice(5))) return at(0, (name) => name)
   const clips = song.clips.filter((c) => c.src === src && !laneMuted(song, c.lane)) // a muted row plays nothing
   if (!clips.length) return 'silence'
   const total = Math.max(1, Math.ceil(songLength(song) - 1e-9))
@@ -158,10 +161,18 @@ export function songExpr(project, src, expr) {
     if (!byStart.has(key)) byStart.set(key, [])
     byStart.get(key).push([c.start, c.start + c.len])
   }
-  const layers = [...byStart.entries()].map(([shift, spans]) => `p => p${Number(shift) ? `.late(${shift})` : ''}.mask("${maskMini(spans, total, beats)}")`)
-  if (layers.length === 1) return `(${expr})${layers[0].slice(6)}`
-  return `(${expr}).layer(${layers.join(', ')})`
+  const byExpr = new Map() // code → its layers
+  for (const [shift, spans] of byStart) {
+    const expr = at(Number(shift), (name) => shiftedAuto(name, shift))
+    if (!byExpr.has(expr)) byExpr.set(expr, [])
+    byExpr.get(expr).push(`p => p${Number(shift) ? `.late(${shift})` : ''}.mask("${maskMini(spans, total, beats)}")`)
+  }
+  const parts = [...byExpr].map(([expr, layers]) => (layers.length === 1 ? `(${expr})${layers[0].slice(6)}` : `(${expr}).layer(${layers.join(', ')})`))
+  return parts.length === 1 ? parts[0] : `stack(\n${parts.join(',\n')}\n)`
 }
+
+/** An automation's signal as read inside a copy of a part moved `shift` bars later. */
+export const shiftedAuto = (name, shift) => (name && Number(shift) ? `${name}.early(${tidy(shift)})` : name)
 
 /**
  * Why the song leaves a node in the patch silent, or null when it plays. Wiring isn't the
