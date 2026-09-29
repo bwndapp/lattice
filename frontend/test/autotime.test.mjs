@@ -8,14 +8,14 @@
 import { bundle } from './lib/bundle.mjs'
 
 const m = await bundle({
-  'project.js': ['normalizeProject', 'generateCode'],
+  'project.js': ['normalizeProject', 'generateCode', 'auditionCode'],
   'automation.js': ['autoValueFn'],
   // Strudel itself, from the same bundle (as the app has it) for the generated code to run on
-  '../node_modules/@strudel/core': ['stack', 'signal', 's', 'silence'],
+  '../node_modules/@strudel/core': ['stack', 'signal', 's', 'silence', 'pure'],
   '../node_modules/@strudel/mini': ['miniAllStrings'],
 }, 'autotime')
 m.miniAllStrings() // the code's strings are mini-notation, as in the app
-const core = { stack: m.stack, signal: m.signal, s: m.s, silence: m.silence }
+const core = { stack: m.stack, signal: m.signal, s: m.s, silence: m.silence, pure: m.pure }
 
 let fails = 0
 const ok = (name, cond, extra) => {
@@ -85,6 +85,19 @@ check('a clip playing its pattern from 1 bar in', project([[5, 3, 1]], [[3, 8]])
 
 // clips at bar 0 and bar 4 together
 check('clips at bars 0 and 4', project([[0, 2], [4, 4]], [[0, 8]]), 0, 8)
+
+// a note heard in the piano roll while the song plays has the cutoff the curve has now,
+// not the knob's own (the app passes where each automated knob is: autoLive.js `liveKnobs`)
+{
+  const p = project([[0, 8]], [[0, 8]])
+  const heard = (live) => {
+    const lines = m.auditionCode(p, 'p1', 'c1', { live }).split('\n')
+    const body = `${lines.slice(0, -1).join('\n')}\nreturn ${lines.at(-1)}`
+    return new Function(...Object.keys(core), body)(...Object.values(core)).queryArc(0, 1).find((h) => h.hasOnset())?.value
+  }
+  ok('a note heard with the song stopped has the knob\'s own cutoff', heard(new Map())?.cutoff === undefined, JSON.stringify(heard(new Map())))
+  ok('a note heard while the song plays has the curve\'s cutoff', heard(new Map([['c:p1:c1:lpf', 1234]]))?.cutoff === 1234, JSON.stringify(heard(new Map([['c:p1:c1:lpf', 1234]]))))
+}
 
 console.log(`\n${fails ? `${fails} failing` : 'all good'}`)
 process.exit(fails ? 1 : 0)
