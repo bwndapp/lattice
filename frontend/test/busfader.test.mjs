@@ -50,6 +50,7 @@ const src = (f) => JSON.stringify(path.join(here, '..', 'src', f))
 fs.writeFileSync(entry, [
   `export { normalizeProject, generateCode, auditionCode } from ${src('project.js')}`,
   `export { appParam } from ${src('automation.js')}`,
+  `export { autoDriver, autoTargets } from ${src('autoDrive.js')}`,
   `export { setInsertParams } from ${src('stereo.js')}`,
   `export { graphCode, defaultData } from ${src('graph.js')}`,
   `export { GainNode, destination, getSuperdoughAudioController } from ${JSON.stringify(shim)}`,
@@ -142,6 +143,28 @@ ok('a channel on its own bus is turned down by its level and the bus level', rou
   ok('automation moves the bus level', level().every((g) => near(g, 0.3)), JSON.stringify(level()))
   ok('the audition goes through the patch', /orbit/.test(m.auditionCode(p, 'p1', 'c1') ?? ''))
   ok('a note heard in the piano roll leaves the automated bus level where it was', level().every((g) => near(g, 0.3)), JSON.stringify(level()))
+}
+
+// picking a note in the piano roll (or a drag that ends where it began) regenerates the code
+// without changing the project: the bus level has to stay on its curve, not go back to the
+// knob, and keep following the curve after that
+{
+  const base = patch(1, { vol: 1 })
+  const p = m.normalizeProject({ ...base, song: { on: true, clips: [{ id: 'k', src: 'auto:v', start: 0, len: 4 }], autos: [{ id: 'v', target: 'n:bus:vol', bars: 4, points: [{ x: 0, y: 0.2 }, { x: 4, y: 0.2 }] }] } })
+  const orbits = [...new Set([...m.generateCode(p).matchAll(/\.orbit\((\d+)\)/g)].map((x) => Number(x[1])))]
+  for (const o of orbits) ctl.getOrbit(o)
+  const level = () => orbits.map((o) => reach(ctl.nodes[o].summingNode))
+  const driver = m.autoDriver(m.autoTargets(p), () => 1)
+  driver.tick()
+  ok('the curve turns the bus level to 0.3', level().every((g) => near(g, 0.3)), JSON.stringify(level()))
+  m.generateCode(p) // the note picked: same notes, same code
+  ok('a no-change edit leaves the automated bus level on its curve', level().every((g) => near(g, 0.3)), JSON.stringify(level()))
+  driver.tick()
+  ok('and the song keeps it there', level().every((g) => near(g, 0.3)), JSON.stringify(level()))
+  driver.stop()
+  ok('stopping puts the knob back where it is set', level().every((g) => near(g, 1)), JSON.stringify(level()))
+  m.generateCode(p)
+  ok('a stopped driver no longer moves it', level().every((g) => near(g, 1)), JSON.stringify(level()))
 }
 
 console.log(fails ? `\n${fails} failing` : '\nall good')
