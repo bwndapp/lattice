@@ -1497,7 +1497,7 @@ export default function App() {
           <svg className="logo-mark" viewBox="14 14 36 36" aria-hidden="true">
             <g strokeLinecap="square" fill="none">
               <path d="M14 26 38 50M26 14 50 38" stroke="currentColor" strokeWidth="7" />
-              <path d="M14 38 38 14M26 50 50 26" stroke="var(--ink)" strokeWidth="13" />
+              <path d="M14 38 38 14M26 50 50 26" stroke="var(--shell)" strokeWidth="13" />
               <path d="M14 38 38 14M26 50 50 26" stroke="currentColor" strokeWidth="7" />
             </g>
           </svg>
