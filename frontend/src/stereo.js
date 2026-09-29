@@ -320,11 +320,12 @@ export function declareRoute(list, from, to, gain = 1) {
 
 /**
  * The inserts the code now has. `partial` (auditioning one node) only adds and updates,
- * so the rest of the patch keeps its processing for when playback comes back to it.
+ * so the rest of the patch keeps its processing for when playback comes back to it. `keep`
+ * (a note heard on its own) only adds: inserts already there keep where automation has them.
  */
-export function commitInserts(list, { partial = false } = {}) {
-  declared = partial ? new Map([...declared, ...list.inserts]) : list.inserts
-  routed = partial ? new Map([...routed, ...list.routes]) : list.routes
+export function commitInserts(list, { partial = false, keep = false } = {}) {
+  declared = keep ? new Map([...list.inserts, ...declared]) : partial ? new Map([...declared, ...list.inserts]) : list.inserts
+  routed = keep ? new Map([...list.routes, ...routed]) : partial ? new Map([...routed, ...list.routes]) : list.routes
   // the audio side must never break generating the code (and so the whole app)
   try { apply() } catch (err) { console.warn('[stereo] could not update the stereo inserts', err) }
 }

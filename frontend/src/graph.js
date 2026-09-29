@@ -991,8 +991,9 @@ export function graphCode(project, { solo = null, song = null, audition = false,
       }
     }
   }
-  commitInserts(inserts, { partial: !!solo || audition }) // an audition must not rewire the playing mix
-  commitFx(fx, { partial: !!solo || audition })
+  // an audition must not rewire the playing mix, nor put automated knobs back where they're set
+  commitInserts(inserts, { partial: !!solo || audition, keep: audition })
+  commitFx(fx, { partial: !!solo || audition, keep: audition })
   return { lines, lanes }
 }
 

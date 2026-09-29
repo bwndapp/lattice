@@ -50,11 +50,16 @@ export function beginFx() {
 export function declareFx(list, key, kind, params) {
   list.set(key, { kind, params })
 }
-/** The effects the code now has. `partial` (auditioning) only adds and updates. */
-export function commitFx(list, { partial = false } = {}) {
-  declared = partial ? new Map([...declared, ...list]) : list
+/**
+ * The effects the code now has. `partial` (auditioning) only adds and updates; `keep` (a
+ * note heard on its own) only adds, so effects already playing keep where automation has them.
+ */
+export function commitFx(list, { partial = false, keep = false } = {}) {
+  const had = declared
+  declared = keep ? new Map([...list, ...declared]) : partial ? new Map([...declared, ...list]) : list
   try {
     for (const inst of instances.values()) {
+      if (keep && had.has(inst.key)) continue
       const d = declared.get(inst.key)
       if (d && d.kind === inst.kind) inst.set(d.params)
     }
