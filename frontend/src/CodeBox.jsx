@@ -15,7 +15,7 @@ import './CodeBox.css'
  * around them stays quiet.
  */
 const paint = HighlightStyle.define([
-  { tag: tags.string, color: '#ffcb2e' },
+  { tag: tags.string, color: '#e0a33c' },
   { tag: tags.number, color: '#f2f2f0' },
   { tag: [tags.keyword, tags.operatorKeyword, tags.modifier], color: '#c8a2ff' },
   { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: '#86d8cc' },
@@ -28,15 +28,15 @@ const paint = HighlightStyle.define([
 
 const look = EditorView.theme({
   '&': { color: '#f2f2f0', backgroundColor: 'transparent', fontSize: '12px' },
-  '.cm-content': { fontFamily: 'var(--mono)', padding: '0.4rem 0', caretColor: '#ffcb2e', lineHeight: '1.55' },
+  '.cm-content': { fontFamily: 'var(--mono)', padding: '0.4rem 0', caretColor: '#e0a33c', lineHeight: '1.55' },
   '.cm-line': { padding: '0 0.55rem' },
   '&.cm-focused': { outline: 'none' },
-  '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#ffcb2e', borderLeftWidth: '2px' },
-  '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': { backgroundColor: 'rgba(255, 203, 46, 0.22)' },
+  '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#e0a33c', borderLeftWidth: '2px' },
+  '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': { backgroundColor: 'rgba(224, 163, 60, 0.22)' },
   '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.05)' },
   '.cm-gutters': { backgroundColor: 'transparent', color: '#6e6e6c', border: 'none', fontFamily: 'var(--mono)', fontSize: '10px' },
   '.cm-activeLineGutter': { backgroundColor: 'transparent', color: '#b6b6b2' },
-  '.cm-matchingBracket, &.cm-focused .cm-matchingBracket': { backgroundColor: 'rgba(255, 203, 46, 0.2)', outline: 'none', color: 'inherit' },
+  '.cm-matchingBracket, &.cm-focused .cm-matchingBracket': { backgroundColor: 'rgba(224, 163, 60, 0.2)', outline: 'none', color: 'inherit' },
   '.cm-scroller': { overflow: 'auto' },
 }, { dark: true })
 

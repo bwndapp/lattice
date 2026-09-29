@@ -19,23 +19,22 @@
 :root {
   color-scheme: dark;
   /*
-   * Studio grey: the chrome is a light-ish grey you look past, and the dark is kept for
-   * where the work actually is — the patch, the lanes, the roll, a code box. One signal
-   * colour, and it means something is live.
+   * Studio grey, and grey means grey: the frame is a dark neutral you look past, the work
+   * sits on something darker still, and the signal is a gold rather than a highlighter.
    */
-  --shell: var(--line);   /* the frame: bar, panes, sidebars */
-  --panel: var(--dim);   /* raised surfaces: nodes, cards, windows, menus */
-  --raised: var(--dim);  /* a face above a panel: buttons, thumbs */
-  --sunk: var(--line);    /* pressed into chrome: wells, tracks, inputs */
-  --canvas: var(--sunk);  /* where content lives */
-  --well: var(--canvas);    /* the deepest inset: code, meters, step wells */
-  --line: var(--dim);    /* a division on grey */
-  --paper: #f2f2f0;   /* text */
-  --muted: #b6b6b2;   /* second rank */
-  --dim: var(--muted);     /* third rank */
-  --acid: #ffcb2e;    /* the signal: playing, armed, live */
-  --ink: var(--canvas);     /* text and marks on the signal or on paper */
-  --danger: var(--muted);
+  --shell: #232327;   /* the frame: bar, panes, sidebars */
+  --panel: #2b2b30;   /* raised surfaces: nodes, cards, windows, menus */
+  --raised: #35353b;  /* a face above a panel: buttons, thumbs */
+  --sunk: #1c1c20;    /* pressed into chrome: wells, tracks, inputs */
+  --canvas: #141417;  /* where content lives */
+  --well: #0f0f12;    /* the deepest inset: code, meters, step wells */
+  --line: #3a3a41;    /* a division on grey */
+  --paper: #e9e9e7;   /* text */
+  --muted: #9b9ba1;   /* second rank */
+  --dim: #6d6d74;     /* third rank */
+  --acid: #e0a33c;    /* the signal: playing, armed, live */
+  --ink: #141410;     /* text and marks on the signal or on paper */
+  --danger: #e8563f;
   --sidebar: 340px;
   --display: "Archivo", "Arial Narrow", system-ui, sans-serif;
   --mono: "Martian Mono", ui-monospace, "SF Mono", Menlo, monospace;
