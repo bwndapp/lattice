@@ -24,6 +24,17 @@
  */
 export const NEWS = [
   {
+    id: '2026-09-29',
+    date: '2026-09-29',
+    version: '0.5.0',
+    title: 'A new look',
+    items: [
+      'Grey chrome, dark where the work is — easier on the eyes for a long session',
+      'One **signal** colour, and it only marks what’s live',
+      'New mark, icon and share card to match',
+    ],
+  },
+  {
     id: '2026-09-28-2',
     date: '2026-09-28',
     version: '0.4.0',
