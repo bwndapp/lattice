@@ -48,7 +48,9 @@ export const applyGainCurve = (v) => v
 `)
 const src = (f) => JSON.stringify(path.join(here, '..', 'src', f))
 fs.writeFileSync(entry, [
-  `export { normalizeProject, generateCode } from ${src('project.js')}`,
+  `export { normalizeProject, generateCode, auditionCode } from ${src('project.js')}`,
+  `export { appParam } from ${src('automation.js')}`,
+  `export { setInsertParams } from ${src('stereo.js')}`,
   `export { graphCode, defaultData } from ${src('graph.js')}`,
   `export { GainNode, destination, getSuperdoughAudioController } from ${JSON.stringify(shim)}`,
 ].join('\n'))
@@ -127,6 +129,20 @@ for (const n of [1, 3]) {
 // a channel with its own bus (through an eq) plays into the mixer bus at its level
 const routed = heard(patch(3, { vol: 0.5, chan: { 'eq:out': 0.2 } }, { eq: true }))
 ok('a channel on its own bus is turned down by its level and the bus level', routed.length === 2 && routed.some((g) => near(g, 0.1)) && routed.some((g) => near(g, 0.5)), JSON.stringify(routed))
+
+// automation turns the bus level down while the song plays; hearing a note in the piano
+// roll (an audition through the patch) must leave it there, not put the knob's own level back
+{
+  const p = patch(1, { vol: 1 })
+  const orbits = [...new Set([...m.graphCode(p, {}).lines.join('\n').matchAll(/\.orbit\((\d+)\)/g)].map((x) => Number(x[1])))]
+  for (const o of orbits) ctl.getOrbit(o)
+  const level = () => orbits.map((o) => reach(ctl.nodes[o].summingNode))
+  const app = m.appParam(p, 'n:bus:vol')
+  m.setInsertParams(app.key, { [app.param]: 0.3 })
+  ok('automation moves the bus level', level().every((g) => near(g, 0.3)), JSON.stringify(level()))
+  ok('the audition goes through the patch', /orbit/.test(m.auditionCode(p, 'p1', 'c1') ?? ''))
+  ok('a note heard in the piano roll leaves the automated bus level where it was', level().every((g) => near(g, 0.3)), JSON.stringify(level()))
+}
 
 console.log(fails ? `\n${fails} failing` : '\nall good')
 process.exit(fails ? 1 : 0)
