@@ -59,17 +59,11 @@ export function snapValue(v, def) {
  * pixels for the whole travel, `fineRange` with shift held.
  */
 export function startDrag(x, y, pos, fine = false, { range = 150, fineRange = 600 } = {}) {
-  return { x0: x, y0: y, x, y, from: pos, fine, moved: false, axis: 'y', range, fineRange }
+  return { x0: x, y0: y, x, y, from: pos, fine, moved: false, range, fineRange }
 }
 
 /** Has the pointer moved far enough from where it went down to be a drag, not a click? */
 export const pastThreshold = (d, x, y, px = 3) => Math.max(Math.abs(x - d.x0), Math.abs(y - d.y0)) >= px
-
-/** Once it's a drag, it works along whichever way the pointer set off: right or up adds. */
-export function lockAxis(d, x, y) {
-  d.axis = Math.abs(x - d.x0) > Math.abs(y - d.y0) ? 'x' : 'y'
-  d.moved = true
-}
 
 /**
  * Where the drag has the knob now (0..1), the pointer at (x, y). `now` is where the knob
@@ -85,7 +79,7 @@ export function dragTo(d, x, y, fine, now) {
     d.from = now
     return now
   }
-  const along = d.axis === 'x' ? x - d.x : d.y - y
+  const along = d.y - y // always up and down: up adds, sideways doesn't count
   const p = d.from + along / (fine ? d.fineRange : d.range)
   if (p > 1) { d.from -= p - 1; return 1 }
   if (p < 0) { d.from -= p; return 0 }

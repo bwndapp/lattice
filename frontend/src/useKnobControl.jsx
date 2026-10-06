@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import './Knob.css'
 import { knobBridge } from './knobBridge.js'
-import { clamp, detent, dragTo, lockAxis, pastThreshold, startDrag, undetent, wheelPixels, wheelTravel } from './knobMath.js'
+import { clamp, detent, dragTo, pastThreshold, startDrag, undetent, wheelPixels, wheelTravel } from './knobMath.js'
 
 /*
  * One way of turning things, for every knob-like control: the knobs (Knob.jsx), the tempo,
@@ -16,7 +16,7 @@ export const RESET_HINT = `${MAC ? 'cmd' : 'ctrl'}-click or Home to reset`
 const hasMods = (e) => e.shiftKey || e.altKey || e.ctrlKey || e.metaKey
 
 /**
- * Everything that turns a knob: dragging (either way, shift for fine, the pointer locked so
+ * Everything that turns a knob: dragging (up and down, shift for fine, the pointer locked so
  * a long sweep never meets the edge of the screen), the wheel, the keys, typing a value and
  * resetting it. Options (read fresh on every event):
  *
@@ -162,7 +162,7 @@ function makeControl(opts, ref, setLive, setPeek, setTyping) {
     if (document.pointerLockElement === d.el) { d.vx += e.movementX; d.vy += e.movementY } else if (!d.locked) { d.vx = e.clientX; d.vy = e.clientY }
     if (!d.moved) {
       if (!pastThreshold(d, d.vx, d.vy)) return // a click isn't a drag
-      lockAxis(d, d.vx, d.vy)
+      d.moved = true
       if (d.mouse) hold(d)
     }
     const centre = opts.current.centre

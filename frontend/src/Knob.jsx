@@ -9,7 +9,7 @@ import { KnobReadout, KnobTypeInput, RESET_HINT, useKnobControl } from './useKno
 export { formatValue, gainDb, readoutText } from './knobMath.js'
 
 /**
- * A knob: drag up/down or sideways (shift for fine), scroll, arrow keys, double-click (or
+ * A knob: drag up or down (shift for fine), scroll, arrow keys, double-click (or
  * Enter) to type a value, ctrl/cmd-click, alt-click or Home to reset (see useKnobControl).
  * With a `target` (see automation.js), right-click offers to automate it; an automated knob
  * wears a mark and, while the song plays, turns with its curve, and the sound follows a

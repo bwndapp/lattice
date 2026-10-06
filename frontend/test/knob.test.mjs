@@ -1,6 +1,6 @@
 // node frontend/test/knob.test.mjs — the arithmetic knobs turn by (knobMath.js)
 import assert from 'node:assert/strict'
-import { NOTCH_PX, detent, dragTo, formatValue, lockAxis, parseKnobValue, readoutText, pastThreshold, undetent, snapValue, startDrag, stepOf, wheelPixels, wheelTravel } from '../src/knobMath.js'
+import { NOTCH_PX, detent, dragTo, formatValue, parseKnobValue, readoutText, pastThreshold, undetent, snapValue, startDrag, stepOf, wheelPixels, wheelTravel } from '../src/knobMath.js'
 
 const near = (a, b, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} ≉ ${b}`)
 
@@ -42,13 +42,13 @@ near(dragTo(d, 100, 10, true, 0.7), 0.8)
 near(dragTo(d, 100, 10, false, 0.8), 0.8)
 near(dragTo(d, 100, -5, false, 0.8), 0.9)
 
-// either way: whichever way the pointer set off, right or up adds
+// always up and down: up adds, sideways doesn't count, even when the drag sets off sideways
 const side = startDrag(0, 0, 0.5)
-lockAxis(side, 6, 1)
-near(dragTo(side, 30, 50, false, 0.5), 0.7) // 30px right; the drift down doesn't count
+near(dragTo(side, 30, 0, false, 0.5), 0.5)
+near(dragTo(side, 60, -30, false, 0.5), 0.7)
 const upward = startDrag(0, 0, 0.5)
-lockAxis(upward, 1, -6)
 near(dragTo(upward, 40, -30, false, 0.5), 0.7)
+near(dragTo(upward, 0, 30, false, 0.5), 0.3)
 // pushing past the end and coming back turns it straight away
 const end = startDrag(0, 0, 0.9)
 assert.equal(dragTo(end, 0, -60, false, 0.9), 1)
