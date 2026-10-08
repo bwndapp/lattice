@@ -8,6 +8,7 @@ import TrackMap from './TrackMap.jsx'
 import BranchMark from './BranchMark.jsx'
 import { Glass } from './Glass.jsx'
 import LiveOnTrack from './LiveOnTrack.jsx'
+import { Photo, faceUrl } from './BotFace.jsx'
 import './Browser.css'
 
 const VIEWS = [['explore', 'explore'], ['mine', 'mine'], ['liked', 'liked']]
@@ -249,7 +250,7 @@ export default function Browser({ user, login, activeId, refreshKey, onPick, onN
                     className="b-card-author"
                     onClick={() => narrow({ author: t.author_id, name: t.author })}
                     data-tip={`Everything ${t.author} has shared`}
-                  >{t.author}</button>
+                  ><Photo src={faceUrl(t.face)} className="b-card-photo" />{t.author}</button>
                   {t.tags?.length > 0 && (
                     <div className="b-card-tags">
                       {t.tags.slice(0, 4).map((tag) => (

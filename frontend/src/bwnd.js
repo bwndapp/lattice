@@ -224,12 +224,20 @@ export async function getToken() {
   return t.access_token
 }
 
-/** The signed-in user (id, email, name, role for platform staff), or null. */
+// the live profile from /userinfo (checkSession), for what the token may not carry: picture, username
+let profile = null
+
+/** The signed-in user (id, email, name, username, picture URL or null, role for platform staff), or null. */
 export function currentUser() {
   const t = read()
   const c = t?.access_token ? decode(t.access_token) : null
   if (!c) return null
-  return { id: c.sub, email: c.email, name: c.name, givenName: c.given_name, familyName: c.family_name, role: c.role }
+  const p = profile?.sub === c.sub ? profile : {}
+  return {
+    id: c.sub, email: c.email, name: c.name, givenName: c.given_name, familyName: c.family_name, role: c.role,
+    username: p.preferred_username ?? c.preferred_username ?? null,
+    picture: p.picture ?? c.picture ?? null,
+  }
 }
 
 /** Where THIS build's API lives: `/api` in the live build, `/preview/api` in
@@ -266,6 +274,12 @@ export async function checkSession() {
       if (!n?.access_token) return read() ? currentUser() : null
       r = await fetch(`${ISSUER}/userinfo`, { headers: { Authorization: `Bearer ${n.access_token}` } })
       if (r.status === 401) { write(null); notify(); return null }
+    }
+    if (r.ok) {
+      const p = await r.json()
+      const changed = p.sub !== profile?.sub || p.picture !== profile?.picture || p.preferred_username !== profile?.preferred_username
+      profile = p
+      if (changed) notify() // a new picture shows without signing in again
     }
   } catch { /* offline: keep what we have */ }
   return currentUser()

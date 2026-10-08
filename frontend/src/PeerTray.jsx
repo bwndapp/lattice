@@ -4,6 +4,7 @@ import { whereOnScreen } from './surfaces.jsx'
 import { createFace } from './vendor/bbot.js'
 import { applyFx } from './vendor/bbot-fx.js'
 import { botLook, botStyle } from './bot.js'
+import { Photo, faceUrl } from './BotFace.jsx'
 import './PeerTray.css'
 
 /**
@@ -126,6 +127,8 @@ function PeerFace({ peer, mine = false, away = false, faces = null }) {
       style={botStyle(look)}
     >
       <span className="peer-face-box" ref={box} />
+      {/* their picture, pinned to the bot: the bot still says what they're doing */}
+      <Photo src={faceUrl(peer.face)} className="peer-face-photo" />
       <span className="peer-face-says">
         {tab && <span className="says-tab">{tab}</span>}
         <span className="says-name">{peer.name}</span>

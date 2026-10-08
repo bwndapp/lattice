@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { COLLAB_ROOT } from './base'
-import BotFace from './BotFace.jsx'
+import BotFace, { Photo, faceUrl } from './BotFace.jsx'
 import './LiveOnTrack.css'
 
 /**
@@ -62,6 +62,8 @@ export function useLiveOn(trackId) {
 }
 
 function Bot({ person, i }) {
+  // they overlap a little, most recent in front, so four people read as a huddle
+  if (person.face) return <Photo src={faceUrl(person.face)} className="live-bot" style={{ zIndex: 8 - i }} />
   return (
     <BotFace
       bot={person.bot}

@@ -3,6 +3,18 @@ import { createFace } from './vendor/bbot.js'
 import { applyFx } from './vendor/bbot-fx.js'
 import { botLook, botOf, botStyle, colorOf } from './bot.js'
 import { usePresence } from './collab.js'
+import { apiUrl } from './bwnd.js'
+
+/** Where someone's picture is served, from the `face` a track or a room hands out. */
+export const faceUrl = (face) => (face ? apiUrl(`/api/tracks/face/${face}`) : null)
+
+/** A profile picture, round. Gone (not broken) if it fails to load. */
+export function Photo({ src, className, style }) {
+  const [bad, setBad] = useState(false)
+  useEffect(() => setBad(false), [src])
+  if (!src || bad) return null
+  return <img src={src} alt="" className={`photo ${className || ''}`} style={style} onError={() => setBad(true)} draggable={false} />
+}
 
 /** One person's face, self-contained: their hash and colour, drawn (bot.js). */
 export default function BotFace({ bot, color, expression = 'content', className, style }) {
@@ -24,6 +36,8 @@ export default function BotFace({ bot, color, expression = 'content', className,
  */
 export function MyFace({ user, className }) {
   const [bot, setBot] = useState(null)
+  const [bad, setBad] = useState(false)
+  useEffect(() => setBad(false), [user?.picture])
   const me = usePresence()
   useEffect(() => {
     let live = true
@@ -31,6 +45,8 @@ export function MyFace({ user, className }) {
     if (user?.id) botOf(user.id).then((b) => { if (live) setBot(b) }, () => {})
     return () => { live = false }
   }, [user?.id])
+  // their own blue wind picture when they have one; the bot is for people without
+  if (user?.picture && !bad) return <img src={user.picture} alt="" className={`photo ${className || ''}`} onError={() => setBad(true)} draggable={false} />
   if (!bot) return <span className={className} aria-hidden />
   const color = me?.bot === bot && me.color ? me.color : colorOf(bot)
   return <BotFace bot={bot} color={color} className={className} />

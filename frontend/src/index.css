@@ -1426,3 +1426,6 @@ button.chan-synth:hover span { color: var(--acid); }
 /* the knife: shift + right-drag across wires (see Graph.jsx) */
 .graph-canvas .knife-line { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; overflow: visible; }
 .graph-canvas .knife-line line { stroke: var(--acid); stroke-width: 1.5; stroke-dasharray: 6 4; }
+
+/* a profile picture from blue wind (BotFace.jsx Photo / MyFace) */
+img.photo { display: inline-block; border-radius: 50%; object-fit: cover; background: var(--well); flex: none; }

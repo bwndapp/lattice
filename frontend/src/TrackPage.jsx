@@ -4,6 +4,7 @@ import { parseProject } from './project'
 import { changesBetween, summarise } from './history.js'
 import { previewTrack, stopPreview } from './audio'
 import BranchMark from './BranchMark.jsx'
+import { Photo, faceUrl } from './BotFace.jsx'
 import { addTags, cleanTag, MAX_TAGS, MAX_TITLE } from './tags.js'
 import './TrackPage.css'
 
@@ -297,7 +298,7 @@ export default function TrackPage({ id, user, login, started = false, onOpen, on
           {track.visibility !== 'public' && <span className="b-tag">{track.visibility}</span>}
         </div>
         <p className="tp-by">
-          by <button type="button" className="tp-author" onClick={() => onAuthor(track.author_id, track.author)}>{track.author}</button>
+          by <button type="button" className="tp-author" onClick={() => onAuthor(track.author_id, track.author)}><Photo src={faceUrl(track.face)} className="tp-photo" />{track.author}</button>
           {' · '}last saved {timeAgo(track.updated_at)}
           {track.parent && (
             <> · <span className="tp-from"><BranchMark />branched off <button type="button" className="tp-link" onClick={() => onOpen(track.parent.id, true)}>{track.parent.title}</button></span></>

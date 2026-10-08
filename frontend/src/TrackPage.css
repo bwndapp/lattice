@@ -189,3 +189,4 @@
 @media (prefers-reduced-motion: reduce) {
   .tp-save-acts, .tp-dot, .tp-act { transition: none; }
 }
+.tp-photo { width: 18px; height: 18px; margin-right: 5px; vertical-align: -4px; }

@@ -98,10 +98,11 @@ COLORS = ["#6cc9ff", "#ff8fb1", "#8de88d", "#ffcf6b", "#c79bff", "#5ee0cf", "#ff
 
 
 class Peer:
-    __slots__ = ("id", "ws", "name", "color", "at", "sel", "sub", "edit", "view", "bot")
+    __slots__ = ("id", "ws", "name", "color", "at", "sel", "sub", "edit", "view", "bot", "face")
 
-    def __init__(self, pid, ws, name, color, sub, edit, bot):
+    def __init__(self, pid, ws, name, color, sub, edit, bot, face=None):
         self.id = pid
+        self.face = face  # "<author_id>?v=<stamp>" for /api/tracks/face/, when they have a picture
         self.ws = ws
         self.name = name
         self.color = color
@@ -113,7 +114,7 @@ class Peer:
         self.view = None  # which of the app's views they're looking at
 
     def public(self):
-        return {"id": self.id, "name": self.name, "color": self.color, "bot": self.bot,
+        return {"id": self.id, "name": self.name, "color": self.color, "bot": self.bot, "face": self.face,
                 "at": self.at, "sel": self.sel, "edit": self.edit, "view": self.view}
 
 
@@ -328,6 +329,28 @@ def _bot_of(user, name, pid):
     return hashlib.sha256(seed.encode()).hexdigest()[:12]
 
 
+def _face_of(user, env):
+    """Their picture as tracks.py serves it: noted in the same faces table, keyed on the same
+    public handle, so the room hands out a path and never the picture's own address (which
+    carries their account id). None without a picture or a sign-in."""
+    pic = str((user or {}).get("picture") or "")[:500]
+    if not pic or not user.get("sub"):
+        return None
+    aid = hashlib.sha256(f"lattice:{user['sub']}".encode()).hexdigest()[:12]  # tracks._author_id
+    try:
+        with use_env(env):
+            conn = db()
+            conn.execute("CREATE TABLE IF NOT EXISTS faces (author_id TEXT PRIMARY KEY, picture TEXT NOT NULL, updated_at INTEGER NOT NULL)")
+            conn.execute("INSERT INTO faces (author_id, picture, updated_at) VALUES (?, ?, ?) "
+                         "ON CONFLICT(author_id) DO UPDATE SET picture = excluded.picture, updated_at = excluded.updated_at "
+                         "WHERE faces.picture != excluded.picture", (aid, pic, int(time.time())))
+            conn.commit()
+            stamp = conn.execute("SELECT updated_at FROM faces WHERE author_id = ?", (aid,)).fetchone()[0]
+        return f"{aid}?v={stamp}"
+    except Exception:
+        return None  # the bot face is still there
+
+
 def _clean_name(raw, user):
     name = (user or {}).get("given_name") or (user or {}).get("name") or (raw or "")
     name = " ".join(str(name).split())[:24]
@@ -367,10 +390,11 @@ async def collab(ws: WebSocket, track_id: str):
         edit = _may_edit(row, user, room.open)
         name = _clean_name(hello.get("name"), user)
         bot = _bot_of(user, name, room.next_id)
-        peer = Peer(room.next_id, ws, name, room.color_for(bot), (user or {}).get("sub"), edit, bot)
+        face = await asyncio.to_thread(_face_of, user, _env_of(ws))
+        peer = Peer(room.next_id, ws, name, room.color_for(bot), (user or {}).get("sub"), edit, bot, face)
         room.next_id += 1
         await ws.send_text(json.dumps({
-            "t": "me", "id": peer.id, "color": peer.color, "name": peer.name, "bot": peer.bot,
+            "t": "me", "id": peer.id, "color": peer.color, "name": peer.name, "bot": peer.bot, "face": peer.face,
             "edit": edit, "owner": _is_owner(row, user), "open": room.open,
             # only the owner is told the key, because only the owner hands it out
             "jam": jam_mode, "key": jam_key if (jam_mode == "invite" and _is_owner(row, user)) else None,
@@ -554,7 +578,7 @@ async def live(request: Request):
     for key, room in list(_rooms.items()):
         if not key.startswith(here) or room.jam != "open" or not room.peers:
             continue
-        out[key[len(here):]] = [{"name": p.name, "color": p.color, "bot": p.bot} for p in list(room.peers.values())[:8]]
+        out[key[len(here):]] = [{"name": p.name, "color": p.color, "bot": p.bot, "face": p.face} for p in list(room.peers.values())[:8]]
     return {"tracks": out}
 
 
@@ -562,4 +586,4 @@ async def live(request: Request):
 async def who(request: Request, track_id: str):
     """Who's on a track right now, for a page that isn't holding a socket open."""
     room = _rooms.get(f"{_env_of(request)}:{track_id}")
-    return {"peers": [{"name": p.name, "color": p.color, "bot": p.bot} for p in (room.peers.values() if room else [])]}
+    return {"peers": [{"name": p.name, "color": p.color, "bot": p.bot, "face": p.face} for p in (room.peers.values() if room else [])]}

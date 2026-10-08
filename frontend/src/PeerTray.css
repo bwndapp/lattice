@@ -96,3 +96,10 @@
   .peer-tray { right: 8px; bottom: 8px; padding: 5px 7px; }
   .peer-face-box { width: 28px; height: 28px; }
 }
+
+/* their picture, small, on the bot's lower right */
+.peer-face-photo {
+  position: absolute; right: -3px; bottom: -3px; width: 15px; height: 15px;
+  box-shadow: 0 0 0 1.5px var(--canvas); pointer-events: none;
+}
+.peer-face.me .peer-face-photo { width: 12px; height: 12px; }

@@ -10,7 +10,8 @@ import secrets
 import time
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+import httpx
 
 from incubator_lib import db, db_path, sso_user
 
@@ -63,6 +64,14 @@ def _conn():
               saved_at INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS track_versions_track ON track_versions(track_id, id);
+            -- each person's profile picture, keyed on their public handle so the picture
+            -- URL (which carries their account id) never leaves the server; a cache of
+            -- what blue wind says, refreshed whenever they turn up signed in
+            CREATE TABLE IF NOT EXISTS faces (
+              author_id TEXT PRIMARY KEY,
+              picture TEXT NOT NULL,
+              updated_at INTEGER NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS likes (
               track_id TEXT NOT NULL,
               sub TEXT NOT NULL,
@@ -148,6 +157,38 @@ def _author(user):
 def _author_id(sub):
     """A stable public handle for whoever made a track, without showing who they are."""
     return hashlib.sha256(f"lattice:{sub}".encode()).hexdigest()[:12] if sub else ""
+
+
+_seen_faces = {}  # (db path, author_id) -> picture, so a request only writes when it changed
+
+
+def _remember_face(conn, user):
+    """Keep the signed-in person's picture current, or forget it once they've removed it."""
+    if not user or not user.get("sub"):
+        return
+    aid = _author_id(user["sub"])
+    pic = str(user.get("picture") or "")[:500]
+    key = (str(db_path()), aid)
+    if _seen_faces.get(key) == pic:
+        return
+    if pic:
+        conn.execute("INSERT INTO faces (author_id, picture, updated_at) VALUES (?, ?, ?) "
+                     "ON CONFLICT(author_id) DO UPDATE SET picture = excluded.picture, updated_at = excluded.updated_at "
+                     "WHERE faces.picture != excluded.picture", (aid, pic, int(time.time())))
+    else:
+        conn.execute("DELETE FROM faces WHERE author_id = ?", (aid,))
+    conn.commit()
+    _seen_faces[key] = pic
+
+
+def _faces_of(conn, author_ids):
+    """author_id -> "<author_id>?v=<when it changed>", the path under /face/, for the people
+    in a list who have a picture. The collab rooms hand out the same thing (collab._face_of)."""
+    ids = list({a for a in author_ids if a})
+    if not ids:
+        return {}
+    rows = conn.execute(f"SELECT author_id, updated_at FROM faces WHERE author_id IN ({','.join('?' * len(ids))})", ids)
+    return {r["author_id"]: f"{r['author_id']}?v={r['updated_at']}" for r in rows}
 
 
 PROJECT_MARK = "// @project "
@@ -329,12 +370,15 @@ def list_tracks(request: Request, q: str = "", sort: str = "new", view: str = "e
     conn = _conn()
     try:
         rows = conn.execute(sql, [user["sub"] if user else ""] + params + [limit + 1, offset]).fetchall()
+        _remember_face(conn, user)
+        faces = _faces_of(conn, [r["author_id"] for r in rows[:limit]])
     finally:
         conn.close()
     more = len(rows) > limit
     def row_out(r):
         keep = {k: r[k] for k in r.keys() if k not in ("my_like", "parent_title", "parent_author")}
         out = _public(keep, user, r["my_like"], with_code=False)
+        out["face"] = faces.get(out["author_id"])
         if r["forked_from"] and r["parent_title"]:
             out["parent"] = {"id": r["forked_from"], "title": r["parent_title"], "author": r["parent_author"]}
         return out
@@ -365,6 +409,29 @@ def popular_tags(q: str = "", limit: int = 12):
     return {"tags": [{"tag": t, "n": n} for t, n in top]}
 
 
+@router.get("/face/{author_id}")
+async def face(author_id: str):
+    """Someone's profile picture, by their public handle. Fetched from blue wind and passed
+    on, because the picture's own address would give away their account id. Lists add
+    ?v=<when it changed>, so a browser can keep it for a long time."""
+    conn = _conn()
+    try:
+        row = conn.execute("SELECT picture FROM faces WHERE author_id = ?", (author_id[:32],)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return Response(status_code=404)
+    try:
+        async with httpx.AsyncClient(timeout=8) as client:
+            r = await client.get(row["picture"])
+    except httpx.HTTPError:
+        return Response(status_code=502)
+    if r.status_code != 200 or not r.headers.get("content-type", "").startswith("image/"):
+        return Response(status_code=404)
+    return Response(r.content, media_type=r.headers["content-type"],
+                    headers={"Cache-Control": "public, max-age=86400"})
+
+
 @router.get("/{track_id}")
 def get_track(track_id: str, request: Request):
     user = sso_user(request)
@@ -385,9 +452,11 @@ def get_track(track_id: str, request: Request):
         remixes = conn.execute(
             "SELECT COUNT(*) AS n FROM tracks WHERE forked_from = ? AND visibility = 'public'",
             (track_id,)).fetchone()["n"]
+        _remember_face(conn, user)
+        face = _faces_of(conn, [row["author_id"]]).get(row["author_id"])
     finally:
         conn.close()
-    return {**_public(row, user, liked), "parent": parent, "remixes": remixes}
+    return {**_public(row, user, liked), "parent": parent, "remixes": remixes, "face": face}
 
 
 @router.post("")

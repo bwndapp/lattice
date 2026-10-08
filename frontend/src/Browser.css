@@ -358,3 +358,4 @@ button.b-card-from:hover b { color: var(--paper); }
   cursor: var(--ring); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .b-card-tag:hover { color: var(--paper); }
+.b-card-photo { width: 14px; height: 14px; margin-right: 5px; vertical-align: -3px; }
