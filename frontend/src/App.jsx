@@ -1395,6 +1395,7 @@ export default function App() {
         !canEdit && track && { label: 'save a copy', onSelect: () => remix(), disabled: busy, hint: 'Yours to change · it still credits the original' },
         isOwner && { label: 'history…', shortcut: 'ctrl/cmd H', onSelect: () => setShowVersions(true), hint: 'Every save, and what changed at each one' },
         project && { label: 'export…', onSelect: () => { stop(); setShowExport(true) }, hint: 'Bounce it to a WAV or MP3' },
+        (project || code) && { label: view === 'code' ? 'close the code' : 'view the code', shortcut: 'ctrl/cmd J', onSelect: toggleView, hint: 'The whole track as Strudel code' },
         codeChanged && track && !isOwner && { label: 'undo my changes', onSelect: () => revert() },
         track && 'line',
         track && { label: 'copy link', onSelect: () => share() },
