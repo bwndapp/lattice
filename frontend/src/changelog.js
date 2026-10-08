@@ -24,6 +24,18 @@
  */
 export const NEWS = [
   {
+    id: '2026-10-08',
+    date: '2026-10-08',
+    version: '0.6.0',
+    title: 'Your picture, everywhere',
+    items: [
+      '**Your blue wind picture** at the top of the menu',
+      '**See who made a track**: their picture on its card and its page',
+      '**Pictures in a jam**: everyone in the room shows their picture',
+      '**Knobs always turn up and down** when you drag them',
+    ],
+  },
+  {
     id: '2026-09-29',
     date: '2026-09-29',
     version: '0.5.0',
