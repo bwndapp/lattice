@@ -1,0 +1,211 @@
+<!doctype html>
+<!--
+  Three 1200×1200 images for a Reddit post: lattice, multiplayer, the four views.
+  Rendered by tools/brand/reddit.sh (headless chromium, one ?n=1|2|3 per image).
+  Same palette, mark and type as the app (index.css, tools/brand/make.mjs).
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Martian+Mono:wght@400;600&display=swap">
+<style>
+  :root {
+    --shell: #232327; --panel: #2b2b30; --raised: #35353b; --sunk: #1c1c20;
+    --canvas: #141417; --well: #0f0f12; --line: #3a3a41;
+    --paper: #e9e9e7; --muted: #9b9ba1; --dim: #6d6d74; --acid: #e0a33c;
+    --p1: #6cc9ff; --p2: #ff8fb1; --p3: #8de88d;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1200px; height: 1200px; background: var(--canvas); overflow: hidden; }
+  body { font-family: "Martian Mono", monospace; color: var(--paper); }
+  .slide {
+    position: relative; width: 1200px; height: 1200px; padding: 84px 84px 72px;
+    display: none; flex-direction: column;
+    background:
+      linear-gradient(var(--canvas) 0 0) padding-box,
+      var(--canvas);
+    background-image:
+      linear-gradient(to right, var(--shell) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--shell) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+  .slide.on { display: flex; }
+  .slide::after { /* the grid fades out towards the words */
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse at 50% 58%, transparent 30%, var(--canvas) 78%);
+  }
+  .slide > * { position: relative; z-index: 1; }
+
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand svg { width: 44px; height: 44px; }
+  .brand b { font-family: "Archivo Black"; font-size: 40px; letter-spacing: -1.5px; font-weight: 400; }
+  .kicker { display: inline-flex; align-items: center; gap: 10px; margin-top: 64px;
+    font-size: 20px; color: var(--acid); letter-spacing: 3px; text-transform: uppercase; }
+  .kicker i { width: 10px; height: 10px; border-radius: 50%; background: var(--acid); box-shadow: 0 0 14px var(--acid); }
+  h1 { font-family: "Archivo Black"; font-weight: 400; font-size: 92px; line-height: 0.98;
+    letter-spacing: -3.5px; margin-top: 18px; }
+  h1 em { font-style: normal; color: var(--acid); }
+  .sub { font-size: 25px; line-height: 1.5; color: var(--muted); margin-top: 26px; max-width: 1032px; }
+
+  .stage { flex: 1; display: grid; place-items: center; }
+  .foot { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; }
+  .points { display: flex; gap: 14px; flex-wrap: wrap; }
+  .pt { font-size: 18px; color: var(--paper); background: var(--panel); border: 1.5px solid var(--line);
+    border-radius: 999px; padding: 12px 20px; }
+  .pt b { color: var(--acid); font-weight: 600; }
+  .url { font-size: 22px; color: var(--muted); white-space: nowrap; }
+  .url b { color: var(--paper); font-weight: 600; }
+
+  /* the four views */
+  .views { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; width: 100%; }
+  .view { background: var(--shell); border: 1.5px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .view header { display: flex; justify-content: space-between; padding: 14px 18px; background: var(--panel);
+    border-bottom: 1.5px solid var(--line); font-size: 19px; }
+  .view header span { color: var(--dim); font-size: 15px; }
+  .view svg { display: block; width: 100%; height: 250px; background: var(--canvas); }
+  .code { height: 250px; background: var(--well); padding: 22px 22px; font-size: 17px; line-height: 1.75; color: var(--muted); }
+  .code .k { color: var(--acid); } .code .s { color: var(--paper); } .code .c { color: var(--dim); }
+</style>
+</head>
+<body>
+
+<!-- 1 · what lattice is -->
+<section class="slide" data-n="1">
+  <div class="brand"><svg data-mark></svg><b>lattice</b></div>
+  <h1 style="margin-top:70px">Make music by<br><em>wiring boxes</em> together.</h1>
+  <p class="sub">Drums, basslines, chords, effects, all in your browser.<br>Drag a wire, turn a knob, hear it right away.</p>
+  <div class="stage"><svg id="patch1" width="1032" height="420" viewBox="0 0 1032 420"></svg></div>
+  <div class="foot">
+    <div class="points"><span class="pt">no install</span><span class="pt">no code needed</span><span class="pt">built on <b>Strudel</b></span></div>
+    <span class="url"><b>lattice.bwnd.app</b></span>
+  </div>
+</section>
+
+<!-- 2 · multiplayer -->
+<section class="slide" data-n="2">
+  <div class="brand"><svg data-mark></svg><b>lattice</b></div>
+  <div class="kicker"><i></i>new · multiplayer</div>
+  <h1>Send a link.<br><em>Jam on it live.</em></h1>
+  <p class="sub">Everyone edits the same track at once, cursors and all,<br>and it plays in sync for the whole room.</p>
+  <div class="stage"><svg id="patch2" width="1032" height="420" viewBox="0 0 1032 420"></svg></div>
+  <div class="foot">
+    <div class="points"><span class="pt">see where everyone's working</span><span class="pt">invite-only if you like</span><span class="pt">your save stays <b>yours</b></span></div>
+    <span class="url"><b>lattice.bwnd.app</b></span>
+  </div>
+</section>
+
+<!-- 3 · one track, four ways in -->
+<section class="slide" data-n="3">
+  <div class="brand"><svg data-mark></svg><b>lattice</b></div>
+  <h1 style="margin-top:70px">One track,<br><em>four ways</em> in.</h1>
+  <div class="stage">
+    <div class="views">
+      <div class="view"><header>patch<span>sound design</span></header><svg id="v-patch" viewBox="0 0 500 250"></svg></div>
+      <div class="view"><header>timeline<span>arrange + automate</span></header><svg id="v-time" viewBox="0 0 500 250"></svg></div>
+      <div class="view"><header>piano roll<span>write notes</span></header><svg id="v-roll" viewBox="0 0 500 250"></svg></div>
+      <div class="view"><header>code<span>full Strudel</span></header>
+        <div class="code">
+          <div><span class="k">note</span>(<span class="s">"c2 ~ eb2 g1"</span>)</div>
+          <div>&nbsp;&nbsp;.<span class="k">s</span>(<span class="s">"sawtooth"</span>)</div>
+          <div>&nbsp;&nbsp;.<span class="k">lpf</span>(<span class="k">slider</span>(800, 200, 4000))</div>
+          <div><span class="c">// paste a whole song, it plays</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot" style="margin-top:34px">
+    <div class="points"><span class="pt">share + remix tracks</span><span class="pt">every save kept</span></div>
+    <span class="url"><b>lattice.bwnd.app</b></span>
+  </div>
+</section>
+
+<script>
+const C = {
+  shell: '#232327', panel: '#2b2b30', raised: '#35353b', sunk: '#1c1c20', canvas: '#141417',
+  line: '#3a3a41', paper: '#e9e9e7', muted: '#9b9ba1', dim: '#6d6d74', acid: '#e0a33c',
+  p1: '#6cc9ff', p2: '#ff8fb1', p3: '#8de88d',
+}
+
+// the mark, as make.mjs draws it
+const MARK = `<g stroke-linecap="square">
+  <path d="M14 26 38 50M26 14 50 38" stroke="${C.acid}" stroke-width="7"/>
+  <path d="M14 38 38 14M26 50 50 26" stroke="${C.canvas}" stroke-width="13"/>
+  <path d="M14 38 38 14M26 50 50 26" stroke="${C.acid}" stroke-width="7"/></g>`
+document.querySelectorAll('[data-mark]').forEach((s) => { s.setAttribute('viewBox', '0 0 64 64'); s.innerHTML = MARK })
+
+const node = (x, y, w, label, { lit = false, h = 74, ring = null } = {}) => `
+  <g transform="translate(${x} ${y})">
+    ${ring ? `<rect x="-6" y="-6" width="${w + 12}" height="${h + 12}" rx="10" fill="none" stroke="${ring}" stroke-width="2.5" stroke-dasharray="7 5"/>` : ''}
+    <rect width="${w}" height="${h}" rx="8" fill="${C.panel}" stroke="${lit ? C.acid : C.line}" stroke-width="${lit ? 2.5 : 1.5}"/>
+    <rect x="1.5" y="1.5" width="${w - 3}" height="24" rx="6.5" fill="${C.raised}"/>
+    <text x="12" y="19" font-family="Martian Mono" font-size="14" fill="${lit ? C.acid : C.muted}">${label}</text>
+    <rect x="12" y="40" width="${w - 58}" height="7" rx="3.5" fill="${C.sunk}"/>
+    <rect x="12" y="40" width="${Math.round((w - 58) * (lit ? 0.72 : 0.38))}" height="7" rx="3.5" fill="${lit ? C.acid : C.dim}"/>
+    <circle cx="${w - 22}" cy="52" r="10" fill="${C.sunk}" stroke="${C.line}"/>
+    <path d="M${w - 22} 45 v7" stroke="${lit ? C.acid : C.muted}" stroke-width="2.5" stroke-linecap="round"/>
+  </g>`
+const wire = (x1, y1, x2, y2, lit = false) => {
+  const m = (x1 + x2) / 2
+  return `<path d="M${x1} ${y1} C${m} ${y1} ${m} ${y2} ${x2} ${y2}" fill="none" stroke="${lit ? C.acid : C.line}" stroke-width="${lit ? 3.5 : 2.5}"/>`
+}
+const cursor = (x, y, colour, name) => `
+  <g transform="translate(${x} ${y})">
+    <path d="M0 0 L0 26 L7 19 L12 31 L17 29 L12 17 L22 17 Z" fill="${colour}" stroke="${C.canvas}" stroke-width="2" stroke-linejoin="round"/>
+    <rect x="20" y="28" width="${name.length * 10.5 + 22}" height="28" rx="14" fill="${colour}"/>
+    <text x="31" y="47" font-family="Martian Mono" font-weight="600" font-size="15" fill="${C.canvas}">${name}</text>
+  </g>`
+const face = (x, y, r, colour, look = 0) => `
+  <g transform="translate(${x} ${y})">
+    <circle r="${r}" fill="${colour}"/>
+    <ellipse cx="${-r * 0.32 + look}" cy="${-r * 0.1}" rx="${r * 0.13}" ry="${r * 0.2}" fill="${C.canvas}"/>
+    <ellipse cx="${r * 0.32 + look}" cy="${-r * 0.1}" rx="${r * 0.13}" ry="${r * 0.2}" fill="${C.canvas}"/>
+  </g>`
+
+// the patch: three sounds through effects into the output
+function patch({ people = false } = {}) {
+  const W = 236, row = (i) => 40 + i * 130, mid = (i) => row(i) + 37
+  const lit = people ? [false, true, true] : [false, true, false]
+  return `
+    ${[0, 1, 2].map((i) => wire(W, mid(i), 380, mid(i), lit[i])).join('')}
+    ${[0, 1, 2].map((i) => wire(380 + W, mid(i), 790, mid(1) + (i - 1) * 16, lit[i])).join('')}
+    ${node(0, row(0), W, 'pattern · drums')}
+    ${node(0, row(1), W, 'pattern · bass', { lit: lit[1] })}
+    ${node(0, row(2), W, 'pattern · keys', { lit: lit[2], ring: people ? C.p2 : null })}
+    ${node(380, row(0), W, 'filter', { ring: people ? C.p1 : null })}
+    ${node(380, row(1), W, 'distortion', { lit: lit[1] })}
+    ${node(380, row(2), W, 'reverb', { lit: lit[2] })}
+    ${node(790, row(1), 200, 'output', { lit: true })}
+    ${people ? cursor(560, 92, C.p1, 'maya') + cursor(170, 352, C.p2, 'jo') + cursor(910, 228, C.p3, 'you') : ''}
+  `
+}
+document.getElementById('patch1').innerHTML = patch()
+document.getElementById('patch2').innerHTML = patch({ people: true })
+
+// the people in the room, bottom right, as the app's tray has them
+const tray = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+tray.setAttribute('width', 232); tray.setAttribute('height', 64)
+tray.innerHTML = `<rect width="232" height="64" rx="32" fill="${C.panel}" stroke="${C.line}" stroke-width="1.5"/>
+  ${face(42, 32, 20, C.p1, 3)}${face(94, 32, 20, C.p2, -3)}${face(146, 32, 20, C.p3, 2)}
+  <text x="182" y="38" font-family="Martian Mono" font-size="15" fill="${C.muted}">3 in</text>`
+tray.style.cssText = 'position:absolute; top:74px; right:84px; z-index:1'
+document.querySelector('[data-n="2"]').append(tray)
+
+// mini views for slide 3
+document.getElementById('v-patch').innerHTML = `<g transform="translate(26 26) scale(0.46)">${patch()}</g>`
+const clips = [[0, 0, 4, C.dim], [0, 4, 4, C.dim], [0, 8, 8, C.muted], [1, 2, 6, C.acid], [1, 8, 8, C.acid], [2, 4, 4, '#86d8cc'], [2, 12, 4, '#86d8cc'], [3, 8, 8, '#c8a2ff']]
+document.getElementById('v-time').innerHTML = `
+  ${[0, 4, 8, 12, 16].map((b) => `<path d="M${30 + b * 27.5} 18V232" stroke="${C.shell}" stroke-width="1.5"/>`).join('')}
+  ${clips.map(([l, s, n, c]) => `<rect x="${32 + s * 27.5}" y="${24 + l * 44}" width="${n * 27.5 - 4}" height="34" rx="5" fill="${c}" opacity="0.88"/>`).join('')}
+  <path d="M32 222 C140 222 200 200 260 186 S 420 192 468 200" fill="none" stroke="${C.acid}" stroke-width="2.5"/>
+  <path d="M250 14V236" stroke="${C.paper}" stroke-width="2"/>`
+const notes = [[0, 7, 2], [2, 9, 1], [3, 5, 3], [6, 3, 2], [8, 7, 2], [10, 10, 2], [12, 8, 1], [13, 5, 3]]
+document.getElementById('v-roll').innerHTML = `
+  ${Array.from({ length: 12 }, (_, i) => `<rect x="0" y="${i * 20 + 6}" width="38" height="19" fill="${[1, 3, 6, 8, 10].includes(i) ? C.sunk : C.raised}"/>`).join('')}
+  ${Array.from({ length: 12 }, (_, i) => `<path d="M38 ${i * 20 + 6}H500" stroke="${C.shell}"/>`).join('')}
+  ${notes.map(([s, p, n]) => `<rect x="${48 + s * 28}" y="${6 + (11 - p) * 20 + 2}" width="${n * 28 - 3}" height="16" rx="3" fill="${C.acid}"/>`).join('')}`
+
+const n = new URLSearchParams(location.search).get('n') || '1'
+document.querySelector(`[data-n="${n}"]`).classList.add('on')
+</script>
+</body>
+</html>
