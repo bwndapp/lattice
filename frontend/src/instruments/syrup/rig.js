@@ -39,7 +39,7 @@ export function makeRig(ac, node, voices) {
   out.connect(gain)
   gain.connect(send)
   let orbit = null
-  let bus = null
+  let bus = null // the bus node itself: a reset (stop) makes a new one under the same id
   // the patch as last set, and what the modulators said last
   let patch = null
   let tempo = { beatSeconds: 0.5 }
@@ -166,11 +166,11 @@ export function makeRig(ac, node, voices) {
         if (next?.summingNode) gain.connect(next.summingNode)
         orbit = next
       }
-      const busId = value.bus ?? null
-      if (busId !== bus) {
+      const nextBus = value.bus != null ? controller.getBus(value.bus) ?? null : null
+      if (nextBus !== bus) {
         send.disconnect()
-        if (busId != null) { const node = controller.getBus(busId); if (node) send.connect(node) }
-        bus = busId
+        if (nextBus) send.connect(nextBus)
+        bus = nextBus
       }
       glide(send.gain, applyGainCurve(num(value.busgain, 1)), ac)
       // each note's own level and pan are applied in the processor, voice by voice; what's

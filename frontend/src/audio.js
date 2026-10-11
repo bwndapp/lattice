@@ -5,6 +5,7 @@ import { auditionCode, generateCode, paramValue, paramsFor } from './project'
 import { liveKnobs } from './autoLive.js'
 import { stackLanes } from './exportAudio.js'
 import { GLOBAL_DELAY, GLOBAL_REVERB, routeVoice, silenceFx } from './fxbus.js'
+import { resetInserts } from './stereo'
 import { evaluate } from '@strudel/core'
 import { transpiler } from '@strudel/transpiler'
 import { prepareInstruments, registerEngineSounds, releaseHeld } from './instruments/host.js'
@@ -266,6 +267,7 @@ export function silenceNow() {
     }
     setTimeout(() => {
       try { resetGlobalEffects() } catch { /* nothing playing yet */ }
+      resetInserts() // the bus inserts on the buses that reset just let go of
       silenceFx() // reverb and delay tails too
     }, 45)
   } catch { /* audio not started */ }

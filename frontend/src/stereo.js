@@ -379,6 +379,9 @@ function safeController() {
 
 /** Put a rack between a stereo orbit and the speakers. */
 function mount(n, orbit, channels) {
+  // the rack this bus had before a reset: its units (a distortion's bias source, the
+  // worklets) would otherwise keep running unheard, one more set every stop
+  teardown(n)
   const ac = getAudioContext()
   const stereo = () => new GainNode(ac, { gain: 1, channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' })
   const input = stereo()
@@ -408,6 +411,14 @@ function aim(n, rack) {
   if (to != null && to !== n) rack.send.connect(controller.getOrbit(to).summingNode)
   else controller.output.connectToDestination(rack.send, rack.channels)
   rack.to = to
+}
+
+/**
+ * Stop resets the audio, and every bus with it: let go of the racks now rather than leave
+ * them running until their bus is next made. They're rebuilt as the buses come back.
+ */
+export function resetInserts() {
+  for (const n of [...racks.keys()]) teardown(n)
 }
 
 function teardown(n) {
