@@ -1,0 +1,153 @@
+/*
+ * Monochrome clay: one grey, lit by one light from the top left, with shadows that sit
+ * where a real lump of clay would put them. State is depth, not hue: what's on or picked
+ * is raised and lit, what's off is carved in. The only colour left is the music itself —
+ * clip, pattern and note colours, which are what you made, not the interface.
+ *
+ * After https://ayeeye.net/posts/leadgen/monochrome-clay-lighting, with the app's own
+ * typefaces kept. Loaded last (main.jsx), so it restyles what the other sheets lay out.
+ */
+:root {
+  /* the old tokens, recast in clay: every sheet that reads them follows */
+  --shell: #2a2a2a;
+  --panel: #2f2f2f;
+  --raised: #3a3a3a;
+  --sunk: #1f1f1f;
+  --canvas: #242424;
+  --well: #1c1c1c;
+  --line: #383838;
+  --paper: #bdbdbd;   /* dim on purpose: white text floats off the clay */
+  --muted: #858585;
+  --dim: #5e5e5e;
+  --acid: #d6d6d6;    /* the signal is light now, not a hue: lit, not coloured */
+  --ink: #1e1e1e;
+  --danger: #b97272;
+
+  /* the clay itself */
+  --room: radial-gradient(120% 90% at 15% 0%, #333 0%, #2a2a2a 50%, #1f1f1f 100%);
+  --engrave: 0 -1px 0 rgba(0, 0, 0, 0.7), 0 1px 0 rgba(255, 255, 255, 0.04);
+  --groove: rgba(0, 0, 0, 0.45);
+  --groove-hi: rgba(255, 255, 255, 0.035);
+  --face: radial-gradient(140% 160% at 25% 0%, #444 0%, #303030 45%, #232323 100%);
+  --face-hi: radial-gradient(140% 160% at 25% 0%, #5a5a5a 0%, #3e3e3e 45%, #2c2c2c 100%);
+  --well-g: linear-gradient(180deg, #1b1b1b 0%, #212121 60%, #262626 100%);
+  --slab: linear-gradient(180deg, #313131 0%, #2c2c2c 100%);
+  --raise-sm:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1), inset 0 -2px 2px rgba(0, 0, 0, 0.4),
+    inset 4px 5px 8px rgba(255, 255, 255, 0.035), inset -4px -6px 10px rgba(0, 0, 0, 0.3),
+    0 1px 2px rgba(0, 0, 0, 0.75), 0 4px 8px rgba(0, 0, 0, 0.4), 0 10px 18px rgba(0, 0, 0, 0.35),
+    -4px -4px 10px rgba(255, 255, 255, 0.025);
+  --raise-xs:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1), inset 0 -1px 1px rgba(0, 0, 0, 0.45),
+    0 1px 2px rgba(0, 0, 0, 0.7), 0 2px 5px rgba(0, 0, 0, 0.35);
+  --raise-slab:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 -2px 2px rgba(0, 0, 0, 0.35),
+    0 1px 2px rgba(0, 0, 0, 0.7), 0 8px 16px rgba(0, 0, 0, 0.35), 0 22px 44px rgba(0, 0, 0, 0.45);
+  --press:
+    inset 0 2px 3px rgba(0, 0, 0, 0.65), inset 4px 6px 12px rgba(0, 0, 0, 0.45),
+    inset -3px -4px 8px rgba(255, 255, 255, 0.03), 0 1px 0 rgba(255, 255, 255, 0.06);
+  --press-xs: inset 0 1px 2px rgba(0, 0, 0, 0.7), inset 0 -1px 0 rgba(255, 255, 255, 0.03), 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* ── the room ────────────────────────────────────────── */
+html body { background: var(--room) fixed; text-shadow: var(--engrave); -webkit-font-smoothing: antialiased; }
+body::after {
+  content: ""; position: fixed; inset: 0; z-index: 9999; pointer-events: none; opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 1 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+html :focus-visible { outline: 2px solid rgba(255, 255, 255, 0.22); outline-offset: 2px; }
+
+/* the frame: slabs, evenly lit, split by a groove with a lit lip under it */
+html .bar { background: var(--slab); border-bottom: 1px solid var(--groove); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 1px 0 var(--groove-hi), 0 8px 18px rgba(0, 0, 0, 0.35); z-index: 5; }
+html .detail-dock { background: var(--slab); border-top: 1px solid var(--groove); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 -10px 26px rgba(0, 0, 0, 0.45); }
+html .logo { color: var(--paper); }
+
+/* ── buttons: raised lumps that squash when pressed ──── */
+html .btn {
+  border: 0; border-radius: 12px; background: var(--face); color: var(--paper);
+  box-shadow: var(--raise-sm); text-shadow: var(--engrave);
+  transition: transform 0.12s, box-shadow 0.12s, background 0.12s;
+}
+html .btn:hover:not(:disabled) { background: var(--face-hi); }
+html .btn:active:not(:disabled) { background: var(--well-g); box-shadow: var(--press); transform: translateY(1px) scale(0.98); }
+html .btn.ghost { background: transparent; box-shadow: none; color: var(--muted); }
+html .btn.ghost:hover:not(:disabled) { background: var(--face); box-shadow: var(--raise-xs); color: var(--paper); }
+html .btn.on, html .btn.primary { background: var(--face-hi); color: #d0d0d0; font-weight: 700; }
+html .btn.primary:disabled { background: var(--face); color: var(--muted); }
+html .btn.danger:hover:not(:disabled) { color: var(--danger); }
+html .btn.ch-btn { border-radius: 9px; box-shadow: var(--raise-xs); }
+html .btn.ch-btn.ghost { box-shadow: none; }
+
+/* play: the biggest lump; while it plays it's pushed in */
+html .btn.play { background: var(--face-hi); color: #d4d4d4; border-radius: 14px; }
+html .btn.play.on { background: var(--well-g); box-shadow: var(--press); color: var(--paper); }
+
+/* segmented switches: a carved tray, the picked one raised out of it */
+html .seg { padding: 3px; gap: 3px; border-radius: 14px; background: var(--well-g); box-shadow: var(--press); }
+html .seg .btn { background: transparent; box-shadow: none; border-radius: 11px; color: var(--muted); }
+html .seg .btn + .btn { margin-left: 0; }
+html .seg .btn.on { background: var(--face-hi); box-shadow: var(--raise-xs); color: var(--paper); }
+html .gswitch { background: var(--well-g); box-shadow: var(--press); }
+html .gswitch-thumb, html .gswitch-thumb.refracting { background: var(--face-hi); backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: var(--raise-xs); }
+html .tm-seg, html .dd-tabs, html .dd-keys { border: 0; border-radius: 999px; background: var(--well-g); box-shadow: var(--press-xs); padding: 2px; }
+html .tm-seg button + button { border-left: 0; }
+html .tm-seg button { border-radius: 999px; }
+html .tm-seg button.on, html .dd-tab.on, html .dd-keys-on.on { color: var(--paper); background: var(--face-hi); box-shadow: var(--raise-xs); }
+
+/* ── fields: carved into the surface ─────────────────── */
+html .select, html input:not([type=range]):not([type=checkbox]):not([type=radio]), html textarea,
+html .lcd, html .node-input, html .node-code, html .ch-input {
+  border: 0; border-radius: 10px; background: var(--well-g); box-shadow: var(--press-xs); color: var(--paper);
+}
+html .lcd { border-radius: 12px; box-shadow: var(--press); }
+html .lcd-value { color: #cfcfcf; }
+html .tempo:focus-within, html .tempo.editing, html .tempo.dragging { box-shadow: var(--press), 0 0 0 1px rgba(255, 255, 255, 0.14); }
+
+/* ── panels: popovers and menus are slabs ────────────── */
+html .popover { border: 0; border-radius: 16px; background: var(--slab); box-shadow: var(--raise-slab); }
+html .am-main, html .am-flyout { border: 0; border-radius: 14px; background: var(--slab); box-shadow: var(--raise-slab); }
+html .am-row.cursor, html .am-row:hover, html .am-row.open { background: var(--well-g); box-shadow: var(--press-xs); border-color: transparent; }
+html .file-item:hover:not(:disabled), html .file-item:focus-visible { background: var(--well-g); box-shadow: var(--press-xs); border-radius: 8px; }
+
+/* ── the step grid: off is a carved well, on is a lit key standing out of it ── */
+html .step { border: 0; border-radius: 5px; background: var(--well-g); box-shadow: var(--press-xs); }
+html .step.alt { background: linear-gradient(180deg, #181818 0%, #1d1d1d 60%, #222 100%); }
+html .step:hover { background: #2a2a2a; }
+/* a lit key has to read at a glance across thirty-two cells: brighter clay, a taller lip */
+html .step.on {
+  background: radial-gradient(140% 160% at 25% 0%, #7a7a7a 0%, #555 45%, #3d3d3d 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 -2px 2px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.8), 0 3px 7px rgba(0, 0, 0, 0.45);
+}
+html .step.bar-start { box-shadow: var(--press-xs), -2px 0 0 #3a3a3a; }
+html .step.on.bar-start { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 -2px 2px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.8), -2px 0 0 #3a3a3a; }
+html .ch + .ch { border-top: 1px solid var(--groove); box-shadow: inset 0 1px 0 var(--groove-hi); }
+html .ch.ch-ruler { background: var(--slab); border-bottom: 1px solid var(--groove); }
+html .led { border: 0; border-radius: 7px; background: var(--face); box-shadow: var(--raise-xs); }
+html .led.on, html .led.solo.on { background: var(--well-g); box-shadow: var(--press-xs); color: var(--paper); }
+
+/* ── the patch: nodes are slabs sitting on the canvas ── */
+html .gnode {
+  --node-radius: 12px;
+  border: 0; background: var(--slab); box-shadow: var(--raise-slab);
+}
+html .node-head { border-bottom: 1px solid var(--groove); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07); text-shadow: none; }
+html .gnode { --head-bg: #3a3a3a; --head-ink: var(--paper); --head-lit: #5a5a5a; }
+html .g-transform { --head-bg: #4a4a4a; --head-ink: #dcdcdc; }
+html .g-combine { --head-bg: #262626; }
+html .g-combine .node-head { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05); }
+html .g-output { border: 0; --head-bg: #1e1e1e; --head-ink: var(--paper); box-shadow: var(--raise-slab), 0 0 0 2px #3c3c3c; }
+html .gnode.selected { box-shadow: var(--raise-slab), 0 0 0 2px rgba(255, 255, 255, 0.28); }
+html .react-flow__node[style*="--lit"] .gnode { box-shadow: var(--raise-slab), 0 0 calc(var(--lit) * 16px) color-mix(in srgb, var(--glow, #fff) calc(var(--lit) * 22%), transparent); }
+html .node-btn { border: 0; border-radius: 6px; background: var(--face); box-shadow: var(--raise-xs); opacity: 0.9; }
+html .node-btn.on { background: var(--well-g); box-shadow: var(--press-xs); color: var(--paper); }
+html .stepper button { border: 0; border-radius: 6px; background: var(--face); box-shadow: var(--raise-xs); }
+html .graph-canvas .react-flow__controls, html .graph-canvas .react-flow__minimap { border: 0; border-radius: 12px; overflow: hidden; box-shadow: var(--raise-slab); }
+html .react-flow__controls-button { background: var(--face); border: 0; border-bottom: 1px solid var(--groove); color: var(--paper); fill: var(--paper); }
+
+/* ── browse ──────────────────────────────────────────── */
+html .b-card { border: 0; border-radius: 18px; background: var(--slab); box-shadow: var(--raise-slab); }
+html .b-button { border: 0; border-radius: 12px; background: var(--face); box-shadow: var(--raise-sm); color: var(--paper); }
+html .b-button.primary, html .b-button.on { background: var(--face-hi); color: #d4d4d4; }
+html .b-play { background: var(--face); box-shadow: var(--raise-sm); color: var(--paper); fill: var(--paper); }
+html .b-play.on { background: var(--well-g); box-shadow: var(--press); }
+html .b-tag.on { background: var(--face-hi); color: var(--paper); box-shadow: var(--raise-xs); }
