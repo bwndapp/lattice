@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { rollSteps } from './roll.js'
 import {
   INSTRUMENTS, INSTRUMENT_MIME, PARAMS,
   instrumentChannel, midiToNote, newId, paramValue, paramsFor, stepCount, stepDivision,
@@ -293,6 +294,14 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
               <button className={`btn ch-btn ${fxOpen ? 'on' : ''}`} aria-expanded={fxOpen} onClick={() => toggle(setOpenFx, ch.id)} title="Sound settings">
                 fx{tweaked ? ` ${tweaked}` : ''}
               </button>
+              {ch.kind === 'drum' && (
+                <button
+                  className="btn ghost ch-btn"
+                  title={`Random hits across all ${pattern.bars} bar${pattern.bars === 1 ? '' : 's'} · click again for another · undo brings it back`}
+                  aria-label={`Roll random steps for ${ch.name}`}
+                  onClick={() => updateChannel(ch.id, (c, pat) => { c.steps = rollSteps(c, { bars: pat.bars, stepsPerBar: pat.stepsPerBar, beats: project.beats }) })}
+                >roll</button>
+              )}
               {ch.kind === 'synth' && (
                 <button className={`btn ch-btn ${rollOpen ? 'on' : ''}`} aria-expanded={rollOpen} onClick={() => (rollOpen ? dock?.close() : dock?.open(pattern.id, ch.id, 'notes'))} title="Piano roll, along the bottom of the app">notes</button>
               )}
