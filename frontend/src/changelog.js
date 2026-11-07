@@ -24,6 +24,16 @@
  */
 export const NEWS = [
   {
+    id: '2026-11-07',
+    date: '2026-11-07',
+    version: '0.7.0',
+    title: 'Clay, and a roll for drums',
+    items: [
+      '**A new look**: one soft grey, lit like clay — what\'s on is raised, what\'s off sits in',
+      '**Roll button on drum rows**: scatter random hits across every bar',
+    ],
+  },
+  {
     id: '2026-10-08',
     date: '2026-10-08',
     version: '0.6.0',
