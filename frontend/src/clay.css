@@ -58,7 +58,7 @@ body::after {
 html :focus-visible { outline: 2px solid rgba(255, 255, 255, 0.22); outline-offset: 2px; }
 
 /* the frame: slabs, evenly lit, split by a groove with a lit lip under it */
-html .bar { background: var(--slab); border-bottom: 1px solid var(--groove); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 1px 0 var(--groove-hi), 0 8px 18px rgba(0, 0, 0, 0.35); z-index: 5; }
+html .bar { background: var(--slab); border-bottom: 1px solid var(--groove); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 1px 0 var(--groove-hi), 0 8px 18px rgba(0, 0, 0, 0.35); z-index: 30; }
 html .detail-dock { background: var(--slab); border-top: 1px solid var(--groove); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 -10px 26px rgba(0, 0, 0, 0.45); }
 html .logo { color: var(--paper); }
 
