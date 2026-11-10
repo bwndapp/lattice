@@ -96,3 +96,9 @@ assert.match(cubeLine, /n_m\.fmap\(\(v\) => \(\{ \.\.\.v, _r: 'c\.r0' \}\)\)\.st
 assert.doesNotMatch(cubeLine, /s\("bd/, 'and no longer plays its kick')
 assert.match(cubeLine, /s\("~ ~ ~ ~ sd/, 'the other layers keep their own sounds')
 console.log('cube inputs ok')
+
+// held back from main only while wired out: unwire the layer and it's back in the mix
+const unwired = normalizeGraph({ ...raw, edges: raw.edges.filter((e) => e.sourceHandle !== 'out-r1'), nodes: raw.nodes.map((n) => (n.id === 'c' ? { ...n, data: { ...n.data, offMain: { r1: true } } } : n)) }, [])
+const unwiredCode = String(graphCode({ ...unwired, patterns: [], bpm: 120, beats: 4 }).lines?.join('\n') ?? graphCode({ ...unwired, patterns: [], bpm: 120, beats: 4 }))
+assert.match(mainLine(unwiredCode), /sd/, 'an unwired layer plays through main again')
+console.log('cube main ok')

@@ -485,7 +485,8 @@ function AbstractFace({ node }) {
   const pattern = def?.asPattern?.(abstractState(node))
   const parts = abstractParts(node)
   const offMain = node.data?.offMain ?? {}
-  const heldBack = parts.filter((p) => offMain[p.id]).length
+  const outOnOwn = (pid) => ctx.project.edges.some((e) => e.source === node.id && e.sourceHandle === `out-${pid}`)
+  const heldBack = parts.filter((p) => offMain[p.id] && outOnOwn(p.id)).length
   return (
     <>
       {pattern && !parts.length && (

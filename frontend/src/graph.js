@@ -989,7 +989,10 @@ export function graphCode(project, { solo = null, song = null, audition = false,
         return hv && held?.has(hv) ? fromNode(hv, src.id) : inputs[k]
       })
       const built = abstractBuild(node, fed, slots).map((p) => ({ ...p, expr: p.expr && (p.own ? gate(p.expr) : p.expr) }))
-      const offMainIds = new Set(Object.entries(node.data?.offMain ?? {}).filter(([, v]) => v === true).map(([k]) => k))
+      // a layer is held back from the main out only while it's wired out on its own port —
+      // unwire it and it's back in the mix (its "main" button goes with the wire)
+      const wiredOut = (pid) => edges.some((e) => e.source === id && outChannel(e.sourceHandle) === pid)
+      const offMainIds = new Set(Object.entries(node.data?.offMain ?? {}).filter(([k, v]) => v === true && wiredOut(k)).map(([k]) => k))
       const main = built.filter((p) => p.expr && !offMainIds.has(p.id)).map((p) => p.expr)
       const name = nodeVar(id)
       lines.push(`// ${node.data.name ?? spec.label}`, `const ${name} = ${fromNode(main.length > 1 ? `stack(${main.join(', ')})` : main[0] ?? 'silence', id)}`)
