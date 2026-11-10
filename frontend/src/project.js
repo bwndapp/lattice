@@ -1,5 +1,5 @@
 import { parse } from 'acorn'
-import { defaultData, demoGraph, graphCode, normalizeGraph, patternChanVar, patternVar, splitPatternIds } from './graph.js'
+import { NODE_TYPES, defaultData, demoGraph, graphCode, normalizeGraph, outChannel, patternChanVar, patternHeldVar, patternVar, splitPatternIds } from './graph.js'
 import { normalizeSong, shiftedAuto, songActive, songExpr } from './song.js'
 import { automationCode, channelTarget } from './automation.js'
 import { GLOBAL_DELAY, GLOBAL_REVERB } from './fxbus.js'
@@ -334,6 +334,18 @@ function channelCode(ch, pattern, auto = null) {
   return `/* ${commentText(ch.name)} */ ${expr}`
 }
 
+/**
+ * An instrument as a rhythm machine plays it: the machine's rhythm says when, so this only
+ * has to say what, all the time. Notes you drew stay (each hit takes whichever is held then);
+ * a synth with none holds its own note; a drum holds its sound.
+ */
+function heldChannelCode(ch, pattern, auto = null) {
+  const whole = { ...pattern, bars: 1, stepsPerBar: 1 } // one step: the whole bar
+  if (ch.kind === 'synth' && !ch.notes?.length) return channelCode({ ...ch, notes: [{ s: 0, l: 1, n: noteToMidi(ch.note ?? 'c3') }] }, whole, auto)
+  if (ch.kind === 'drum') return channelCode({ ...ch, steps: [1] }, whole, auto)
+  return channelCode(ch, pattern, auto)
+}
+
 export { patternVar, patternChanVar }
 
 /** The pattern whose node a pattern plays through: its original, or itself. */
@@ -473,8 +485,29 @@ export function generateCode(project, { solo = null, laneSolo = null, audition =
     }
     lines.push(`const ${patternVar(pattern.id)} = ${value}`)
   }
+  // patterns wired straight into a rhythm machine's layer (the cube, fibonacci…) also get a
+  // held version: the machine's rhythm says when, the pattern only says what
+  const held = new Set()
+  for (const e of project.edges ?? []) {
+    const src = project.nodes.find((n) => n.id === e.source)
+    const dst = project.nodes.find((n) => n.id === e.target)
+    if (src?.type !== 'pattern' || !NODE_TYPES[dst?.type]?.abstract) continue
+    const pattern = project.patterns.find((p) => p.id === src.data.patternId)
+    if (!pattern) continue
+    const chan = outChannel(e.sourceHandle)
+    const name = patternHeldVar(pattern.id, chan)
+    if (held.has(name)) continue
+    const chans = pattern.channels.filter((c) => !c.mute && (chan ? c.id === chan : !src.data.offMain?.[c.id]))
+    const gated = (shift) => {
+      const exprs = chans.map((c) => heldChannelCode(c, pattern, autoAt(shift))).filter((x) => !x.endsWith(' silence'))
+      return exprs.length ? (exprs.length === 1 ? exprs[0] : `stack(${exprs.join(', ')})`) : 'silence'
+    }
+    const plain = gated(0)
+    lines.push(`const ${name} = ${song && plain !== 'silence' ? song(`pattern:${pattern.id}`, gated) : plain}`)
+    held.add(name)
+  }
   const patternSolo = typeof solo === 'string' && solo.startsWith('pattern:') && project.patterns.some((p) => `pattern:${p.id}` === solo)
-  const graph = graphCode(project, { solo: patternSolo ? null : solo, song, auto, laneSolo, audition })
+  const graph = graphCode(project, { solo: patternSolo ? null : solo, song, auto, laneSolo, audition, held })
   lines.push('', ...graph.lines.map((l) => (l.startsWith('// ') ? `// ${commentText(l.slice(3))}` : l)))
   if (patternSolo) lines.push('', '// auditioning one pattern', ...graph.lanes.map((l) => `_${l.replace(/^_/, '')}`), `solo: ${patternVar(solo.slice(8))}`)
   else lines.push('', solo ? '// auditioning one node' : '// output', ...(graph.lanes.length ? graph.lanes : ['$: silence']))

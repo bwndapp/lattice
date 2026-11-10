@@ -23,3 +23,32 @@ assert.equal(junk.layers[0].steps, 8); assert.ok(junk.layers[0].hits <= 8); asse
 assert.ok(!junk.layers[0].sound.includes('"'))
 for (const l of roll(s).layers) { assert.ok([3, 5, 8, 13, 21].includes(l.steps)); assert.ok(l.hits < l.steps) }
 console.log('fib ok')
+
+// ── an instrument wired straight into a layer is fired by every hit, notes or not ──
+const { bundle } = await import('./lib/bundle.mjs')
+const pm = await bundle({ 'project.js': ['normalizeProject', 'generateCode'] }, 'fibheld')
+const track = (notes, steps) => pm.generateCode(pm.normalizeProject({
+  bpm: 120, beats: 4,
+  patterns: [
+    { id: 'syn', name: 'syn', bars: 1, stepsPerBar: 16, channels: [{ id: 'c1', kind: 'synth', name: 'syn', sound: 'sawtooth', note: 'e3', notes }] },
+    { id: 'drm', name: 'drm', bars: 1, stepsPerBar: 16, channels: [{ id: 'd1', kind: 'drum', name: 'drm', sound: 'cp', steps }] },
+  ],
+  nodes: [
+    { id: 'ps', type: 'pattern', x: 0, y: 0, data: { patternId: 'syn' } },
+    { id: 'pd', type: 'pattern', x: 0, y: 0, data: { patternId: 'drm' } },
+    { id: 'f', type: 'fib', x: 0, y: 0, data: {} },
+    { id: 'o', type: 'output', x: 0, y: 0, data: {} },
+  ],
+  edges: [
+    { source: 'ps', sourceHandle: 'out', target: 'f', targetHandle: 'in-0' },
+    { source: 'pd', sourceHandle: 'out', target: 'f', targetHandle: 'in-1' },
+    { source: 'f', sourceHandle: 'out', target: 'o', targetHandle: 'in-0' },
+  ],
+}))
+let made = track([], [])
+assert.match(made, /const p_syn_held = .*note\("e3"\)\.s\("sawtooth"\)/, 'an empty synth holds its own note')
+assert.match(made, /const p_drm_held = .*s\("cp"\)/, 'a drum holds its sound, whatever its steps')
+assert.match(made, /p_syn_held\.fmap\(.*\)\.struct\("\{t ~ ~ t/, 'and the loop fires it')
+made = track([{ s: 0, l: 16, n: 48 }], [1])
+assert.match(made, /const p_syn_held = .*note\("c3@16"\)/, 'notes you drew are kept')
+console.log('fib held ok')

@@ -900,6 +900,8 @@ export const nodeVar = (id) => `n_${id}`
 export const patternVar = (id) => `p_${id}`
 /** One instrument of a pattern, as its own variable (project.js writes these out). */
 export const patternChanVar = (patternId, channelId) => `p_${patternId}_${channelId}`
+/** A pattern (or one instrument of it) as a rhythm machine plays it: every note held (see project.js). */
+export const patternHeldVar = (patternId, channelId = null) => `p_${patternId}${channelId ? `_${channelId}` : ''}_held`
 /** The instrument a wire leaves a pattern node by, or null for its main out. */
 export const outChannel = (handle) => /^out-(.+)$/.exec(String(handle ?? ''))?.[1] ?? null
 
@@ -918,7 +920,7 @@ export function splitPatternIds(project) {
  * Code for the graph: one `const` per node that makes a pattern, in dependency order,
  * then one lane per wire into each output node. `solo` (a node id) plays only that node.
  */
-export function graphCode(project, { solo = null, song = null, audition = false, auto = null, laneSolo = null } = {}) {
+export function graphCode(project, { solo = null, song = null, audition = false, auto = null, laneSolo = null, held = null } = {}) {
   const { nodes, edges } = project
   const byId = new Map(nodes.map((n) => [n.id, n]))
   const patternIds = new Set(project.patterns.map((p) => p.id))
@@ -979,9 +981,16 @@ export function graphCode(project, { solo = null, song = null, audition = false,
       // an abstract instrument: each layer plays its own sound, when the song says, or
       // whatever's wired into that layer on the layer's rhythm (see abstract/index.js)
       const gate = (e) => (song ? song(`node:${id}`, () => e) : e)
-      const built = abstractBuild(node, inputs, slots).map((p) => ({ ...p, expr: p.expr && (p.own ? gate(p.expr) : p.expr) }))
-      const held = new Set(Object.entries(node.data?.offMain ?? {}).filter(([, v]) => v === true).map(([k]) => k))
-      const main = built.filter((p) => p.expr && !held.has(p.id)).map((p) => p.expr)
+      // a pattern wired straight in plays its held version (project.js): an empty synth
+      // holds its own note and a drum its own sound, so every hit of the rhythm fires it
+      const fed = wires.filter((w) => exprs.get(w.source)).map((w, k) => {
+        const src = byId.get(w.source)
+        const hv = src?.type === 'pattern' ? patternHeldVar(src.data.patternId, outChannel(w.sourceHandle)) : null
+        return hv && held?.has(hv) ? fromNode(hv, src.id) : inputs[k]
+      })
+      const built = abstractBuild(node, fed, slots).map((p) => ({ ...p, expr: p.expr && (p.own ? gate(p.expr) : p.expr) }))
+      const offMainIds = new Set(Object.entries(node.data?.offMain ?? {}).filter(([, v]) => v === true).map(([k]) => k))
+      const main = built.filter((p) => p.expr && !offMainIds.has(p.id)).map((p) => p.expr)
       const name = nodeVar(id)
       lines.push(`// ${node.data.name ?? spec.label}`, `const ${name} = ${fromNode(main.length > 1 ? `stack(${main.join(', ')})` : main[0] ?? 'silence', id)}`)
       exprs.set(id, name)
