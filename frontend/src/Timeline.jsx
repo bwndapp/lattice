@@ -123,6 +123,9 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     sketchCache.current.set(src, { pattern, said: JSON.stringify(pattern), ink, url })
     return url
   }
+  // how many bars one tile of a clip's sketch covers: the part's, unless an abstract
+  // instrument's sketch runs longer (a Fibonacci drift, say)
+  const sketchBars = (src, bars) => (src?.startsWith('node:') && sketchFor(src) ? sketchCache.current.get(src)?.pattern?.bars : null) ?? bars
   const length = songLength(song)
   const inPatch = parts.filter((p) => p.inPatch && p.kind !== 'auto')
   const unused = parts.filter((p) => !p.inPatch)
@@ -1177,6 +1180,9 @@ export default function Timeline({ project, onUpdateProject, transport, started 
                 // where the pattern starts over inside the clip (it may begin part-way in, after a cut)
                 const loops = (part.kind === 'pattern' || part.kind === 'auto') && part.bars > 0
                 const into = loops ? (((c.offset ?? 0) % part.bars) + part.bars) % part.bars : 0
+                // an abstract instrument's sketch can run longer than its part (a drift): a cut clip picks it up part-way
+                const tile = sketchBars(c.src, part.bars)
+                const sketchInto = !loops && tile > part.bars ? (((c.offset ?? 0) % tile) + tile) % tile : into
                 const firstRepeat = part.bars - into
                 const repeats = loops ? Math.max(0, Math.ceil((c.len - firstRepeat - 1e-9) / part.bars)) : 0
                 // nothing on the patch plays this any more: it sits here and makes no sound
@@ -1189,7 +1195,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
                     style={{ left: c.start * ppb, top: c.lane * LANE_H + 3, width: Math.max(4, c.len * ppb - 1), height: LANE_H - 6, '--clip': colorFor(c.src, song.colors), '--clip-ink': inkFor(colorFor(c.src, song.colors)), ...(peerClips.get(c.id) ? { '--peer': peerClips.get(c.id).color } : {}) }}
                     title={`${part.name} · bar ${Math.floor(c.start) + 1}${c.start % 1 ? `.${Math.round((c.start % 1) * beats) + 1}` : ''} · ${Math.round(c.len * beats) / beats} bar${c.len === 1 ? '' : 's'}${loose ? (part.kind === 'auto' ? ' · its knob is gone, so this plays nothing' : ' · unused: nothing on the patch plays it, so this makes no sound · add it back from “unused” in the patcher’s add pane') : ''}`}
                   >
-                    <ClipSketch url={sketchFor(c.src)} bars={part.bars} ppb={ppb} into={into} laneH={LANE_H} full={part.kind === 'auto'} />
+                    <ClipSketch url={sketchFor(c.src)} bars={tile} ppb={ppb} into={sketchInto} laneH={LANE_H} full={part.kind === 'auto'} />
                     <span className="clip-name">{part.name}</span>
                     {loose && <span className="clip-loose" aria-label="not in the patch">?</span>}
                     {Array.from({ length: repeats }, (_, i) => (
@@ -1216,7 +1222,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
               ))}
               {ghost && ghost.lane >= 0 && (
                 <div className={`clip preview ghost ${LANE_H >= 30 ? 'roomy' : ''}`} style={{ left: ghost.start * ppb, top: ghost.lane * LANE_H + 3, width: ghost.len * ppb - 1, height: LANE_H - 6, '--clip': colorFor(ghost.src ?? '', song.colors), '--clip-ink': inkFor(colorFor(ghost.src ?? '', song.colors)) }}>
-                  <ClipSketch url={sketchFor(ghost.src)} bars={partBySrc.get(ghost.src)?.bars} ppb={ppb} into={0} laneH={LANE_H} />
+                  <ClipSketch url={sketchFor(ghost.src)} bars={sketchBars(ghost.src, partBySrc.get(ghost.src)?.bars)} ppb={ppb} into={0} laneH={LANE_H} />
                   <span className="clip-name">{partBySrc.get(ghost.src)?.name}</span>
                 </div>
               )}

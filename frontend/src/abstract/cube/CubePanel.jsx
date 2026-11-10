@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef } from 'react'
-import * as THREE from 'three'
 import { BANKS } from '../../project.js'
 import { MOVES, N, RINGS, STEP_OF, STICKERS, faces, inverse, isSolved, paint, scrambleMoves, twist } from './model.js'
 import './cube.css'
@@ -7,23 +6,26 @@ import './cube.css'
 // '' first: no sound of its own (play what's wired in)
 const SOUNDS = ['', 'bd', 'sd', 'hh', 'oh', 'cp', 'rim', 'lt', 'mt', 'ht', 'cr', 'rd', 'cb', 'sh', 'perc', 'tb']
 const ROW_NAMES = ['top', 'upper', 'lower', 'bottom']
-const AXES = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)]
 const C = (N - 1) / 2 // a cubie's index → its centre, centred on the cube
 
 // stickers: what's played is bright; the caps (not played) are the same, dimmed
-const INK = {
-  ring: [new THREE.Color('#2b2b2b'), new THREE.Color('#9c9c9c'), new THREE.Color('#f2f2f2')],
-  cap: [new THREE.Color('#222222'), new THREE.Color('#5a5a5a'), new THREE.Color('#8a8a8a')],
-}
-const PLAYHEAD = new THREE.Color('#e0a33c')
+const colours = (THREE) => ({
+  INK: {
+    ring: [new THREE.Color('#2b2b2b'), new THREE.Color('#9c9c9c'), new THREE.Color('#f2f2f2')],
+    cap: [new THREE.Color('#222222'), new THREE.Color('#5a5a5a'), new THREE.Color('#8a8a8a')],
+  },
+  PLAYHEAD: new THREE.Color('#e0a33c'),
+  AXES: [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)],
+})
 
 /**
  * The cube's window: the puzzle in 3D, and the four drums it plays underneath.
  * Drag a sticker to twist its layer, click one to paint it, drag the space around the cube
  * to turn it over. Everything shown follows the saved state, so an undo, a peer's twist or a
  * scramble animates the same way your own twist does.
+ * `THREE` is handed in (panels.js loads it on first open, so only cube users download it).
  */
-export default function CubePanel({ state, change, position, playing }) {
+export default function CubePanel({ THREE, state, change, position, playing }) {
   const host = useRef(null)
   const view = useRef(null) // the three.js side, made once
   const stateRef = useRef(state)
@@ -31,6 +33,7 @@ export default function CubePanel({ state, change, position, playing }) {
 
   useEffect(() => {
     const el = host.current
+    const { INK, PLAYHEAD, AXES } = colours(THREE)
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
     renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1))
     el.appendChild(renderer.domElement)

@@ -21,7 +21,7 @@ assert.equal(parts({ ...s, layers: s.layers.map((l) => ({ ...l, mute: true })) }
 const junk = normalize({ layers: [{ steps: 7, hits: 99, mode: 'weird', sound: 'bd"); x(' }], timing: 'sideways' })
 assert.equal(junk.layers[0].steps, 8); assert.ok(junk.layers[0].hits <= 8); assert.equal(junk.timing, 'drift')
 assert.ok(!junk.layers[0].sound.includes('"'))
-for (const l of roll(s).layers) { assert.ok([3, 5, 8, 13, 21].includes(l.steps)); assert.ok(l.hits < l.steps) }
+for (const l of roll(s).layers) { assert.ok([3, 5, 8, 13, 21, 34, 55].includes(l.steps)); assert.ok(l.hits < l.steps) }
 // as many layers as you like (to sixteen), each new one further along the Fibonacci numbers
 let many = normalize(null)
 assert.equal(many.layers.length, 4)
@@ -63,3 +63,22 @@ assert.match(made, /p_syn_held\.fmap\(.*\)\.struct\("\{t ~ ~ t/, 'and the loop f
 made = track([{ s: 0, l: 16, n: 48 }], [1])
 assert.match(made, /const p_syn_held = .*note\("c3@16"\)/, 'notes you drew are kept')
 console.log('fib held ok')
+
+// the timeline's sketch: in drift, every bar until the loops meet again (capped); in bar, one
+{
+  const { asPattern, normalize, roll, SKETCH_BARS } = await import('../src/abstract/fib/model.js')
+  const two = normalize({ layers: [{ mode: 'even', hits: 3, steps: 8 }, { mode: 'even', hits: 2, steps: 5 }] })
+  const p = asPattern(two)
+  assert.equal(p.bars, 5, '8 and 5 in sixteenths line up again after 5 bars')
+  assert.equal(p.channels[1].steps.length, 80)
+  assert.deepEqual(p.channels[1].steps.slice(16, 21), p.channels[1].steps.slice(1, 6), 'the 5-loop keeps sliding into bar two')
+  assert.equal(asPattern(normalize(null)).bars, SKETCH_BARS, 'loops that take ages to meet are capped')
+  assert.equal(asPattern({ ...two, timing: 'bar' }).bars, 1)
+  // roll reaches the long loops too
+  let r = 7
+  const rand = () => ((r = (r * 16807) % 2147483647) / 2147483647)
+  const seen = new Set()
+  for (let i = 0; i < 60; i++) for (const l of roll(two, rand).layers) seen.add(l.steps)
+  assert.ok(seen.has(34) && seen.has(55), 'roll picks 34 and 55')
+  console.log('fib sketch + roll ok')
+}

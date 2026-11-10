@@ -106,7 +106,8 @@ export function roll(state, rand = Math.random) {
   return {
     ...state,
     layers: state.layers.map((l) => {
-      const steps = any([3, 5, 8, 13, 21])
+      // the long loops come up less often: they take a while to come round
+      const steps = any([3, 5, 8, 13, 21, 3, 5, 8, 13, 21, 34, 55])
       const hits = any(FIB.filter((n) => n < steps))
       return { ...l, mode: rand() < 0.25 ? 'golden' : 'even', steps, hits, rotate: Math.floor(rand() * (steps + 8)) }
     }),
@@ -150,15 +151,26 @@ export function code(state) {
   return lines.length === 1 ? lines[0] : `stack(${lines.join(', ')})`
 }
 
-/** The first bar, as a drum pattern of sixteenths, for the timeline to sketch. */
+// the longest sketch a drift makes: past it, the timeline repeats it (loops of 5, 13 and
+// 21 only meet again after 1365 bars)
+export const SKETCH_BARS = 32
+const gcd = (a, b) => (b ? gcd(b, a % b) : a)
+
+/**
+ * What it plays, as a drum pattern of sixteenths for the timeline to sketch. In drift that's
+ * every bar until the loops line up again (up to SKETCH_BARS), so a clip shows them sliding.
+ */
 export function asPattern(state) {
+  const live = state.layers.filter((l) => !l.mute)
+  const period = state.timing === 'drift' ? live.reduce((a, l) => (a * l.steps) / gcd(a, l.steps), 16) : 16
+  const bars = Math.min(SKETCH_BARS, period / 16)
   return {
-    bars: 1,
+    bars,
     stepsPerBar: 16,
     channels: state.layers.map((l, i) => {
       const vals = layerSteps(l)
-      const at = (s) => (state.timing === 'drift' ? vals[s % vals.length] : vals[Math.floor((s * vals.length) / 16)])
-      return { id: `l${i}`, kind: 'drum', mute: l.mute, steps: Array.from({ length: 16 }, (_, s) => (at(s) ? 1 : 0)) }
+      const at = (s) => (state.timing === 'drift' ? vals[s % vals.length] : vals[Math.floor(((s % 16) * vals.length) / 16)])
+      return { id: `l${i}`, kind: 'drum', mute: l.mute, steps: Array.from({ length: bars * 16 }, (_, s) => (at(s) ? 1 : 0)) }
     }),
   }
 }
