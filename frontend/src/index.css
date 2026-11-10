@@ -1186,6 +1186,7 @@ button.chan-synth:hover span { color: var(--acid); }
 .abs-sketch-row i { height: 6px; background: var(--sunk); border-radius: 1px; }
 .abs-sketch-row i.on { background: var(--paper); }
 .abs-sketch-row.muted { opacity: 0.35; }
+.abs-inline { flex: 1; min-width: 48px; margin: 0 0.4rem; }
 .node-inputs { list-style: none; margin: 0 -0.6rem -0.6rem; padding: 0; border-top: 1px solid var(--line); }
 .slot { position: relative; display: flex; align-items: center; gap: 0.4rem; min-height: 2rem; padding: 0.3rem 0.5rem 0.3rem 0.9rem; border-bottom: 1px solid var(--line); }
 .slot:last-child { border-bottom: 0; }

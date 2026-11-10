@@ -7,7 +7,7 @@ import '@xyflow/react/dist/style.css'
 import { APPLY, BUS_NODES, CHANNEL_FADER, FX_CATS, FX_UNITS, GROUPS, NODE_TYPES, channelGain, defaultData, effectsByCat, inputKey, inputsOf, makeFxUnit, makesCycle, menuGroup } from './graph'
 import { ENGINES } from './instruments/index.js'
 import { openAbstract, openCode, openSynth } from './instruments/windows.js'
-import { abstractOf, abstractState } from './abstract/index.js'
+import { abstractOf, abstractParts, abstractState } from './abstract/index.js'
 import { INSTRUMENTS, INSTRUMENT_MIME, instrumentChannel, makePattern, newId } from './project'
 import { FRAME_BAR_H, collapseFrame, collapsedHosts, expandFrame, heldBy, removeFrame as dropFrame, rfSize, routeEdge } from './frames'
 import Knob, { formatValue } from './Knob.jsx'
@@ -193,6 +193,10 @@ function nodeTitle(node, project, from = 'out') {
     const pat = project.patterns.find((p) => p.id === node.data.patternId)
     const chan = pat?.channels.find((c) => `out-${c.id}` === from)
     if (chan) return `${pat.name} · ${chan.name}`
+  }
+  if (NODE_TYPES[node.type]?.abstract && String(from ?? '').startsWith('out-')) {
+    const part = abstractParts(node).find((p) => `out-${p.id}` === from)
+    if (part) return `${node.data?.name || NODE_TYPES[node.type].label} · ${part.name}`
   }
   if (node.data?.name) return node.data.name
   if (node.type === 'pattern') return project.patterns.find((p) => p.id === node.data.patternId)?.name ?? 'pattern'
@@ -476,11 +480,15 @@ function PeerLayer() {
  * window (double-clicking the node opens it too).
  */
 function AbstractFace({ node }) {
+  const ctx = useContext(Ctx)
   const def = abstractOf(node.type)
   const pattern = def?.asPattern?.(abstractState(node))
+  const parts = abstractParts(node)
+  const offMain = node.data?.offMain ?? {}
+  const heldBack = parts.filter((p) => offMain[p.id]).length
   return (
     <>
-      {pattern && (
+      {pattern && !parts.length && (
         <div className="abs-sketch" aria-hidden>
           {pattern.channels.map((c) => (
             <div key={c.id} className={`abs-sketch-row ${c.mute ? 'muted' : ''}`} style={{ gridTemplateColumns: `repeat(${c.steps.length}, 1fr)` }}>
@@ -488,6 +496,41 @@ function AbstractFace({ node }) {
             </div>
           ))}
         </div>
+      )}
+      {parts.length > 0 && (
+        // its sounds one by one, each with a port of its own, as a pattern's instruments have
+        <ul className="node-chans">
+          {parts.map((p, r) => {
+            const wired = ctx.project.edges.some((e) => e.source === node.id && e.sourceHandle === `out-${p.id}`)
+            const onMain = !offMain[p.id]
+            const steps = pattern?.channels[r]?.steps
+            return (
+              <li key={p.id} className={`chan ${p.expr ? '' : 'muted'} ${wired ? 'wired' : ''} ${onMain ? '' : 'held'}`}>
+                <span className="chan-name">{p.name}</span>
+                {steps && (
+                  <span className="abs-sketch-row abs-inline" aria-hidden style={{ gridTemplateColumns: `repeat(${steps.length}, 1fr)` }}>
+                    {steps.map((v, i) => <i key={i} className={v ? 'on' : ''} />)}
+                  </span>
+                )}
+                {wired && (
+                  <button
+                    className={`chan-main nodrag ${onMain ? 'on' : ''}`}
+                    aria-pressed={onMain}
+                    title={onMain
+                      ? `${p.name} plays out the main port as well as its own wire · click to take it off the main`
+                      : `${p.name} only leaves by its own wire · click to put it back on the main`}
+                    onClick={() => ctx.updateNode(node.id, (d) => { d.offMain = { ...(d.offMain ?? {}), [p.id]: onMain } })}
+                  >main</button>
+                )}
+                <Handle type="source" position={Position.Right} id={`out-${p.id}`} className={`port out chan-port ${wired ? '' : 'free'}`} title={`Wire ${p.name} somewhere of its own`} />
+              </li>
+            )
+          })}
+          <li className="chan mix">
+            <span className="chan-name">{heldBack > 0 ? 'rest' : 'all'}</span>
+            <Handle type="source" position={Position.Right} id="out" className="port out" title={heldBack > 0 ? 'Every layer except the ones held back' : 'Every layer'} />
+          </li>
+        </ul>
       )}
       <div className="node-actions nodrag">
         <button className="btn primary" onClick={() => openAbstract(node.id)} title="Open its window (or double-click the node)">open {def?.label}</button>
@@ -518,7 +561,7 @@ function StudioNode({ id, selected }) {
   const pattern = patternOf
   // with instruments listed down the side, the main out joins them as the last row rather
   // than floating at the node's middle, where it landed on top of one of them
-  const outInList = !!pattern && pattern.channels.length > 0
+  const outInList = (!!pattern && pattern.channels.length > 0) || abstractParts(node).length > 0
 
   // a part wears the same colour here as its clips do on the timeline
   const tint = spec.group === 'source' ? colorFor(nodeSrc(node, ctx.project), ctx.project.song?.colors) : null

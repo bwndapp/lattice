@@ -15,7 +15,7 @@
 
 import { parse } from 'acorn'
 import { STEREO_ORBIT_BASE, beginInserts, commitInserts, declareInsert, declareRoute } from './stereo'
-import { abstractNodeTypes, abstractOf, packState } from './abstract/index.js'
+import { abstractNodeTypes, abstractOf, abstractParts, packState } from './abstract/index.js'
 import { DELAY_DEFAULTS, DELAY_DIVISIONS, GLOBAL_DELAY, GLOBAL_REVERB, REVERB_DEFAULTS, beginFx, commitFx, declareFx } from './fxbus.js'
 
 const clampNum = (v, fallback, lo, hi) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : fallback)
@@ -814,7 +814,12 @@ export function normalizeGraph(raw, patterns) {
       const chan = Object.entries(n.data?.chan ?? {}).filter(([k, v]) => /^\w{1,64}:out(-[\w-]{1,40})?$/.test(k) && Number.isFinite(v))
       if (chan.length) data.chan = Object.fromEntries(chan.map(([k, v]) => [k, clampNum(v, 1, 0, 1.5)]))
     }
-    if (spec.abstract) data.state = packState(n.type, abstractOf(n.type).normalize(n.data?.state))
+    if (spec.abstract) {
+      data.state = packState(n.type, abstractOf(n.type).normalize(n.data?.state))
+      const ids = new Set(abstractParts({ type: n.type, data }).map((p) => p.id))
+      const off = Object.entries(n.data?.offMain ?? {}).filter(([k, v]) => v === true && ids.has(k))
+      if (off.length) data.offMain = Object.fromEntries(off)
+    }
     if (n.type === 'arrange') data.bars = Object.fromEntries(Object.entries(n.data?.bars ?? {}).filter(([k]) => /^in-\d+$/.test(k)).map(([k, v]) => [k, Math.round(clampNum(v, 4, 1, 64))]))
     if (n.type === 'output') {
       data.muted = Object.fromEntries(Object.entries(n.data?.muted ?? {}).filter(([, v]) => v === true))
@@ -837,8 +842,10 @@ export function normalizeGraph(raw, patterns) {
     if (Array.isArray(spec.inputs) && slotIndex(e.targetHandle) >= spec.inputs.length) continue
     // a wire can leave a pattern node by one instrument's port instead of its main out;
     // when that instrument is gone the wire goes with it
-    const chan = source.type === 'pattern' && /^out-[\w-]{1,40}$/.test(String(e?.sourceHandle)) ? e.sourceHandle.slice(4) : null
-    const known = chan && channelsIn(source.data.patternId)
+    const split = source.type === 'pattern' || NODE_TYPES[source.type]?.abstract
+    const chan = split && /^out-[\w-]{1,40}$/.test(String(e?.sourceHandle)) ? e.sourceHandle.slice(4) : null
+    // (an abstract instrument's parts are its own, so they're always known)
+    const known = chan && (source.type === 'pattern' ? channelsIn(source.data.patternId) : abstractParts(source))
     if (chan && known && !known.some((c) => c.id === chan)) continue
     const from = chan ? `out-${chan}` : 'out'
     // one wire per input slot, unless the node says that input takes as many as you give
@@ -926,12 +933,14 @@ export function graphCode(project, { solo = null, song = null, audition = false,
   const declare = (orbit, key, kind, params) => declareInsert(inserts, orbit, key, kind, params)
   const routeBus = (from, to, gain) => declareRoute(inserts, from, to, gain)
   const orbitOf = new Map() // node id → the bus its sound ends up on, when not the main one
+  const partVars = new Map() // `${node}:${part}` → an abstract instrument's part, wired out on its own
   const channelsOf = (pid) => project.patterns.find((p) => p.id === pid)?.channels ?? []
   /** What a wire carries: one instrument of a pattern, or everything the source node makes. */
   const carried = (w, name) => {
     const chan = outChannel(w.sourceHandle)
     if (!chan) return name
     const src = byId.get(w.source)
+    if (partVars.has(`${w.source}:${chan}`)) return partVars.get(`${w.source}:${chan}`)
     if (src?.type !== 'pattern' || !channelsOf(src.data.patternId).some((c) => c.id === chan)) return name
     return fromNode(patternChanVar(src.data.patternId, chan), src.id)
   }
@@ -978,6 +987,18 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     // `codeLabel` keeps a renamed node's comment as it was, so saved tracks make the same code
     lines.push(`// ${node.data.name ?? spec.codeLabel ?? spec.label}`, `const ${name} = ${expr}`)
     exprs.set(id, name)
+    // an abstract instrument's parts wired out on their own ports: a line each, under the
+    // same song as the whole, so the timeline mutes them together
+    if (spec.abstract) {
+      for (const part of abstractParts(node)) {
+        if (!edges.some((e) => e.source === id && outChannel(e.sourceHandle) === part.id)) continue
+        const raw = part.expr ?? 'silence'
+        const sung = songPart ? song(`node:${id}`, () => raw) : raw
+        const pv = `${name}_${part.id}`
+        lines.push(`const ${pv} = ${fromNode(sung, id)}`)
+        partVars.set(`${id}:${part.id}`, pv)
+      }
+    }
     return name
   }
 

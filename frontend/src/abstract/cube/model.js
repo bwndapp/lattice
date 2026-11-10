@@ -205,20 +205,27 @@ export const isSolved = (state) => !state.moves.length
 
 const GAIN = ['0', '0.7', '1']
 
+/**
+ * The cube as separate sounds, one per layer: { id, name, expr } with expr null when that
+ * layer plays nothing. Each is a port of its own on the patch node.
+ */
+export function parts(state) {
+  return rings(state).map((vals, r) => {
+    const row = state.rows[r]
+    const snd = soundToken(row.sound)
+    let expr = null
+    if (!row.mute && vals.some(Boolean)) {
+      expr = `s("${vals.map((v) => (v ? snd : '~')).join(' ')}")`
+      if (state.bank) expr += `.bank("${state.bank}")`
+      expr += `.gain("${vals.map((v) => GAIN[v]).join(' ')}")`
+    }
+    return { id: `r${r}`, name: snd, expr }
+  })
+}
+
 /** The cube as Strudel: a stack of one sixteen-step bar per layer. */
 export function code(state) {
-  const bars = rings(state)
-  const lines = []
-  bars.forEach((vals, r) => {
-    const row = state.rows[r]
-    if (row.mute || !vals.some(Boolean)) return
-    const snd = soundToken(row.sound)
-    const steps = vals.map((v) => (v ? snd : '~')).join(' ')
-    let line = `s("${steps}")`
-    if (state.bank) line += `.bank("${state.bank}")`
-    line += `.gain("${vals.map((v) => GAIN[v]).join(' ')}")`
-    lines.push(line)
-  })
+  const lines = parts(state).map((p) => p.expr).filter(Boolean)
   if (!lines.length) return 'silence'
   return lines.length === 1 ? lines[0] : `stack(${lines.join(', ')})`
 }

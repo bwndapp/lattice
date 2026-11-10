@@ -41,3 +41,34 @@ assert.ok(!normalize({ rows: [{ sound: 'bd"); evil(' }] }).rows[0].sound.include
 assert.match(code(start), /^stack\(s\("bd ~ ~ ~ bd/)
 assert.equal(code({ ...start, rows: start.rows.map((x) => ({ ...x, mute: true })) }), 'silence')
 console.log('cube ok')
+
+// ── on the patch: each layer has a port of its own, and "main" takes it off the main out ──
+const { bundle } = await import('./lib/bundle.mjs')
+const { graphCode, normalizeGraph } = await bundle({ 'graph.js': ['graphCode', 'normalizeGraph'] }, 'cube')
+const raw = {
+  nodes: [
+    { id: 'c', type: 'cube', data: {} },
+    { id: 'f', type: 'filter', data: {} },
+    { id: 'o', type: 'output', data: {} },
+  ],
+  edges: [
+    { source: 'c', sourceHandle: 'out', target: 'o', targetHandle: 'in-0' },
+    { source: 'c', sourceHandle: 'out-r1', target: 'f', targetHandle: 'in' },
+    { source: 'f', target: 'o', targetHandle: 'in-1' },
+    { source: 'c', sourceHandle: 'out-r9', target: 'o', targetHandle: 'in-2' }, // no such layer
+  ],
+}
+const g = normalizeGraph(raw, [])
+assert.equal(g.edges.length, 3, 'a port that isn\'t a layer is dropped')
+assert.ok(g.edges.some((e) => e.sourceHandle === 'out-r1'))
+let made = graphCode({ ...g, patterns: [], bpm: 120, beats: 4 }).lines?.join('\n') ?? String(graphCode({ ...g, patterns: [], bpm: 120, beats: 4 }))
+assert.match(made, /const n_c_r1 = s\("~ ~ ~ ~ sd/, 'the snare layer gets a line of its own')
+assert.match(made, /n_c_r1\.lpf|n_c_r1\)?\./, 'and that line is what the filter gets')
+// a copy until it's taken off the main
+const mainLine = (code) => code.split('\n').find((l) => l.startsWith('const n_c = '))
+assert.match(mainLine(made), /sd/)
+const held = normalizeGraph({ ...raw, nodes: raw.nodes.map((n) => (n.id === 'c' ? { ...n, data: { offMain: { r1: true, r7: true } } } : n)) }, [])
+assert.deepEqual(held.nodes[0].data.offMain, { r1: true })
+made = graphCode({ ...held, patterns: [], bpm: 120, beats: 4 }).lines?.join('\n') ?? String(graphCode({ ...held, patterns: [], bpm: 120, beats: 4 }))
+assert.doesNotMatch(mainLine(made), /sd/)
+console.log('cube ports ok')

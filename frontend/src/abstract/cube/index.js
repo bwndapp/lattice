@@ -1,4 +1,4 @@
-import { asPattern, code, normalize, pack } from './model.js'
+import { asPattern, code, normalize, pack, parts } from './model.js'
 
 /** The cube: a twisty-puzzle drum machine (see model.js; CubePanel.jsx is its window). */
 export default {
@@ -8,6 +8,7 @@ export default {
   normalize,
   pack,
   code,
+  parts,
   asPattern,
   width: 760,
 }

@@ -11,6 +11,9 @@ import cube from './cube/index.js'
  *   normalize(raw)       saved settings (anything) → complete state
  *   pack(state)          (optional) state → how it's saved in the track (compact)
  *   code(state)          state → a Strudel expression: what it plays, one cycle a bar
+ *   parts(state)         (optional) its separate sounds: [{ id, name, expr | null }]. Each
+ *                        gets a port of its own on the node, as a pattern's instruments do:
+ *                        wiring one is a copy, and "main" takes it off the main out
  *   asPattern(state)     (optional) state → a drum/synth pattern ({ bars, stepsPerBar,
  *                        channels }) for the timeline to sketch on its clips
  *   width                (optional) how wide its window opens, in CSS pixels
@@ -45,6 +48,22 @@ export function abstractNodeTypes() {
     inputs: 0,
     params: [],
     abstract: true,
-    code: (data) => d.code(d.normalize(data?.state)),
+    code: (data) => mainCode(d, data),
   }]))
+}
+
+/** What a node's main out plays: everything, less the parts taken off it. */
+function mainCode(def, data) {
+  const state = def.normalize(data?.state)
+  const off = Object.entries(data?.offMain ?? {}).filter(([, v]) => v === true).map(([k]) => k)
+  if (!def.parts || !off.length) return def.code(state)
+  const exprs = def.parts(state).filter((p) => p.expr && !off.includes(p.id)).map((p) => p.expr)
+  if (!exprs.length) return 'silence'
+  return exprs.length === 1 ? exprs[0] : `stack(${exprs.join(', ')})`
+}
+
+/** A node's separate sounds, or [] (see `parts` above). */
+export const abstractParts = (node) => {
+  const def = abstractOf(node?.type)
+  return def?.parts ? def.parts(def.normalize(node.data?.state)) : []
 }
