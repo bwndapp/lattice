@@ -3,7 +3,8 @@ import { BANKS } from '../../project.js'
 import { FIB, layerSteps, roll } from './model.js'
 import './fib.css'
 
-const SOUNDS = ['bd', 'sd', 'hh', 'oh', 'cp', 'rim', 'lt', 'mt', 'ht', 'cr', 'rd', 'cb', 'sh', 'perc', 'tb']
+// '' first: no sound of its own (play what's wired in)
+const SOUNDS = ['', 'bd', 'sd', 'hh', 'oh', 'cp', 'rim', 'lt', 'mt', 'ht', 'cr', 'rd', 'cb', 'sh', 'perc', 'tb']
 const STEPS = [2, 3, 5, 8, 13, 21]
 const RADII = [62, 95, 128, 161] // layer one innermost
 // each loop's colour, the same on its ring and its row
@@ -107,7 +108,7 @@ export default function FibPanel({ state, change, position, playing }) {
               <li key={i} className={`fib-layer ${l.mute ? 'muted' : ''}`} style={{ '--ink': INKS[i] }}>
                 <span className="fib-badge" aria-hidden>{i + 1}</span>
                 <select className="fib-sound" value={l.sound} onChange={(e) => setLayer(i, { sound: e.target.value })} aria-label={`Loop ${i + 1}'s sound`}>
-                  {(SOUNDS.includes(l.sound) ? SOUNDS : [l.sound, ...SOUNDS]).map((s) => <option key={s} value={s}>{s}</option>)}
+                  {(SOUNDS.includes(l.sound) ? SOUNDS : [l.sound, ...SOUNDS]).map((s) => <option key={s} value={s}>{s || '—'}</option>)}
                 </select>
                 <span className="fib-ratio">
                   {golden

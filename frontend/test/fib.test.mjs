@@ -4,7 +4,9 @@ import { evenRhythm, goldenRhythm, layerSteps, normalize, parts, roll } from '..
 
 assert.equal(evenRhythm(3, 8).join(''), '10010010', '3 in 8 is the tresillo')
 assert.equal(goldenRhythm(13).join(''), '1011010110110', 'the Fibonacci word')
-const s = normalize(null)
+assert.ok(parts(normalize(null)).every((p) => p.expr === null), 'a new machine has no sounds of its own')
+assert.ok(parts(normalize(null))[0].drive('x'), 'but its rhythm still drives what\'s wired in')
+const s = normalize({ layers: [{ sound: 'bd' }, { sound: 'sd' }, { sound: 'hh' }, { sound: 'rim' }] })
 assert.deepEqual(normalize(JSON.parse(JSON.stringify(s))), s)
 assert.equal(layerSteps(s.layers[0]).filter(Boolean).length, 3)
 assert.equal(layerSteps(s.layers[0])[0], 2, 'the loop\'s first hit is accented')

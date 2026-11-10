@@ -4,7 +4,8 @@ import { BANKS } from '../../project.js'
 import { MOVES, N, RINGS, STEP_OF, STICKERS, faces, inverse, isSolved, paint, scrambleMoves, twist } from './model.js'
 import './cube.css'
 
-const SOUNDS = ['bd', 'sd', 'hh', 'oh', 'cp', 'rim', 'lt', 'mt', 'ht', 'cr', 'rd', 'cb', 'sh', 'perc', 'tb']
+// '' first: no sound of its own (play what's wired in)
+const SOUNDS = ['', 'bd', 'sd', 'hh', 'oh', 'cp', 'rim', 'lt', 'mt', 'ht', 'cr', 'rd', 'cb', 'sh', 'perc', 'tb']
 const ROW_NAMES = ['top', 'upper', 'lower', 'bottom']
 const AXES = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)]
 const C = (N - 1) / 2 // a cubie's index → its centre, centred on the cube
@@ -265,7 +266,7 @@ export default function CubePanel({ state, change, position, playing }) {
             <li key={r} className={`cube-row ${state.rows[r].mute ? 'muted' : ''}`}>
               <span className="cube-row-name meta">{ROW_NAMES[r]}</span>
               <select className="select" value={state.rows[r].sound} onChange={(e) => setRow(r, { sound: e.target.value })} aria-label={`${ROW_NAMES[r]} layer's sound`}>
-                {(SOUNDS.includes(state.rows[r].sound) ? SOUNDS : [state.rows[r].sound, ...SOUNDS]).map((s) => <option key={s} value={s}>{s}</option>)}
+                {(SOUNDS.includes(state.rows[r].sound) ? SOUNDS : [state.rows[r].sound, ...SOUNDS]).map((s) => <option key={s} value={s}>{s || '—'}</option>)}
               </select>
               <button type="button" className={`led mute ${state.rows[r].mute ? 'on' : ''}`} aria-pressed={state.rows[r].mute} onClick={() => setRow(r, { mute: !state.rows[r].mute })} title="Mute this layer">m</button>
               <span className="cube-steps">

@@ -122,10 +122,10 @@ export function rings(state) {
 
 export const MAX_MOVES = 240
 const DEFAULT_ROWS = [
-  { sound: 'bd', mute: false },
-  { sound: 'sd', mute: false },
-  { sound: 'hh', mute: false },
-  { sound: 'rim', mute: false },
+  { sound: '', mute: false },
+  { sound: '', mute: false },
+  { sound: '', mute: false },
+  { sound: '', mute: false },
 ]
 
 /** A groove to start from, with a few spare hits on the caps for twists to bring down. */
@@ -142,7 +142,8 @@ function defaultPainted() {
   return p
 }
 
-const soundToken = (s) => String(s ?? '').replace(/[^\w:.#-]/g, '').slice(0, 40) || 'bd'
+// '' is no sound of its own: the layer only plays what's wired into it
+const soundToken = (s) => String(s ?? '').replace(/[^\w:.#-]/g, '').slice(0, 40)
 
 /** Anything → complete cube settings. */
 export function normalize(raw) {
@@ -215,7 +216,7 @@ export function parts(state) {
     const row = state.rows[r]
     const snd = soundToken(row.sound)
     let expr = null
-    if (!row.mute && vals.some(Boolean)) {
+    if (snd && !row.mute && vals.some(Boolean)) {
       expr = `s("${vals.map((v) => (v ? snd : '~')).join(' ')}")`
       if (state.bank) expr += `.bank("${state.bank}")`
       expr += `.gain("${vals.map((v) => GAIN[v]).join(' ')}")`
@@ -224,7 +225,7 @@ export function parts(state) {
     const struct = vals.map((v) => (v ? 't' : '~')).join(' ')
     const vel = vals.map((v) => VELOCITY[v]).join(' ')
     const drive = (x) => (row.mute || !vals.some(Boolean) ? null : `${x}.struct("${struct}").velocity("${vel}")`)
-    return { id: `r${r}`, name: snd, expr, drive }
+    return { id: `r${r}`, name: snd || 'no sound', expr, drive }
   })
 }
 

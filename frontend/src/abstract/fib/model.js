@@ -49,12 +49,13 @@ export function layerSteps(layer) {
 // ── settings ────────────────────────────────────────────────────────────────
 
 const DEFAULT_LAYERS = [
-  { mode: 'even', hits: 3, steps: 8, rotate: 0, sound: 'bd', mute: false },
-  { mode: 'even', hits: 2, steps: 5, rotate: 2, sound: 'sd', mute: false },
-  { mode: 'golden', hits: 8, steps: 13, rotate: 0, sound: 'hh', mute: false },
-  { mode: 'even', hits: 5, steps: 21, rotate: 3, sound: 'rim', mute: false },
+  { mode: 'even', hits: 3, steps: 8, rotate: 0, sound: '', mute: false },
+  { mode: 'even', hits: 2, steps: 5, rotate: 2, sound: '', mute: false },
+  { mode: 'golden', hits: 8, steps: 13, rotate: 0, sound: '', mute: false },
+  { mode: 'even', hits: 5, steps: 21, rotate: 3, sound: '', mute: false },
 ]
-const soundToken = (s) => String(s ?? '').replace(/[^\w:.#-]/g, '').slice(0, 40) || 'bd'
+// '' is no sound of its own: the layer only plays what's wired into it
+const soundToken = (s) => String(s ?? '').replace(/[^\w:.#-]/g, '').slice(0, 40)
 const pick = (v, list, d) => (list.includes(v) ? v : d)
 const int = (v, d, lo, hi) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Math.round(Number(v)))) : d)
 
@@ -108,7 +109,7 @@ export function parts(state) {
     const live = !l.mute && vals.some(Boolean)
     const snd = soundToken(l.sound)
     let expr = null
-    if (live) {
+    if (live && snd) {
       expr = `s("${seq(vals.map((v) => (v ? snd : '~')), state.timing)}")`
       if (state.bank) expr += `.bank("${state.bank}")`
       expr += `.gain("${seq(vals.map((v) => GAIN[v]), state.timing)}")`
@@ -117,7 +118,7 @@ export function parts(state) {
     const vel = seq(vals.map((v) => VELOCITY[v]), state.timing)
     return {
       id: `l${i}`,
-      name: snd,
+      name: snd || 'no sound',
       expr,
       drive: (x) => (live ? `${x}.struct("${struct}").velocity("${vel}")` : null),
     }

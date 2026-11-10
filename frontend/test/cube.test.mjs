@@ -2,7 +2,10 @@
 import assert from 'node:assert/strict'
 import { MOVES, RINGS, STICKERS, code, faces, inverse, normalize, pack, paint, rings, scrambleMoves, twist } from '../src/abstract/cube/model.js'
 
-const start = normalize(null)
+// a new cube has no sounds of its own: silent until you pick one or wire something in
+assert.equal(code(normalize(null)), 'silence')
+const KIT = [{ sound: 'bd' }, { sound: 'sd' }, { sound: 'hh' }, { sound: 'rim' }]
+const start = normalize({ rows: KIT })
 assert.equal(STICKERS.length, 96)
 assert.equal(new Set(RINGS.flat()).size, 64, 'four rings of sixteen, none shared')
 
@@ -47,7 +50,7 @@ const { bundle } = await import('./lib/bundle.mjs')
 const { graphCode, normalizeGraph } = await bundle({ 'graph.js': ['graphCode', 'normalizeGraph'] }, 'cube')
 const raw = {
   nodes: [
-    { id: 'c', type: 'cube', data: {} },
+    { id: 'c', type: 'cube', data: { state: { rows: KIT } } },
     { id: 'f', type: 'filter', data: {} },
     { id: 'o', type: 'output', data: {} },
   ],
@@ -67,7 +70,7 @@ assert.match(made, /n_c_r1\.lpf|n_c_r1\)?\./, 'and that line is what the filter 
 // a copy until it's taken off the main
 const mainLine = (code) => code.split('\n').find((l) => l.startsWith('const n_c = '))
 assert.match(mainLine(made), /sd/)
-const held = normalizeGraph({ ...raw, nodes: raw.nodes.map((n) => (n.id === 'c' ? { ...n, data: { offMain: { r1: true, r7: true } } } : n)) }, [])
+const held = normalizeGraph({ ...raw, nodes: raw.nodes.map((n) => (n.id === 'c' ? { ...n, data: { ...n.data, offMain: { r1: true, r7: true } } } : n)) }, [])
 assert.deepEqual(held.nodes[0].data.offMain, { r1: true })
 made = graphCode({ ...held, patterns: [], bpm: 120, beats: 4 }).lines?.join('\n') ?? String(graphCode({ ...held, patterns: [], bpm: 120, beats: 4 }))
 assert.doesNotMatch(mainLine(made), /sd/)
@@ -77,7 +80,7 @@ console.log('cube ports ok')
 const fedRaw = {
   nodes: [
     { id: 'm', type: 'notes', data: { mini: 'c3 e3', sound: 'sawtooth' } },
-    { id: 'c', type: 'cube', data: {} },
+    { id: 'c', type: 'cube', data: { state: { rows: KIT } } },
     { id: 'o', type: 'output', data: {} },
   ],
   edges: [
