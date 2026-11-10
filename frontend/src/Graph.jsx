@@ -552,7 +552,7 @@ function StudioNode({ id, selected }) {
   const wires = node ? inputsOf(ctx.project.edges, id) : []
   const patternOf = node?.type === 'pattern' && ctx.project.patterns.find((p) => p.id === node.data.patternId)
   // the ports move when inputs or instruments come and go, so react flow has to re-measure
-  const slotKey = `${wires.map((w) => w.targetHandle).join(',')}|${(patternOf ? patternOf.channels : []).map((c) => c.id).join(',')}`
+  const slotKey = `${wires.map((w) => w.targetHandle).join(',')}|${(patternOf ? patternOf.channels : []).map((c) => c.id).join(',')}|${node && NODE_TYPES[node.type]?.abstract ? abstractParts(node).length : ''}`
   useEffect(() => { updateInternals(id) }, [id, slotKey, updateInternals])
   if (!node || !spec) return null
 
@@ -704,7 +704,7 @@ function StudioNode({ id, selected }) {
 
         {Array.isArray(spec.inputs) && (
           <ul className="node-inputs named">
-            {spec.inputs.map((role, i) => {
+            {(spec.abstract ? spec.inputs.slice(0, abstractParts(node).length) : spec.inputs).map((role, i) => {
               const handle = `in-${i}`
               const on = wires.filter((w) => w.targetHandle === handle)
               const takesMany = spec.many?.includes(handle)

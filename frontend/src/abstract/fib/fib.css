@@ -1,5 +1,5 @@
 /* the Fibonacci machine's window: its loops as rings on the left, one tidy row each on the right */
-.fib-panel { display: grid; grid-template-columns: 310px 1fr; gap: 1rem; padding: 0.9rem; align-items: start; }
+.fib-panel { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 1rem; padding: 0.9rem; align-items: start; }
 .fib-stage { width: 100%; aspect-ratio: 1; background: var(--well); border-radius: 12px; box-shadow: var(--press, none); }
 .fib-spiral { fill: none; stroke: rgba(255, 255, 255, 0.06); stroke-width: 1.2; }
 .fib-track { fill: none; stroke: var(--ink); stroke-opacity: 0.14; stroke-width: 1; }
@@ -16,9 +16,9 @@
 .fib-toggle button { border: 0; border-radius: 9px; padding: 0.25rem 0.6rem; font: inherit; font-size: 12px; background: transparent; color: var(--muted); cursor: pointer; }
 .fib-toggle button.on { background: var(--raised); color: var(--paper); }
 
-.fib-layers { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.fib-layers { list-style: none; margin: 0; padding: 0 0.2rem 0 0; display: flex; flex-direction: column; gap: 0.5rem; max-height: 340px; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
 .fib-layer {
-  display: grid; grid-template-columns: 1.4rem minmax(2.6rem, 3.4rem) auto auto 3.4rem 1.5rem; justify-content: space-between; align-items: center; column-gap: 0.35rem; row-gap: 0.4rem;
+  display: grid; grid-template-columns: 1.4rem minmax(2.6rem, 3.4rem) auto auto 3.4rem 1.5rem 1rem; justify-content: space-between; align-items: center; column-gap: 0.35rem; row-gap: 0.4rem;
   padding: 0.55rem 0.6rem; border-radius: 10px; background: var(--panel); border-left: 3px solid var(--ink);
 }
 .fib-layer.muted { opacity: 0.5; }
@@ -37,9 +37,16 @@
 .fib-mode { border: 0; border-radius: 7px; padding: 0.2rem 0; font: inherit; font-size: 11px; background: var(--well); color: var(--muted); cursor: pointer; }
 .fib-mode.on { color: var(--ink); }
 .fib-layer .led { width: 1.5rem; }
-.fib-strip { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 3px; }
+.fib-strip { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 3px; min-width: 0; }
+.fib-strip.long i { width: 6px; height: 6px; }
 .fib-strip i { width: 9px; height: 9px; border-radius: 50%; background: #333; }
 .fib-strip i.v1 { background: var(--ink); opacity: 0.7; }
 .fib-strip i.v2 { background: var(--ink); }
 .fib-hint { margin: 0; line-height: 1.4; }
 @media (max-width: 760px) { .fib-panel { grid-template-columns: 1fr; } }
+.fib-remove { width: 1rem; height: 1.4rem; padding: 0; border: 0; background: transparent; color: var(--dim); font-size: 15px; cursor: pointer; }
+.fib-remove:hover:not(:disabled) { color: var(--danger); }
+.fib-remove:disabled { visibility: hidden; }
+.fib-add { align-self: flex-start; border: 1px dashed var(--line); border-radius: 10px; padding: 0.35rem 0.8rem; font: inherit; font-size: 12px; background: transparent; color: var(--muted); cursor: pointer; }
+.fib-add:hover:not(:disabled) { color: var(--paper); border-color: var(--muted); }
+.fib-add:disabled { opacity: 0.4; cursor: default; }

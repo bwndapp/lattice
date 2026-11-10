@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { BANKS } from '../../project.js'
-import { FIB, layerSteps, roll } from './model.js'
+import { FIB, MAX_LAYERS, addLayer, layerSteps, removeLayer, roll } from './model.js'
 import './fib.css'
 
 // '' first: no sound of its own (play what's wired in)
 const SOUNDS = ['', 'bd', 'sd', 'hh', 'oh', 'cp', 'rim', 'lt', 'mt', 'ht', 'cr', 'rd', 'cb', 'sh', 'perc', 'tb']
-const STEPS = [2, 3, 5, 8, 13, 21]
-const RADII = [62, 95, 128, 161] // layer one innermost
-// each loop's colour, the same on its ring and its row
-const INKS = ['#ffb347', '#86d8cc', '#c8a2ff', '#ff8fa3']
+const STEPS = [2, 3, 5, 8, 13, 21, 34, 55]
+// the rings share the space between these, layer one innermost, however many there are
+const INNER = 34
+const OUTER = 166
+const radius = (i, n) => INNER + ((OUTER - INNER) * (i + (n === 1 ? 1 : 0.5))) / Math.max(1, n === 1 ? 2 : n)
+// each loop's colour, the same on its ring and its row (round again past eight)
+const INKS = ['#ffb347', '#86d8cc', '#c8a2ff', '#ff8fa3', '#9fb4ff', '#b9c96a', '#ffd23f', '#5ad1ff']
+const inkOf = (i) => INKS[i % INKS.length]
 const PHI = (1 + Math.sqrt(5)) / 2
 
 /** A golden spiral, the faint ground the rings sit on: r grows by φ every quarter turn. */
@@ -51,7 +55,7 @@ export default function FibPanel({ state, change, position, playing }) {
         const step = st.timing === 'drift'
           ? Math.floor(p * 16 + 1e-6) % l.steps
           : Math.floor((((p % 1) + 1) % 1) * l.steps)
-        const [x, y] = at(RADII[i], step, l.steps)
+        const [x, y] = at(radius(i, st.layers.length), step, l.steps)
         el.setAttribute('cx', x.toFixed(1))
         el.setAttribute('cy', y.toFixed(1))
         el.style.opacity = l.mute ? '0.25' : '1'
@@ -76,16 +80,21 @@ export default function FibPanel({ state, change, position, playing }) {
     <div className="fib-panel">
       <svg className="fib-stage" viewBox="-180 -180 360 360" role="img" aria-label="The four loops as rings">
         <path d={SPIRAL} className="fib-spiral" />
-        {loops.map((vals, i) => (
-          <g key={i} className={`fib-ring ${state.layers[i].mute ? 'muted' : ''}`} style={{ '--ink': INKS[i] }}>
-            <circle r={RADII[i]} className="fib-track" />
-            {vals.map((v, s) => {
-              const [x, y] = at(RADII[i], s, vals.length)
-              return <circle key={s} cx={x} cy={y} r={v === 2 ? 6.5 : v ? 5 : 2} className={`fib-dot v${v}`} />
-            })}
-            <circle ref={(el) => { heads.current[i] = el }} r={10} className="fib-head" style={{ opacity: 0 }} />
-          </g>
-        ))}
+        {loops.map((vals, i) => {
+          const r = radius(i, loops.length)
+          // dots shrink as rings crowd in, and as a ring fills up with steps
+          const k = Math.min(1, Math.sqrt(4 / loops.length), (2 * Math.PI * r) / vals.length / 13)
+          return (
+            <g key={i} className={`fib-ring ${state.layers[i].mute ? 'muted' : ''}`} style={{ '--ink': inkOf(i) }}>
+              <circle r={r} className="fib-track" />
+              {vals.map((v, s) => {
+                const [x, y] = at(r, s, vals.length)
+                return <circle key={s} cx={x} cy={y} r={(v === 2 ? 6.5 : v ? 5 : 2) * k} className={`fib-dot v${v}`} />
+              })}
+              <circle ref={(el) => { heads.current[i] = el }} r={10 * k} className="fib-head" style={{ opacity: 0 }} />
+            </g>
+          )
+        })}
       </svg>
 
       <div className="fib-side">
@@ -105,7 +114,7 @@ export default function FibPanel({ state, change, position, playing }) {
           {state.layers.map((l, i) => {
             const golden = l.mode === 'golden'
             return (
-              <li key={i} className={`fib-layer ${l.mute ? 'muted' : ''}`} style={{ '--ink': INKS[i] }}>
+              <li key={i} className={`fib-layer ${l.mute ? 'muted' : ''}`} style={{ '--ink': inkOf(i) }}>
                 <span className="fib-badge" aria-hidden>{i + 1}</span>
                 <select className="fib-sound" value={l.sound} onChange={(e) => setLayer(i, { sound: e.target.value })} aria-label={`Loop ${i + 1}'s sound`}>
                   {(SOUNDS.includes(l.sound) ? SOUNDS : [l.sound, ...SOUNDS]).map((s) => <option key={s} value={s}>{s || '—'}</option>)}
@@ -124,13 +133,15 @@ export default function FibPanel({ state, change, position, playing }) {
                 </span>
                 <button type="button" className={`fib-mode ${golden ? 'on' : ''}`} onClick={() => setLayer(i, { mode: golden ? 'even' : 'golden' })} title={golden ? 'Golden: a window onto the Fibonacci word · click for even' : 'Even: hits spread as evenly as they go · click for golden'}>{golden ? 'golden' : 'even'}</button>
                 <button type="button" className={`led mute ${l.mute ? 'on' : ''}`} aria-pressed={l.mute} onClick={() => setLayer(i, { mute: !l.mute })} title="Mute this loop">m</button>
-                <span className="fib-strip" aria-hidden>
+                <button type="button" className="fib-remove" disabled={state.layers.length <= 1} onClick={() => change((st) => removeLayer(st, i), { removed: i })} title="Remove this loop (and its wires)" aria-label={`Remove loop ${i + 1}`}>×</button>
+                <span className={`fib-strip ${loops[i].length > 21 ? 'long' : ''}`} aria-hidden>
                   {loops[i].map((v, s) => <i key={s} className={`v${v}`} />)}
                 </span>
               </li>
             )
           })}
         </ol>
+        <button type="button" className="fib-add" disabled={state.layers.length >= MAX_LAYERS} onClick={() => change(addLayer)} title="Another loop, one step further along the Fibonacci numbers">+ layer</button>
         <p className="fib-hint meta">Wire Syrup or a melody into a loop's input on the node to play it on that loop's rhythm.</p>
       </div>
     </div>

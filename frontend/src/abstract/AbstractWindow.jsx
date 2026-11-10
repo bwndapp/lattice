@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { closeSynth, raiseSynth } from '../instruments/windows.js'
-import { abstractOf, packState } from './index.js'
+import { abstractOf, abstractParts, packState } from './index.js'
 import { PANELS } from './panels.js'
 import '../instruments/SynthWindow.css'
 
@@ -62,10 +62,35 @@ export default function AbstractWindow({ window: win, project, order, front, onU
 
   if (!def) return null
   const state = def.normalize(node.data?.state)
-  const change = (fn) => onUpdateProject((p) => {
+  // `removed`: the index of a layer that's going, so the wires on later layers move up one
+  // and the ones on it go with it
+  const change = (fn, { removed = null } = {}) => onUpdateProject((p) => {
     const n = p.nodes.find((x) => x.id === win.nodeId)
     if (!n) return
+    const before = abstractParts(n).map((x) => x.id)
     n.data = { ...n.data, state: packState(n.type, fn(def.normalize(n.data?.state))) }
+    if (removed == null) return
+    const after = abstractParts(n).map((x) => x.id)
+    const moved = (k) => (k === removed ? null : k > removed ? k - 1 : k)
+    const portOf = (id) => { const k = before.indexOf(id); const m = k < 0 ? k : moved(k); return m == null ? null : m < 0 ? id : after[m] }
+    p.edges = p.edges.flatMap((e) => {
+      if (e.target === n.id && /^in-\d+$/.test(e.targetHandle ?? '')) {
+        const m = moved(Number(e.targetHandle.slice(3)))
+        if (m == null) return []
+        e = { ...e, targetHandle: `in-${m}` }
+      }
+      if (e.source === n.id && String(e.sourceHandle ?? '').startsWith('out-')) {
+        const id = portOf(e.sourceHandle.slice(4))
+        if (id == null) return []
+        e = { ...e, sourceHandle: `out-${id}` }
+      }
+      // its id says which ports it joins (as graph.js names them), so it moves with them
+      const from = e.sourceHandle ?? 'out'
+      return [{ ...e, id: `e_${e.source}_${from === 'out' ? '' : `${from.slice(4)}_`}${e.target}_${String(e.targetHandle ?? 'in').replace('-', '')}` }]
+    })
+    if (n.data.offMain) {
+      n.data.offMain = Object.fromEntries(Object.entries(n.data.offMain).map(([id, v]) => [portOf(id), v]).filter(([id]) => id != null))
+    }
   })
   const Panel = PANELS[def.type] ? panelFor(def) : () => <p className="meta" style={{ padding: '1rem' }}>no window yet</p>
   const name = node.data?.name || def.label

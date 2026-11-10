@@ -1,6 +1,6 @@
 // node frontend/test/fib.test.mjs — the Fibonacci machine: its rhythms, its drift, and a sound played on a loop
 import assert from 'node:assert/strict'
-import { evenRhythm, goldenRhythm, layerSteps, normalize, parts, roll } from '../src/abstract/fib/model.js'
+import { MAX_LAYERS, addLayer, evenRhythm, goldenRhythm, layerSteps, normalize, parts, removeLayer, roll } from '../src/abstract/fib/model.js'
 
 assert.equal(evenRhythm(3, 8).join(''), '10010010', '3 in 8 is the tresillo')
 assert.equal(goldenRhythm(13).join(''), '1011010110110', 'the Fibonacci word')
@@ -22,6 +22,17 @@ const junk = normalize({ layers: [{ steps: 7, hits: 99, mode: 'weird', sound: 'b
 assert.equal(junk.layers[0].steps, 8); assert.ok(junk.layers[0].hits <= 8); assert.equal(junk.timing, 'drift')
 assert.ok(!junk.layers[0].sound.includes('"'))
 for (const l of roll(s).layers) { assert.ok([3, 5, 8, 13, 21].includes(l.steps)); assert.ok(l.hits < l.steps) }
+// as many layers as you like (to sixteen), each new one further along the Fibonacci numbers
+let many = normalize(null)
+assert.equal(many.layers.length, 4)
+many = addLayer(many)
+assert.deepEqual([many.layers[4].hits, many.layers[4].steps], [21, 34], 'after 5 in 21 comes 21 in 34')
+for (let i = 0; i < 40; i++) many = addLayer(many)
+assert.equal(many.layers.length, MAX_LAYERS)
+assert.equal(normalize(JSON.parse(JSON.stringify(many))).layers.length, MAX_LAYERS, 'they save')
+assert.equal(parts(many).length, MAX_LAYERS)
+assert.equal(removeLayer(many, 3).layers[3].steps, many.layers[4].steps, 'removing one moves the rest up')
+assert.equal(removeLayer(normalize({ layers: [{}] }), 0).layers.length, 1, 'never fewer than one')
 console.log('fib ok')
 
 // ── an instrument wired straight into a layer is fired by every hit, notes or not ──

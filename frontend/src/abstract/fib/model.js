@@ -14,8 +14,8 @@
  * Pure functions, no UI: FibPanel.jsx draws this, the patch plays it.
  */
 
-export const FIB = [1, 2, 3, 5, 8, 13, 21]
-export const LAYERS = 4
+export const FIB = [1, 2, 3, 5, 8, 13, 21, 34, 55]
+export const MAX_LAYERS = 16
 export const MODES = ['even', 'golden']
 export const TIMINGS = ['drift', 'bar']
 const PHI = (1 + Math.sqrt(5)) / 2
@@ -59,21 +59,40 @@ const soundToken = (s) => String(s ?? '').replace(/[^\w:.#-]/g, '').slice(0, 40)
 const pick = (v, list, d) => (list.includes(v) ? v : d)
 const int = (v, d, lo, hi) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Math.round(Number(v)))) : d)
 
-/** Anything → complete settings. */
+function cleanLayer(l = {}, d) {
+  const steps = pick(Number(l.steps), FIB.filter((n) => n >= 2), d.steps)
+  return {
+    mode: pick(l.mode, MODES, d.mode),
+    steps,
+    hits: Math.min(steps, pick(Number(l.hits), FIB, d.hits)),
+    rotate: int(l.rotate, d.rotate, 0, 999),
+    sound: soundToken(l.sound ?? d.sound),
+    mute: l.mute === true,
+  }
+}
+
+/**
+ * The layer that comes after `layers`: one step further along the Fibonacci numbers than
+ * the last, with the number before it as its hits — 13 → 8 in 21, 21 → 13 in 34 — and
+ * wrapping back down to short loops past 55, so a stack keeps finding new lengths.
+ */
+export function nextLayer(layers) {
+  const last = layers[layers.length - 1]
+  const long = FIB.filter((n) => n >= 3)
+  const at = last ? long.indexOf(last.steps) : -1
+  const steps = at >= 0 && at < long.length - 1 ? long[at + 1] : long[0]
+  const hits = FIB[Math.max(0, FIB.indexOf(steps) - 1)]
+  return { mode: 'even', hits, steps, rotate: layers.length % 4, sound: '', mute: false }
+}
+
+export const addLayer = (state) => (state.layers.length >= MAX_LAYERS ? state : { ...state, layers: [...state.layers, nextLayer(state.layers)] })
+export const removeLayer = (state, i) => (state.layers.length <= 1 ? state : { ...state, layers: state.layers.filter((_, k) => k !== i) })
+
+/** Anything → complete settings. A new machine has four layers; you can add up to sixteen. */
 export function normalize(raw) {
   const r = raw && typeof raw === 'object' ? raw : {}
-  const layers = DEFAULT_LAYERS.map((d, i) => {
-    const l = r.layers?.[i] ?? {}
-    const steps = pick(Number(l.steps), FIB.filter((n) => n >= 2), d.steps)
-    return {
-      mode: pick(l.mode, MODES, d.mode),
-      steps,
-      hits: Math.min(steps, pick(Number(l.hits), FIB, d.hits)),
-      rotate: int(l.rotate, d.rotate, 0, 999),
-      sound: soundToken(l.sound ?? d.sound),
-      mute: l.mute === true,
-    }
-  })
+  const given = Array.isArray(r.layers) && r.layers.length ? r.layers.slice(0, MAX_LAYERS) : DEFAULT_LAYERS
+  const layers = given.map((l, i) => cleanLayer(l, DEFAULT_LAYERS[i] ?? nextLayer(given.slice(0, i))))
   return {
     layers,
     timing: pick(r.timing, TIMINGS, 'drift'),
