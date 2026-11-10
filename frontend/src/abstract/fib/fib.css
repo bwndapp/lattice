@@ -1,27 +1,45 @@
-/* the Fibonacci machine's window: its loops as rings on the left, their controls on the right */
-.fib-panel { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(360px, 1.2fr); gap: 0.9rem; padding: 0.8rem; }
-.fib-stage { width: 100%; aspect-ratio: 1; background: var(--well); border-radius: 10px; }
-.fib-spiral { fill: none; stroke: rgba(255, 255, 255, 0.07); stroke-width: 1.2; }
-.fib-track { fill: none; stroke: rgba(255, 255, 255, 0.06); stroke-width: 1; }
+/* the Fibonacci machine's window: its loops as rings on the left, one tidy row each on the right */
+.fib-panel { display: grid; grid-template-columns: 310px 1fr; gap: 1rem; padding: 0.9rem; align-items: start; }
+.fib-stage { width: 100%; aspect-ratio: 1; background: var(--well); border-radius: 12px; box-shadow: var(--press, none); }
+.fib-spiral { fill: none; stroke: rgba(255, 255, 255, 0.06); stroke-width: 1.2; }
+.fib-track { fill: none; stroke: var(--ink); stroke-opacity: 0.14; stroke-width: 1; }
 .fib-dot { fill: #3a3a3a; }
-.fib-dot.v1 { fill: #9c9c9c; }
-.fib-dot.v2 { fill: #f2f2f2; }
-.fib-ring.muted { opacity: 0.3; }
-.fib-head { fill: none; stroke: #e0a33c; stroke-width: 2; transition: opacity 0.2s; }
-.fib-side { display: flex; flex-direction: column; gap: 0.7rem; min-width: 0; }
-.fib-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
-.fib-kit { display: flex; align-items: center; gap: 0.4rem; margin-left: auto; }
-.fib-layers { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
-.fib-layer { display: flex; flex-direction: column; gap: 0.3rem; }
-.fib-layer.muted .fib-strip { opacity: 0.35; }
-.fib-layer-top { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }
-.fib-layer-top .select { padding: 0.2rem 0.35rem; font-size: 12px; }
-.fib-rot { display: inline-flex; align-items: center; gap: 0.2rem; font-size: 12px; }
-.fib-rot button { width: 1.4rem; height: 1.4rem; padding: 0; border: 0; border-radius: 6px; background: var(--raised); color: var(--paper); cursor: pointer; }
-.fib-rot span { min-width: 1.4rem; text-align: center; font-variant-numeric: tabular-nums; }
-.fib-strip { display: grid; gap: 2px; }
-.fib-strip i { height: 10px; border-radius: 2px; background: var(--sunk); }
-.fib-strip i.v1 { background: #8f8f8f; }
-.fib-strip i.v2 { background: #f2f2f2; }
+.fib-dot.v1 { fill: var(--ink); fill-opacity: 0.7; }
+.fib-dot.v2 { fill: var(--ink); }
+.fib-ring.muted { opacity: 0.25; }
+.fib-head { fill: none; stroke: var(--ink); stroke-width: 2; transition: opacity 0.2s; }
+
+.fib-side { display: flex; flex-direction: column; gap: 0.8rem; min-width: 0; }
+.fib-actions { display: flex; align-items: center; gap: 0.5rem; }
+.fib-kit { margin-left: auto; max-width: 11rem; padding: 0.3rem 0.5rem; font-size: 12px; }
+.fib-toggle { display: inline-flex; padding: 3px; gap: 2px; border-radius: 12px; background: var(--well); }
+.fib-toggle button { border: 0; border-radius: 9px; padding: 0.25rem 0.6rem; font: inherit; font-size: 12px; background: transparent; color: var(--muted); cursor: pointer; }
+.fib-toggle button.on { background: var(--raised); color: var(--paper); }
+
+.fib-layers { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.fib-layer {
+  display: grid; grid-template-columns: 1.4rem minmax(2.6rem, 3.4rem) auto auto 3.4rem 1.5rem; justify-content: space-between; align-items: center; column-gap: 0.35rem; row-gap: 0.4rem;
+  padding: 0.55rem 0.6rem; border-radius: 10px; background: var(--panel); border-left: 3px solid var(--ink);
+}
+.fib-layer.muted { opacity: 0.5; }
+.fib-badge { width: 1.4rem; height: 1.4rem; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; background: var(--ink); color: #1a1a1a; }
+.fib-sound { appearance: none; -webkit-appearance: none; text-decoration: underline dotted rgba(255,255,255,0.25); text-underline-offset: 3px; font: inherit; font-size: 13px; font-weight: 600; color: var(--paper); background: transparent; border: 0; padding: 0; cursor: pointer; min-width: 0; }
+.fib-ratio { display: inline-flex; align-items: center; gap: 0.3rem; }
+.fib-in { font-size: 11px; color: var(--muted); }
+.fib-word { font-size: 17px; width: 3.2rem; text-align: center; color: var(--ink); }
+.fib-cycle { display: inline-flex; align-items: center; border-radius: 8px; background: var(--well); }
+.fib-cycle b { min-width: 1.5rem; text-align: center; font-size: 14px; font-variant-numeric: tabular-nums; color: var(--paper); }
+.fib-cycle button, .fib-rot button { width: 1.1rem; height: 1.6rem; padding: 0; border: 0; background: transparent; color: var(--muted); font-size: 14px; cursor: pointer; }
+.fib-cycle button:hover:not(:disabled), .fib-rot button:hover { color: var(--paper); }
+.fib-cycle button:disabled { opacity: 0.25; cursor: default; }
+.fib-rot { display: inline-flex; align-items: center; font-size: 12px; color: var(--muted); }
+.fib-rot span { min-width: 2.4rem; text-align: center; font-variant-numeric: tabular-nums; }
+.fib-mode { border: 0; border-radius: 7px; padding: 0.2rem 0; font: inherit; font-size: 11px; background: var(--well); color: var(--muted); cursor: pointer; }
+.fib-mode.on { color: var(--ink); }
+.fib-layer .led { width: 1.5rem; }
+.fib-strip { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 3px; }
+.fib-strip i { width: 9px; height: 9px; border-radius: 50%; background: #333; }
+.fib-strip i.v1 { background: var(--ink); opacity: 0.7; }
+.fib-strip i.v2 { background: var(--ink); }
 .fib-hint { margin: 0; line-height: 1.4; }
 @media (max-width: 760px) { .fib-panel { grid-template-columns: 1fr; } }

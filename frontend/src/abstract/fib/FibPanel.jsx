@@ -5,7 +5,9 @@ import './fib.css'
 
 const SOUNDS = ['bd', 'sd', 'hh', 'oh', 'cp', 'rim', 'lt', 'mt', 'ht', 'cr', 'rd', 'cb', 'sh', 'perc', 'tb']
 const STEPS = [2, 3, 5, 8, 13, 21]
-const RADII = [58, 92, 126, 160] // layer one innermost
+const RADII = [62, 95, 128, 161] // layer one innermost
+// each loop's colour, the same on its ring and its row
+const INKS = ['#ffb347', '#86d8cc', '#c8a2ff', '#ff8fa3']
 const PHI = (1 + Math.sqrt(5)) / 2
 
 /** A golden spiral, the faint ground the rings sit on: r grows by φ every quarter turn. */
@@ -74,13 +76,13 @@ export default function FibPanel({ state, change, position, playing }) {
       <svg className="fib-stage" viewBox="-180 -180 360 360" role="img" aria-label="The four loops as rings">
         <path d={SPIRAL} className="fib-spiral" />
         {loops.map((vals, i) => (
-          <g key={i} className={`fib-ring ${state.layers[i].mute ? 'muted' : ''}`}>
+          <g key={i} className={`fib-ring ${state.layers[i].mute ? 'muted' : ''}`} style={{ '--ink': INKS[i] }}>
             <circle r={RADII[i]} className="fib-track" />
             {vals.map((v, s) => {
               const [x, y] = at(RADII[i], s, vals.length)
-              return <circle key={s} cx={x} cy={y} r={v === 2 ? 6.5 : v ? 5 : 2.2} className={`fib-dot v${v}`} />
+              return <circle key={s} cx={x} cy={y} r={v === 2 ? 6.5 : v ? 5 : 2} className={`fib-dot v${v}`} />
             })}
-            <circle ref={(el) => { heads.current[i] = el }} r={9} className="fib-head" style={{ opacity: 0 }} />
+            <circle ref={(el) => { heads.current[i] = el }} r={10} className="fib-head" style={{ opacity: 0 }} />
           </g>
         ))}
       </svg>
@@ -88,52 +90,61 @@ export default function FibPanel({ state, change, position, playing }) {
       <div className="fib-side">
         <div className="fib-actions">
           <button type="button" className="btn primary" onClick={() => change((st) => roll(st))} title="Roll every loop: new Fibonacci lengths, hits and rotations">roll</button>
-          <span className="seg" role="group" aria-label="Timing">
-            <button type="button" className={`btn ${state.timing === 'drift' ? 'on' : ''}`} aria-pressed={state.timing === 'drift'} onClick={() => change((st) => ({ ...st, timing: 'drift' }))} title="Every loop in sixteenths: loops of different lengths drift apart and meet again">drift</button>
-            <button type="button" className={`btn ${state.timing === 'bar' ? 'on' : ''}`} aria-pressed={state.timing === 'bar'} onClick={() => change((st) => ({ ...st, timing: 'bar' }))} title="Each loop squeezed into one bar: 5 steps become quintuplets">bar</button>
+          <span className="fib-toggle" role="group" aria-label="Timing">
+            {[['drift', 'Every loop in sixteenths: loops of different lengths drift apart and meet again'], ['bar', 'Each loop squeezed into one bar: 5 steps become quintuplets']].map(([t, tip]) => (
+              <button key={t} type="button" className={state.timing === t ? 'on' : ''} aria-pressed={state.timing === t} onClick={() => change((st) => ({ ...st, timing: t }))} title={tip}>{t}</button>
+            ))}
           </span>
-          <label className="fib-kit">
-            <span className="meta">kit</span>
-            <select className="select" value={state.bank} onChange={(e) => change((st) => ({ ...st, bank: e.target.value }))}>
-              {(BANKS.includes(state.bank) ? BANKS : [state.bank, ...BANKS]).map((b) => <option key={b} value={b}>{b || 'default sounds'}</option>)}
-            </select>
-          </label>
+          <select className="select fib-kit" value={state.bank} onChange={(e) => change((st) => ({ ...st, bank: e.target.value }))} aria-label="Drum kit" title="Drum kit">
+            {(BANKS.includes(state.bank) ? BANKS : [state.bank, ...BANKS]).map((b) => <option key={b} value={b}>{b || 'default sounds'}</option>)}
+          </select>
         </div>
 
         <ol className="fib-layers">
-          {state.layers.map((l, i) => (
-            <li key={i} className={`fib-layer ${l.mute ? 'muted' : ''}`}>
-              <div className="fib-layer-top">
-                <select className="select" value={l.sound} onChange={(e) => setLayer(i, { sound: e.target.value })} aria-label={`Loop ${i + 1}'s sound`}>
+          {state.layers.map((l, i) => {
+            const golden = l.mode === 'golden'
+            return (
+              <li key={i} className={`fib-layer ${l.mute ? 'muted' : ''}`} style={{ '--ink': INKS[i] }}>
+                <span className="fib-badge" aria-hidden>{i + 1}</span>
+                <select className="fib-sound" value={l.sound} onChange={(e) => setLayer(i, { sound: e.target.value })} aria-label={`Loop ${i + 1}'s sound`}>
                   {(SOUNDS.includes(l.sound) ? SOUNDS : [l.sound, ...SOUNDS]).map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
-                <select className="select" value={l.mode} onChange={(e) => setLayer(i, { mode: e.target.value })} aria-label="How the hits are spread" title="even: hits spread as evenly as they go · golden: a window onto the Fibonacci word">
-                  <option value="even">even</option>
-                  <option value="golden">golden</option>
-                </select>
-                {l.mode === 'even' && (
-                  <select className="select" value={l.hits} onChange={(e) => setLayer(i, { hits: Number(e.target.value) })} aria-label="Hits">
-                    {FIB.filter((n) => n <= l.steps).map((n) => <option key={n} value={n}>{n} hit{n === 1 ? '' : 's'}</option>)}
-                  </select>
-                )}
-                <select className="select" value={l.steps} onChange={(e) => setLayer(i, { steps: Number(e.target.value) })} aria-label="Loop length">
-                  {STEPS.map((n) => <option key={n} value={n}>in {n}</option>)}
-                </select>
-                <span className="fib-rot" title={l.mode === 'golden' ? 'Slide the window along the Fibonacci word' : 'Turn the loop round'}>
-                  <button type="button" onClick={() => setLayer(i, { rotate: Math.max(0, l.rotate - 1) })} aria-label="Rotate back">−</button>
-                  <span>{l.rotate}</span>
-                  <button type="button" onClick={() => setLayer(i, { rotate: l.rotate + 1 })} aria-label="Rotate on">+</button>
+                <span className="fib-ratio">
+                  {golden
+                    ? <span className="fib-word" title="Hits from the Fibonacci word">φ</span>
+                    : <Cycle list={FIB.filter((n) => n <= l.steps)} value={l.hits} onChange={(v) => setLayer(i, { hits: v })} label="hits" />}
+                  <span className="fib-in">in</span>
+                  <Cycle list={STEPS} value={l.steps} onChange={(v) => setLayer(i, { steps: v })} label="steps" />
                 </span>
+                <span className="fib-rot" title={golden ? 'Slide the window along the Fibonacci word' : 'Turn the loop round'}>
+                  <button type="button" onClick={() => setLayer(i, { rotate: Math.max(0, l.rotate - 1) })} aria-label="Rotate back">‹</button>
+                  <span>rot {l.rotate}</span>
+                  <button type="button" onClick={() => setLayer(i, { rotate: l.rotate + 1 })} aria-label="Rotate on">›</button>
+                </span>
+                <button type="button" className={`fib-mode ${golden ? 'on' : ''}`} onClick={() => setLayer(i, { mode: golden ? 'even' : 'golden' })} title={golden ? 'Golden: a window onto the Fibonacci word · click for even' : 'Even: hits spread as evenly as they go · click for golden'}>{golden ? 'golden' : 'even'}</button>
                 <button type="button" className={`led mute ${l.mute ? 'on' : ''}`} aria-pressed={l.mute} onClick={() => setLayer(i, { mute: !l.mute })} title="Mute this loop">m</button>
-              </div>
-              <span className="fib-strip" style={{ gridTemplateColumns: `repeat(${loops[i].length}, 1fr)` }} aria-hidden>
-                {loops[i].map((v, s) => <i key={s} className={`v${v}`} />)}
-              </span>
-            </li>
-          ))}
+                <span className="fib-strip" aria-hidden>
+                  {loops[i].map((v, s) => <i key={s} className={`v${v}`} />)}
+                </span>
+              </li>
+            )
+          })}
         </ol>
-        <p className="fib-hint meta">Wire a sound (Syrup, a melody…) into a loop's input on the node and it plays on that loop's rhythm.</p>
+        <p className="fib-hint meta">Wire Syrup or a melody into a loop's input on the node to play it on that loop's rhythm.</p>
       </div>
     </div>
+  )
+}
+
+/** A number you step through a list of: click the arrows, or scroll over it. */
+function Cycle({ list, value, onChange, label }) {
+  const i = Math.max(0, list.indexOf(value))
+  const go = (d) => onChange(list[Math.min(list.length - 1, Math.max(0, i + d))])
+  return (
+    <span className="fib-cycle" onWheel={(e) => go(e.deltaY < 0 ? 1 : -1)} title={`${label}: scroll or click the arrows`}>
+      <button type="button" disabled={i <= 0} onClick={() => go(-1)} aria-label={`Fewer ${label}`}>‹</button>
+      <b>{value}</b>
+      <button type="button" disabled={i >= list.length - 1} onClick={() => go(1)} aria-label={`More ${label}`}>›</button>
+    </span>
   )
 }
