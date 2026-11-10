@@ -108,6 +108,27 @@ export function makeChannel(kind = 'drum', patch = {}) {
   return { ...base, ...rest, params: { ...(params ?? {}) } }
 }
 
+/**
+ * Copy an instrument into the same pattern, right below it: its sound, its synth settings
+ * (a Syrup patch, a kick's shape), its notes or steps and its knobs — a new patch to take
+ * somewhere else without losing the one you had. Named "syrup 2", "syrup 3"… Returns its id.
+ */
+export function duplicateChannel(pattern, channelId) {
+  const i = pattern.channels.findIndex((c) => c.id === channelId)
+  if (i < 0) return null
+  const from = pattern.channels[i]
+  const base = from.name.replace(/\s+\d+$/, '') || from.name
+  const taken = new Set(pattern.channels.map((c) => c.name))
+  let k = 2
+  while (taken.has(`${base} ${k}`.slice(0, 40))) k++
+  const copy = { ...JSON.parse(JSON.stringify(from)), id: newId(), name: `${base} ${k}`.slice(0, 40) }
+  // after the last of its family, so syrup, syrup 2, syrup 3 stay in order
+  let at = i
+  pattern.channels.forEach((c, k) => { if (k > i && (c.name.replace(/\s+\d+$/, '') || c.name) === base) at = k })
+  pattern.channels.splice(at + 1, 0, copy)
+  return copy.id
+}
+
 export function makePattern(name = 'pattern', patch = {}) {
   return { id: newId(), name, bars: 1, stepsPerBar: 16, channels: [], ...patch }
 }

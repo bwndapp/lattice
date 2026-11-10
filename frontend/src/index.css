@@ -776,7 +776,7 @@ button.lcd-unit:hover { color: var(--acid); }
 }
 .pop-name:focus { outline: none; border-bottom-color: var(--acid); }
 .pattern-pop .rack-body { overflow: auto; padding-bottom: 0.4rem; }
-.rack-body.compact .ch { grid-template-columns: 1.6rem 6.5rem 12rem minmax(max(12rem, calc(var(--n) * 1.4rem)), 1fr) 12.5rem; padding-inline: 0.75rem; }
+.rack-body.compact .ch { grid-template-columns: 1.6rem 6.5rem 12rem minmax(max(12rem, calc(var(--n) * 1.4rem)), 1fr) 14.5rem; padding-inline: 0.75rem; }
 .rack-body.compact .rack-add { padding: 0.6rem 0.75rem; }
 @media (max-width: 1100px) {
   .playlist.has-palette { --palette: 0px; }

@@ -3,7 +3,8 @@ import Knob from '../Knob.jsx'
 import { engineTarget } from '../automation.js'
 import { holdInPatch, previewInPatch } from '../audio'
 import { ENGINES, engineData } from './index.js'
-import { closeSynth, raiseSynth } from './windows.js'
+import { closeSynth, openSynth, raiseSynth } from './windows.js'
+import { duplicateChannel } from '../project.js'
 import { watchInstrument } from './host.js'
 import { keyNote, useOctave } from '../keyboard.js'
 import KickPanel from './KickPanel.jsx'
@@ -179,6 +180,16 @@ export default function SynthWindow({ project, patternId, channelId, order, fron
           <button type="button" className="sw-oct" disabled={octave >= 8} onClick={() => shiftOctave(1)} aria-label="An octave up">+</button>
         </span>
         <button type="button" className="btn" onClick={() => play(null)} title="Play one hit">hear</button>
+        <button
+          type="button"
+          className="btn ghost"
+          title="A copy of this patch, as a new instrument in the same pattern, opened beside this one"
+          onClick={() => {
+            let made = null
+            onUpdateProject((p) => { const pat = p.patterns.find((x) => x.id === patternId); if (pat) made = duplicateChannel(pat, channelId) })
+            if (made) setTimeout(() => openSynth(patternId, made), 0)
+          }}
+        >duplicate</button>
         <button type="button" className="btn ghost" onClick={reset} title="Every knob back to where it started">reset</button>
         <button type="button" className="sw-close" onClick={close} title="Close (Esc)" aria-label={`Close ${spec.label}`}>×</button>
       </header>

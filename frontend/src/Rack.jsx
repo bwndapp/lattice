@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { rollSteps } from './roll.js'
 import {
   INSTRUMENTS, INSTRUMENT_MIME, PARAMS,
-  instrumentChannel, midiToNote, newId, paramValue, paramsFor, stepCount, stepDivision,
+  duplicateChannel, instrumentChannel, midiToNote, paramValue, paramsFor, stepCount, stepDivision,
 } from './project'
 import { previewInPatch } from './audio'
 import Knob from './Knob.jsx'
@@ -305,12 +305,7 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
               {ch.kind === 'synth' && (
                 <button className={`btn ch-btn ${rollOpen ? 'on' : ''}`} aria-expanded={rollOpen} onClick={() => (rollOpen ? dock?.close() : dock?.open(pattern.id, ch.id, 'notes'))} title="Piano roll, along the bottom of the app">notes</button>
               )}
-              {!compact && (
-                <button className="btn ghost ch-btn" title="Duplicate" aria-label={`Duplicate ${ch.name}`} onClick={() => update((pat) => {
-                  const i = pat.channels.findIndex((c) => c.id === ch.id)
-                  pat.channels.splice(i + 1, 0, { ...JSON.parse(JSON.stringify(pat.channels[i])), id: newId(), name: `${ch.name} 2`.slice(0, 40) })
-                })}>dup</button>
-              )}
+              <button className="btn ghost ch-btn" title={ch.engine ? 'Duplicate: a copy of this patch, right below, to take somewhere new' : 'Duplicate'} aria-label={`Duplicate ${ch.name}`} onClick={() => update((pat) => { duplicateChannel(pat, ch.id) })}>dup</button>
               <button className="btn ghost danger ch-btn" title="Remove instrument" aria-label={`Remove ${ch.name}`} onClick={() => update((pat) => { pat.channels = pat.channels.filter((c) => c.id !== ch.id) })}>del</button>
             </div>
 
