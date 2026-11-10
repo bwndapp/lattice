@@ -24,6 +24,15 @@
  */
 export const NEWS = [
   {
+    id: '2026-11-10-6',
+    date: '2026-11-10',
+    version: '0.10.2',
+    title: 'Rhythms first',
+    items: [
+      '**Cube and Fibonacci start silent**: just the rhythm — pick a drum, or wire Syrup in to play it',
+    ],
+  },
+  {
     id: '2026-11-10-5',
     date: '2026-11-10',
     version: '0.10.1',
