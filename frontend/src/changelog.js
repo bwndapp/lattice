@@ -24,6 +24,16 @@
  */
 export const NEWS = [
   {
+    id: '2026-11-10-4',
+    date: '2026-11-10',
+    version: '0.10.0',
+    title: 'Fibonacci, and rhythms that play anything',
+    items: [
+      '**Fibonacci machine**: four drum loops of Fibonacci lengths that drift against each other — **roll** to hunt for a groove',
+      '**Play any sound on a rhythm**: wire Syrup or a melody into a cube or Fibonacci layer and it plays on that layer\'s rhythm',
+    ],
+  },
+  {
     id: '2026-11-10-3',
     date: '2026-11-10',
     version: '0.9.0',
