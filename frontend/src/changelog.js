@@ -24,6 +24,17 @@
  */
 export const NEWS = [
   {
+    id: '2026-11-10',
+    date: '2026-11-10',
+    version: '0.8.0',
+    title: 'The cube',
+    items: [
+      '**Cube**: a drum machine you twist — four drums ringed round a 3D puzzle, each ring one bar',
+      '**Scramble it** for a new groove from the same hits, **solve** to get yours back',
+      'Add it from **sources** in the patch; it lands on the **timeline** like any part',
+    ],
+  },
+  {
     id: '2026-11-07',
     date: '2026-11-07',
     version: '0.7.0',
