@@ -24,6 +24,15 @@
  */
 export const NEWS = [
   {
+    id: '2026-11-10-5',
+    date: '2026-11-10',
+    version: '0.10.1',
+    title: 'A cleaner Fibonacci',
+    items: [
+      '**Fibonacci window redone**: one row per loop, each coloured to match its ring',
+    ],
+  },
+  {
     id: '2026-11-10-4',
     date: '2026-11-10',
     version: '0.10.0',
