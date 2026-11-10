@@ -99,6 +99,10 @@ html .select, html input:not([type=range]):not([type=checkbox]):not([type=radio]
 html .lcd, html .node-input, html .node-code, html .ch-input {
   border: 0; border-radius: 10px; background: var(--well-g); box-shadow: var(--press-xs); color: var(--paper);
 }
+/* a dropdown's list is drawn by the browser, which can't paint the gradient behind it and falls
+   back to white under our light text: give its options a flat dark of their own */
+html select option, html select optgroup { background-color: #2a2a2a; color: #d6d6d6; }
+html select, html select.select { background-color: #1f1f1f; }
 html .lcd { border-radius: 12px; box-shadow: var(--press); }
 html .lcd-value { color: #cfcfcf; }
 html .tempo:focus-within, html .tempo.editing, html .tempo.dragging { box-shadow: var(--press), 0 0 0 1px rgba(255, 255, 255, 0.14); }
