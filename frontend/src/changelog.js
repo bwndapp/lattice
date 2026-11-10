@@ -24,6 +24,17 @@
  */
 export const NEWS = [
   {
+    id: '2026-11-10-7',
+    date: '2026-11-10',
+    version: '0.11.0',
+    title: 'Stack the Fibonacci',
+    items: [
+      '**Keep adding Fibonacci layers**, up to sixteen — loops now run to 34 and 55 steps',
+      '**Rhythm machines fire Syrup with no notes drawn**: wire it in and every hit plays',
+      '**Duplicate a synth patch** from its window or the pattern rack, and keep going from there',
+    ],
+  },
+  {
     id: '2026-11-10-6',
     date: '2026-11-10',
     version: '0.10.2',
