@@ -130,10 +130,17 @@ function* live(channelId, type) {
   }
 }
 
-function instanceFor(ac, channelId, type) {
+/**
+ * The instance a note plays on. `route` (a note's `_r`) gives the same instrument a
+ * separate instance — same settings, its own voices and its own outputs — for when one
+ * instrument is played down two different paths at once (one layer of a rhythm machine
+ * into a distortion, another clean): one instance can only send what it mixes itself to
+ * one bus, and would flip between them note by note.
+ */
+function instanceFor(ac, channelId, type, route = '') {
   if (!instances.has(ac)) instances.set(ac, new Map())
   const map = instances.get(ac)
-  const key = `${channelId}:${type}`
+  const key = `${channelId}:${type}${route ? `|${route}` : ''}`
   if (!map.has(key)) {
     const inst = createInstance(ac, channelId, type)
     map.set(key, inst)
@@ -314,7 +321,7 @@ export function registerEngineSounds() {
       // the instrument this note came from (project.js marks every note with it); code
       // written by hand gets one shared instance per engine, at the engine's defaults
       const channelId = typeof value._c === 'string' ? value._c : '_'
-      const inst = instanceFor(ac, channelId, spec.type)
+      const inst = instanceFor(ac, channelId, spec.type, typeof value._r === 'string' ? value._r : '')
       inst.rig?.target(value) // what the engine mixes itself goes where this note goes
       let midi = toMidi(value.note)
       if (midi == null && value.freq > 0) midi = 69 + 12 * Math.log2(value.freq / 440)

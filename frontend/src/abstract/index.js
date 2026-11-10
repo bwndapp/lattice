@@ -81,7 +81,10 @@ export const abstractParts = (node) => {
 export function abstractBuild(node, inputs = [], slots = []) {
   return abstractParts(node).map((p, i) => {
     const k = slots.indexOf(`in-${i}`)
-    if (k >= 0 && inputs[k] && p.drive) return { id: p.id, expr: p.drive(inputs[k]), own: false }
+    // each layer plays an engine (Syrup…) on an instance of its own, so two layers fed the
+    // same instrument can go down different paths (instruments/host.js)
+    const fed = inputs[k] && `${inputs[k]}.fmap((v) => ({ ...v, _r: '${node.id}.${p.id}' }))`
+    if (k >= 0 && fed && p.drive) return { id: p.id, expr: p.drive(fed), own: false }
     return { id: p.id, expr: p.expr, own: true }
   })
 }
