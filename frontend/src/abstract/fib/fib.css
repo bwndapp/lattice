@@ -1,0 +1,27 @@
+/* the Fibonacci machine's window: its loops as rings on the left, their controls on the right */
+.fib-panel { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(360px, 1.2fr); gap: 0.9rem; padding: 0.8rem; }
+.fib-stage { width: 100%; aspect-ratio: 1; background: var(--well); border-radius: 10px; }
+.fib-spiral { fill: none; stroke: rgba(255, 255, 255, 0.07); stroke-width: 1.2; }
+.fib-track { fill: none; stroke: rgba(255, 255, 255, 0.06); stroke-width: 1; }
+.fib-dot { fill: #3a3a3a; }
+.fib-dot.v1 { fill: #9c9c9c; }
+.fib-dot.v2 { fill: #f2f2f2; }
+.fib-ring.muted { opacity: 0.3; }
+.fib-head { fill: none; stroke: #e0a33c; stroke-width: 2; transition: opacity 0.2s; }
+.fib-side { display: flex; flex-direction: column; gap: 0.7rem; min-width: 0; }
+.fib-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.fib-kit { display: flex; align-items: center; gap: 0.4rem; margin-left: auto; }
+.fib-layers { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
+.fib-layer { display: flex; flex-direction: column; gap: 0.3rem; }
+.fib-layer.muted .fib-strip { opacity: 0.35; }
+.fib-layer-top { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }
+.fib-layer-top .select { padding: 0.2rem 0.35rem; font-size: 12px; }
+.fib-rot { display: inline-flex; align-items: center; gap: 0.2rem; font-size: 12px; }
+.fib-rot button { width: 1.4rem; height: 1.4rem; padding: 0; border: 0; border-radius: 6px; background: var(--raised); color: var(--paper); cursor: pointer; }
+.fib-rot span { min-width: 1.4rem; text-align: center; font-variant-numeric: tabular-nums; }
+.fib-strip { display: grid; gap: 2px; }
+.fib-strip i { height: 10px; border-radius: 2px; background: var(--sunk); }
+.fib-strip i.v1 { background: #8f8f8f; }
+.fib-strip i.v2 { background: #f2f2f2; }
+.fib-hint { margin: 0; line-height: 1.4; }
+@media (max-width: 760px) { .fib-panel { grid-template-columns: 1fr; } }

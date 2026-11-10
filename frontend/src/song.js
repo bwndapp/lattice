@@ -22,7 +22,8 @@ export const MAX_CLIPS = 400
 
 /** Source nodes that make sound by themselves (nothing wired into them). */
 export function sourceNodes(project) {
-  return project.nodes.filter((n) => NODE_TYPES[n.type]?.group === 'source' && n.type !== 'pattern' && !project.edges.some((e) => e.target === n.id))
+  // (an abstract instrument stays one even with something wired in: its own layers still play)
+  return project.nodes.filter((n) => NODE_TYPES[n.type]?.group === 'source' && n.type !== 'pattern' && (NODE_TYPES[n.type].abstract || !project.edges.some((e) => e.target === n.id)))
 }
 
 /** Nodes that only feed sidechain triggers: they keep running whatever the timeline says. */

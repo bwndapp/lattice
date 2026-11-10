@@ -504,9 +504,12 @@ function AbstractFace({ node }) {
             const wired = ctx.project.edges.some((e) => e.source === node.id && e.sourceHandle === `out-${p.id}`)
             const onMain = !offMain[p.id]
             const steps = pattern?.channels[r]?.steps
+            // something wired into this layer plays on its rhythm instead of its own sound
+            const fed = ctx.project.edges.find((e) => e.target === node.id && e.targetHandle === `in-${r}`)
+            const fedBy = fed ? originLabel(ctx.project, fed) : null
             return (
-              <li key={p.id} className={`chan ${p.expr ? '' : 'muted'} ${wired ? 'wired' : ''} ${onMain ? '' : 'held'}`}>
-                <span className="chan-name">{p.name}</span>
+              <li key={p.id} className={`chan ${p.expr || fed ? '' : 'muted'} ${wired ? 'wired' : ''} ${onMain ? '' : 'held'}`}>
+                <span className="chan-name" title={fedBy ? `Plays ${fedBy} on this layer's rhythm` : undefined}>{fedBy ? `← ${fedBy}` : p.name}</span>
                 {steps && (
                   <span className="abs-sketch-row abs-inline" aria-hidden style={{ gridTemplateColumns: `repeat(${steps.length}, 1fr)` }}>
                     {steps.map((v, i) => <i key={i} className={v ? 'on' : ''} />)}
@@ -600,7 +603,7 @@ function StudioNode({ id, selected }) {
       <div className="node-body">
         {node.type !== 'output' && !ctx.heard.has(id) && (
           <p className="node-warn">
-            {spec.inputs && wires.length === 0
+            {spec.inputs && !spec.abstract && wires.length === 0
               ? 'not heard · drop it on a wire, or wire it between a sound and the output'
               : 'not heard · wire its right dot on toward the output'}
           </p>

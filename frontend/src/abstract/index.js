@@ -1,4 +1,5 @@
 import cube from './cube/index.js'
+import fib from './fib/index.js'
 
 /**
  * Abstract instruments: sources that make music by some stranger means than steps and
@@ -11,9 +12,13 @@ import cube from './cube/index.js'
  *   normalize(raw)       saved settings (anything) → complete state
  *   pack(state)          (optional) state → how it's saved in the track (compact)
  *   code(state)          state → a Strudel expression: what it plays, one cycle a bar
- *   parts(state)         (optional) its separate sounds: [{ id, name, expr | null }]. Each
- *                        gets a port of its own on the node, as a pattern's instruments do:
- *                        wiring one is a copy, and "main" takes it off the main out
+ *   layers               names of its layers, one input each: wire a sound into one and that
+ *                        layer plays it on its rhythm instead of its own sound (Syrup's notes
+ *                        chopped by the cube, say)
+ *   parts(state)         its layers: [{ id, name, expr | null, drive(x) }] — expr its own
+ *                        sound, drive(x) any pattern x played on its rhythm. Each layer gets
+ *                        a port of its own on the node, as a pattern's instruments do: wiring
+ *                        one is a copy, and "main" takes it off the main out
  *   asPattern(state)     (optional) state → a drum/synth pattern ({ bars, stepsPerBar,
  *                        channels }) for the timeline to sketch on its clips
  *   width                (optional) how wide its window opens, in CSS pixels
@@ -25,7 +30,7 @@ import cube from './cube/index.js'
  * Its state lives on the node as `data.state`. To add one: a folder here, a line below and
  * a line in panels.js.
  */
-export const ABSTRACTS = Object.fromEntries([cube].map((d) => [d.type, d]))
+export const ABSTRACTS = Object.fromEntries([cube, fib].map((d) => [d.type, d]))
 
 /** A node's abstract definition, or null. */
 export const abstractOf = (type) => ABSTRACTS[type] ?? null
@@ -45,7 +50,7 @@ export function abstractNodeTypes() {
     group: 'source',
     label: d.label,
     blurb: d.blurb,
-    inputs: 0,
+    inputs: d.layers ?? 0,
     params: [],
     abstract: true,
     code: (data) => mainCode(d, data),
@@ -66,4 +71,17 @@ function mainCode(def, data) {
 export const abstractParts = (node) => {
   const def = abstractOf(node?.type)
   return def?.parts ? def.parts(def.normalize(node.data?.state)) : []
+}
+
+/**
+ * A node's layers as code: [{ id, expr, own }] — `own` when it plays its own sound (the song
+ * gates those), otherwise it's the input wired into that layer (`inputs`, in `slots`) on the
+ * layer's rhythm, which arrives already gated by wherever it came from.
+ */
+export function abstractBuild(node, inputs = [], slots = []) {
+  return abstractParts(node).map((p, i) => {
+    const k = slots.indexOf(`in-${i}`)
+    if (k >= 0 && inputs[k] && p.drive) return { id: p.id, expr: p.drive(inputs[k]), own: false }
+    return { id: p.id, expr: p.expr, own: true }
+  })
 }

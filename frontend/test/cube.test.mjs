@@ -72,3 +72,24 @@ assert.deepEqual(held.nodes[0].data.offMain, { r1: true })
 made = graphCode({ ...held, patterns: [], bpm: 120, beats: 4 }).lines?.join('\n') ?? String(graphCode({ ...held, patterns: [], bpm: 120, beats: 4 }))
 assert.doesNotMatch(mainLine(made), /sd/)
 console.log('cube ports ok')
+
+// ── a sound wired into a layer plays on that layer's rhythm; the other layers keep their drums ──
+const fedRaw = {
+  nodes: [
+    { id: 'm', type: 'notes', data: { mini: 'c3 e3', sound: 'sawtooth' } },
+    { id: 'c', type: 'cube', data: {} },
+    { id: 'o', type: 'output', data: {} },
+  ],
+  edges: [
+    { source: 'm', target: 'c', targetHandle: 'in-0' },
+    { source: 'c', target: 'o', targetHandle: 'in-0' },
+  ],
+}
+const fed = normalizeGraph(fedRaw, [])
+assert.equal(fed.edges.length, 2, 'a layer takes a wire')
+const fedCode = String(graphCode({ ...fed, patterns: [], bpm: 120, beats: 4 }).lines?.join('\n') ?? graphCode({ ...fed, patterns: [], bpm: 120, beats: 4 }))
+const cubeLine = fedCode.split('\n').find((l) => l.startsWith('const n_c = '))
+assert.match(cubeLine, /n_m\.struct\("t ~ ~ ~ t/, 'the top layer chops the melody on the kick\'s rhythm')
+assert.doesNotMatch(cubeLine, /s\("bd/, 'and no longer plays its kick')
+assert.match(cubeLine, /s\("~ ~ ~ ~ sd/, 'the other layers keep their own sounds')
+console.log('cube inputs ok')

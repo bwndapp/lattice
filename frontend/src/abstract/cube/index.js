@@ -5,6 +5,7 @@ export default {
   type: 'cube',
   label: 'cube',
   blurb: 'A drum machine you twist: four drums ringed round a 4×4×4 cube — scramble it for a new groove',
+  layers: ['top', 'upper', 'lower', 'bottom'],
   normalize,
   pack,
   code,

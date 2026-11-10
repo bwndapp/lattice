@@ -15,7 +15,7 @@
 
 import { parse } from 'acorn'
 import { STEREO_ORBIT_BASE, beginInserts, commitInserts, declareInsert, declareRoute } from './stereo'
-import { abstractNodeTypes, abstractOf, abstractParts, packState } from './abstract/index.js'
+import { abstractBuild, abstractNodeTypes, abstractOf, abstractParts, packState } from './abstract/index.js'
 import { DELAY_DEFAULTS, DELAY_DIVISIONS, GLOBAL_DELAY, GLOBAL_REVERB, REVERB_DEFAULTS, beginFx, commitFx, declareFx } from './fxbus.js'
 
 const clampNum = (v, fallback, lo, hi) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : fallback)
@@ -975,6 +975,25 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     const inputKeys = wires.filter((w) => exprs.get(w.source)).map((w) => inputKey(w))
     // a single input passes its bus on; mixing several inputs lands back on the main bus
     const route = { orbit: inputs.length === 1 && spec.inputs !== 'many' ? inputOrbits[0] : null }
+    if (spec.abstract) {
+      // an abstract instrument: each layer plays its own sound, when the song says, or
+      // whatever's wired into that layer on the layer's rhythm (see abstract/index.js)
+      const gate = (e) => (song ? song(`node:${id}`, () => e) : e)
+      const built = abstractBuild(node, inputs, slots).map((p) => ({ ...p, expr: p.expr && (p.own ? gate(p.expr) : p.expr) }))
+      const held = new Set(Object.entries(node.data?.offMain ?? {}).filter(([, v]) => v === true).map(([k]) => k))
+      const main = built.filter((p) => p.expr && !held.has(p.id)).map((p) => p.expr)
+      const name = nodeVar(id)
+      lines.push(`// ${node.data.name ?? spec.label}`, `const ${name} = ${fromNode(main.length > 1 ? `stack(${main.join(', ')})` : main[0] ?? 'silence', id)}`)
+      exprs.set(id, name)
+      // layers wired out on their own ports: a line each
+      for (const p of built) {
+        if (!edges.some((e) => e.source === id && outChannel(e.sourceHandle) === p.id)) continue
+        const pv = `${name}_${p.id}`
+        lines.push(`const ${pv} = ${fromNode(p.expr ?? 'silence', id)}`)
+        partVars.set(`${id}:${p.id}`, pv)
+      }
+      return name
+    }
     // a source making sound on its own plays when the song says (patterns are handled where
     // they're defined); its automations are marked in its code, to be read in song time
     // inside each clip (song.js)
@@ -997,18 +1016,6 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     // `codeLabel` keeps a renamed node's comment as it was, so saved tracks make the same code
     lines.push(`// ${node.data.name ?? spec.codeLabel ?? spec.label}`, `const ${name} = ${expr}`)
     exprs.set(id, name)
-    // an abstract instrument's parts wired out on their own ports: a line each, under the
-    // same song as the whole, so the timeline mutes them together
-    if (spec.abstract) {
-      for (const part of abstractParts(node)) {
-        if (!edges.some((e) => e.source === id && outChannel(e.sourceHandle) === part.id)) continue
-        const raw = part.expr ?? 'silence'
-        const sung = songPart ? song(`node:${id}`, () => raw) : raw
-        const pv = `${name}_${part.id}`
-        lines.push(`const ${pv} = ${fromNode(sung, id)}`)
-        partVars.set(`${id}:${part.id}`, pv)
-      }
-    }
     return name
   }
 

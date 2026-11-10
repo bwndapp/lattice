@@ -5,4 +5,5 @@
  */
 export const PANELS = {
   cube: () => import('./cube/CubePanel.jsx'),
+  fib: () => import('./fib/FibPanel.jsx'),
 }

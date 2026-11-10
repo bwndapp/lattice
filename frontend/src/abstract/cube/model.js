@@ -204,6 +204,7 @@ export const isSolved = (state) => !state.moves.length
 // ── what it plays ───────────────────────────────────────────────────────────
 
 const GAIN = ['0', '0.7', '1']
+const VELOCITY = ['0', '0.7', '1']
 
 /**
  * The cube as separate sounds, one per layer: { id, name, expr } with expr null when that
@@ -219,7 +220,11 @@ export function parts(state) {
       if (state.bank) expr += `.bank("${state.bank}")`
       expr += `.gain("${vals.map((v) => GAIN[v]).join(' ')}")`
     }
-    return { id: `r${r}`, name: snd, expr }
+    // anything wired into this layer, played on its rhythm (with its accents)
+    const struct = vals.map((v) => (v ? 't' : '~')).join(' ')
+    const vel = vals.map((v) => VELOCITY[v]).join(' ')
+    const drive = (x) => (row.mute || !vals.some(Boolean) ? null : `${x}.struct("${struct}").velocity("${vel}")`)
+    return { id: `r${r}`, name: snd, expr, drive }
   })
 }
 
