@@ -15,6 +15,7 @@
 
 import { parse } from 'acorn'
 import { STEREO_ORBIT_BASE, beginInserts, commitInserts, declareInsert, declareRoute } from './stereo'
+import { abstractNodeTypes, abstractOf, packState } from './abstract/index.js'
 import { DELAY_DEFAULTS, DELAY_DIVISIONS, GLOBAL_DELAY, GLOBAL_REVERB, REVERB_DEFAULTS, beginFx, commitFx, declareFx } from './fxbus.js'
 
 const clampNum = (v, fallback, lo, hi) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : fallback)
@@ -112,6 +113,8 @@ export const NODE_TYPES = {
     params: [{ key: 'code', type: 'code', label: 'code', def: 's("bd sd")' }],
     code: (d) => codeNodeExpr(d.code),
   },
+  // the stranger sources: a cube you twist, … (see abstract/index.js)
+  ...abstractNodeTypes(),
 
   fast: {
     group: 'transform', label: 'speed', blurb: 'Play faster or slower',
@@ -771,7 +774,10 @@ export function effectsByCat({ hidden = false, only = null } = {}) {
 
 export function defaultData(type) {
   const spec = NODE_TYPES[type]
-  return Object.fromEntries((spec?.params ?? []).map((p) => [p.key, p.def]))
+  const data = Object.fromEntries((spec?.params ?? []).map((p) => [p.key, p.def]))
+  // an abstract instrument keeps everything it is in `state`
+  if (spec?.abstract) data.state = packState(type, abstractOf(type).normalize(null))
+  return data
 }
 
 const slotIndex = (handle) => {
@@ -808,6 +814,7 @@ export function normalizeGraph(raw, patterns) {
       const chan = Object.entries(n.data?.chan ?? {}).filter(([k, v]) => /^\w{1,64}:out(-[\w-]{1,40})?$/.test(k) && Number.isFinite(v))
       if (chan.length) data.chan = Object.fromEntries(chan.map(([k, v]) => [k, clampNum(v, 1, 0, 1.5)]))
     }
+    if (spec.abstract) data.state = packState(n.type, abstractOf(n.type).normalize(n.data?.state))
     if (n.type === 'arrange') data.bars = Object.fromEntries(Object.entries(n.data?.bars ?? {}).filter(([k]) => /^in-\d+$/.test(k)).map(([k, v]) => [k, Math.round(clampNum(v, 4, 1, 64))]))
     if (n.type === 'output') {
       data.muted = Object.fromEntries(Object.entries(n.data?.muted ?? {}).filter(([, v]) => v === true))

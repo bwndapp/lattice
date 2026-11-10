@@ -51,7 +51,7 @@ export function songParts(project, autos = project.song?.autos ?? []) {
     kind: n.type,
     id: n.id,
     name: n.data?.name || partLabel(n),
-    bars: n.type === 'sound' ? 1 : 4,
+    bars: n.type === 'sound' || NODE_TYPES[n.type]?.abstract ? 1 : 4,
     inPatch: true,
     trigger: triggerOnly(project, n.id),
   }))

@@ -6,7 +6,8 @@ import {
 import '@xyflow/react/dist/style.css'
 import { APPLY, BUS_NODES, CHANNEL_FADER, FX_CATS, FX_UNITS, GROUPS, NODE_TYPES, channelGain, defaultData, effectsByCat, inputKey, inputsOf, makeFxUnit, makesCycle, menuGroup } from './graph'
 import { ENGINES } from './instruments/index.js'
-import { openCode, openSynth } from './instruments/windows.js'
+import { openAbstract, openCode, openSynth } from './instruments/windows.js'
+import { abstractOf, abstractState } from './abstract/index.js'
 import { INSTRUMENTS, INSTRUMENT_MIME, instrumentChannel, makePattern, newId } from './project'
 import { FRAME_BAR_H, collapseFrame, collapsedHosts, expandFrame, heldBy, removeFrame as dropFrame, rfSize, routeEdge } from './frames'
 import Knob, { formatValue } from './Knob.jsx'
@@ -470,6 +471,31 @@ function PeerLayer() {
   )
 }
 
+/**
+ * An abstract instrument on its node: what it plays now, drawn small, and the way into its
+ * window (double-clicking the node opens it too).
+ */
+function AbstractFace({ node }) {
+  const def = abstractOf(node.type)
+  const pattern = def?.asPattern?.(abstractState(node))
+  return (
+    <>
+      {pattern && (
+        <div className="abs-sketch" aria-hidden>
+          {pattern.channels.map((c) => (
+            <div key={c.id} className={`abs-sketch-row ${c.mute ? 'muted' : ''}`} style={{ gridTemplateColumns: `repeat(${c.steps.length}, 1fr)` }}>
+              {c.steps.map((v, i) => <i key={i} className={v ? 'on' : ''} />)}
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="node-actions nodrag">
+        <button className="btn primary" onClick={() => openAbstract(node.id)} title="Open its window (or double-click the node)">open {def?.label}</button>
+      </div>
+    </>
+  )
+}
+
 /** One card on the canvas. Everything reads the project through context, so it's never stale. */
 function StudioNode({ id, selected }) {
   const ctx = useContext(Ctx)
@@ -627,6 +653,8 @@ function StudioNode({ id, selected }) {
         )}
 
         {node.type === 'fxrack' && <FxRack node={node} />}
+
+        {spec.abstract && <AbstractFace node={node} />}
 
         {Array.isArray(spec.inputs) && (
           <ul className="node-inputs named">
@@ -1966,6 +1994,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
             onNodeDoubleClick={(e, n) => {
               // double-click a pattern node (not its controls) to open its rack
               const node = project.nodes.find((x) => x.id === n.id)
+              if (NODE_TYPES[node?.type]?.abstract && !e.target.closest('input, select, textarea, button')) return openAbstract(node.id)
               if (node?.type !== 'pattern' || e.target.closest('input, select, textarea, button')) return
               if (project.patterns.some((p) => p.id === node.data.patternId)) ctx.editPattern(node.data.patternId, e)
               else ctx.newPatternFor(node.id)

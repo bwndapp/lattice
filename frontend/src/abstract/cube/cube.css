@@ -1,0 +1,21 @@
+/* the cube's window: the puzzle on the left, its four drums on the right */
+.cube-panel { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(300px, 1fr); gap: 0.9rem; padding: 0.8rem; }
+.cube-stage { position: relative; min-height: 360px; background: var(--well); border-radius: 10px; overflow: hidden; cursor: grab; touch-action: none; }
+.cube-stage:active { cursor: grabbing; }
+.cube-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.cube-side { display: flex; flex-direction: column; gap: 0.7rem; min-width: 0; }
+.cube-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.cube-count { margin-left: auto; }
+.cube-kit { display: flex; align-items: center; gap: 0.5rem; }
+.cube-kit .select { flex: 1; min-width: 0; }
+.cube-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.45rem; }
+.cube-row { display: grid; grid-template-columns: 3.4rem 4.2rem auto 1fr; align-items: center; gap: 0.4rem; }
+.cube-row.muted .cube-steps { opacity: 0.35; }
+.cube-row .select { min-width: 0; }
+.cube-steps { display: grid; grid-template-columns: repeat(16, 1fr); gap: 2px; }
+.cube-step { height: 18px; padding: 0; border: 0; border-radius: 3px; background: var(--sunk); cursor: pointer; }
+.cube-step.beat { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08); }
+.cube-step.v1 { background: #8f8f8f; }
+.cube-step.v2 { background: #f2f2f2; }
+.cube-hint { margin: 0; line-height: 1.4; }
+@media (max-width: 720px) { .cube-panel { grid-template-columns: 1fr; } }

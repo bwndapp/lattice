@@ -10,7 +10,7 @@
  * Windows keep their place in the list (moving one in the page would drop a drag in
  * progress); `z` says which is in front.
  */
-let open = [] // [{ id, kind: 'engine' | 'code', …what it's for, z }]
+let open = [] // [{ id, kind: 'engine' | 'code' | 'abstract', …what it's for, z }]
 let top = 0
 const listeners = new Set()
 const changed = (next) => { open = next; for (const fn of listeners) fn() }
@@ -33,6 +33,11 @@ export function openSynth(patternId, channelId) {
  */
 export function openCode(what) {
   show({ id: what.channelId ? `code:${what.channelId}` : `code:${what.nodeId}:${what.key}`, kind: 'code', ...what })
+}
+
+/** An abstract instrument's window (a node in the patch, see abstract/index.js). */
+export function openAbstract(nodeId) {
+  show({ id: `abs:${nodeId}`, kind: 'abstract', nodeId })
 }
 
 export function closeSynth(id) {

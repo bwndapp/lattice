@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { abstractOf, abstractState } from './abstract/index.js'
+import { openAbstract } from './instruments/windows.js'
 import { makePattern, makeVariation, newId } from './project'
 import { MAX_BARS, laneInfo, songLength, songParts } from './song'
 import Popover from './Popover.jsx'
@@ -102,8 +104,11 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const automation = useAutomation()
   const sketchFor = (src) => {
     const isAuto = src?.startsWith(AUTO_PREFIX)
-    if (!src?.startsWith('pattern:') && !isAuto) return null
-    const pattern = isAuto ? song.autos?.find((a) => a.id === src.slice(AUTO_PREFIX.length)) : project.patterns.find((p) => p.id === src.slice(8))
+    // an abstract instrument that can say what it plays is sketched as a pattern
+    const absNode = src?.startsWith('node:') ? project.nodes.find((n) => `node:${n.id}` === src) : null
+    const absPattern = absNode && abstractOf(absNode.type)?.asPattern?.(abstractState(absNode))
+    if (!src?.startsWith('pattern:') && !isAuto && !absPattern) return null
+    const pattern = absPattern ?? (isAuto ? song.autos?.find((a) => a.id === src.slice(AUTO_PREFIX.length)) : project.patterns.find((p) => p.id === src.slice(8)))
     const ink = inkFor(colorFor(src, song.colors))
     const hit = sketchCache.current.get(src)
     if (hit && hit.ink === ink) {
@@ -411,6 +416,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     setTimeout(() => {
       if (src.startsWith(AUTO_PREFIX)) automation?.open(src.slice(AUTO_PREFIX.length), { x, y })
       else if (src.startsWith('pattern:')) dock?.open(src.slice(8), null, 'rack')
+      else if (node && abstractOf(node.type)) openAbstract(node.id)
       else if (node) setPanel({ nodeId: node.id, x, y })
     }, 0)
   }

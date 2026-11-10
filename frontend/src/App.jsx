@@ -1836,7 +1836,7 @@ export default function App() {
         />
       )}
       {/* plugin windows for the app's own instruments, floating over everything */}
-      <SynthWindows project={project} onUpdateProject={updateProject} />
+      <SynthWindows project={project} onUpdateProject={updateProject} transport={transport} />
 
       {autoEditing && project && (
         <AutomationEditor

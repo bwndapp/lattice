@@ -1180,6 +1180,12 @@ button.chan-synth:hover span { color: var(--acid); }
 .node-hint { color: var(--muted); font-size: 11px; }
 .node-actions { display: flex; gap: 0.3rem; flex-wrap: wrap; }
 .node-actions .btn { padding: 0.25rem 0.5rem; font-size: 11px; }
+/* an abstract instrument on its node: what it plays now, small (one row per drum) */
+.abs-sketch { display: flex; flex-direction: column; gap: 2px; margin: 0.1rem 0 0.5rem; }
+.abs-sketch-row { display: grid; gap: 1px; }
+.abs-sketch-row i { height: 6px; background: var(--sunk); border-radius: 1px; }
+.abs-sketch-row i.on { background: var(--paper); }
+.abs-sketch-row.muted { opacity: 0.35; }
 .node-inputs { list-style: none; margin: 0 -0.6rem -0.6rem; padding: 0; border-top: 1px solid var(--line); }
 .slot { position: relative; display: flex; align-items: center; gap: 0.4rem; min-height: 2rem; padding: 0.3rem 0.5rem 0.3rem 0.9rem; border-bottom: 1px solid var(--line); }
 .slot:last-child { border-bottom: 0; }
