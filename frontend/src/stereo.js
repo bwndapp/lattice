@@ -44,6 +44,47 @@ class CoarseProcessor extends AudioWorkletProcessor {
 registerProcessor('lattice-coarse', CoarseProcessor)
 
 /*
+ * Bitcrush: fewer levels (bits) and fewer samples (rate, held like the lo-fi insert), with
+ * the clean sound mixed back underneath. Bits are continuous, so turning the knob glides
+ * rather than stepping, and it can be automated.
+ */
+class CrushProcessor extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [
+      { name: 'bits', defaultValue: 8, minValue: 1, maxValue: 16, automationRate: 'k-rate' },
+      { name: 'rate', defaultValue: 1, minValue: 1, maxValue: 32, automationRate: 'k-rate' },
+      { name: 'mix', defaultValue: 1, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+    ]
+  }
+  constructor() { super(); this.phase = 0; this.held = [] }
+  process(inputs, outputs, params) {
+    const input = inputs[0]
+    const output = outputs[0]
+    if (!output || !output.length) return true
+    if (!input || !input.length) { for (const ch of output) ch.fill(0); return true }
+    const half = Math.pow(2, params.bits[0]) / 2 // levels each side of zero
+    const every = Math.max(1, Math.round(params.rate[0]))
+    const wet = params.mix[0]
+    for (let i = 0; i < output[0].length; i++) {
+      if (this.phase <= 0) {
+        for (let c = 0; c < output.length; c++) {
+          const x = (input[Math.min(c, input.length - 1)] || [])[i] || 0
+          this.held[c] = Math.round(x * half) / half
+        }
+        this.phase = every
+      }
+      this.phase--
+      for (let c = 0; c < output.length; c++) {
+        const dry = (input[Math.min(c, input.length - 1)] || [])[i] || 0
+        output[c][i] = dry + ((this.held[c] || 0) - dry) * wet
+      }
+    }
+    return true
+  }
+}
+registerProcessor('lattice-crush', CrushProcessor)
+
+/*
  * Pitch: the bus moved up or down without moving the tempo.
  *
  * Everything written is kept in a ring, and two read heads run through it at the speed the
@@ -741,6 +782,15 @@ const UNITS = {
         node = null
       },
     }
+  },
+
+  /** Bitcrush: bits, rate and mix (see the crush worklet above). */
+  crush(ac) {
+    return workletInsert(ac, 'lattice-crush', (params) => ({
+      bits: Math.min(16, Math.max(1, Number(params.bits) || 8)),
+      rate: Math.min(32, Math.max(1, Number(params.rate) || 1)),
+      mix: Math.min(1, Math.max(0, Number.isFinite(+params.mix) ? +params.mix : 1)),
+    }))
   },
 
   /** Everything up or down, tempo untouched (see the pitch worklet above). */

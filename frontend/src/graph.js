@@ -351,6 +351,16 @@ export const NODE_TYPES = {
     params: [{ key: 'coarse', type: 'int', label: 'grit', min: 1, max: 32, def: 6 }],
     code: stereoCode('lofi', (d) => ({ coarse: d.coarse })),
   },
+  bitcrush: {
+    group: 'effect', cat: 'drive', label: 'bitcrush', blurb: 'Fewer bits, lower rate: crunchy and digital',
+    inputs: 1,
+    params: [
+      { key: 'bits', type: 'knob', label: 'bits', min: 1, max: 16, def: 6 },
+      { key: 'rate', type: 'knob', label: 'rate', min: 1, max: 32, def: 1, log: true, unit: 'x' },
+      { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 1 },
+    ],
+    code: stereoCode('crush', (d) => ({ bits: d.bits, rate: d.rate, mix: d.mix })),
+  },
   sidechain: {
     group: 'effect', label: 'sidechain', blurb: 'Duck the sound every time the trigger hits (kick pumps the bass)',
     // named inputs: slot 0 is ducked, slot 1 does the ducking
@@ -673,7 +683,7 @@ function stereoCode(kind, params) {
   return code
 }
 const STEREO_TYPES = new Set(['haas', 'widener', 'utility', 'bus', 'eq3', 'saturator', 'distortion', 'clipper', 'softclip', 'compressor', 'limiter',
-  'filter', 'djfilter', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi', 'pitch', 'freqshift'])
+  'filter', 'djfilter', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi', 'bitcrush', 'pitch', 'freqshift'])
 
 /**
  * Nodes that are real audio on a bus rather than settings on each note: they work on
@@ -683,7 +693,7 @@ const STEREO_TYPES = new Set(['haas', 'widener', 'utility', 'bus', 'eq3', 'satur
 export const BUS_NODES = new Set([...STEREO_TYPES, 'reverb', 'delay'])
 
 /** Effects that can sit inside an fx rack: every plain effect node. */
-export const FX_UNITS = ['eq3', 'compressor', 'limiter', 'saturator', 'distortion', 'clipper', 'softclip', 'punch', 'haas', 'widener', 'utility', 'filter', 'djfilter', 'reverb', 'delay', 'space', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi', 'pitch', 'freqshift']
+export const FX_UNITS = ['eq3', 'compressor', 'limiter', 'saturator', 'distortion', 'clipper', 'softclip', 'punch', 'haas', 'widener', 'utility', 'filter', 'djfilter', 'reverb', 'delay', 'space', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi', 'bitcrush', 'pitch', 'freqshift']
 
 /**
  * Effects an instrument's lane can stack: the ones that are real audio on a bus. Reverb and
