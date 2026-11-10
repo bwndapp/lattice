@@ -24,6 +24,15 @@
  */
 export const NEWS = [
   {
+    id: '2026-11-10-2',
+    date: '2026-11-10',
+    version: '0.8.1',
+    title: 'Cube layers on their own',
+    items: [
+      '**Every cube layer has its own port**: wire one drum into its own effects, like a pattern\'s instruments',
+    ],
+  },
+  {
     id: '2026-11-10',
     date: '2026-11-10',
     version: '0.8.0',
