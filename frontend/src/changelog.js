@@ -24,6 +24,17 @@
  */
 export const NEWS = [
   {
+    id: '2026-11-10-8',
+    date: '2026-11-10',
+    version: '0.11.1',
+    title: 'Watch the Fibonacci drift',
+    items: [
+      '**Drifting loops on the timeline**: a Fibonacci clip shows its loops sliding apart, bar by bar',
+      '**Longer rolls**: roll can now land on loops of 34 and 55 steps',
+      '**Faster start**: the cube\'s 3D only downloads when you open one',
+    ],
+  },
+  {
     id: '2026-11-10-7',
     date: '2026-11-10',
     version: '0.11.0',
