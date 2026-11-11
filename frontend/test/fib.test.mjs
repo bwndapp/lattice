@@ -38,8 +38,8 @@ console.log('fib ok')
 // ── an instrument wired straight into a layer is fired by every hit, notes or not ──
 const { bundle } = await import('./lib/bundle.mjs')
 const pm = await bundle({ 'project.js': ['normalizeProject', 'generateCode'] }, 'fibheld')
-const track = (notes, steps) => pm.generateCode(pm.normalizeProject({
-  bpm: 120, beats: 4,
+const track = (notes, steps, song) => pm.generateCode(pm.normalizeProject({
+  bpm: 120, beats: 4, song,
   patterns: [
     { id: 'syn', name: 'syn', bars: 1, stepsPerBar: 16, channels: [{ id: 'c1', kind: 'synth', name: 'syn', sound: 'sawtooth', note: 'e3', notes }] },
     { id: 'drm', name: 'drm', bars: 1, stepsPerBar: 16, channels: [{ id: 'd1', kind: 'drum', name: 'drm', sound: 'cp', steps }] },
@@ -62,6 +62,12 @@ assert.match(made, /const p_drm_held = .*s\("cp"\)/, 'a drum holds its sound, wh
 assert.match(made, /p_syn_held\.fmap\(.*\)\.struct\("\{t ~ ~ t/, 'and the loop fires it')
 made = track([{ s: 0, l: 16, n: 48 }], [1])
 assert.match(made, /const p_syn_held = .*note\("c3@16"\)/, 'notes you drew are kept')
+// on the song, only the machine needs a clip: the instruments wired into it play with it
+made = track([], [], { on: true, clips: [{ id: 'k', src: 'node:f', lane: 0, start: 0, len: 2 }] })
+const fibLine = made.split('\n').find((l) => l.startsWith('const n_f = '))
+assert.match(fibLine, /\(p_syn_held\.fmap\(.*?\)\)\.mask\("<1 1>"\)/, 'the synth plays where the fibonacci clip is')
+assert.doesNotMatch(fibLine, /silence/, 'with no clip of its own')
+assert.match(made, /const p_syn_held = \/\* syn \*\/ note\(/, 'its held version is no longer gated by its own clips')
 console.log('fib held ok')
 
 // the timeline's sketch: in drift, every bar until the loops meet again (capped); in bar, one

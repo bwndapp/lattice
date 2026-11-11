@@ -192,6 +192,9 @@ export function songSilence(project, node) {
     const rootId = project.patterns.find((p) => p.id === node.data?.patternId)?.parent ?? node.data?.patternId
     const root = project.patterns.find((p) => p.id === rootId)
     if (!root) return null
+    // wired only into rhythm machines, it plays as part of them: their clips are its clips
+    const outs = project.edges.filter((e) => e.source === node.id)
+    if (outs.length && outs.every((e) => NODE_TYPES[project.nodes.find((n) => n.id === e.target)?.type]?.abstract)) return null
     srcs = [root, ...project.patterns.filter((v) => v.parent === rootId)].map((p) => `pattern:${p.id}`)
     bars = root.bars
   } else {

@@ -507,7 +507,8 @@ export function generateCode(project, { solo = null, laneSolo = null, audition =
     lines.push(`const ${patternVar(pattern.id)} = ${value}`)
   }
   // patterns wired straight into a rhythm machine's layer (the cube, fibonacci…) also get a
-  // held version: the machine's rhythm says when, the pattern only says what
+  // held version: the machine's rhythm says when, the pattern only says what. On the song
+  // it plays where the machine's clips are (graph.js gates it there), not the pattern's own
   const held = new Set()
   for (const e of project.edges ?? []) {
     const src = project.nodes.find((n) => n.id === e.source)
@@ -524,7 +525,7 @@ export function generateCode(project, { solo = null, laneSolo = null, audition =
       return exprs.length ? (exprs.length === 1 ? exprs[0] : `stack(${exprs.join(', ')})`) : 'silence'
     }
     const plain = gated(0)
-    lines.push(`const ${name} = ${song && plain !== 'silence' ? song(`pattern:${pattern.id}`, gated) : plain}`)
+    lines.push(`const ${name} = ${plain}`)
     held.add(name)
   }
   const patternSolo = typeof solo === 'string' && solo.startsWith('pattern:') && project.patterns.some((p) => `pattern:${p.id}` === solo)

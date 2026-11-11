@@ -986,7 +986,8 @@ export function graphCode(project, { solo = null, song = null, audition = false,
       const fed = wires.filter((w) => exprs.get(w.source)).map((w, k) => {
         const src = byId.get(w.source)
         const hv = src?.type === 'pattern' ? patternHeldVar(src.data.patternId, outChannel(w.sourceHandle)) : null
-        return hv && held?.has(hv) ? fromNode(hv, src.id) : inputs[k]
+        // (and it's part of this machine: it plays where the machine's clips are)
+        return hv && held?.has(hv) ? gate(fromNode(hv, src.id)) : inputs[k]
       })
       const built = abstractBuild(node, fed, slots).map((p) => ({ ...p, expr: p.expr && (p.own ? gate(p.expr) : p.expr) }))
       // a layer is held back from the main out only while it's wired out on its own port —
