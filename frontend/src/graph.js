@@ -14,7 +14,7 @@
  */
 
 import { parse } from 'acorn'
-import { STEREO_ORBIT_BASE, beginInserts, commitInserts, declareInsert, declareRoute } from './stereo'
+import { STEREO_ORBIT_BASE, beginInserts, commitInserts, declareBranch, declareInsert, declareRoute, declareSpeakers } from './stereo'
 import { abstractBuild, abstractNodeTypes, abstractOf, abstractParts, packState } from './abstract/index.js'
 import { DELAY_DEFAULTS, DELAY_DIVISIONS, GLOBAL_DELAY, GLOBAL_REVERB, REVERB_DEFAULTS, beginFx, commitFx, declareFx } from './fxbus.js'
 
@@ -560,6 +560,7 @@ export const NODE_TYPES = {
     code: (d, xs, ctx) => {
       if (!xs.length || !ctx?.route) return xs.length ? `stack(${xs.join(', ')})` : null
       const orbit = ctx.stereoOrbit(ctx.nodeId)
+      const seen = new Set()
       const parts = xs.map((x, i) => {
         const from = ctx.inputOrbits?.[i]
         const fader = channelGain(d, ctx.inputKeys?.[i])
@@ -567,8 +568,13 @@ export const NODE_TYPES = {
         // after its own effects, the way a mixer's fader sits after its inserts
         if (from == null) return `${fader === 1 ? x : `${x}.mul(gain(${tidy(fader)}))`}.orbit(${orbit})`
         if (from !== orbit) ctx.routeBus(from, orbit, fader)
+        // two branches of one split bus bring the same notes: they play once, and each
+        // branch is heard through its own route
+        const notes = ctx.notesOf ? ctx.notesOf(x) : x
+        if (seen.has(notes)) return null
+        seen.add(notes)
         return x
-      })
+      }).filter(Boolean)
       ctx.declare(orbit, ctx.nodeId, 'fader', { gain: d.vol, pan: d.pan })
       ctx.route.orbit = orbit
       return parts.length === 1 ? parts[0] : `stack(${parts.join(', ')})`
@@ -935,6 +941,8 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     if (STEREO_TYPES.has(n.type)) stereoKeys.push(n.id)
     for (const u of n.data?.chain ?? []) if (STEREO_TYPES.has(u.type)) stereoKeys.push(`${n.id}_${u.id}`)
   }
+  // branch buses (see below) come after, so adding one never renumbers the others
+  for (const n of nodes) stereoKeys.push(`branch:${n.id}`)
   const stereoOrbit = (key) => STEREO_ORBIT_BASE + Math.max(0, stereoKeys.indexOf(key))
   const inserts = beginInserts()
   // reverbs and delays: the patch's own, and the shared pair the instruments' knobs send to
@@ -945,6 +953,12 @@ export function graphCode(project, { solo = null, song = null, audition = false,
   const declare = (orbit, key, kind, params) => declareInsert(inserts, orbit, key, kind, params)
   const routeBus = (from, to, gain) => declareRoute(inserts, from, to, gain)
   const orbitOf = new Map() // node id → the bus its sound ends up on, when not the main one
+  // A node that passes its input on unchanged (an insert on a bus already there) plays the
+  // same notes: `sameAs` maps it to the node that made them, so where two wires bring the
+  // same notes back together (a dry and a wet branch into one mixer bus) they play once.
+  const sameAs = new Map()
+  const notesOf = (x) => sameAs.get(x) ?? x
+  const fanout = (id) => edges.filter((e) => e.source === id && byId.get(e.target)).length
   const partVars = new Map() // `${node}:${part}` → an abstract instrument's part, wired out on its own
   const channelsOf = (pid) => project.patterns.find((p) => p.id === pid)?.channels ?? []
   /** What a wire carries: one instrument of a pattern, or everything the source node makes. */
@@ -977,6 +991,15 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     const inputKeys = wires.filter((w) => exprs.get(w.source)).map((w) => inputKey(w))
     // a single input passes its bus on; mixing several inputs lands back on the main bus
     const route = { orbit: inputs.length === 1 && spec.inputs !== 'many' ? inputOrbits[0] : null }
+    // Inserts on a bus act on the whole bus. When that bus also goes somewhere else (split
+    // to a dry and a wet path), these inserts get a branch of their own, fed from it, so
+    // they only touch the sound on this wire.
+    const feeder = wires.find((w) => exprs.get(w.source))?.source
+    if (route.orbit != null && (STEREO_TYPES.has(node.type) || node.type === 'fxrack') && node.type !== 'bus' && feeder && fanout(feeder) > 1) {
+      const branch = stereoOrbit(`branch:${id}`)
+      declareBranch(inserts, route.orbit, branch)
+      route.orbit = branch
+    }
     if (spec.abstract) {
       // an abstract instrument: each layer plays its own sound, when the song says, or
       // whatever's wired into that layer on the layer's rhythm (see abstract/index.js)
@@ -1020,12 +1043,13 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     const mixChannels = (pid) => (off.size
       ? channelsOf(pid).filter((c) => !off.has(c.id)).map((c) => patternChanVar(pid, c.id))
       : null)
-    let expr = spec.code(node.data, inputs, { patternIds, mixChannels, slots, inputKeys, nodeId: id, orbit: 2 + sidechains.indexOf(id), cps, beats, route, inputOrbits, stereoOrbit, declare, routeBus, auto: nodeAuto, autoOf, declareFx: (key, kind, params) => declareFx(fx, key, kind, params) })
+    let expr = spec.code(node.data, inputs, { patternIds, mixChannels, slots, inputKeys, notesOf, nodeId: id, orbit: 2 + sidechains.indexOf(id), cps, beats, route, inputOrbits, stereoOrbit, declare, routeBus, auto: nodeAuto, autoOf, declareFx: (key, kind, params) => declareFx(fx, key, kind, params) })
     if (!expr) { exprs.set(id, null); return null }
     if (songPart) { const marked = expr; expr = song(`node:${id}`, (shift, read) => marked.replace(/\u0001(\w+)\u0001/g, (_, a) => read(a))) }
     if (spec.group === 'source') expr = fromNode(expr, id)
     if (route.orbit != null) orbitOf.set(id, route.orbit)
     const name = nodeVar(id)
+    if (inputs.length === 1 && expr === inputs[0] && route.orbit != null) sameAs.set(name, notesOf(inputs[0]))
     // `codeLabel` keeps a renamed node's comment as it was, so saved tracks make the same code
     lines.push(`// ${node.data.name ?? spec.codeLabel ?? spec.label}`, `const ${name} = ${expr}`)
     exprs.set(id, name)
@@ -1036,16 +1060,25 @@ export function graphCode(project, { solo = null, song = null, audition = false,
   if (solo && byId.has(solo)) {
     const v = visit(solo)
     if (v) lanes.push(`solo: ${v}`)
+    if (v && orbitOf.get(solo) != null) declareSpeakers(inserts, orbitOf.get(solo))
   } else {
     for (const out of nodes.filter((n) => n.type === 'output')) {
       // soloing a lane is listening, not a decision about the track: it's whoever is at
       // this keyboard, so it never travels to the other people in the room (collab.js)
       const soloWire = laneSolo?.[out.id] ?? null
+      const playing = new Set() // notes already on a lane (a split bus's branches carry the same ones)
       for (const w of inputsOf(edges, out.id)) {
         const v = visit(w.source)
         if (!v) continue
         const muted = out.data.muted?.[w.targetHandle] || (soloWire && soloWire !== w.targetHandle)
-        lanes.push(`${muted ? '_' : ''}${out.id}_${w.targetHandle.replace('-', '')}: ${carried(w, v)}`)
+        const lane = `${out.id}_${w.targetHandle.replace('-', '')}`
+        const bus = orbitOf.get(w.source)
+        const what = carried(w, v)
+        if (muted || bus == null || what !== v) { lanes.push(`${muted ? '_' : ''}${lane}: ${what}`); continue }
+        // a bus on a lane is heard from the speakers even when it's also routed on
+        declareSpeakers(inserts, bus)
+        lanes.push(`${lane}: ${playing.has(notesOf(v)) ? 'silence' : v}`)
+        playing.add(notesOf(v))
       }
     }
   }

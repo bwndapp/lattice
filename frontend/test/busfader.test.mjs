@@ -167,5 +167,36 @@ ok('a channel on its own bus is turned down by its level and the bus level', rou
   ok('a stopped driver no longer moves it', level().every((g) => near(g, 1)), JSON.stringify(level()))
 }
 
+// a mixer bus split in two — dry straight on, wet through an insert — into a second mixer
+// bus: each branch keeps its own fader, the insert only touches the wet one, notes play once
+{
+  const p = m.normalizeProject({
+    bpm: 120, beats: 4, patterns, song: { on: false, clips: [] },
+    nodes: [
+      { id: 'a0', type: 'pattern', x: 0, y: 0, data: { patternId: 'p1' } },
+      { id: 'A', type: 'bus', x: 0, y: 0, data: m.defaultData('bus') },
+      { id: 'wet', type: 'level', x: 0, y: 0, data: { ...m.defaultData('level'), gain: 0.4 } },
+      { id: 'B', type: 'bus', x: 0, y: 0, data: { ...m.defaultData('bus'), chan: { 'A:out': 0.8, 'wet:out': 0.5 } } },
+      { id: 'out', type: 'output', x: 0, y: 0, data: { muted: {} } },
+    ],
+    edges: [
+      { id: 'e1', source: 'a0', target: 'A', targetHandle: 'in-0' },
+      { id: 'e2', source: 'A', target: 'B', targetHandle: 'in-0' },
+      { id: 'e3', source: 'A', target: 'wet', targetHandle: 'in' },
+      { id: 'e4', source: 'wet', target: 'B', targetHandle: 'in-1' },
+      { id: 'e5', source: 'B', target: 'out', targetHandle: 'in-0' },
+    ],
+  })
+  const { lines, lanes } = m.graphCode(p, {})
+  const code = [...lines, ...lanes].join('\n')
+  const bLine = lines.find((l) => l.startsWith('const n_B = '))
+  ok('split: the notes reach the second bus once', bLine && !bLine.includes('stack('), bLine)
+  const orbits = [...new Set([...code.matchAll(/\.orbit\((\d+)\)/g)].map((x) => Number(x[1])))]
+  ok('split: the notes play on one bus', orbits.length === 1, JSON.stringify(orbits))
+  ctl.getOrbit(orbits[0])
+  const g = reach(ctl.nodes[orbits[0]].summingNode)
+  ok('split: dry at its fader plus wet through the insert at its own', near(g, 0.8 + 0.5 * 0.4), String(g))
+}
+
 console.log(fails ? `\n${fails} failing` : '\nall good')
 process.exit(fails ? 1 : 0)

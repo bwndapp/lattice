@@ -337,14 +337,16 @@ export function prepareInserts() {
 export const STEREO_ORBIT_BASE = 40
 
 let declared = new Map() // orbit → [{ key, kind, params }] from the latest generated code
-let routed = new Map() // orbit → { to, gain }: the orbit it plays into (a mixer bus) and at what level
-const racks = new Map() // orbit → { orbit (Orbit object), input, output, units: Map(key → unit) }
+let routed = new Map() // orbit → Map(to → gain): the buses it plays into (mixer buses, branches) and at what level
+let virtuals = new Set() // branch buses: racks of the app's own, fed from another bus, with no Strudel orbit behind them
+let speakers = new Set() // buses that play to the speakers as well as wherever they're routed
+const racks = new Map() // bus → { orbit (Orbit object, null for a branch), input, output, sends: Map(to → GainNode), units: Map(key → unit) }
 let controller = null
 let armed = false
 
 /** Start collecting the inserts a code generation declares. */
 export function beginInserts() {
-  return { inserts: new Map(), routes: new Map() }
+  return { inserts: new Map(), routes: new Map(), virtual: new Set(), speakers: new Set() }
 }
 
 /** A stereo insert on an orbit, in signal order. */
@@ -353,10 +355,31 @@ export function declareInsert(list, orbit, key, kind, params) {
   list.inserts.get(orbit).push({ key, kind, params })
 }
 
-/** Send everything on one orbit into another (a mixer bus) instead of the speakers, at `gain`. */
+/**
+ * Send everything on one orbit into another (a mixer bus) instead of the speakers, at `gain`.
+ * A bus can play into several: its sound split, each copy at its own level.
+ */
 export function declareRoute(list, from, to, gain = 1) {
+  if (from === to) return
   if (!list.inserts.has(from)) list.inserts.set(from, [])
-  list.routes.set(from, { to, gain })
+  if (!list.routes.has(from)) list.routes.set(from, new Map())
+  list.routes.get(from).set(to, gain)
+}
+
+/**
+ * A branch: bus `to` takes a copy of what comes out of bus `from` and has inserts of its own,
+ * so effects after a bus that splits only touch their own branch (parallel processing).
+ * `to` is the app's own rack, not a Strudel orbit: no note ever plays on it.
+ */
+export function declareBranch(list, from, to) {
+  declareRoute(list, from, to, 1)
+  list.virtual.add(to)
+  if (!list.inserts.has(to)) list.inserts.set(to, [])
+}
+
+/** A bus that also plays to the speakers, though it's routed somewhere else as well. */
+export function declareSpeakers(list, orbit) {
+  list.speakers.add(orbit)
 }
 
 /**
@@ -367,19 +390,23 @@ export function declareRoute(list, from, to, gain = 1) {
 export function commitInserts(list, { partial = false, keep = false } = {}) {
   declared = keep ? new Map([...list.inserts, ...declared]) : partial ? new Map([...declared, ...list.inserts]) : list.inserts
   routed = keep ? new Map([...list.routes, ...routed]) : partial ? new Map([...routed, ...list.routes]) : list.routes
+  virtuals = keep || partial ? new Set([...virtuals, ...list.virtual]) : list.virtual
+  speakers = keep || partial ? new Set([...speakers, ...list.speakers]) : list.speakers
   // the audio side must never break generating the code (and so the whole app)
   try { apply() } catch (err) { console.warn('[stereo] could not update the stereo inserts', err) }
 }
 
 function apply() {
   if (!install()) return
-  for (const [n, rack] of racks) {
-    if (controller.nodes[n] !== rack.orbit) { teardown(n); continue } // the controller was reset
+  for (const [n, rack] of [...racks]) {
+    if (racks.get(n) !== rack) continue // rebuilt on the way round
+    if (rack.virtual ? !virtuals.has(n) : controller.nodes[n] !== rack.orbit) { teardown(n); continue } // gone, or the controller was reset
     wire(n, rack, declared.get(n) ?? [])
     aim(n, rack)
   }
+  for (const n of virtuals) if (!racks.has(n)) mountBranch(n)
   // a bus that was already playing before it got an insert (a sidechain's, say)
-  for (const n of declared.keys()) if (!racks.has(n) && controller.nodes[n]) mount(n, controller.nodes[n])
+  for (const n of declared.keys()) if (!racks.has(n) && !virtuals.has(n) && controller.nodes[n]) mount(n, controller.nodes[n])
 }
 
 /** Hook into the audio controller once the page may make sound. */
@@ -406,7 +433,7 @@ function install() {
   ctl.getOrbit = (n, channels) => {
     const fresh = ctl.nodes[n] == null
     const orbit = getOrbit(n, channels)
-    if ((n >= STEREO_ORBIT_BASE || declared.has(n)) && (fresh || racks.get(n)?.orbit !== orbit)) {
+    if ((n >= STEREO_ORBIT_BASE || declared.has(n)) && !virtuals.has(n) && (fresh || racks.get(n)?.orbit !== orbit)) {
       try { mount(n, orbit, channels) } catch (err) { console.warn('[stereo] could not insert on bus', n, err) }
     }
     return orbit
@@ -418,40 +445,65 @@ function safeController() {
   try { return getSuperdoughAudioController() } catch { return null }
 }
 
+const stereoGain = (ac) => new GainNode(ac, { gain: 1, channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' })
+
 /** Put a rack between a stereo orbit and the speakers. */
 function mount(n, orbit, channels) {
   // the rack this bus had before a reset: its units (a distortion's bias source, the
   // worklets) would otherwise keep running unheard, one more set every stop
   teardown(n)
   const ac = getAudioContext()
-  const stereo = () => new GainNode(ac, { gain: 1, channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' })
-  const input = stereo()
-  const output = stereo()
+  const input = stereoGain(ac)
+  const output = stereoGain(ac)
   orbit.output.disconnect() // it went straight to the speakers
   orbit.output.connect(input)
   // order starts unset so the first wiring always connects input → output, even with no
   // units (a bus that only plays into a mixer bus has none)
-  // what it plays into, at the level the bus it feeds gives it (a mixer's channel fader)
-  const send = stereo()
-  output.connect(send)
-  const rack = { orbit, input, output, send, units: new Map(), order: null, channels, to: undefined }
+  const rack = { orbit, input, output, sends: new Map(), units: new Map(), order: null, channels }
   racks.set(n, rack)
   wire(n, rack, declared.get(n) ?? [])
   aim(n, rack)
 }
 
-/** Point a rack at the speakers, or into the mixer bus its orbit is routed to, at its level. */
+/** A branch's rack: fed by the bus it branches off (see declareBranch), not by notes. */
+function mountBranch(n) {
+  teardown(n)
+  const ac = getAudioContext()
+  const rack = { orbit: null, virtual: true, input: stereoGain(ac), output: stereoGain(ac), sends: new Map(), units: new Map(), order: null, channels: undefined }
+  racks.set(n, rack)
+  wire(n, rack, declared.get(n) ?? [])
+  aim(n, rack)
+  return rack
+}
+
+/** Where a send into bus `to` lands: a branch's rack, or a mixer bus's orbit. */
+const intoBus = (to) => (virtuals.has(to) ? (racks.get(to) ?? mountBranch(to)).input : controller.getOrbit(to).summingNode)
+
+/**
+ * Point a rack at what it plays into, a send each at its own level (a mixer's channel
+ * fader): the mixer buses and branches it's routed to, and the speakers when it's routed
+ * nowhere or is also heard on its own.
+ */
 function aim(n, rack) {
-  const route = routed.get(n) ?? null
-  const to = route?.to ?? null
-  smooth(rack.send.gain, route ? route.gain ?? 1 : 1)
-  if (rack.to === to) return
-  rack.output.disconnect()
-  rack.output.connect(rack.send)
-  rack.send.disconnect()
-  if (to != null && to !== n) rack.send.connect(controller.getOrbit(to).summingNode)
-  else controller.output.connectToDestination(rack.send, rack.channels)
-  rack.to = to
+  const routes = routed.get(n) ?? new Map()
+  const want = new Map(routes)
+  if (!routes.size || speakers.has(n)) want.set('speakers', 1)
+  for (const [to, send] of [...rack.sends]) {
+    if (want.has(to) && (to === 'speakers' || send.into === intoBus(to))) continue
+    try { rack.output.disconnect(send); send.disconnect() } catch { /* already gone */ }
+    rack.sends.delete(to)
+  }
+  for (const [to, gain] of want) {
+    let send = rack.sends.get(to)
+    if (!send) {
+      send = stereoGain(getAudioContext())
+      rack.output.connect(send)
+      if (to === 'speakers') controller.output.connectToDestination(send, rack.channels)
+      else { send.into = intoBus(to); send.connect(send.into) }
+      rack.sends.set(to, send)
+    }
+    smooth(send.gain, gain ?? 1)
+  }
 }
 
 /**
@@ -466,7 +518,7 @@ function teardown(n) {
   const rack = racks.get(n)
   if (!rack) return
   for (const unit of rack.units.values()) unit.dispose()
-  try { rack.input.disconnect(); rack.output.disconnect(); rack.send.disconnect() } catch { /* already gone */ }
+  try { rack.input.disconnect(); rack.output.disconnect(); for (const send of rack.sends.values()) send.disconnect() } catch { /* already gone */ }
   racks.delete(n)
 }
 
