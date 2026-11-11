@@ -24,6 +24,16 @@
  */
 export const NEWS = [
   {
+    id: '2026-11-11-2',
+    date: '2026-11-11',
+    version: '0.12.0',
+    title: 'Split the bus',
+    items: [
+      '**Parallel processing**: split a mixer bus into a dry and a wet path, each with its own effects and fader',
+      '**The Fibonacci is the clip**: anything wired into it plays with its clip, and stays off the timeline',
+    ],
+  },
+  {
     id: '2026-11-11',
     date: '2026-11-11',
     version: '0.11.2',
