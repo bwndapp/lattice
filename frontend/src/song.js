@@ -32,12 +32,44 @@ export function triggerOnly(project, nodeId) {
   return out.length > 0 && out.every((e) => project.nodes.find((n) => n.id === e.target)?.type === 'sidechain' && e.targetHandle === 'in-1')
 }
 
+/**
+ * A node whose sound only ends up in rhythm machines (the cube, fibonacci…), wired straight
+ * in or through effects first: it's part of the machine, not a part of the song. The
+ * machine's clips are its clips, so it never goes on the timeline itself and plays
+ * whenever the machine does (graph.js gates it there).
+ */
+export function inMachine(project, nodeId) {
+  const typeOf = new Map(project.nodes.map((n) => [n.id, n.type]))
+  const seen = new Set([nodeId])
+  let reached = false
+  const walk = (id) => {
+    for (const e of project.edges) {
+      if (e.source !== id) continue
+      const t = typeOf.get(e.target)
+      if (NODE_TYPES[t]?.abstract) { reached = true; continue }
+      if (!t || t === 'output') return false
+      if (seen.has(e.target)) continue
+      seen.add(e.target)
+      if (!walk(e.target)) return false
+    }
+    return true
+  }
+  return walk(nodeId) && reached
+}
+
+/** A pattern (by any of its variations) whose every node is inside a rhythm machine. */
+export function patternInMachine(project, patternId) {
+  const rootId = project.patterns.find((p) => p.id === patternId)?.parent ?? patternId
+  const nodes = project.nodes.filter((n) => n.type === 'pattern' && n.data?.patternId === rootId)
+  return nodes.length > 0 && nodes.every((n) => inMachine(project, n.id))
+}
+
 /** Everything that can go on the timeline, in sidebar order. `autos` defaults to the song's. */
 export function songParts(project, autos = project.song?.autos ?? []) {
   // originals, each followed by its variations (which play through the original's node)
   const byId = new Map(project.patterns.map((p) => [p.id, p]))
   const ordered = project.patterns.filter((p) => !p.parent).flatMap((p) => [p, ...project.patterns.filter((v) => v.parent === p.id)])
-  const patterns = ordered.map((p) => ({
+  const patterns = ordered.filter((p) => !patternInMachine(project, p.id)).map((p) => ({
     src: `pattern:${p.id}`,
     kind: 'pattern',
     id: p.id,
@@ -47,7 +79,7 @@ export function songParts(project, autos = project.song?.autos ?? []) {
     parentName: p.parent ? byId.get(p.parent)?.name : null,
     inPatch: project.nodes.some((n) => n.type === 'pattern' && n.data.patternId === (p.parent ?? p.id)),
   }))
-  const nodes = sourceNodes(project).map((n) => ({
+  const nodes = sourceNodes(project).filter((n) => !inMachine(project, n.id)).map((n) => ({
     src: `node:${n.id}`,
     kind: n.type,
     id: n.id,
@@ -151,7 +183,12 @@ const tidy = (v) => String(Math.round(v * 10000) / 10000)
  */
 export function songExpr(project, src, at) {
   const song = project.song
-  if (src.startsWith('node:') && triggerOnly(project, src.slice(5))) return at(0, (name) => name)
+  if (src.startsWith('node:') && (triggerOnly(project, src.slice(5)) || inMachine(project, src.slice(5)))) return at(0, (name) => name)
+  // inside a rhythm machine a pattern always plays (the machine's clips say when); its
+  // variations only take turns on the timeline, so there they're quiet
+  if (src.startsWith('pattern:') && patternInMachine(project, src.slice(8))) {
+    return project.patterns.find((p) => p.id === src.slice(8))?.parent ? 'silence' : at(0, (name) => name)
+  }
   const clips = song.clips.filter((c) => c.src === src && !laneMuted(song, c.lane)) // a muted row plays nothing
   if (!clips.length) return 'silence'
   const total = Math.max(1, Math.ceil(songLength(song) - 1e-9))
@@ -192,15 +229,13 @@ export function songSilence(project, node) {
     const rootId = project.patterns.find((p) => p.id === node.data?.patternId)?.parent ?? node.data?.patternId
     const root = project.patterns.find((p) => p.id === rootId)
     if (!root) return null
-    // wired only into rhythm machines, it plays as part of them: their clips are its clips
-    const outs = project.edges.filter((e) => e.source === node.id)
-    if (outs.length && outs.every((e) => NODE_TYPES[project.nodes.find((n) => n.id === e.target)?.type]?.abstract)) return null
+    if (patternInMachine(project, rootId)) return null // a machine's clips are its clips
     srcs = [root, ...project.patterns.filter((v) => v.parent === rootId)].map((p) => `pattern:${p.id}`)
     bars = root.bars
   } else {
     if (NODE_TYPES[node.type]?.group !== 'source') return null
     if (project.edges.some((e) => e.target === node.id)) return null // fed by something else: not a part
-    if (triggerOnly(project, node.id)) return null
+    if (triggerOnly(project, node.id) || inMachine(project, node.id)) return null
     srcs = [`node:${node.id}`]
     bars = node.type === 'sound' ? 1 : 4
   }

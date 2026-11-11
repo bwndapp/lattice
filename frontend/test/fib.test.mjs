@@ -88,3 +88,37 @@ console.log('fib held ok')
   assert.ok(seen.has(34) && seen.has(55), 'roll picks 34 and 55')
   console.log('fib sketch + roll ok')
 }
+
+// ── anything wired into a machine is part of it: the machine is the clip ──
+{
+  const { bundle } = await import('./lib/bundle.mjs')
+  const m = await bundle({ 'project.js': ['normalizeProject', 'generateCode'], 'song.js': ['songParts'] }, 'fibclip')
+  const proj = (wireOut) => m.normalizeProject({
+    bpm: 120, beats: 4,
+    patterns: [{ id: 'syn', name: 'syn', bars: 1, stepsPerBar: 16, channels: [{ id: 'c1', kind: 'synth', name: 'syn', sound: 'sawtooth', note: 'e3', notes: [{ s: 0, l: 4, n: 48 }] }] }],
+    nodes: [
+      { id: 'ps', type: 'pattern', x: 0, y: 0, data: { patternId: 'syn' } },
+      { id: 'lp', type: 'filter', x: 0, y: 0, data: {} },
+      { id: 'f', type: 'fib', x: 0, y: 0, data: {} },
+      { id: 'o', type: 'output', x: 0, y: 0, data: {} },
+    ],
+    edges: [
+      { source: 'ps', target: 'lp', targetHandle: 'in' },
+      { source: 'lp', target: 'f', targetHandle: 'in-0' },
+      { source: 'f', target: 'o', targetHandle: 'in-0' },
+      ...(wireOut ? [{ source: 'ps', target: 'o', targetHandle: 'in-1' }] : []),
+    ],
+    song: { on: true, clips: [{ id: 'k', src: 'node:f', lane: 0, start: 0, len: 2 }, { id: 'old', src: 'pattern:syn', lane: 1, start: 4, len: 1 }] },
+  })
+  const inside = proj(false)
+  const srcs = m.songParts(inside).map((p) => p.src)
+  assert.ok(srcs.includes('node:f') && !srcs.includes('pattern:syn'), 'a pattern inside the fib is not a part of the song')
+  const code = m.generateCode(inside)
+  const synDef = code.slice(code.indexOf('const p_syn = '), code.indexOf('const n_ps'))
+  assert.match(synDef, /note\(/, 'it plays all the time')
+  assert.doesNotMatch(synDef, /mask/, 'its own old clip no longer gates it')
+  assert.match(code.split('\n').find((l) => l.startsWith('const n_f = ')), /\(n_lp[^\n]*\)\.mask\("<1 1>"\)/, 'through its filter, the fib\'s clip gates it')
+  // also wired to the output on its own: then it's a part of the song as well
+  assert.ok(m.songParts(proj(true)).some((p) => p.src === 'pattern:syn'))
+  console.log('fib is the clip ok')
+}
