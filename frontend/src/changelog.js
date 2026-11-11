@@ -24,6 +24,16 @@
  */
 export const NEWS = [
   {
+    id: '2026-11-11',
+    date: '2026-11-11',
+    version: '0.11.2',
+    title: 'One clip for the Fibonacci',
+    items: [
+      '**Fibonacci on the timeline**: one clip plays it, with every instrument wired into it',
+      '**Just you in the room**: your other tabs, and dropped connections, no longer show as other people',
+    ],
+  },
+  {
     id: '2026-11-10-8',
     date: '2026-11-10',
     version: '0.11.1',
