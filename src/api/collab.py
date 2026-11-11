@@ -92,6 +92,7 @@ MAX_OPS = 200_000       # one edit's worth of changes
 # Two budgets, not one. A pointer moving at 60 frames a second would otherwise use up a
 # shared allowance and take an edit down with it — and a dropped cursor is nothing, while a
 # dropped edit is two people looking at different tracks and not being told.
+SILENT = 150            # seconds without a word (browsers ping every 25s, hidden tabs maybe once a minute) before a socket counts as gone
 CURSORS = 45            # cursor and selection messages a second, beyond which they're dropped
 EDITS = 30              # everything else: far more than a person can do, so it means trouble
 COLORS = ["#6cc9ff", "#ff8fb1", "#8de88d", "#ffcf6b", "#c79bff", "#5ee0cf", "#ff9e6b", "#a8b6ff"]
@@ -422,7 +423,9 @@ async def collab(ws: WebSocket, track_id: str):
 
         window, moves, edits = time.monotonic(), 0, 0
         while True:
-            raw = await ws.receive_text()
+            # a laptop shut or a dropped connection never says goodbye: without this its
+            # ghost would sit in the room for good, looking like somebody else is here
+            raw = await asyncio.wait_for(ws.receive_text(), timeout=SILENT)
             now = time.monotonic()
             if now - window > 1:
                 window, moves, edits = now, 0, 0
@@ -555,6 +558,10 @@ async def collab(ws: WebSocket, track_id: str):
     except Exception:
         pass
     finally:
+        try:
+            await ws.close()
+        except Exception:
+            pass
         if room is not None and peer is not None:
             room.peers.pop(peer.id, None)
             await room.tell_others(peer.id, {"t": "gone", "id": peer.id})
@@ -564,6 +571,17 @@ async def collab(ws: WebSocket, track_id: str):
             await ws.close()
         except Exception:
             pass
+
+
+def _people(room):
+    """Who's in a room, once each: the same account in two tabs is one person."""
+    seen, out = set(), []
+    for p in list(room.peers.values()):
+        if p.bot in seen:
+            continue
+        seen.add(p.bot)
+        out.append({"name": p.name, "color": p.color, "bot": p.bot, "face": p.face})
+    return out
 
 
 @router.get("/live")
@@ -578,7 +596,7 @@ async def live(request: Request):
     for key, room in list(_rooms.items()):
         if not key.startswith(here) or room.jam != "open" or not room.peers:
             continue
-        out[key[len(here):]] = [{"name": p.name, "color": p.color, "bot": p.bot, "face": p.face} for p in list(room.peers.values())[:8]]
+        out[key[len(here):]] = _people(room)[:8]
     return {"tracks": out}
 
 
@@ -586,4 +604,4 @@ async def live(request: Request):
 async def who(request: Request, track_id: str):
     """Who's on a track right now, for a page that isn't holding a socket open."""
     room = _rooms.get(f"{_env_of(request)}:{track_id}")
-    return {"peers": [{"name": p.name, "color": p.color, "bot": p.bot, "face": p.face} for p in (room.peers.values() if room else [])]}
+    return {"peers": _people(room) if room else []}

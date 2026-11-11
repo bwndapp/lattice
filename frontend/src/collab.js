@@ -87,15 +87,30 @@ const listeners = new Set()
 const selListeners = new Set()
 const NOBODY = new Map()
 
+/**
+ * The others as people, not sockets: our own account in another tab isn't somebody else
+ * (no tray face, no cursor), and anyone else open twice shows once.
+ */
+function people() {
+  const seen = new Set(me?.bot ? [me.bot] : [])
+  const out = []
+  for (const p of peers.values()) {
+    if (p.bot && seen.has(p.bot)) continue
+    if (p.bot) seen.add(p.bot)
+    out.push(p)
+  }
+  return out
+}
+
 const changed = () => {
-  snapshot = [...peers.values()]
+  snapshot = people()
   for (const fn of listeners) { try { fn() } catch { /* a bad listener isn't our problem */ } }
 }
 // Selections change far less often than cursors, and they touch every node on screen, so
 // they get their own store: a cursor sweeping past must not re-render the whole canvas.
 const selChanged = () => {
   holders = new Map()
-  for (const p of peers.values()) {
+  for (const p of people()) {
     if (!p.sel?.where || !p.sel.ids?.length) continue
     let map = holders.get(p.sel.where)
     if (!map) holders.set(p.sel.where, (map = new Map()))
