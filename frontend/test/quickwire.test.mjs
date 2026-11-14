@@ -129,5 +129,17 @@ ok('the knife skips it too', m.knifeMode(p, [{ id: 'w1' }], 'delay') === null)
   ok('shift + A skips the stream', m.quickSide(st) === null && !m.canQuickWire('stream', 'after'))
 }
 
+// triggers: no inserts on them, and taking a triggered pattern out never wires a machine into an effect
+{
+  const q = patch([['f', 'fib'], ['pn', 'pattern'], ['lp', 'filter'], ['o', 'output']], [
+    { source: 'f', sourceHandle: 'trig-l0', target: 'pn', targetHandle: 'trig-c1' },
+    { source: 'pn', sourceHandle: 'out', target: 'lp', targetHandle: 'in' },
+    { source: 'lp', target: 'o', targetHandle: 'in-0' },
+  ])
+  ok('a trigger takes no inserts', !m.takesInserts(q, q.edges[0]))
+  m.healOnRemove(q, ['pn'])
+  ok('removing the pattern leaves the filter unfed, not fed a trigger', !q.edges.some((e) => e.target === 'lp'), wires(q))
+}
+
 if (fails) { console.log(`\n${fails} failed`); process.exit(1) }
 console.log('\nall passed')

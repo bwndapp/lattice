@@ -25,6 +25,9 @@ const meters = new Map() // meter id → the last reading written there
 let colors = new Map() // source key → its colour as [r, g, b]
 
 const key = (nodeId, chanId) => (chanId ? `${nodeId}|${chanId}` : nodeId)
+// a trigger wire (graph.js triggerOf), without pulling the patch's code in here
+const triggerOf = (handle) => /^trig-(.+)$/.exec(String(handle ?? ''))?.[1] ?? null
+const isTrigger = (e) => !!triggerOf(e?.sourceHandle)
 
 /**
  * The sources feeding every node and wire: walk back from each one until we reach the
@@ -45,9 +48,12 @@ export function flowPaths(project, { sourceTypes, splitOf }) {
     else if (sourceTypes.has(node.type)) {
       const chans = node.type === 'pattern' ? (project.patterns.find((p) => p.id === node.data.patternId)?.channels ?? []) : []
       keys = chans.length ? chans.map((c) => key(id, c.id)) : [id]
-      // a source with inputs (a rhythm machine) also carries what's wired into it
-      const fed = project.edges.filter((e) => e.target === id)
+      // a source with inputs also carries what's wired into it (triggers carry no sound)
+      const fed = project.edges.filter((e) => e.target === id && !isTrigger(e))
       if (fed.length) keys = [...new Set([...keys, ...fed.flatMap((e) => keysOfEdge(e, trail))])]
+      // a rhythm machine lights with every instrument it fires
+      const fires = project.edges.filter((e) => e.source === id && isTrigger(e))
+      if (fires.length) keys = [...new Set([...keys, ...fires.map((e) => key(e.target, triggerOf(e.targetHandle)))])]
     } else {
       keys = [...new Set(project.edges.filter((e) => e.target === id).flatMap((e) => keysOfEdge(e, trail)))]
     }
@@ -59,7 +65,8 @@ export function flowPaths(project, { sourceTypes, splitOf }) {
     const src = byId.get(e.source)
     const chan = /^out-(.+)$/.exec(String(e.sourceHandle ?? ''))?.[1]
     let keys
-    if (chan && src?.type === 'pattern') keys = [key(e.source, chan)]
+    if (isTrigger(e)) keys = [key(e.target, triggerOf(e.targetHandle))] // lit as the instrument it fires plays
+    else if (chan && src?.type === 'pattern') keys = [key(e.source, chan)]
     else {
       keys = keysOfNode(e.source, trail)
       // the main out doesn't carry what left by an instrument's own port

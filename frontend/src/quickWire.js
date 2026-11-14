@@ -1,4 +1,4 @@
-import { NODE_TYPES, defaultData, inputKey, makesCycle } from './graph'
+import { NODE_TYPES, defaultData, inputKey, isTrigger, makesCycle } from './graph'
 import { collapsedHosts, routeEdge } from './frames'
 
 /** Can this kind of node be dropped into the middle of a wire? It needs an input and an output. */
@@ -9,6 +9,7 @@ export const splicable = (type) => !!NODE_TYPES[type]?.inputs && type !== 'outpu
  * between would cut the sound off from it. Effects go after the machine instead.
  */
 export const takesInserts = (p, wire) => {
+  if (isTrigger(wire)) return false // a trigger carries rhythm, not sound
   const type = p.nodes.find((n) => n.id === wire?.target)?.type
   return !NODE_TYPES[type]?.abstract && type !== 'stream' // (the stream only listens to the output)
 }
@@ -298,11 +299,11 @@ export function healOnRemove(p, ids) {
     if (seen.has(id)) return []
     seen.add(id)
     const type = byId.get(id)?.type
-    return p.edges.filter((e) => e.target === id && passes(type, e.targetHandle))
+    return p.edges.filter((e) => e.target === id && !isTrigger(e) && passes(type, e.targetHandle))
       .sort((a, b) => slotOf(a.targetHandle) - slotOf(b.targetHandle))
       .flatMap((e) => (gone.has(e.source) ? feeds(e.source, seen) : [{ source: e.source, sourceHandle: e.sourceHandle }]))
   }
-  const outs = p.edges.filter((e) => gone.has(e.source) && !gone.has(e.target))
+  const outs = p.edges.filter((e) => gone.has(e.source) && !gone.has(e.target) && !isTrigger(e))
     .map((e) => ({ target: e.target, targetHandle: e.targetHandle, from: feeds(e.source) }))
   p.nodes = p.nodes.filter((n) => !gone.has(n.id))
   p.edges = p.edges.filter((e) => !gone.has(e.source) && !gone.has(e.target))

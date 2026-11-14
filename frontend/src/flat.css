@@ -94,3 +94,18 @@ html .graph-canvas .port:hover { border-color: var(--acid); }
 /* the sliding switches: the thumb was glass over the labels; flat, it sits behind them */
 html .glass, html .cs-thumb, html .gswitch-thumb, html .b-switch-thumb, html .song-tools-thumb { z-index: 0; }
 html .cs-opt, html .gswitch-opt, html .b-switch-opt, html .song-tools .song-tool, html .song-tools button { position: relative; z-index: 1; }
+
+/* triggers: rhythm, not sound. Square ports, a thin dashed wire (graph.js triggerOf) */
+html .graph-canvas .port.trig {
+  width: 8px; height: 8px; border-radius: 1px; border: 1px solid var(--fam-combine); background: var(--panel);
+}
+html .graph-canvas .port.trig.free { opacity: 0.5; }
+html .graph-canvas .gnode:hover .port.trig.free, html .graph-canvas .port.trig:hover { opacity: 1; border-color: var(--acid); }
+html .graph-canvas .port.trig.in { left: -5px; }
+html .graph-canvas .port.chan-port.legacy { right: 10px; }
+html .graph-canvas .react-flow__edge.trigger .react-flow__edge-path {
+  stroke: var(--fam-combine); stroke-width: 1.5; stroke-dasharray: 4 4; opacity: 0.8;
+}
+html .graph-canvas .react-flow__edge.trigger .wire-casing, html .graph-canvas .react-flow__edge.trigger .wire-sheen { display: none; }
+html .graph-canvas .react-flow__edge.trigger.selected .react-flow__edge-path { stroke: var(--acid); opacity: 1; }
+html .node-chans .chan.fires .chan-name, html .node-chans .chan.fired .chan-name { color: var(--fam-combine); }

@@ -4,7 +4,7 @@ import {
   applyNodeChanges, applyEdgeChanges, useNodesInitialized, useReactFlow, useUpdateNodeInternals, useViewport,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { APPLY, BUS_NODES, CHANNEL_FADER, FX_CATS, FX_UNITS, GROUPS, NODE_TYPES, channelGain, defaultData, effectsByCat, inputKey, inputsOf, makeFxUnit, makesCycle, menuGroup } from './graph'
+import { APPLY, BUS_NODES, CHANNEL_FADER, FX_CATS, FX_UNITS, GROUPS, NODE_TYPES, channelGain, defaultData, effectsByCat, inputKey, inputsOf, isTrigger, makeFxUnit, makesCycle, menuGroup, triggerOf } from './graph'
 import { ENGINES } from './instruments/index.js'
 import { openAbstract, openCode, openSynth } from './instruments/windows.js'
 import { abstractOf, abstractParts, abstractState } from './abstract/index.js'
@@ -480,6 +480,20 @@ function PeerLayer() {
   )
 }
 
+/** What a trigger wire fires: the instrument's name on its pattern node. */
+function triggerLabel(project, e) {
+  const node = project.nodes.find((n) => n.id === e.target)
+  const pattern = project.patterns.find((p) => p.id === node?.data?.patternId)
+  return pattern?.channels.find((c) => `trig-${c.id}` === e.targetHandle)?.name ?? 'instrument'
+}
+
+/** Which layer of which machine a trigger wire comes from. */
+function layerLabel(project, e) {
+  const node = project.nodes.find((n) => n.id === e.source)
+  const part = abstractParts(node).find((p) => `trig-${p.id}` === e.sourceHandle)
+  return `${node?.data?.name ?? NODE_TYPES[node?.type]?.label ?? 'machine'} ${part?.name ?? ''}`.trim()
+}
+
 /**
  * An abstract instrument on its node: what it plays now, drawn small, and the way into its
  * window (double-clicking the node opens it too).
@@ -504,18 +518,18 @@ function AbstractFace({ node }) {
         </div>
       )}
       {parts.length > 0 && (
-        // its sounds one by one, each with a port of its own, as a pattern's instruments have
+        // its layers one by one, each with a trigger port: wire one into an instrument on a
+        // pattern node and that instrument plays on the layer's rhythm (graph.js triggerOf)
         <ul className="node-chans">
           {parts.map((p, r) => {
             const wired = ctx.project.edges.some((e) => e.source === node.id && e.sourceHandle === `out-${p.id}`)
             const onMain = !offMain[p.id]
             const steps = pattern?.channels[r]?.steps
-            // something wired into this layer plays on its rhythm instead of its own sound
-            const fed = ctx.project.edges.find((e) => e.target === node.id && e.targetHandle === `in-${r}`)
-            const fedBy = fed ? originLabel(ctx.project, fed) : null
+            const fires = ctx.project.edges.filter((e) => e.source === node.id && e.sourceHandle === `trig-${p.id}`)
+            const firesWhat = fires.map((e) => triggerLabel(ctx.project, e)).join(', ')
             return (
-              <li key={p.id} className={`chan ${p.expr || fed ? '' : 'muted'} ${wired ? 'wired' : ''} ${onMain ? '' : 'held'}`}>
-                <span className="chan-name" title={fedBy ? `Plays ${fedBy} on this layer's rhythm` : undefined}>{fedBy ? `← ${fedBy}` : p.name}</span>
+              <li key={p.id} className={`chan ${p.expr || fires.length ? '' : 'muted'} ${wired ? 'wired' : ''} ${onMain ? '' : 'held'} ${fires.length ? 'fires' : ''}`}>
+                <span className="chan-name" title={fires.length ? `Triggers ${firesWhat}` : `${p.name}: wire its trigger into an instrument on a pattern node`}>{fires.length ? `→ ${firesWhat}` : p.name}</span>
                 {steps && (
                   <span className="abs-sketch-row abs-inline" aria-hidden style={{ gridTemplateColumns: `repeat(${steps.length}, 1fr)` }}>
                     {steps.map((v, i) => <i key={i} className={v ? 'on' : ''} />)}
@@ -531,13 +545,15 @@ function AbstractFace({ node }) {
                     onClick={() => ctx.updateNode(node.id, (d) => { d.offMain = { ...(d.offMain ?? {}), [p.id]: onMain } })}
                   >main</button>
                 )}
-                <Handle type="source" position={Position.Right} id={`out-${p.id}`} className={`port out chan-port ${wired ? '' : 'free'}`} title={`Wire ${p.name} somewhere of its own`} />
+                {/* an old track's layer wired out on its own still has its sound port */}
+                {wired && <Handle type="source" position={Position.Right} id={`out-${p.id}`} className="port out chan-port legacy" title={`${p.name}'s own sound`} />}
+                <Handle type="source" position={Position.Right} id={`trig-${p.id}`} className={`port trig out ${fires.length ? '' : 'free'}`} title={`${p.name}: trigger · wire into an instrument's trigger on a pattern node`} />
               </li>
             )
           })}
           <li className="chan mix">
-            <span className="chan-name">{heldBack > 0 ? 'rest' : 'all'}</span>
-            <Handle type="source" position={Position.Right} id="out" className="port out" title={heldBack > 0 ? 'Every layer except the ones held back' : 'Every layer'} />
+            <span className="chan-name">sound</span>
+            <Handle type="source" position={Position.Right} id="out" className="port out" title="The layers that play their own sound (one that triggers instruments plays through them instead)" />
           </li>
         </ul>
       )}
@@ -648,8 +664,18 @@ function StudioNode({ id, selected }) {
                   {pattern.channels.map((c) => {
                     const wired = ctx.project.edges.some((e) => e.source === id && e.sourceHandle === `out-${c.id}`)
                     const onMain = !offMain[c.id]
+                    const firedBy = ctx.project.edges.filter((e) => e.target === id && e.targetHandle === `trig-${c.id}`)
                     return (
-                      <li key={c.id} className={`chan ${c.mute ? 'muted' : ''} ${wired ? 'wired' : ''} ${onMain ? '' : 'held'}`} data-flow={`${id}|${c.id}`}>
+                      <li key={c.id} className={`chan ${c.mute ? 'muted' : ''} ${wired ? 'wired' : ''} ${onMain ? '' : 'held'} ${firedBy.length ? 'fired' : ''}`} data-flow={`${id}|${c.id}`}>
+                        <Handle
+                          type="target"
+                          position={Position.Left}
+                          id={`trig-${c.id}`}
+                          className={`port trig in ${firedBy.length ? '' : 'free'}`}
+                          title={firedBy.length
+                            ? `${c.name} plays on ${firedBy.map((e) => layerLabel(ctx.project, e)).join(' and ')}'s rhythm instead of its own steps`
+                            : `${c.name}: trigger · wire a rhythm machine's layer here to play it on that rhythm`}
+                        />
                         {ENGINES[c.engine?.type] ? (
                           // an instrument the app plays itself: its name opens its window
                           <button
@@ -1477,11 +1503,11 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
     ...e,
     type: 'wire', // with a + in the middle to add a node into it
     sourceHandle: e.sourceHandle ?? 'out',
-    data: { tension, closed: machines.split(' ').includes(e.target) },
+    data: { tension, closed: isTrigger(e) || machines.split(' ').includes(e.target) },
     style: wireTint.get(e.id) ? { '--wire': wireTint.get(e.id) } : undefined,
     animated: started,
-    className: e.id === spliceTarget || knifeHits.has(e.id) ? 'splice-target' : e.id === detaching ? 'detaching' : '',
-    domAttributes: { 'data-touches': `${e.source} ${e.target}`, ...(machines.split(' ').includes(e.target) ? { 'data-closed': '' } : {}) },
+    className: `${isTrigger(e) ? 'trigger ' : ''}${e.id === spliceTarget || knifeHits.has(e.id) ? 'splice-target' : e.id === detaching ? 'detaching' : ''}`,
+    domAttributes: { 'data-touches': `${e.source} ${e.target}`, ...(isTrigger(e) || machines.split(' ').includes(e.target) ? { 'data-closed': '' } : {}) },
     ...routeEdge(e, frameHosts),
   })), [project.edges, machines, started, spliceTarget, detaching, tension, wireTint, frameHosts, knifeHits])
   const [edges, setEdges] = useState(rfEdges)
@@ -1668,11 +1694,11 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
       // inline on the wires the knife crossed (an effect on several into one place gets a bus first)
       if (knifeAt) made = knifeInsert(p, knifeAt, id, (_i, t = type) => `${t}${newId().slice(-5)}`)
       // dragged out of a port and dropped on nothing: the wire you were pulling lands here
-      if (fromPort && NODE_TYPES[type]?.inputs) {
+      if (fromPort && NODE_TYPES[type]?.inputs && !triggerOf(fromPort.handleId)) {
         p.edges.push({ source: fromPort.nodeId, sourceHandle: fromPort.handleId ?? 'out', target: id, targetHandle: firstInput(type) })
       }
       // pulled backwards out of an input: the new node plays into it
-      if (toPort && type !== 'output') {
+      if (toPort && type !== 'output' && !triggerOf(toPort.handleId)) {
         p.edges.push({ source: id, sourceHandle: 'out', target: toPort.nodeId, targetHandle: toPort.handleId ?? 'in' })
       }
       if (after) {
@@ -1889,6 +1915,11 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
 
   const isValidConnection = useCallback((c) => {
     if (c.source === c.target) return false
+    // a trigger only ever goes from a machine's layer into an instrument's trigger port
+    if (triggerOf(c.sourceHandle) || triggerOf(c.targetHandle)) {
+      const into = project.nodes.find((n) => n.id === c.target)
+      return !!triggerOf(c.sourceHandle) && !!triggerOf(c.targetHandle) && into?.type === 'pattern'
+    }
     const target = project.nodes.find((n) => n.id === c.target)
     if (!target || !NODE_TYPES[target.type]?.inputs) return false
     // the output's right dot goes to the stream and nowhere else, and nothing else feeds the stream
@@ -1901,6 +1932,13 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
     detachRef.current = null // a pulled wire that lands on an output is rewired, not deleted
     setDetaching(null)
     onUpdateProject((p) => {
+      if (triggerOf(c.sourceHandle)) {
+        // a trigger port takes as many layers as you give it; the same wire twice is one
+        if (!p.edges.some((e) => e.source === c.source && e.sourceHandle === c.sourceHandle && e.target === c.target && e.targetHandle === c.targetHandle)) {
+          p.edges.push({ source: c.source, sourceHandle: c.sourceHandle, target: c.target, targetHandle: c.targetHandle })
+        }
+        return
+      }
       const target = p.nodes.find((n) => n.id === c.target)
       const spec = NODE_TYPES[target?.type]
       const handle = spec?.inputs === 1 ? 'in' : c.targetHandle
