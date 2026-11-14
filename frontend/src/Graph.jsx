@@ -15,7 +15,11 @@ import { canAutomate, nodeTarget, unitTarget } from './automation.js'
 import SoundPicker from './SoundPicker.jsx'
 import { useRollDock } from './rollDock.js'
 import AddMenu from './AddMenu.jsx'
-import StreamRow from './StreamRow.jsx'
+import StreamPanel from './StreamRow.jsx'
+import { startStream } from './stream.js'
+
+// the output and the stream take in, never play on: no solo, no "not heard"
+const LISTENS = new Set(['output', 'stream'])
 import CodeBox from './CodeBox.jsx'
 import { ADD_INTO_WIRE, EDGE_TYPES } from './WireEdge.jsx'
 import { copyNodes, pasteNodes, readClipboard, writeClipboard } from './nodeClipboard'
@@ -575,7 +579,7 @@ function StudioNode({ id, selected }) {
 
   return (
     <div
-      className={`gnode g-${spec.group} t-${node.type} ${selected ? 'selected' : ''} ${soloing ? 'soloing' : ''} ${node.type !== 'output' && !ctx.heard.has(id) ? 'unheard' : ''} ${heldBy ? 'peer-held' : ''}`}
+      className={`gnode g-${spec.group} t-${node.type} ${selected ? 'selected' : ''} ${soloing ? 'soloing' : ''} ${!LISTENS.has(node.type) && !ctx.heard.has(id) ? 'unheard' : ''} ${heldBy ? 'peer-held' : ''}`}
       style={{ ...(tint ? { '--tint': tint, '--tint-ink': inkFor(tint) } : {}), ...(heldBy ? { '--peer': heldBy.color } : {}) }}
       title={heldBy ? `${heldBy.name} has this selected` : undefined}
       onClick={(e) => {
@@ -591,7 +595,7 @@ function StudioNode({ id, selected }) {
           <span className="node-bus" title="Runs on the bus: it works on everything mixed into it, after every per-note effect in the patch">bus</span>
         )}
         <span className="node-title">{node.type === 'pattern' ? pattern?.name ?? 'no pattern' : node.data.name ?? ''}</span>
-        {node.type !== 'output' && (
+        {!LISTENS.has(node.type) && (
           <button
             className={`node-btn nodrag ${soloing ? 'on' : ''}`}
             onClick={() => ctx.setSolo(soloing ? null : id)}
@@ -603,7 +607,7 @@ function StudioNode({ id, selected }) {
       </div>
 
       <div className="node-body">
-        {node.type !== 'output' && !ctx.heard.has(id) && (
+        {!LISTENS.has(node.type) && !ctx.heard.has(id) && (
           <p className="node-warn">
             {spec.inputs && !spec.abstract && wires.length === 0
               ? 'not heard · drop it on a wire, or wire it between a sound and the output'
@@ -805,10 +809,15 @@ function StudioNode({ id, selected }) {
             </li>
           </ul>
         )}
-        {node.type === 'output' && <StreamRow />}
+        {node.type === 'output' && !ctx.project.nodes.some((n) => n.type === 'stream') && (
+          <button type="button" className="stream-open nodrag" onClick={ctx.addStream}
+            title="Stream what you hear as data (every hit, the spectrum, the energy) to TouchDesigner, Max or an agent">stream →</button>
+        )}
+        {node.type === 'stream' && <StreamPanel />}
       </div>
 
-      {node.type !== 'output' && !outInList && <Handle type="source" position={Position.Right} id="out" className="port out" />}
+      {!LISTENS.has(node.type) && !outInList && <Handle type="source" position={Position.Right} id="out" className="port out" />}
+      {node.type === 'output' && ctx.project.nodes.some((n) => n.type === 'stream') && <Handle type="source" position={Position.Right} id="out" className="port out" />}
     </div>
   )
 }
@@ -1463,7 +1472,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
   // a wire to or from a node hidden in a collapsed frame is drawn to the frame's edge instead
   const frameHosts = useMemo(() => collapsedHosts(project.frames), [project.frames])
   // rhythm machines, as a string so moving nodes doesn't redraw every wire: wires into one take no inserts
-  const machines = project.nodes.filter((n) => NODE_TYPES[n.type]?.abstract).map((n) => n.id).join(' ')
+  const machines = project.nodes.filter((n) => NODE_TYPES[n.type]?.abstract || n.type === 'stream').map((n) => n.id).join(' ')
   const rfEdges = useMemo(() => project.edges.map((e) => ({
     ...e,
     type: 'wire', // with a + in the middle to add a node into it
@@ -1597,7 +1606,25 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
     if (gone.has(solo)) onSolo(null)
   }, [onUpdateProject, solo, onSolo])
 
+  // the stream: one per track, to the right of the output, wired from it, switched on
+  const addStream = useCallback(() => {
+    const output = project.nodes.find((n) => n.type === 'output')
+    const have = project.nodes.find((n) => n.type === 'stream')
+    if (!output) return null
+    if (!have) {
+      const id = `stream${newId().slice(-5)}`
+      onUpdateProject((p) => {
+        const out = p.nodes.find((n) => n.type === 'output')
+        p.nodes.push({ id, type: 'stream', x: out.x + 340, y: out.y, data: defaultData('stream') })
+        p.edges.push({ source: out.id, sourceHandle: 'out', target: id, targetHandle: 'in' })
+      })
+    }
+    startStream()
+    return have?.id ?? null
+  }, [project.nodes, onUpdateProject])
+
   const addNode = useCallback((type, position, instrument, intoWire = null, fromPort = null, toPort = null, quick = null, knifeAt = null) => {
+    if (type === 'stream') return addStream()
     const id = `${type}${newId().slice(-5)}`
     const rect = wrapRef.current?.getBoundingClientRect()
     let at = position
@@ -1664,7 +1691,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
     if (clicked || quick) selectNext.current = id // so shift + A again carries on the chain
     if (knifeAt) selectNext.current = made ?? id
     return id
-  }, [flow, onUpdateProject, project.nodes])
+  }, [flow, onUpdateProject, project.nodes, addStream])
 
   // nodes with a path of wires to an output: everything else is silent
   const heard = useMemo(() => {
@@ -1826,6 +1853,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
       return next
     }),
     updateNode,
+    addStream,
     removeNode: (id) => removeNodes([id]),
     frameSel,
     selectFrame,
@@ -1854,7 +1882,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
       })
       dock?.open(patternId, null, 'rack')
     },
-  }), [project, heard, solo, onSolo, laneSolo, onLaneSolo, updateNode, removeNodes, frameSel, selectFrame, updateFrame, removeFrame, toggleFrame, onUpdateProject, automation, dock])
+  }), [project, heard, solo, onSolo, laneSolo, onLaneSolo, updateNode, addStream, removeNodes, frameSel, selectFrame, updateFrame, removeFrame, toggleFrame, onUpdateProject, automation, dock])
 
   // what we have selected, so the others see it ringed on their canvas
   useEffect(() => { selectionIs('graph', nodes.filter((n) => n.selected && n.type !== 'frame').map((n) => n.id)) }, [nodes])
@@ -1863,6 +1891,8 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
     if (c.source === c.target) return false
     const target = project.nodes.find((n) => n.id === c.target)
     if (!target || !NODE_TYPES[target.type]?.inputs) return false
+    // the output's right dot goes to the stream and nowhere else, and nothing else feeds the stream
+    if ((project.nodes.find((n) => n.id === c.source)?.type === 'output') !== (target.type === 'stream')) return false
     return !makesCycle(project.edges, c.source, c.target)
   }, [project])
 

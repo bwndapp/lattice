@@ -2,13 +2,16 @@ import { NODE_TYPES, defaultData, inputKey, makesCycle } from './graph'
 import { collapsedHosts, routeEdge } from './frames'
 
 /** Can this kind of node be dropped into the middle of a wire? It needs an input and an output. */
-export const splicable = (type) => !!NODE_TYPES[type]?.inputs && type !== 'output'
+export const splicable = (type) => !!NODE_TYPES[type]?.inputs && type !== 'output' && type !== 'stream'
 /**
  * Can something go in the middle of this wire? Not on one into a rhythm machine (the cube,
  * the Fibonacci…): what's wired there is played by the machine's rhythm, so an effect in
  * between would cut the sound off from it. Effects go after the machine instead.
  */
-export const takesInserts = (p, wire) => !NODE_TYPES[p.nodes.find((n) => n.id === wire?.target)?.type]?.abstract
+export const takesInserts = (p, wire) => {
+  const type = p.nodes.find((n) => n.id === wire?.target)?.type
+  return !NODE_TYPES[type]?.abstract && type !== 'stream' // (the stream only listens to the output)
+}
 export const firstInput = (type) => (NODE_TYPES[type]?.inputs === 1 ? 'in' : 'in-0')
 const slotOf = (h) => Number(/^in-(\d+)$/.exec(h ?? '')?.[1] ?? -1)
 
@@ -28,14 +31,14 @@ export function spliceInto(p, edgeId, nodeId) {
  * output takes the new node after it; the output (inputs only) takes it before.
  */
 export function quickSide(node) {
-  if (!node || !NODE_TYPES[node.type]) return null
+  if (!node || !NODE_TYPES[node.type] || node.type === 'stream') return null
   if (node.type !== 'output') return 'after'
   return NODE_TYPES[node.type].inputs ? 'before' : null
 }
 
 /** Can a node of this type (an instrument comes as a 'pattern') be wired in on that side? */
 export function canQuickWire(type, side) {
-  if (!NODE_TYPES[type]) return false
+  if (!NODE_TYPES[type] || type === 'stream') return false
   if (side === 'after') return !!NODE_TYPES[type].inputs
   if (side === 'before') return type !== 'output'
   return false

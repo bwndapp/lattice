@@ -1,5 +1,5 @@
-/* the output node's stream switch (see StreamRow.jsx) */
-.stream-row { display: grid; gap: 0.35rem; margin-top: 0.4rem; padding-top: 0.45rem; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 10px; }
+/* the stream node's face (see StreamRow.jsx) */
+.stream-row { display: grid; gap: 0.5rem; margin-top: 0.3rem; font-family: var(--mono); font-size: 10px; min-width: 15rem; }
 .stream-top { display: flex; align-items: center; gap: 0.5rem; }
 .stream-switch {
   display: inline-flex; align-items: center; gap: 0.35rem;
@@ -17,3 +17,17 @@
 .stream-hint { margin: 0; line-height: 1.5; color: var(--muted); }
 .stream-hint code { color: var(--paper); }
 .stream-new { padding: 0; font: inherit; color: var(--paper); background: none; border: 0; text-decoration: underline; text-underline-offset: 2px; cursor: var(--ring); }
+
+.stream-field { display: grid; gap: 0.2rem; }
+.stream-label { color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
+.stream-link a.btn { text-decoration: none; display: inline-flex; align-items: center; }
+.stream-note { color: var(--dim); line-height: 1.4; }
+.stream-sends { margin: 0; line-height: 1.5; color: var(--muted); }
+.stream-sends code { color: var(--paper); }
+.stream-new { justify-self: start; }
+.stream-open {
+  margin-top: 0.4rem; padding: 0.15rem 0.6rem; font: inherit; font-family: var(--mono); font-size: 10px;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+  background: var(--sunk); border: 1px solid var(--line); border-radius: 999px; cursor: var(--ring);
+}
+.stream-open:hover { color: var(--paper); border-color: var(--muted); }

@@ -609,6 +609,15 @@ export const NODE_TYPES = {
     params: [],
     code: () => null, // handled by generateGraphCode
   },
+  stream: {
+    group: 'output', label: 'stream', blurb: 'What you hear, as data over a websocket: every hit, the spectrum and the energy, for TouchDesigner, Max or an agent',
+    inputs: 1, // only ever the output's wire: it listens to the master, it doesn't play
+    params: [
+      { key: 'rate', type: 'select', label: 'frames/s', options: ['15', '30', '60'], def: '60' },
+      { key: 'bins', type: 'select', label: 'spectrum', options: ['16', '32', '64'], def: '64' },
+    ],
+    code: () => null,
+  },
 }
 
 const CODE_MAX = 100_000
@@ -857,6 +866,7 @@ export function normalizeGraph(raw, patterns) {
     if (!source || !target || source.id === target.id) continue
     const spec = NODE_TYPES[target.type]
     if (!spec.inputs) continue
+    if ((source.type === 'output') !== (target.type === 'stream')) continue
     const handle = spec.inputs === 1 ? 'in' : `in-${slotIndex(e.targetHandle)}`
     if (Array.isArray(spec.inputs) && slotIndex(e.targetHandle) >= spec.inputs.length) continue
     // a wire can leave a pattern node by one instrument's port instead of its main out;
@@ -980,7 +990,7 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     trail.add(id)
     const node = byId.get(id)
     const spec = node && NODE_TYPES[node.type]
-    if (!spec || node.type === 'output') { exprs.set(id, null); return null }
+    if (!spec || node.type === 'output' || node.type === 'stream') { exprs.set(id, null); return null }
     const wires = inputsOf(edges, id)
     const inputs = []
     const slots = []

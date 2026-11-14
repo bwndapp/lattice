@@ -16,7 +16,7 @@
  *                rms, peak (0 … 1, linear), db (rms in dBFS),
  *                bands { sub, bass, lowmid, mid, highmid, presence, air } (0 … 1),
  *                centroid (Hz: how bright), flux (0 … 1: how much changed since the last
- *                frame — spikes on every hit), spectrum [64 × 0 … 1, 20 Hz – 20 kHz, log] }
+ *                frame — spikes on every hit), spectrum [16, 32 or 64 × 0 … 1, 20 Hz – 20 kHz, log] }
  *   transport  play or stop: { t, playing, bpm, beats }
  *   status     (from the server) whether anyone's publishing: { live }
  *
@@ -28,8 +28,8 @@ import { getAudioContext, getSuperdoughAudioController } from '@strudel/webaudio
 import { API_ROOT } from './base'
 import { currentA4, midiOf } from './tuning.js'
 
-const RATE = 60
-const BINS = 64
+let RATE = 60 // the stream node's settings: frames a second, and spectrum bins
+let BINS = 64
 const BANDS = [['sub', 20, 60], ['bass', 60, 250], ['lowmid', 250, 500], ['mid', 500, 2000], ['highmid', 2000, 4000], ['presence', 4000, 6000], ['air', 6000, 20000]]
 const FLOOR = -100
 const CEIL = -10
@@ -64,6 +64,11 @@ const newKey = () => {
   return btoa(String.fromCharCode(...a)).replace(/\+/g, '-').replace(/\//g, '_')
 }
 
+/** Everything about the stream on one page, for a person or an agent (src/api/stream.py). */
+export function streamGuideUrl(key = state.key) {
+  return key ? `${window.location.origin}${API_ROOT}/stream/${key}/guide` : ''
+}
+
 /** Where to listen: the websocket URL for this stream. */
 export function streamUrl(key = state.key) {
   if (!key) return ''
@@ -92,12 +97,23 @@ export function setStreamProject(project) {
     nodes.set(n.id, n.data?.name || pattern?.name || n.type)
   }
   names = { nodes, insts }
+  if (!project) return
+  // the stream node: its settings, and taking it off the patch switches the stream off
+  const node = project.nodes?.find((n) => n.type === 'stream')
+  if (!node) { if (state.on) stop(true); return }
+  const rate = Number(node.data?.rate) || 60
+  BINS = Number(node.data?.bins) || 64
+  if (rate !== RATE) {
+    RATE = rate
+    if (frameTimer) { clearInterval(frameTimer); frameTimer = setInterval(frame, 1000 / RATE) }
+  }
 }
 
 /** How to ask where the song is: { playing(), cycle(), cps(), beats() }. */
 export function setStreamTransport(getters) { transport = { ...transport, ...getters } }
 
 export function toggleStream() { (state.on ? stop : start)(true) }
+export function startStream() { if (!state.on) start(true) }
 
 /** A new link: anyone with the old one stops hearing it. */
 export function newStreamLink() {
@@ -199,7 +215,7 @@ function tap() {
 // the FFT bins each log-spaced bin and band covers, worked out once per sample rate
 let layout = null
 function layoutFor(rate, n) {
-  if (layout?.rate === rate && layout.n === n) return layout
+  if (layout?.rate === rate && layout.n === n && layout.bins.length === BINS) return layout
   const hz = rate / 2 / n
   const bin = (f) => Math.min(n - 1, Math.max(1, Math.round(f / hz)))
   const edges = Array.from({ length: BINS + 1 }, (_, i) => 20 * 1000 ** (i / BINS)) // 20 Hz … 20 kHz
@@ -239,7 +255,7 @@ function frame() {
     let den = 0
     for (let i = 1; i < freq.length; i++) { const p = 10 ** (freq[i] / 10); num += p * i * L.hz; den += p }
     let flux = 0
-    if (lastSpec) for (let i = 0; i < BINS; i++) flux += Math.max(0, spectrum[i] - lastSpec[i])
+    if (lastSpec?.length === BINS) for (let i = 0; i < BINS; i++) flux += Math.max(0, spectrum[i] - lastSpec[i])
     lastSpec = spectrum
     Object.assign(msg, {
       rms: round(rms),
@@ -247,7 +263,7 @@ function frame() {
       db: round(20 * Math.log10(rms + 1e-9), 1),
       bands: Object.fromEntries(L.bands.map(([k, a, b]) => [k, round(norm(powerDb(a, b)), 3)])),
       centroid: den > 0 ? Math.round(num / den) : 0,
-      flux: round(Math.min(1, flux / 8), 3),
+      flux: round(Math.min(1, flux / (BINS / 8)), 3),
       spectrum,
     })
   }

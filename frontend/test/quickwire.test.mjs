@@ -29,6 +29,7 @@ const src = (f) => JSON.stringify(path.join(here, '..', 'src', f))
 fs.writeFileSync(entry, [
   `export * from ${src('quickWire.js')}`,
   `export { makesCycle } from ${src('graph.js')}`,
+  `export { normalizeProject } from ${src('project.js')}`,
 ].join('\n'))
 execFileSync(path.join(here, '..', 'node_modules', '.bin', 'esbuild'), [
   entry, '--bundle', '--format=esm', '--platform=neutral', '--log-level=error',
@@ -113,6 +114,20 @@ p = patch([['s', 'pattern'], ['f', 'fib'], ['d', 'delay'], ['o', 'output', 900]]
 ok('no effect between a sound and the Fibonacci', !m.takesInserts(p, p.edges[0]) && !m.spliceInto(p, 'w1', 'd') && wires(p) === 'f>o s>f', wires(p))
 ok('one after it still goes in', m.spliceInto(p, 'w2', 'd') && wires(p) === 'd>o f>d s>f', wires(p))
 ok('the knife skips it too', m.knifeMode(p, [{ id: 'w1' }], 'delay') === null)
+
+// the stream: only ever on the output's wire, and nothing goes in between
+{
+  const q = m.normalizeProject({ v: 3, bpm: 120, beats: 4, patterns: [], nodes: [
+    { id: 'out', type: 'output', x: 0, y: 0, data: {} },
+    { id: 'st', type: 'stream', x: 300, y: 0, data: { rate: '30', bins: '99' } },
+    { id: 'n', type: 'stack', x: -300, y: 0, data: {} }],
+  edges: [{ source: 'out', target: 'st', targetHandle: 'in' }, { source: 'n', target: 'st' }, { source: 'out', target: 'n', targetHandle: 'in-0' }] })
+  const st = q.nodes.find((n) => n.type === 'stream')
+  ok('the stream keeps its settings, bad ones reset', st?.data.rate === '30' && st?.data.bins === '64', JSON.stringify(st?.data))
+  ok('only the output wires into the stream, and only to it', q.edges.map((e) => `${e.source}>${e.target}`).join(' ') === 'out>st', q.edges.map((e) => `${e.source}>${e.target}`).join(' '))
+  ok('nothing splices into the stream wire', !m.splicable('stream') && !m.takesInserts(q, q.edges[0]))
+  ok('shift + A skips the stream', m.quickSide(st) === null && !m.canQuickWire('stream', 'after'))
+}
 
 if (fails) { console.log(`\n${fails} failed`); process.exit(1) }
 console.log('\nall passed')
