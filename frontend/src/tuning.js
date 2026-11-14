@@ -11,6 +11,9 @@ export const TUNING_MAX = 480
 
 let ratio = 1
 
+/** A4 right now, in Hz. */
+export const currentA4 = () => A4 * ratio
+
 /** The track's tuning, A4 in Hz. */
 export function setTuning(hz) {
   const a4 = Number(hz)
@@ -19,7 +22,7 @@ export function setTuning(hz) {
 
 const NOTE = /^([a-gA-G])([#bsf]*)(-?\d+)?$/
 const CHROMA = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 }
-function midiOf(note) {
+export function midiOf(note) {
   if (typeof note === 'number') return Number.isFinite(note) ? note : null
   const m = NOTE.exec(String(note ?? '').trim())
   if (!m) return null

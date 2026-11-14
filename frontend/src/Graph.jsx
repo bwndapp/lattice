@@ -15,6 +15,7 @@ import { canAutomate, nodeTarget, unitTarget } from './automation.js'
 import SoundPicker from './SoundPicker.jsx'
 import { useRollDock } from './rollDock.js'
 import AddMenu from './AddMenu.jsx'
+import StreamRow from './StreamRow.jsx'
 import CodeBox from './CodeBox.jsx'
 import { ADD_INTO_WIRE, EDGE_TYPES } from './WireEdge.jsx'
 import { copyNodes, pasteNodes, readClipboard, writeClipboard } from './nodeClipboard'
@@ -804,6 +805,7 @@ function StudioNode({ id, selected }) {
             </li>
           </ul>
         )}
+        {node.type === 'output' && <StreamRow />}
       </div>
 
       {node.type !== 'output' && !outInList && <Handle type="source" position={Position.Right} id="out" className="port out" />}

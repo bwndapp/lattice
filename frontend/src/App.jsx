@@ -22,6 +22,7 @@ import { Glass } from './Glass.jsx'
 import { AutomationEditor } from './Automation.jsx'
 import { routeVoice } from './fxbus.js'
 import { A4, TUNING_MAX, TUNING_MIN, setTuning } from './tuning.js'
+import { setStreamProject, setStreamTrack, setStreamTransport, streamHit, streamTransport } from './stream.js'
 import Versions from './Versions.jsx'
 import ExportDialog from './ExportDialog.jsx'
 import Tooltip from './Tooltip.jsx'
@@ -201,6 +202,19 @@ export default function App() {
   const project = useMemo(() => parseProject(code), [code])
   // the track's A4, for every note on its way out (tuning.js); code without a project is at 440
   useEffect(() => setTuning(project?.tuning ?? A4), [project?.tuning])
+  // the stream (stream.js): which track, and the names behind its ids
+  useEffect(() => setStreamTrack(trackId), [trackId])
+  useEffect(() => setStreamProject(project), [project])
+  useEffect(() => {
+    const sch = () => editorRef.current?.repl?.scheduler
+    setStreamTransport({
+      playing: () => !!sch()?.started,
+      cycle: () => (sch()?.started ? sch().now() : 0),
+      cps: () => sch()?.cps ?? 0.5,
+      beats: () => transportRef.current?.beats ?? 4,
+    })
+  }, [])
+  useEffect(() => streamTransport(started), [started])
   // tracks saved when a solo was part of the patch: take it as your own, once
   const tookSolo = useRef(null)
   useEffect(() => {
@@ -391,7 +405,13 @@ export default function App() {
   useEffect(() => {
     if (editorRef.current) return // StrictMode mounts twice in dev
     editorRef.current = new StrudelMirror({
-      defaultOutput: (hap, ...rest) => webaudioOutput(hap.withValue(routeVoice), ...rest), // reverb & delay sends, and the tuning (fxbus.js)
+      defaultOutput: (hap, deadline, duration, cps, t) => {
+        const out = hap.withValue(routeVoice) // reverb & delay sends, and the tuning (fxbus.js)
+        // the stream (stream.js): each sound, sent as it's heard
+        const ac = getAudioContext()
+        streamHit(out.value, t - ac.currentTime + (ac.outputLatency || 0), duration, hap.whole?.begin?.valueOf())
+        return webaudioOutput(out, deadline, duration, cps, t)
+      },
       getTime: () => getAudioContext().currentTime,
       transpiler,
       root: rootRef.current,
