@@ -90,3 +90,7 @@ html .gnode .btn.primary { background: transparent; border-color: var(--line); c
 html .gnode .btn.primary:hover:not(:disabled) { border-color: var(--acid); color: var(--acid); }
 html .graph-canvas .port { border-color: var(--muted); background: var(--panel); }
 html .graph-canvas .port:hover { border-color: var(--acid); }
+
+/* the sliding switches: the thumb was glass over the labels; flat, it sits behind them */
+html .glass, html .cs-thumb, html .gswitch-thumb, html .b-switch-thumb, html .song-tools-thumb { z-index: 0; }
+html .cs-opt, html .gswitch-opt, html .b-switch-opt, html .song-tools .song-tool, html .song-tools button { position: relative; z-index: 1; }
