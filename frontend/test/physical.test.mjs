@@ -6,7 +6,7 @@
 import { DSP_BASE } from '../src/instruments/dsp.js'
 import { KickDrive } from '../src/instruments/kick.js'
 import kick from '../src/instruments/kick.js'
-import spec, { MODELS, EXCITERS, BODIES } from '../src/instruments/physical.js'
+import spec, { MODELS, EXCITERS, BODIES, PRESETS } from '../src/instruments/physical.js'
 
 let fails = 0
 const ok = (name, cond, extra) => {
@@ -74,6 +74,17 @@ for (let b = 1; b < BODIES.length; b++) {
   for (let i = 0; i < o.length; i += 2400) if (peak(o.slice(i, i + 2400)) > 0.05) bumps++
   ok('a bounce hits more than once', bumps >= 3, bumps)
 }
+
+for (const pr of PRESETS) {
+  const bad = Object.entries(pr.data).filter(([k, v]) => {
+    const d = spec.params.find((p) => p.key === k)
+    return !d || v < d.min || v > d.max || (d.choices && !Number.isInteger(v))
+  })
+  const o = run(pr.data, { secs: 1.5 })
+  const p = peak(o)
+  ok(`preset ${pr.name}: real knobs in range, heard, under clipping`, !bad.length && o.every(Number.isFinite) && p > 0.05 && p < 0.98, bad.length ? JSON.stringify(bad) : p.toFixed(3))
+}
+ok('preset names are unique', new Set(PRESETS.map((p) => p.name)).size === PRESETS.length)
 
 if (fails) { console.log(`\n${fails} failed`); process.exit(1) }
 console.log('\nall passed')

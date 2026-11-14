@@ -198,6 +198,7 @@ export default function SynthWindow({ project, patternId, channelId, order, fron
           ? <Panel data={data} groups={groups} knob={knob} change={change} target={target} play={play} hold={hold} watch={watch} cps={(Number(project.bpm) || 140) / (Number(project.beats) || 4) / 60} />
           : (
             <div className="sw-groups">
+              {spec.presets && <PresetBar spec={spec} data={data} load={(d) => edit((c) => { c.engine = { ...c.engine, data: { ...d } } })} play={() => play(null)} />}
               {groups.map((g) => (
                 <section key={g.key} className="sw-group" aria-label={g.title}>
                   <h3 className="sw-group-title">{g.title}</h3>
@@ -220,6 +221,71 @@ export default function SynthWindow({ project, patternId, channelId, order, fron
             </div>
           )}
       </div>
+    </div>
+  )
+}
+
+// ── presets, for an engine that's a list of knobs ───────────────────────────
+
+const readSaved = (type) => { try { return JSON.parse(localStorage.getItem(`lattice:presets:${type}`)) ?? [] } catch { return [] } }
+const writeSaved = (type, list) => { try { localStorage.setItem(`lattice:presets:${type}`, JSON.stringify(list)) } catch { /* storage unavailable */ } }
+const sameData = (spec, a, b) => spec.params.every((p) => Math.abs((a[p.key] ?? p.def) - (b[p.key] ?? p.def)) < 1e-6)
+
+/**
+ * A row of presets above the knobs: the engine's own, by group, and any saved in this
+ * browser. ‹ › step through them (and play one, so you hear where you landed); the name
+ * shows which one the knobs are on, or "custom" once you've moved one.
+ */
+function PresetBar({ spec, data, load, play }) {
+  const [saved, setSaved] = useState(() => readSaved(spec.type))
+  const [naming, setNaming] = useState(null) // the name being typed for a save
+  const all = [
+    ...spec.presets.map((p) => ({ ...p, key: `b:${p.name}`, full: engineData({ type: spec.type, data: p.data }) })),
+    ...saved.map((p) => ({ ...p, group: 'saved in this browser', key: `u:${p.name}`, full: engineData({ type: spec.type, data: p.data }) })),
+  ]
+  const at = all.findIndex((p) => sameData(spec, p.full, data))
+  const pick = (p) => { load(p.data); setTimeout(play, 30) }
+  const step = (d) => pick(all[((at < 0 ? (d > 0 ? -1 : 0) : at) + d + all.length) % all.length])
+  const groups = [...new Set(all.map((p) => p.group))]
+  const save = () => {
+    const name = (naming ?? '').trim().slice(0, 40)
+    if (!name) return setNaming(null)
+    const next = [...saved.filter((p) => p.name !== name), { name, data: { ...data } }].slice(-60)
+    setSaved(next)
+    writeSaved(spec.type, next)
+    setNaming(null)
+  }
+  const remove = () => {
+    const p = all[at]
+    if (!p?.key.startsWith('u:')) return
+    const next = saved.filter((x) => x.name !== p.name)
+    setSaved(next)
+    writeSaved(spec.type, next)
+  }
+  return (
+    <div className="sw-presets">
+      <button type="button" className="sw-step" onClick={() => step(-1)} aria-label="Previous preset">‹</button>
+      <select className="select sw-preset-list" value={at >= 0 ? all[at].key : ''} aria-label="Presets" onChange={(e) => { const p = all.find((x) => x.key === e.target.value); if (p) pick(p) }}>
+        {at < 0 && <option value="">custom</option>}
+        {groups.map((g) => (
+          <optgroup key={g} label={g}>
+            {all.filter((p) => p.group === g).map((p) => <option key={p.key} value={p.key}>{p.name}</option>)}
+          </optgroup>
+        ))}
+      </select>
+      <button type="button" className="sw-step" onClick={() => step(1)} aria-label="Next preset">›</button>
+      {naming == null ? (
+        <>
+          <button type="button" className="btn ghost" onClick={() => setNaming(at >= 0 && all[at].key.startsWith('u:') ? all[at].name : '')} title="Keep these settings as a preset in this browser">save</button>
+          {at >= 0 && all[at].key.startsWith('u:') && <button type="button" className="btn ghost" onClick={remove} title="Forget this saved preset">delete</button>}
+        </>
+      ) : (
+        <form className="sw-save" onSubmit={(e) => { e.preventDefault(); save() }}>
+          {/* eslint-disable-next-line jsx-a11y/no-autofocus */}
+          <input className="node-input" autoFocus value={naming} maxLength={40} placeholder="name it" aria-label="Preset name" onChange={(e) => setNaming(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setNaming(null) } }} />
+          <button type="submit" className="btn">keep</button>
+        </form>
+      )}
     </div>
   )
 }

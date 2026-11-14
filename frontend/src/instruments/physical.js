@@ -390,6 +390,49 @@ class PhysicalProcessor extends LatticeInstrument {
 registerProcessor('lattice-physical', PhysicalProcessor)
 `
 
+// ── presets: places to start from, by name (lists by index: see MODELS, EXCITERS, BODIES) ──
+
+const ex = (n) => EXCITERS.indexOf(n)
+const mo = (n) => MODELS.indexOf(n)
+const bo = (n) => BODIES.indexOf(n)
+export const PRESETS = [
+  // strings
+  { name: 'nylon guitar', group: 'strings', data: { exciter: ex('pluck'), hardness: 0.45, position: 0.2, model: mo('string'), decay: 3, material: 0.35, stiffness: 0.05, body: bo('plate'), bodydecay: 0.15, bodymix: 0.35 } },
+  { name: 'steel guitar', group: 'strings', data: { exciter: ex('pluck'), hardness: 0.7, position: 0.12, model: mo('string'), decay: 5, material: 0.7, stiffness: 0.15, body: bo('plate'), bodydecay: 0.2, bodymix: 0.3 } },
+  { name: 'strummed', group: 'strings', data: { exciter: ex('strum'), length: 0.08, hardness: 0.55, position: 0.2, model: mo('string'), decay: 4, material: 0.5, body: bo('plate'), bodydecay: 0.2, bodymix: 0.3 } },
+  { name: 'harp', group: 'strings', data: { exciter: ex('pluck'), hardness: 0.35, position: 0.35, model: mo('string'), decay: 6, material: 0.55, stiffness: 0.02, random: 0.1 } },
+  { name: 'koto', group: 'strings', data: { exciter: ex('pluck'), hardness: 0.85, position: 0.08, model: mo('string'), decay: 2.5, material: 0.5, stiffness: 0.25, body: bo('tube'), bodydecay: 0.12, bodymix: 0.25 } },
+  { name: 'banjo', group: 'strings', data: { exciter: ex('pluck'), hardness: 0.9, position: 0.06, model: mo('string'), decay: 1.5, material: 0.65, body: bo('membrane'), bodydecay: 0.08, bodymix: 0.55 } },
+  { name: 'plucked bass', group: 'strings', data: { exciter: ex('pluck'), hardness: 0.3, position: 0.25, model: mo('string'), decay: 3, material: 0.3, stiffness: 0.02 } },
+  { name: 'hammered piano', group: 'strings', data: { exciter: ex('mallet'), hardness: 0.6, position: 0.12, model: mo('string'), decay: 8, material: 0.7, stiffness: 0.35, body: bo('plate'), bodydecay: 0.6, bodymix: 0.3 } },
+  { name: 'bowed cello', group: 'strings', data: { exciter: ex('bow'), length: 0.15, hardness: 0.4, model: mo('string'), decay: 4, material: 0.4, stiffness: 0.05, body: bo('plate'), bodydecay: 0.25, bodymix: 0.4, release: 0.4 } },
+  // mallets
+  { name: 'marimba', group: 'mallets', data: { exciter: ex('mallet'), hardness: 0.35, position: 0.2, model: mo('bar'), decay: 1.2, material: 0.2, stiffness: 0, body: bo('tube'), bodydecay: 0.5, bodymix: 0.45 } },
+  { name: 'vibraphone', group: 'mallets', data: { exciter: ex('mallet'), hardness: 0.55, model: mo('bar'), decay: 4, material: 0.85, stiffness: 0, body: bo('tube'), bodydecay: 1.2, bodymix: 0.4 } },
+  { name: 'glockenspiel', group: 'mallets', data: { exciter: ex('mallet'), hardness: 0.9, position: 0.1, model: mo('bar'), decay: 3, material: 0.95, stiffness: 0 } },
+  { name: 'kalimba', group: 'mallets', data: { exciter: ex('pluck'), hardness: 0.7, position: 0.15, model: mo('bar'), decay: 1.5, material: 0.5, stiffness: 0, body: bo('plate'), bodydecay: 0.1, bodymix: 0.3 } },
+  { name: 'steel pan', group: 'mallets', data: { exciter: ex('mallet'), hardness: 0.55, position: 0.25, model: mo('harmonic'), decay: 2, material: 0.8, stiffness: 0.12, body: bo('bowl'), bodydecay: 0.3, bodymix: 0.3 } },
+  // drums
+  { name: 'tom', group: 'drums', data: { exciter: ex('mallet'), hardness: 0.4, position: 0.2, model: mo('membrane'), decay: 0.5, material: 0.3, stiffness: 0 } },
+  { name: 'tabla', group: 'drums', data: { exciter: ex('mallet'), hardness: 0.7, position: 0.3, model: mo('membrane'), decay: 0.9, material: 0.55, stiffness: 0.3, random: 0.3 } },
+  { name: 'frame drum', group: 'drums', data: { exciter: ex('mallet'), hardness: 0.25, position: 0.45, model: mo('membrane'), decay: 0.7, material: 0.2, body: bo('tube'), bodytune: -12, bodydecay: 0.15, bodymix: 0.4 } },
+  // metal & glass
+  { name: 'church bell', group: 'metal & glass', data: { exciter: ex('mallet'), hardness: 0.6, model: mo('bell'), decay: 9, material: 0.95, random: 0.2 } },
+  { name: 'gong', group: 'metal & glass', data: { exciter: ex('mallet'), hardness: 0.3, model: mo('gong'), decay: 8, material: 0.9, random: 0.3 } },
+  { name: 'singing bowl', group: 'metal & glass', data: { exciter: ex('mallet'), hardness: 0.3, model: mo('bowl'), decay: 12, material: 0.95 } },
+  { name: 'sung bowl', group: 'metal & glass', data: { exciter: ex('bow'), length: 0.8, hardness: 0.35, model: mo('bowl'), decay: 10, material: 0.95, release: 4 } },
+  { name: 'wine glass', group: 'metal & glass', data: { exciter: ex('bow'), length: 0.5, hardness: 0.5, model: mo('glass'), decay: 6, material: 0.95, release: 1.5 } },
+  { name: 'spring hit', group: 'metal & glass', data: { exciter: ex('mallet'), hardness: 0.8, model: mo('spring'), decay: 2.5, material: 0.8, stiffness: 0.6 } },
+  { name: 'scraped plate', group: 'metal & glass', data: { exciter: ex('scrape'), hardness: 0.6, length: 0.1, model: mo('plate'), decay: 2, material: 0.9, release: 0.6 } },
+  // wind
+  { name: 'flute', group: 'wind', data: { exciter: ex('breath'), length: 0.08, hardness: 0.5, model: mo('tube'), decay: 3, material: 0.6, stiffness: 0, release: 0.3 } },
+  { name: 'reed', group: 'wind', data: { exciter: ex('bow'), length: 0.05, hardness: 0.6, model: mo('tube'), decay: 4, material: 0.5, stiffness: 0, release: 0.2 } },
+  // odd
+  { name: 'dropped marble', group: 'odd', data: { exciter: ex('bounce'), length: 0.4, hardness: 0.9, model: mo('glass'), decay: 1.5, material: 0.9 } },
+  { name: 'rain on tin', group: 'odd', data: { exciter: ex('bounce'), length: 0.1, hardness: 0.8, model: mo('plate'), decay: 0.8, material: 0.9 } },
+  { name: 'breathing gong', group: 'odd', data: { exciter: ex('breath'), length: 0.6, hardness: 0.4, model: mo('gong'), decay: 6, material: 0.85, release: 3 } },
+]
+
 export default {
   type: 'physical',
   label: 'physical',
@@ -399,6 +442,7 @@ export default {
   voices: 8,
   oneShot: false, // let go and it rings on for its release
   params: PARAMS,
+  presets: PRESETS,
   groups: [['exciter', 'exciter'], ['resonator', 'resonator'], ['body', 'body'], ['out', 'out']],
   /** How long it rings once the note ends. */
   tail: (d) => Math.max(Math.min(d.decay, d.release), d.body ? Math.min(d.bodydecay, d.release) : 0) * 1.1 + 0.05,
