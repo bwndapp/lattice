@@ -16,6 +16,21 @@ const threeFiles = () => ({
   },
 })
 
+// Strudel's scheduler looks 0.2 s ahead: a slower machine that stalls the page for longer
+// than that (a busy patch redrawing) makes it skip whole windows of notes, which you hear
+// as the sound cutting in and out. Looking 0.35 s ahead rides out those stalls; edits
+// reach the ears that little bit later.
+const LOOKAHEAD_OVERLAP = 0.25
+const schedulerHeadroom = () => ({
+  name: 'scheduler-headroom',
+  transform(code, id) {
+    if (!/@strudel[\\/]core[\\/]dist[\\/]index\.mjs$/.test(id)) return null
+    const from = '// duration of each cycle\n      0.1,\n      0.1,'
+    if (!code.includes(from)) { this.warn('scheduler-headroom: Strudel changed, lookahead not widened'); return null }
+    return { code: code.replace(from, `// duration of each cycle\n      0.1,\n      ${LOOKAHEAD_OVERLAP},`), map: null }
+  },
+})
+
 // The incubator serves two dirs (see the FastAPI server):
 //   public/  → the live site at  /            (SPA catch-all serves files + index.html)
 //   webapp/  → the draft at      /preview/
@@ -30,7 +45,7 @@ export default defineConfig({
   base: './',
   // copied as-is into the build (the share image); not "public", which is the live site's dir
   publicDir: 'static',
-  plugins: [react(), threeFiles()],
+  plugins: [react(), threeFiles(), schedulerHeadroom()],
   // bwnd sign-in: the issuer and this app's client id come from the box's env
   // at build time (see src/bwnd.js). Empty when built outside a box.
   define: {
