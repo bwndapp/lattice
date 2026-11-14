@@ -51,6 +51,8 @@ export function abstractNodeTypes() {
     label: d.label,
     blurb: d.blurb,
     inputs: d.layers ?? 0,
+    // a layer fires everything wired into it: two or three sounds on one rhythm
+    many: (d.layers ?? []).map((_, i) => `in-${i}`),
     params: [],
     abstract: true,
     code: (data) => mainCode(d, data),
@@ -80,11 +82,13 @@ export const abstractParts = (node) => {
  */
 export function abstractBuild(node, inputs = [], slots = []) {
   return abstractParts(node).map((p, i) => {
-    const k = slots.indexOf(`in-${i}`)
+    // everything wired into this layer, played together on its rhythm
+    const mine = inputs.filter((x, k) => x && slots[k] === `in-${i}`)
+    const joined = mine.length > 1 ? `stack(${mine.join(', ')})` : mine[0]
     // each layer plays an engine (Syrup…) on an instance of its own, so two layers fed the
     // same instrument can go down different paths (instruments/host.js)
-    const fed = inputs[k] && `${inputs[k]}.fmap((v) => ({ ...v, _r: '${node.id}.${p.id}' }))`
-    if (k >= 0 && fed && p.drive) return { id: p.id, expr: p.drive(fed), own: false }
+    const fed = joined && `${joined}.fmap((v) => ({ ...v, _r: '${node.id}.${p.id}' }))`
+    if (fed && p.drive) return { id: p.id, expr: p.drive(fed), own: false }
     return { id: p.id, expr: p.expr, own: true }
   })
 }

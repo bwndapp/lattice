@@ -122,3 +122,32 @@ console.log('fib held ok')
   assert.ok(m.songParts(proj(true)).some((p) => p.src === 'pattern:syn'))
   console.log('fib is the clip ok')
 }
+
+// ── a layer fires everything wired into it ──
+{
+  const both = (type) => pm.generateCode(pm.normalizeProject({
+    bpm: 120, beats: 4,
+    patterns: [
+      { id: 'syn', name: 'syn', bars: 1, stepsPerBar: 16, channels: [{ id: 'c1', kind: 'synth', name: 'syn', sound: 'sawtooth', note: 'e3', notes: [] }] },
+      { id: 'drm', name: 'drm', bars: 1, stepsPerBar: 16, channels: [{ id: 'd1', kind: 'drum', name: 'drm', sound: 'cp', steps: [] }] },
+    ],
+    nodes: [
+      { id: 'ps', type: 'pattern', x: 0, y: 0, data: { patternId: 'syn' } },
+      { id: 'pd', type: 'pattern', x: 0, y: 0, data: { patternId: 'drm' } },
+      { id: 'm', type, x: 0, y: 0, data: {} },
+      { id: 'o', type: 'output', x: 0, y: 0, data: {} },
+    ],
+    edges: [
+      { source: 'ps', sourceHandle: 'out', target: 'm', targetHandle: 'in-0' },
+      { source: 'pd', sourceHandle: 'out', target: 'm', targetHandle: 'in-0' },
+      { source: 'm', sourceHandle: 'out', target: 'o', targetHandle: 'in-0' },
+    ],
+  }))
+  for (const type of ['fib', 'cube']) {
+    const made = both(type)
+    const line = made.split('\n').find((l) => l.startsWith('const n_m = '))
+    assert.ok(made.includes('"targetHandle":"in-0"}') && (made.match(/"target":"m","targetHandle":"in-0"/g) ?? []).length === 2, `${type}: both wires into one layer are kept`)
+    assert.match(line, /stack\(p_syn_held.*p_drm_held.*\)\.fmap\(.*_r: 'm\.\w+'.*\)\.struct\(/, `${type}: and the layer fires both`)
+  }
+  console.log('many into one layer ok')
+}
