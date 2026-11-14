@@ -991,6 +991,9 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
 
 /* signal flow: a hit lights its source and every wire that carries it onward (flow.js) */
 @property --lit { syntax: '<number>'; inherits: true; initial-value: 0; }
+/* a node's light stays on its box: see flow.js */
+@property --nlit { syntax: '<number>'; inherits: false; initial-value: 0; }
+@property --nglow { syntax: '<color>'; inherits: false; initial-value: transparent; }
 /*
  * A wire is drawn three times over: a dark casing, a coloured body, and a thin bright
  * thread down the middle, which together read as something round with light in it rather
@@ -1027,11 +1030,10 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
   stroke: color-mix(in srgb, var(--glow, var(--acid)) calc(var(--lit) * 100%), var(--line));
   stroke-width: calc(3.4px + var(--lit) * 1.6px);
 }
-.react-flow__node[style*="--lit"] .gnode {
-  border-color: color-mix(in srgb, var(--glow, var(--tint, var(--acid))) calc(var(--lit) * 90%), var(--line));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--glow, var(--acid)) calc(var(--lit) * 32%), transparent);
+.react-flow__node[style*="--nlit"] {
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--nglow) calc(var(--nlit) * 100%), transparent);
 }
-.react-flow__node[style*="--lit"] .node-head { background: color-mix(in srgb, var(--head-lit) calc(var(--lit) * 50%), var(--head-bg)); }
 .node-chans .chan[style*="--lit"] { background: color-mix(in srgb, var(--tint, var(--acid)) calc(var(--lit) * 20%), transparent); }
 .node-chans .chan[style*="--lit"] .chan-name { color: color-mix(in srgb, var(--tint, var(--acid)) calc(var(--lit) * 100%), var(--paper)); }
 .graph-canvas .react-flow__controls { box-shadow: none; border: 1px solid var(--line); }

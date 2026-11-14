@@ -125,17 +125,23 @@ const elementFor = (id, kind) => {
   return found
 }
 
-function write(el, id, value, glow = '') {
+// A node takes its own names, which don't inherit (index.css): an inherited value set on a
+// node's box every frame restyles everything inside it, and a few busy nodes cost the page
+// so much time each frame that the scheduler drops notes.
+const NAMES = { lit: ['--lit', '--glow'], node: ['--nlit', '--nglow'] }
+
+function write(el, id, value, glow = '', names = NAMES.lit) {
   const was = lit.get(id)
   if (was && was.v === value && was.c === glow) return
   lit.set(id, { v: value, c: glow })
+  const [L, G] = names
   if (value <= 0) {
-    el.style.removeProperty('--lit')
-    el.style.removeProperty('--glow')
+    el.style.removeProperty(L)
+    el.style.removeProperty(G)
     return
   }
-  el.style.setProperty('--lit', String(value))
-  if (glow) el.style.setProperty('--glow', glow)
+  el.style.setProperty(L, String(value))
+  if (glow) el.style.setProperty(G, glow)
 }
 
 function tick() {
@@ -199,7 +205,7 @@ function tick() {
    * it sets how hard it glows, and they blend by how loud each one is, so two parts
    * sharing a wire mix on their way to the output.
    */
-  const paint = (el, id, keys) => {
+  const paint = (el, id, keys, names) => {
     let best = 0
     let r = 0
     let g = 0
@@ -223,7 +229,7 @@ function tick() {
     // a slow curve: bright on the hit, then a long tail rather than a linear ramp down
     const value = Math.round(Math.sqrt(best) / STEP) * STEP
     const tone = (x) => Math.round(x / weight / 8) * 8 // in steps, so small shifts don't churn
-    write(el, id, value, weight ? `rgb(${tone(r)} ${tone(g)} ${tone(b)})` : '')
+    write(el, id, value, weight ? `rgb(${tone(r)} ${tone(g)} ${tone(b)})` : '', names)
   }
 
   /**
@@ -255,7 +261,7 @@ function tick() {
 
   for (const [id, keys] of paths.nodes) {
     const el = keys.length && elementFor(id, 'node')
-    if (el) paint(el, id, keys)
+    if (el) paint(el, id, keys, NAMES.node)
   }
   for (const [id, keys] of paths.edges) {
     const el = keys.length && elementFor(id, 'edge')
