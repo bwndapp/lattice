@@ -21,6 +21,7 @@ import Popover from './Popover.jsx'
 import { Glass } from './Glass.jsx'
 import { AutomationEditor } from './Automation.jsx'
 import { routeVoice } from './fxbus.js'
+import { A4, TUNING_MAX, TUNING_MIN, setTuning } from './tuning.js'
 import Versions from './Versions.jsx'
 import ExportDialog from './ExportDialog.jsx'
 import Tooltip from './Tooltip.jsx'
@@ -198,6 +199,8 @@ export default function App() {
 
   // Project mode: the code's header line holds the patterns/tracks the UI edits.
   const project = useMemo(() => parseProject(code), [code])
+  // the track's A4, for every note on its way out (tuning.js); code without a project is at 440
+  useEffect(() => setTuning(project?.tuning ?? A4), [project?.tuning])
   // tracks saved when a solo was part of the patch: take it as your own, once
   const tookSolo = useRef(null)
   useEffect(() => {
@@ -388,7 +391,7 @@ export default function App() {
   useEffect(() => {
     if (editorRef.current) return // StrictMode mounts twice in dev
     editorRef.current = new StrudelMirror({
-      defaultOutput: (hap, ...rest) => webaudioOutput(hap.value?.fxsends ? hap.withValue(routeVoice) : hap, ...rest), // reverb & delay sends (fxbus.js)
+      defaultOutput: (hap, ...rest) => webaudioOutput(hap.withValue(routeVoice), ...rest), // reverb & delay sends, and the tuning (fxbus.js)
       getTime: () => getAudioContext().currentTime,
       transpiler,
       root: rootRef.current,
@@ -1524,6 +1527,19 @@ export default function App() {
             else flash('Fix the code error first, then set the tempo')
           }}
         />
+        {project && (
+          <Tempo
+            bpm={project.tuning ?? A4}
+            min={TUNING_MIN}
+            max={TUNING_MAX}
+            resetTo={A4}
+            unit="A4"
+            name="Tuning: where A4 sits, in Hz (every pitched note follows)"
+            ariaLabel="Tuning, A4 in Hz"
+            className="tuning"
+            onChange={(hz) => updateProject((p) => { if (hz === A4) delete p.tuning; else p.tuning = hz })}
+          />
+        )}
         <Position transport={transport} started={started} bpm={project ? project.bpm : (evaluated.cps ?? 0.5) * 60 * transport.beats} songBars={project?.song ? songLength(project.song) : 0} />
         <label className="lcd meter" title="Beats per bar">
           <select
@@ -1872,9 +1888,11 @@ export default function App() {
  * scroll, arrow keys (page up/down for 10), double-click, ctrl/cmd-click or Home for 140.
  * A click without dragging types a tempo. Changing it rewrites setcpm/setcps in the code.
  */
-function Tempo({ bpm, onChange }) {
-  const MIN = 10
-  const MAX = 400
+/**
+ * A number on the bar you drag, scroll or type: the tempo, and (with its own range, unit and
+ * words) the tuning.
+ */
+function Tempo({ bpm, onChange, min: MIN = 10, max: MAX = 400, resetTo = 140, unit = 'bpm', name = 'Tempo', ariaLabel = 'Tempo in BPM', className = 'tempo' }) {
   const SPAN = MAX - MIN
   const tidy = (v) => Math.round(Math.min(MAX, Math.max(MIN, v)) * 10) / 10
   const [text, setText] = useState('')
@@ -1898,8 +1916,8 @@ function Tempo({ bpm, onChange }) {
       return tidy(tidy(from) + Math.round((v - tidy(from)) / unit) * unit)
     },
     onChange,
-    resetTo: 140,
-    range: SPAN * 3, // a bpm every 3 px
+    resetTo,
+    range: SPAN * 3, // a unit every 3 px
     fineRange: SPAN * 30,
     notch: 1 / SPAN,
     fineNotch: 0.1 / SPAN,
@@ -1929,8 +1947,8 @@ function Tempo({ bpm, onChange }) {
   return (
     <label
       ref={control.ref}
-      className={`lcd tempo ${editing ? 'editing' : ''} ${control.live !== null ? 'dragging' : ''}`}
-      title={`Tempo · drag or scroll (shift: fine) · click to type · double-click, ${RESET_HINT.replace(' to reset', '')} for 140`}
+      className={`lcd tempo ${className} ${editing ? 'editing' : ''} ${control.live !== null ? 'dragging' : ''}`}
+      title={`${name} · drag or scroll (shift: fine) · click to type · double-click, ${RESET_HINT.replace(' to reset', '')} for ${resetTo}`}
       onPointerEnter={control.onPointerEnter}
       onPointerLeave={control.onPointerLeave}
       onPointerDown={(e) => { if (!editing) control.onPointerDown(e) }}
@@ -1943,7 +1961,7 @@ function Tempo({ bpm, onChange }) {
         className="lcd-value"
         inputMode="decimal"
         role="spinbutton"
-        aria-label="Tempo in BPM"
+        aria-label={ariaLabel}
         aria-valuemin={MIN}
         aria-valuemax={MAX}
         aria-valuenow={tidy(control.live ?? bpm)}
@@ -1963,7 +1981,7 @@ function Tempo({ bpm, onChange }) {
           else if (/^[0-9.,]$/.test(e.key)) { setEditing(true); setText(e.key); e.preventDefault() }
         }}
       />
-      <span className="lcd-unit" aria-hidden>bpm</span>
+      <span className="lcd-unit" aria-hidden>{unit}</span>
     </label>
   )
 }

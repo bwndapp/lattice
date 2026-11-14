@@ -23,6 +23,7 @@
  */
 import { getAudioContext, getSuperdoughAudioController } from '@strudel/webaudio'
 import { hasGesture } from './activation.js'
+import { tuned } from './tuning.js'
 
 /** Reverb and delay settings the knobs start from. */
 export const REVERB_DEFAULTS = { size: 2.2, predelay: 0.015, tone: 0.55, lowcut: 160, width: 1 }
@@ -77,7 +78,8 @@ const hash = (s) => {
  * A note's value, ready for Strudel: its `fxsends` become one bus send to a router that
  * feeds each effect. Notes without sends (or before audio can start) pass through.
  */
-export function routeVoice(value) {
+export function routeVoice(raw) {
+  const value = tuned(raw) // the track's A4 (tuning.js): every way to the speakers comes through here
   if (!value || !Array.isArray(value.fxsends)) return value
   const { fxsends, ...rest } = value
   try {

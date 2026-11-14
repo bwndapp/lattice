@@ -147,6 +147,9 @@ export function normalizeProject(raw) {
     beats: Math.round(num(raw.beats, 4, 2, 8)),
     patterns: [],
   }
+  // A4, when it isn't 440 (tuning.js): left out at 440 so every other track's header stays as it was
+  const tuning = Math.round(num(raw.tuning, 440, 400, 480) * 10) / 10
+  if (tuning !== 440) project.tuning = tuning
   for (const p of Array.isArray(raw.patterns) ? raw.patterns : []) {
     if (!p || typeof p.id !== 'string') continue
     const pattern = {
