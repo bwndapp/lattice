@@ -105,5 +105,14 @@ ok('a wire that would loop is refused', (() => {
   return !m.quickWire(q, 'a', 'b') && q.edges.length === 1
 })())
 
+// a wire into a rhythm machine takes no inserts: an effect there would cut the sound off it
+p = patch([['s', 'pattern'], ['f', 'fib'], ['d', 'delay'], ['o', 'output', 900]], [
+  { id: 'w1', source: 's', target: 'f', targetHandle: 'in-0' },
+  { id: 'w2', source: 'f', target: 'o', targetHandle: 'in-0' },
+])
+ok('no effect between a sound and the Fibonacci', !m.takesInserts(p, p.edges[0]) && !m.spliceInto(p, 'w1', 'd') && wires(p) === 'f>o s>f', wires(p))
+ok('one after it still goes in', m.spliceInto(p, 'w2', 'd') && wires(p) === 'd>o f>d s>f', wires(p))
+ok('the knife skips it too', m.knifeMode(p, [{ id: 'w1' }], 'delay') === null)
+
 if (fails) { console.log(`\n${fails} failed`); process.exit(1) }
 console.log('\nall passed')

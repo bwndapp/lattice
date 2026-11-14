@@ -18,7 +18,7 @@ import AddMenu from './AddMenu.jsx'
 import CodeBox from './CodeBox.jsx'
 import { ADD_INTO_WIRE, EDGE_TYPES } from './WireEdge.jsx'
 import { copyNodes, pasteNodes, readClipboard, writeClipboard } from './nodeClipboard'
-import { canQuickWire, firstInput, healOnRemove, knifeCuts, knifeHint, knifeInsert, knifeMode, quickSide, quickWire, spliceInto, splicable } from './quickWire.js'
+import { canQuickWire, firstInput, healOnRemove, knifeCuts, knifeHint, knifeInsert, knifeMode, quickSide, quickWire, spliceInto, splicable, takesInserts } from './quickWire.js'
 import { onSoundsChange, previewSound, soundCatalog } from './audio'
 import { flowPaths, setFlowPaths, startFlow, stopFlow } from './flow.js'
 import { colorFor, inkFor, nodeSrc, rgbOf } from './clipColors.js'
@@ -48,7 +48,7 @@ function wireAt(box, skip = null) {
   for (const el of document.querySelectorAll('.graph-canvas .react-flow__edge')) {
     const id = el.getAttribute('data-id') ?? el.dataset.id
     const touches = el.dataset.touches?.split(' ') ?? []
-    if (!id || skips.some((s) => touches.includes(s))) continue
+    if (!id || el.hasAttribute('data-closed') || skips.some((s) => touches.includes(s))) continue
     const path = el.querySelector('path.react-flow__edge-path')
     const ctm = path?.getScreenCTM()
     if (!path || !ctm) continue
@@ -107,7 +107,7 @@ function chainOf(project, ids) {
 function spliceChain(p, edgeId, { head, tail }) {
   const wire = p.edges.find((e) => e.id === edgeId)
   const first = p.nodes.find((n) => n.id === head)
-  if (!wire || !first || [head, tail].includes(wire.source) || [head, tail].includes(wire.target)) return false
+  if (!wire || !first || !takesInserts(p, wire) || [head, tail].includes(wire.source) || [head, tail].includes(wire.target)) return false
   p.edges = p.edges.filter((e) => e !== wire)
   p.edges.push({ source: wire.source, sourceHandle: wire.sourceHandle, target: head, targetHandle: firstInput(first.type) })
   p.edges.push({ source: tail, target: wire.target, targetHandle: wire.targetHandle })
@@ -1456,17 +1456,19 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
   const joinedRef = useRef(false) // that pull found somewhere to land
   // a wire to or from a node hidden in a collapsed frame is drawn to the frame's edge instead
   const frameHosts = useMemo(() => collapsedHosts(project.frames), [project.frames])
+  // rhythm machines, as a string so moving nodes doesn't redraw every wire: wires into one take no inserts
+  const machines = project.nodes.filter((n) => NODE_TYPES[n.type]?.abstract).map((n) => n.id).join(' ')
   const rfEdges = useMemo(() => project.edges.map((e) => ({
     ...e,
     type: 'wire', // with a + in the middle to add a node into it
     sourceHandle: e.sourceHandle ?? 'out',
-    data: { tension },
+    data: { tension, closed: machines.split(' ').includes(e.target) },
     style: wireTint.get(e.id) ? { '--wire': wireTint.get(e.id) } : undefined,
     animated: started,
     className: e.id === spliceTarget || knifeHits.has(e.id) ? 'splice-target' : e.id === detaching ? 'detaching' : '',
-    domAttributes: { 'data-touches': `${e.source} ${e.target}` },
+    domAttributes: { 'data-touches': `${e.source} ${e.target}`, ...(machines.split(' ').includes(e.target) ? { 'data-closed': '' } : {}) },
     ...routeEdge(e, frameHosts),
-  })), [project.edges, started, spliceTarget, detaching, tension, wireTint, frameHosts, knifeHits])
+  })), [project.edges, machines, started, spliceTarget, detaching, tension, wireTint, frameHosts, knifeHits])
   const [edges, setEdges] = useState(rfEdges)
   useEffect(() => setEdges((prev) => {
     const sel = new Set(prev.filter((e) => e.selected).map((e) => e.id))
@@ -1568,7 +1570,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
   // right-click empty canvas (or a wire): add something here, into the wire under the pointer if any
   const paneMenu = useCallback((e) => {
     e.preventDefault()
-    const edge = e.target?.closest?.('.react-flow__edge')
+    const edge = e.target?.closest?.('.react-flow__edge:not([data-closed])')
     const r = 10
     const wire = edge?.getAttribute('data-id') ?? wireAt({ left: e.clientX - r, right: e.clientX + r, top: e.clientY - r, bottom: e.clientY + r })
     setMenu({ x: e.clientX, y: e.clientY, at: flow.screenToFlowPosition({ x: e.clientX - 20, y: e.clientY - 20 }), wire })
@@ -2037,7 +2039,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
             onPaneContextMenu={paneMenu}
             onEdgeContextMenu={(e, edge) => {
               e.preventDefault()
-              setMenu({ x: e.clientX, y: e.clientY, at: flow.screenToFlowPosition({ x: e.clientX - 20, y: e.clientY - 20 }), wire: edge.id })
+              setMenu({ x: e.clientX, y: e.clientY, at: flow.screenToFlowPosition({ x: e.clientX - 20, y: e.clientY - 20 }), wire: takesInserts(project, edge) ? edge.id : null })
             }}
             onNodeDoubleClick={(e, n) => {
               // double-click a pattern node (not its controls) to open its rack

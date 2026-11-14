@@ -3,6 +3,12 @@ import { collapsedHosts, routeEdge } from './frames'
 
 /** Can this kind of node be dropped into the middle of a wire? It needs an input and an output. */
 export const splicable = (type) => !!NODE_TYPES[type]?.inputs && type !== 'output'
+/**
+ * Can something go in the middle of this wire? Not on one into a rhythm machine (the cube,
+ * the Fibonacci…): what's wired there is played by the machine's rhythm, so an effect in
+ * between would cut the sound off from it. Effects go after the machine instead.
+ */
+export const takesInserts = (p, wire) => !NODE_TYPES[p.nodes.find((n) => n.id === wire?.target)?.type]?.abstract
 export const firstInput = (type) => (NODE_TYPES[type]?.inputs === 1 ? 'in' : 'in-0')
 const slotOf = (h) => Number(/^in-(\d+)$/.exec(h ?? '')?.[1] ?? -1)
 
@@ -10,7 +16,7 @@ const slotOf = (h) => Number(/^in-(\d+)$/.exec(h ?? '')?.[1] ?? -1)
 export function spliceInto(p, edgeId, nodeId) {
   const wire = p.edges.find((e) => e === edgeId || e.id === edgeId)
   const node = p.nodes.find((n) => n.id === nodeId)
-  if (!wire || !node || !splicable(node.type) || wire.source === nodeId || wire.target === nodeId) return false
+  if (!wire || !node || !splicable(node.type) || !takesInserts(p, wire) || wire.source === nodeId || wire.target === nodeId) return false
   p.edges = p.edges.filter((e) => e !== wire && e.source !== nodeId && e.target !== nodeId)
   p.edges.push({ source: wire.source, sourceHandle: wire.sourceHandle, target: nodeId, targetHandle: firstInput(node.type) })
   p.edges.push({ source: nodeId, target: wire.target, targetHandle: wire.targetHandle })
@@ -161,7 +167,7 @@ function cutWires(p, cuts) {
   const hosts = collapsedHosts(p.frames)
   const seen = new Set()
   return cuts.map((c) => p.edges.find((e) => e.id === (c.id ?? c)))
-    .filter((e) => e && !seen.has(e) && seen.add(e) && !routeEdge(e, hosts)?.hidden)
+    .filter((e) => e && !seen.has(e) && seen.add(e) && !routeEdge(e, hosts)?.hidden && takesInserts(p, e))
 }
 
 /** Do the wires all end on the same input side of one node (never a sidechain's sound and trigger at once)? */

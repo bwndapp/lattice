@@ -85,7 +85,7 @@ export function WireEdge({ id, sourceX, sourceY, targetX, targetY, data, style, 
       <path className="wire-casing" d={path} style={style} />
       <BaseEdge id={id} path={path} style={style} markerEnd={markerEnd} interactionWidth={interactionWidth} />
       <path className="wire-sheen" d={path} style={style} />
-      <EdgeLabelRenderer>
+      {!data?.closed && <EdgeLabelRenderer>
         <button
           type="button"
           className={`wire-add nodrag nopan ${small ? 'small' : ''}`}
@@ -99,7 +99,7 @@ export function WireEdge({ id, sourceX, sourceY, targetX, targetY, data, style, 
             window.dispatchEvent(new CustomEvent(ADD_INTO_WIRE, { detail: { edgeId: id, x: r.left + r.width / 2, y: r.top + r.height / 2 } }))
           }}
         >+</button>
-      </EdgeLabelRenderer>
+      </EdgeLabelRenderer>}
     </>
   )
 }
