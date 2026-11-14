@@ -6,7 +6,7 @@
 import { DSP_BASE } from '../src/instruments/dsp.js'
 import { KickDrive } from '../src/instruments/kick.js'
 import kick from '../src/instruments/kick.js'
-import spec, { MODELS, EXCITERS } from '../src/instruments/physical.js'
+import spec, { MODELS, EXCITERS, BODIES } from '../src/instruments/physical.js'
 
 let fails = 0
 const ok = (name, cond, extra) => {
@@ -47,7 +47,7 @@ for (let m = 0; m < MODELS.length; m++) {
     ok(`${MODELS[m]} ${EXCITERS[e]}: sounds, finite, under clipping`, o.every(Number.isFinite) && p > 0.05 && p < 0.98, p.toFixed(3))
   }
 }
-for (const m of [0, 1]) {
+for (const m of [0, 1, 6]) {
   const o = run({ model: m, exciter: 1, stiffness: 0, random: 0 }, { note: 57, secs: 1 }).slice(sr / 5)
   let z = 0
   for (let i = 1; i < o.length; i++) if (o[i - 1] < 0 && o[i] >= 0) z++
@@ -58,6 +58,21 @@ for (const m of [0, 1]) {
   const o = run({ model: 0, exciter: 2, length: 0.1, release: 0.1 }, { secs: 2, hold: 1 })
   ok('a bowed string sings while held', peak(o.slice(sr / 2, sr)) > 0.1)
   ok('and stops once let go', peak(o.slice(1.5 * sr)) < 1e-3)
+}
+
+for (let b = 1; b < BODIES.length; b++) {
+  for (const tune of [0, 7]) {
+    const o = run({ model: 0, exciter: 0, body: b, bodymix: 1, bodytune: tune })
+    const p = peak(o)
+    ok(`a string into a ${BODIES[b]} body (+${tune}): heard, under clipping`, o.every(Number.isFinite) && p > 0.15 && p < 0.98, p.toFixed(3))
+  }
+}
+{
+  // a bar that dies in 50 ms: one hit is over inside two 50 ms windows; a bounce keeps on
+  const o = run({ model: 2, exciter: 7, length: 0.3, decay: 0.05 }, { secs: 1.5 })
+  let bumps = 0
+  for (let i = 0; i < o.length; i += 2400) if (peak(o.slice(i, i + 2400)) > 0.05) bumps++
+  ok('a bounce hits more than once', bumps >= 3, bumps)
 }
 
 if (fails) { console.log(`\n${fails} failed`); process.exit(1) }

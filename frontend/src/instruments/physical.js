@@ -2,23 +2,31 @@ import { knobsSource } from './dsp.js'
 
 /**
  * Physical: a sound made the way a real one is. Something sets it going — a pluck, a
- * mallet, a bow, a burst of noise — and something rings: a string, or a body with modes of
- * its own (a bar, a drum skin, a plate, a bell). It isn't a waveform played back, so no two
- * notes are quite alike, and playing harder changes the tone, not only the level.
+ * mallet, a bow, breath, a scrape, a strum, a ball bouncing — and something rings: a string,
+ * a tube, or a body with modes of its own (a bar, a drum skin, a plate, a bell, a glass, a
+ * singing bowl, a gong, a spring). It isn't a waveform played back, so no two notes are quite
+ * alike, and playing harder changes the tone, not only the level.
  *
- *   string    a waveguide (Karplus-Strong grown up): a delay line one period long, a loop
- *             filter that eats the highs as it rings (material), allpasses that make the
- *             upper partials run sharp the way a stiff piano string does (stiffness), and a
- *             comb on the exciter for where it's struck (position)
- *   modal     up to 32 resonators, one per mode of the body, tuned to its ratios; material
- *             sets how much faster the high modes die (wood) or not (metal), stiffness
- *             stretches the ratios apart, position weights the modes the way a strike there
- *             would
+ * What rings can ring something else: a second body, coupled after the first, the way a
+ * guitar string rings its wooden box or a marimba bar the tube under it. It has its own model,
+ * tuning and decay, and a mix between the two.
  *
- * Played from steps (no note) it sits at C3. Velocity brightens the hit.
+ *   waveguides  string, tube, spring: a delay line one period long (a tube's reflection is
+ *               inverted, so it's hollow: odd harmonics only), a loop filter that eats the
+ *               highs as it rings (material), allpasses that make the upper partials run sharp
+ *               (stiffness; a spring has a lot of them, which is its chirp), and a comb on the
+ *               exciter for where it's struck (position)
+ *   modal       up to 32 resonators, one per mode of the body, tuned to its ratios; material
+ *               sets how much faster the high modes die (wood) or not (metal), stiffness
+ *               stretches the ratios apart, position weights the modes the way a strike there
+ *               would
+ *
+ * Played from steps (no note) it sits at C3. Velocity brightens the hit. The lists only ever
+ * grow at the end: a saved sound holds an index into them.
  */
-export const MODELS = ['string', 'harmonic', 'bar', 'membrane', 'plate', 'bell']
-export const EXCITERS = ['pluck', 'mallet', 'bow', 'noise']
+export const MODELS = ['string', 'harmonic', 'bar', 'membrane', 'plate', 'bell', 'tube', 'glass', 'bowl', 'gong', 'spring']
+export const EXCITERS = ['pluck', 'mallet', 'bow', 'noise', 'breath', 'scrape', 'strum', 'bounce']
+export const BODIES = ['none', ...MODELS]
 
 const PARAMS = [
   // what sets it going
@@ -27,11 +35,16 @@ const PARAMS = [
   { key: 'length', group: 'exciter', label: 'length', min: 0.001, max: 2, def: 0.02, log: true, unit: 's' },
   { key: 'position', group: 'exciter', label: 'position', min: 0.02, max: 0.5, def: 0.18 },
   // what rings
-  { key: 'model', group: 'body', label: 'model', min: 0, max: MODELS.length - 1, def: 0, choices: MODELS },
-  { key: 'decay', group: 'body', label: 'decay', min: 0.05, max: 20, def: 2.5, log: true, unit: 's' },
-  { key: 'material', group: 'body', label: 'material', min: 0, max: 1, def: 0.45 },
-  { key: 'stiffness', group: 'body', label: 'stiffness', min: 0, max: 1, def: 0.1 },
-  { key: 'random', group: 'body', label: 'random', min: 0, max: 1, def: 0.15 },
+  { key: 'model', group: 'resonator', label: 'model', min: 0, max: MODELS.length - 1, def: 0, choices: MODELS },
+  { key: 'decay', group: 'resonator', label: 'decay', min: 0.05, max: 20, def: 2.5, log: true, unit: 's' },
+  { key: 'material', group: 'resonator', label: 'material', min: 0, max: 1, def: 0.45 },
+  { key: 'stiffness', group: 'resonator', label: 'stiffness', min: 0, max: 1, def: 0.1 },
+  { key: 'random', group: 'resonator', label: 'random', min: 0, max: 1, def: 0.15 },
+  // what that rings in turn
+  { key: 'body', group: 'body', label: 'body', min: 0, max: BODIES.length - 1, def: 0, choices: BODIES },
+  { key: 'bodytune', group: 'body', label: 'tune', min: -24, max: 24, def: 0, unit: 'st', origin: 0 },
+  { key: 'bodydecay', group: 'body', label: 'decay', min: 0.02, max: 8, def: 0.4, log: true, unit: 's' },
+  { key: 'bodymix', group: 'body', label: 'mix', min: 0, max: 1, def: 0.5 },
   // out
   { key: 'release', group: 'out', label: 'release', min: 0.01, max: 20, def: 3, log: true, unit: 's' },
   { key: 'level', group: 'out', label: 'level', min: -24, max: 6, def: 0, unit: 'db', origin: 0 },
@@ -61,14 +74,25 @@ const plate = (() => {
 })()
 // a church bell: hum, prime, tierce, quint, nominal and the partials above
 const bell = [0.5, 1, 1.183, 1.506, 2, 2.514, 2.662, 3.011, 4.166, 5.433, 6.796, 8.215, 9.71, 11.3, 13.02, 14.8]
-export const MODES = { harmonic, bar, membrane, plate, bell }
+// a wine glass: its rim bends into 2, 3, 4… lobes, each a little further up than the last
+const glass = (() => {
+  const g = Array.from({ length: 12 }, (_, k) => ((k + 2) / 2) ** 2 * (1 + 0.015 * k) ** 1.5)
+  return g.map((x) => x / g[0])
+})()
+// a singing bowl: every mode in a pair a hair apart, so it beats as it rings
+const bowl = [1, 2.71, 5.15, 8.3, 12.1, 16.5, 21.4].flatMap((r, k) => [r, r * (1.0025 + 0.0012 * k)])
+// a gong: modes packed closer and closer as they climb, never in a row
+const gong = Array.from({ length: MAX_MODES }, (_, k) => 1 + 11 * (k / (MAX_MODES - 1)) ** 1.35 + (k ? 0.08 * Math.sin(k * 12.9898) : 0))
+export const MODES = { harmonic, bar, membrane, plate, bell, glass, bowl, gong }
 
 // ── the processor ───────────────────────────────────────────────────────────
 
 const DSP = `
 const PH_MODES = ${JSON.stringify(MODES)}
 const PH_MODEL_NAMES = ${JSON.stringify(MODELS)}
-const PH_LINE = 4096 // the string's delay line: room for a period of 12 Hz at 48 kHz
+const PH_LINE = 4096 // a waveguide's delay line: room for a period of 12 Hz at 48 kHz
+const PH_MAX_MODES = ${MAX_MODES}
+const PH_STAGES = 8
 
 /** A first-order allpass's delay, in samples, at w (radians a sample): (c + z⁻¹)/(1 + c z⁻¹). */
 function phAllpassDelay(c, w) {
@@ -79,27 +103,141 @@ function phAllpassDelay(c, w) {
   return -ph / w
 }
 
+/**
+ * One thing that rings: a waveguide (string, tube, spring) or a set of modes (the rest).
+ * setup() whenever the note or the knobs move; tick() a sample at a time.
+ */
+class PhResonator {
+  constructor() {
+    this.model = -1
+    this.wave = true
+    this.buf = new Float32Array(PH_LINE); this.w = 0; this.M = 100
+    this.ap = 0; this.apx = 0; this.apy = 0; this.lb = 0; this.ly = 0; this.g = 0.99; this.sign = 1
+    this.stages = 0; this.dc = 0; this.dx = new Float64Array(PH_STAGES); this.dy = new Float64Array(PH_STAGES)
+    this.n = 0
+    this.cr = new Float64Array(PH_MAX_MODES); this.ci = new Float64Array(PH_MAX_MODES); this.amp = new Float64Array(PH_MAX_MODES)
+    this.re = new Float64Array(PH_MAX_MODES); this.im = new Float64Array(PH_MAX_MODES)
+    this.r0 = 0.999
+    this.period = 100
+  }
+  clear() {
+    this.buf.fill(0); this.re.fill(0); this.im.fill(0)
+    this.ly = 0; this.apx = 0; this.apy = 0; this.dx.fill(0); this.dy.fill(0)
+  }
+  /** jitter: per-note randoms, -1 … 1, one per mode. */
+  setup(model, f0, T, material, stiffness, random, jitter, position) {
+    if (model !== this.model) { this.model = model; this.clear() } // a new body starts quiet
+    const name = PH_MODEL_NAMES[model]
+    const sr = sampleRate
+    f0 *= 1 + random * 0.004 * jitter[0]
+    this.period = sr / f0
+    // per sample, at the fundamental: what the exciters scale a steady push by
+    this.r0 = Math.exp(-6.9078 / (T * sr))
+    this.wave = name === 'string' || name === 'tube' || name === 'spring'
+    if (this.wave) {
+      const w0 = (2 * Math.PI * f0) / sr
+      const tube = name === 'tube'
+      this.sign = tube ? -1 : 1
+      // a tube's inverted reflection takes two trips round to come back the same way up
+      const trip = tube ? sr / (2 * f0) : sr / f0
+      this.lb = (1 - material) * 0.8 // the loop's lowpass: wood eats highs, metal keeps them
+      const lpDelay = Math.atan2(this.lb * Math.sin(w0), 1 - this.lb * Math.cos(w0)) / w0
+      const spring = name === 'spring'
+      this.stages = spring ? PH_STAGES : stiffness > 0 ? 4 : 0
+      this.dc = spring ? -(0.6 + 0.35 * stiffness) : -0.7 * stiffness
+      const dispDelay = this.stages ? this.stages * phAllpassDelay(this.dc, w0) : 0
+      const D = Math.max(2.5, Math.min(PH_LINE - 4, trip - lpDelay - dispDelay))
+      this.M = Math.floor(D - 0.5)
+      const d = D - this.M
+      this.ap = (1 - d) / (1 + d) // a Thiran allpass for the fraction of a sample
+      this.g = 10 ** (-3 / ((tube ? 2 : 1) * f0 * T))
+      this.r0 = this.g // a waveguide loses once a trip round, not once a sample
+      return
+    }
+    const ratios = PH_MODES[name]
+    const expo = 0.15 + 1.9 * (1 - material) // how much faster high modes die
+    let n = 0
+    let norm = 0
+    for (let i = 0; i < ratios.length && n < PH_MAX_MODES; i++) {
+      const ratio = ratios[i] ** (1 + 0.35 * stiffness) * (1 + random * 0.01 * jitter[i])
+      const f = f0 * ratio
+      if (f > 0.45 * sr) break
+      const Tk = T * Math.max(0.02, ratio) ** -expo
+      const r = Math.exp(-6.9078 / (Tk * sr))
+      const w = (2 * Math.PI * f) / sr
+      this.cr[n] = r * Math.cos(w)
+      this.ci[n] = r * Math.sin(w)
+      // where it's struck: a node of a mode doesn't move it
+      const at = 0.12 + 0.88 * Math.abs(Math.sin((i + 1) * Math.PI * position))
+      const a = at / Math.sqrt(i + 1)
+      this.amp[n] = a
+      norm += a * a
+      n++
+    }
+    for (let i = n; i < this.n; i++) { this.re[i] = 0; this.im[i] = 0 }
+    this.n = n
+    const s = 1 / Math.sqrt(Math.max(1e-6, norm))
+    for (let i = 0; i < n; i++) this.amp[i] *= s
+  }
+  tick(e) {
+    if (this.wave) {
+      const s = this.buf[(this.w - this.M + PH_LINE) % PH_LINE]
+      const a = this.ap * s + this.apx - this.ap * this.apy // the fraction of a sample
+      this.apx = s; this.apy = a
+      this.ly = (1 - this.lb) * a + this.lb * this.ly // the loop's lowpass
+      let z = this.ly
+      for (let j = 0; j < this.stages; j++) { // stiffness
+        const c = this.dc
+        const o = c * z + this.dx[j] - c * this.dy[j]
+        this.dx[j] = z; this.dy[j] = o; z = o
+      }
+      const y = this.sign * z * this.g + e
+      this.buf[this.w] = y
+      this.w = (this.w + 1) % PH_LINE
+      return y * 0.5
+    }
+    let y = 0
+    const n = this.n, re = this.re, im = this.im, cr = this.cr, ci = this.ci, amp = this.amp
+    for (let j = 0; j < n; j++) {
+      const r0 = re[j], i0 = im[j]
+      re[j] = cr[j] * r0 - ci[j] * i0 + e
+      im[j] = ci[j] * r0 + cr[j] * i0
+      y += im[j] * amp[j]
+    }
+    return y * 0.7
+  }
+}
+
+const PH_SUSTAINED = [2, 4, 5] // bow, breath, scrape: they go on while the note's held
+
 class PhysicalProcessor extends LatticeInstrument {
   static voiceCount = 8
   static knobs = ${knobsSource(PARAMS)}
   newVoice() {
     return {
-      active: false, gateOpen: false, released: false, t: 0, f0: 130.81, vel: 1, seed: 1,
-      model: -1, sig: '',
-      // the string
-      buf: new Float32Array(PH_LINE), w: 0, M: 100, ap: 0, apx: 0, apy: 0, lb: 0, ly: 0, g: 0.99,
-      dc: new Float64Array(4), dx: new Float64Array(4), dy: new Float64Array(4),
-      // the modes
-      n: 0, cr: new Float64Array(${MAX_MODES}), ci: new Float64Array(${MAX_MODES}), amp: new Float64Array(${MAX_MODES}),
-      re: new Float64Array(${MAX_MODES}), im: new Float64Array(${MAX_MODES}), ratio: new Float64Array(${MAX_MODES}),
-      jitter: new Float64Array(${MAX_MODES}), r0: 0.999,
+      active: false, gateOpen: false, released: false, t: 0, f0: 130.81, vel: 1, seed: 1, sig: '',
+      a: new PhResonator(), b: new PhResonator(), bodyOn: false, bodyIn: 0, envIn: 0, envB: 0, peakIn: 0, bodyG: 1, bodyGT: 1,
+      jitter: new Float64Array(PH_MAX_MODES), jitterB: new Float64Array(PH_MAX_MODES),
       // the exciter
-      ex: new Float32Array(PH_LINE), exw: 0, noiseScale: 1, lpA: 0.5, lpY: 0, len: 1, bowEnv: 0, phase: 0,
-      // tidy output
+      ex: new Float32Array(PH_LINE), exw: 0, lpA: 0.5, lpY: 0, len: 1, env: 0, phase: 0,
+      pT: -1, pLen: 1, pAmp: 0, pNoise: false, pScale: 1, nextAt: 0, hits: 0, maxHits: 0, gap: 0,
       dcx: 0, dcy: 0, level: 0,
     }
   }
   rand(v) { v.seed = (v.seed * 1664525 + 1013904223) >>> 0; return v.seed / 4294967296 }
+  // a short hit: a burst of noise a period long (a pluck) or a mallet's half-sine
+  pulse(v, noisy, amp) {
+    const k = this.k
+    const sr = sampleRate
+    v.pNoise = noisy
+    v.pLen = noisy
+      ? (v.a.wave ? Math.max(2, Math.round(v.a.period)) : Math.round(0.002 * sr))
+      : Math.max(2, Math.round((0.0004 + (1 - k.hardness) ** 2 * 0.008) * sr))
+    // into modes, a hit rings with its area: as loud whatever its length
+    v.pScale = v.a.wave ? 1 : noisy ? 1.2 / Math.sqrt(v.pLen) : 1.6 / v.pLen
+    v.pAmp = amp
+    v.pT = 0
+  }
   noteOn(v, note, vel) {
     const k = this.k
     v.f0 = 440 * 2 ** (((note >= 0 ? note : 48) - 69) / 12)
@@ -109,165 +247,130 @@ class PhysicalProcessor extends LatticeInstrument {
     v.released = false
     v.active = true
     v.seed = (Math.random() * 4294967296) >>> 0
-    for (let i = 0; i < ${MAX_MODES}; i++) v.jitter[i] = (this.rand(v) * 2 - 1)
-    v.sig = '' // set up afresh
+    for (let i = 0; i < PH_MAX_MODES; i++) { v.jitter[i] = this.rand(v) * 2 - 1; v.jitterB[i] = this.rand(v) * 2 - 1 }
+    v.sig = ''
+    v.peakIn = 0
     this.setup(v)
-    // the exciter: how bright (harder and louder is brighter) and how long
     const ex = Math.round(k.exciter)
-    const fc = Math.min(0.45 * sampleRate, 250 * 2 ** (k.hardness * 6 + vel * 1.5))
+    const fc = Math.min(0.45 * sampleRate, 250 * 2 ** (k.hardness * 6 + vel * 1.5)) // harder and louder is brighter
     v.lpA = 1 - Math.exp((-2 * Math.PI * fc) / sampleRate)
     v.lpY = 0
-    const period = sampleRate / v.f0
-    if (ex === 0) v.len = v.model === 0 ? Math.max(2, Math.round(period)) : Math.round(0.002 * sampleRate)
-    else if (ex === 1) v.len = Math.max(2, Math.round((0.0004 + (1 - k.hardness) ** 2 * 0.008) * sampleRate))
-    else v.len = Math.max(2, Math.round(k.length * sampleRate))
-    v.bowEnv = 0
-    v.noiseScale = 1.2 / Math.sqrt(Math.min(v.len, 0.05 * sampleRate))
+    v.env = 0
+    v.pT = -1
+    v.hits = 0
+    v.maxHits = 0
+    v.len = Math.max(2, Math.round(k.length * sampleRate))
+    if (ex === 0) this.pulse(v, true, 1)
+    else if (ex === 1) this.pulse(v, false, 1)
+    else if (ex === 6) { v.maxHits = 5; v.gap = Math.max(0.008, k.length / 4); v.nextAt = 0 } // a strum: five plucks
+    else if (ex === 7) { v.maxHits = 40; v.gap = 0.05 + k.length * 0.5; v.nextAt = 0 } // a ball let go above it
   }
   noteOff(v) {
     v.gateOpen = false
     v.released = true
     v.sig = ''
   }
-  /** The ringing part's coefficients, from the knobs, the note and whether it's been let go. */
   setup(v) {
     const k = this.k
-    const sig = k.model + '|' + k.decay + '|' + k.material + '|' + k.stiffness + '|' + k.random + '|' + k.position + '|' + k.release + '|' + v.released
+    const sig = k.model + '|' + k.decay + '|' + k.material + '|' + k.stiffness + '|' + k.random + '|' + k.position + '|' + k.release + '|' +
+      k.body + '|' + k.bodytune + '|' + k.bodydecay + '|' + v.released
     if (sig === v.sig) return
     v.sig = sig
-    const model = Math.round(k.model)
-    if (model !== v.model) {
-      // a different body: start it quiet rather than ringing the old one's state through it
-      v.model = model
-      v.buf.fill(0); v.re.fill(0); v.im.fill(0)
-      v.lpY = 0; v.ly = 0; v.apx = 0; v.apy = 0; v.dx.fill(0); v.dy.fill(0)
-    }
     const T = v.released ? Math.min(k.decay, k.release) : k.decay
-    const sr = sampleRate
-    const detune = 1 + k.random * 0.004 * v.jitter[0]
-    const f0 = v.f0 * detune
-    if (model === 0) {
-      // the string: loop delay = period less what the filters in the loop delay it by
-      const w0 = (2 * Math.PI * f0) / sr
-      v.lb = (1 - k.material) * 0.8 // the loop's lowpass: wood eats highs, metal keeps them
-      const lpDelay = Math.atan2(v.lb * Math.sin(w0), 1 - v.lb * Math.cos(w0)) / w0
-      const c = -0.7 * k.stiffness
-      for (let i = 0; i < 4; i++) v.dc[i] = c
-      const dispDelay = k.stiffness > 0 ? 4 * phAllpassDelay(c, w0) : 0
-      const D = Math.max(2.5, Math.min(PH_LINE - 4, sr / f0 - lpDelay - dispDelay))
-      v.M = Math.floor(D - 0.5)
-      const d = D - v.M
-      v.ap = (1 - d) / (1 + d) // a Thiran allpass for the fraction of a sample
-      v.g = 10 ** (-3 / (f0 * T))
-      v.r0 = v.g
-    } else {
-      const ratios = PH_MODES[PH_MODEL_NAMES[model]]
-      const expo = 0.15 + 1.9 * (1 - k.material) // how much faster high modes die
-      let n = 0
-      let norm = 0
-      for (let i = 0; i < ratios.length && n < ${MAX_MODES}; i++) {
-        const ratio = ratios[i] ** (1 + 0.35 * k.stiffness) * (1 + k.random * 0.01 * v.jitter[i])
-        const f = f0 * ratio
-        if (f > 0.45 * sr) break
-        const Tk = T * Math.max(0.02, ratio) ** -expo
-        const r = Math.exp(-6.9078 / (Tk * sr))
-        const w = (2 * Math.PI * f) / sr
-        v.cr[n] = r * Math.cos(w)
-        v.ci[n] = r * Math.sin(w)
-        // where it's struck: a node of a mode doesn't move it
-        const at = 0.12 + 0.88 * Math.abs(Math.sin((i + 1) * Math.PI * k.position))
-        const a = at / Math.sqrt(i + 1)
-        v.amp[n] = a
-        norm += a * a
-        if (ratio === 1 || (n === 0)) v.r0 = r
-        n++
-      }
-      if (n < v.n) for (let i = n; i < v.n; i++) { v.re[i] = 0; v.im[i] = 0 }
-      v.n = n
-      const s = 1 / Math.sqrt(Math.max(1e-6, norm))
-      for (let i = 0; i < n; i++) v.amp[i] *= s
+    v.a.setup(Math.round(k.model), v.f0, T, k.material, k.stiffness, k.random, v.jitter, k.position)
+    const body = Math.round(k.body)
+    v.bodyOn = body > 0
+    if (v.bodyOn) {
+      const TB = v.released ? Math.min(k.bodydecay, k.release) : k.bodydecay
+      v.b.setup(body - 1, v.f0 * 2 ** (k.bodytune / 12), TB, k.material, k.stiffness, k.random, v.jitterB, 0.31)
+      // what comes in keeps on coming, mostly at the first's pitch: scale it to what the body
+      // loses, or a body tuned to it piles up
+      v.bodyIn = 3 * (1 - v.b.r0)
     }
   }
   /** One sample of what sets it going. */
-  excite(v) {
+  excite(v, ex) {
     const k = this.k
-    const ex = Math.round(k.exciter)
-    const t = v.t
-    let x = 0
-    if (ex === 0) {
-      if (t < v.len) x = Math.random() * 2 - 1
-    } else if (ex === 1) {
-      if (t < v.len) {
-        x = Math.sin((Math.PI * t) / v.len)
-        if (v.model !== 0) x *= 1.6 / v.len // a mode rings with the area of the hit
-        v.lpY = x // a mallet's shape is its own tone: no extra lowpass
-        return x
+    const sr = sampleRate
+    let noisy = 0 // through the exciter's lowpass
+    let direct = 0 // its own shape is its tone
+    // a strum's plucks, a ball's bounces
+    if (v.hits < v.maxHits && v.t >= v.nextAt) {
+      if (ex === 6) this.pulse(v, true, 0.8 ** v.hits)
+      else {
+        this.pulse(v, false, 0.75 ** v.hits)
+        v.gap *= 0.72
+        if (v.gap < 0.004) v.maxHits = v.hits + 1
       }
-    } else if (ex === 2) {
-      // a bow: rises over its length, holds while the note does, lets go quickly
-      const target = v.gateOpen ? 1 : 0
-      const rate = v.gateOpen ? 1 / v.len : 1 / (0.04 * sampleRate)
-      v.bowEnv += (target - v.bowEnv) * Math.min(1, rate * 4)
-      if (v.bowEnv > 1e-4) {
-        v.phase += v.f0 / sampleRate
-        if (v.phase >= 1) v.phase -= 1
-        const lose = Math.sqrt(2 * Math.max(1e-5, 1 - v.r0)) // what keeps a loop from piling up
-        const saw = v.model === 0 ? (2 * v.phase - 1) * (1 - v.r0) * 2 : 0
-        x = v.bowEnv * ((Math.random() * 2 - 1) * lose * 0.9 + saw) * (v.model === 0 ? 0.5 : 1)
-      }
-    } else if (t < v.len) {
-      const e = 1 - t / v.len
-      x = (Math.random() * 2 - 1) * e * e
+      v.hits++
+      v.nextAt = v.t + Math.round(v.gap * sr)
     }
-    v.lpY += (x - v.lpY) * v.lpA
-    // noise into the modes piles up with its length: as loud as a mallet's hit, however long
-    if (v.model !== 0 && (ex === 0 || ex === 3)) return v.lpY * v.noiseScale
-    return v.lpY
+    if (v.pT >= 0) {
+      if (v.pNoise) noisy += (Math.random() * 2 - 1) * v.pAmp * v.pScale
+      else direct += Math.sin((Math.PI * v.pT) / v.pLen) * v.pAmp * v.pScale
+      if (++v.pT >= v.pLen) v.pT = -1
+    }
+    if (ex === 3 && v.t < v.len) {
+      const e = 1 - v.t / v.len
+      noisy += (Math.random() * 2 - 1) * e * e * (v.a.wave ? 1 : 1.2 / Math.sqrt(Math.min(v.len, 0.05 * sr)))
+    }
+    if (PH_SUSTAINED.includes(ex)) {
+      // rises over its length, holds while the note does, lets go quickly
+      const target = v.gateOpen ? 1 : 0
+      const rate = v.gateOpen ? 1 / v.len : 1 / (0.04 * sr)
+      v.env += (target - v.env) * Math.min(1, rate * 4)
+      if (v.env > 1e-4) {
+        const lose = Math.sqrt(2 * Math.max(1e-5, 1 - v.a.r0)) // what keeps a loop from piling up
+        if (ex === 2) {
+          v.phase += v.f0 / sr
+          if (v.phase >= 1) v.phase -= 1
+          const saw = v.a.wave ? (2 * v.phase - 1) * (1 - v.a.r0) * 2 : 0
+          noisy += v.env * ((Math.random() * 2 - 1) * lose * 0.9 + saw) * (v.a.wave ? 0.5 : 1)
+        } else if (ex === 4) {
+          // breath: windy noise with a flutter in it
+          const flutter = 1 + 0.18 * Math.sin((2 * Math.PI * 5.2 * v.t) / sr)
+          noisy += v.env * (Math.random() * 2 - 1) * lose * flutter * (v.a.wave ? 0.6 : 1.1)
+        } else if (Math.random() < (20 * 2 ** (k.hardness * 5.5)) / sr) {
+          // scrape: catches at random, more often the harder it's pressed
+          direct += v.env * (0.3 + 0.5 * Math.random()) * (Math.random() < 0.5 ? -1 : 1) * (v.a.wave ? 0.5 : 0.25)
+        }
+      }
+    }
+    v.lpY += (noisy - v.lpY) * v.lpA
+    return v.lpY + direct
   }
   busy(v) { return v.active }
   render(v, L, R, from, to) {
     const k = this.k
     this.setup(v)
+    const ex = Math.round(k.exciter)
     const gain = 10 ** (k.level / 20)
-    const bow = Math.round(k.exciter) === 2
-    const string = v.model === 0
-    const posLag = Math.max(1, Math.min(PH_LINE - 1, Math.round((sampleRate / v.f0) * k.position)))
+    const a = v.a, b = v.b
+    const posLag = Math.max(1, Math.min(PH_LINE - 1, Math.round(a.period * k.position)))
+    const mixB = v.bodyOn ? k.bodymix : 0
+    const envFall = Math.exp(-1 / (0.15 * sampleRate))
+    const glide = 1 - Math.exp(-1 / (0.02 * sampleRate))
     for (let i = from; i < to; i++) {
-      let e = this.excite(v)
-      let y = 0
-      if (string) {
+      let e = this.excite(v, ex)
+      if (a.wave) {
         // where it's struck: the wave sent the other way comes back off the near end
         v.ex[v.exw] = e
         e -= v.ex[(v.exw - posLag + PH_LINE) % PH_LINE]
         v.exw = (v.exw + 1) % PH_LINE
-        const s = v.buf[(v.w - v.M + PH_LINE) % PH_LINE]
-        // the fraction of a sample
-        const a = v.ap * s + v.apx - v.ap * v.apy
-        v.apx = s; v.apy = a
-        // the loop's lowpass, then the stiffness
-        v.ly = (1 - v.lb) * a + v.lb * v.ly
-        let z = v.ly
-        if (k.stiffness > 0) {
-          for (let j = 0; j < 4; j++) {
-            const c = v.dc[j]
-            const o = c * z + v.dx[j] - c * v.dy[j]
-            v.dx[j] = z; v.dy[j] = o; z = o
-          }
-        }
-        y = z * v.g + e
-        v.buf[v.w] = y
-        v.w = (v.w + 1) % PH_LINE
-        y *= 0.5
-      } else {
-        const n = v.n
-        const re = v.re, im = v.im, cr = v.cr, ci = v.ci, amp = v.amp
-        for (let j = 0; j < n; j++) {
-          const r0 = re[j], i0 = im[j]
-          re[j] = cr[j] * r0 - ci[j] * i0 + e
-          im[j] = ci[j] * r0 + cr[j] * i0
-          y += im[j] * amp[j]
-        }
-        y *= 0.7
+      }
+      const ya = a.tick(e)
+      let y = ya
+      if (v.bodyOn) {
+        // the body's level follows what feeds it, however well it's tuned to it: measured
+        // while the first is still sounding, then held, so the body rings on as it would
+        const yb = b.tick(ya * v.bodyIn)
+        const ai = Math.abs(ya), ab = Math.abs(yb)
+        v.envIn = ai > v.envIn ? ai : v.envIn * envFall
+        v.envB = ab > v.envB ? ab : v.envB * envFall
+        if (v.envIn > v.peakIn) v.peakIn = v.envIn
+        if (v.envIn > 0.25 * v.peakIn && v.envB > 1e-7) v.bodyGT = Math.min(400, v.envIn / v.envB)
+        v.bodyG += (v.bodyGT - v.bodyG) * glide
+        y = ya * (1 - mixB) + yb * v.bodyG * mixB
       }
       // no DC, and nothing that runs away gets past a soft limit
       const d = y - v.dcx + 0.9995 * v.dcy
@@ -278,8 +381,10 @@ class PhysicalProcessor extends LatticeInstrument {
       v.t++
       v.level = Math.max(Math.abs(out), v.level * 0.9995)
     }
-    // done once the hit is over and what rings has died away
-    if (v.t > v.len && !(bow && (v.gateOpen || v.bowEnv > 1e-4)) && v.level < 1e-5) v.active = false
+    // done once the hits are over and what rings has died away
+    const hitting = v.pT >= 0 || v.hits < v.maxHits || (ex === 3 && v.t < v.len)
+    const held = PH_SUSTAINED.includes(ex) && (v.gateOpen || v.env > 1e-4)
+    if (!hitting && !held && v.t > 64 && v.level < 1e-5) v.active = false
   }
 }
 registerProcessor('lattice-physical', PhysicalProcessor)
@@ -288,14 +393,14 @@ registerProcessor('lattice-physical', PhysicalProcessor)
 export default {
   type: 'physical',
   label: 'physical',
-  blurb: 'A physical model: pluck, strike, bow or blow on a string, a bar, a drum skin, a plate or a bell, and it rings the way the real thing would',
+  blurb: 'A physical model: pluck, strike, bow, blow, scrape or strum a string, tube, bar, drum skin, plate, bell, glass, bowl, gong or spring, and couple a second body to it',
   kinds: ['synth', 'drum'],
   processor: 'lattice-physical',
   voices: 8,
   oneShot: false, // let go and it rings on for its release
   params: PARAMS,
-  groups: [['exciter', 'exciter'], ['body', 'body'], ['out', 'out']],
+  groups: [['exciter', 'exciter'], ['resonator', 'resonator'], ['body', 'body'], ['out', 'out']],
   /** How long it rings once the note ends. */
-  tail: (d) => Math.min(d.decay, d.release) * 1.1 + 0.05,
+  tail: (d) => Math.max(Math.min(d.decay, d.release), d.body ? Math.min(d.bodydecay, d.release) : 0) * 1.1 + 0.05,
   dsp: DSP,
 }

@@ -201,7 +201,20 @@ export default function SynthWindow({ project, patternId, channelId, order, fron
               {groups.map((g) => (
                 <section key={g.key} className="sw-group" aria-label={g.title}>
                   <h3 className="sw-group-title">{g.title}</h3>
-                  <div className="sw-knobs">{g.params.map(knob)}</div>
+                  {/* a pick from a list is a dropdown; everything else is a knob */}
+                  {g.params.some((d) => d.choices) && (
+                    <div className="sw-picks">
+                      {g.params.filter((d) => d.choices).map((d) => (
+                        <label key={d.key} className="sw-pick">
+                          <span className="sw-pick-label">{d.label}</span>
+                          <select className="select" value={Math.round(data[d.key] ?? d.def)} onChange={(e) => set(d.key, Number(e.target.value))}>
+                            {d.choices.map((c, i) => <option key={c} value={i}>{c}</option>)}
+                          </select>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  <div className="sw-knobs">{g.params.filter((d) => !d.choices).map(knob)}</div>
                 </section>
               ))}
             </div>

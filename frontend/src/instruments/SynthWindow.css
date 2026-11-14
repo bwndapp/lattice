@@ -75,6 +75,10 @@
 .sw-group-title { margin: 0 0 0.35rem; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
 .sw-knobs { display: flex; flex-wrap: wrap; gap: 0.25rem 0.35rem; }
 .sw-knobs .knob { width: 50px; }
+.sw-picks { display: flex; flex-wrap: wrap; gap: 0.35rem 0.6rem; margin-bottom: 0.45rem; }
+.sw-pick { display: grid; gap: 0.15rem; min-width: 7.5rem; flex: 1 1 7.5rem; }
+.sw-pick-label { font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.sw-pick .select { width: 100%; }
 
 /* the kick: sections down the side, the hit drawn big, the picked section's knobs along
    the bottom. Pulled taller from its corner, the drawing takes the room. */
