@@ -115,6 +115,7 @@ class PhResonator {
     this.ap = 0; this.apx = 0; this.apy = 0; this.lb = 0; this.ly = 0; this.g = 0.99; this.sign = 1
     this.stages = 0; this.dc = 0; this.dx = new Float64Array(PH_STAGES); this.dy = new Float64Array(PH_STAGES)
     this.n = 0
+    this.live = 0 // the modes still ringing, from the bottom: the top ones die first (see trim)
     this.cr = new Float64Array(PH_MAX_MODES); this.ci = new Float64Array(PH_MAX_MODES); this.amp = new Float64Array(PH_MAX_MODES)
     this.re = new Float64Array(PH_MAX_MODES); this.im = new Float64Array(PH_MAX_MODES)
     this.r0 = 0.999
@@ -176,6 +177,7 @@ class PhResonator {
     }
     for (let i = n; i < this.n; i++) { this.re[i] = 0; this.im[i] = 0 }
     this.n = n
+    if (this.live > n) this.live = n
     const s = 1 / Math.sqrt(Math.max(1e-6, norm))
     for (let i = 0; i < n; i++) this.amp[i] *= s
   }
@@ -197,7 +199,9 @@ class PhResonator {
       return y * 0.5
     }
     let y = 0
-    const n = this.n, re = this.re, im = this.im, cr = this.cr, ci = this.ci, amp = this.amp
+    // struck again: every mode joins in; otherwise only those still ringing are worked out
+    const n = e > 1e-9 || e < -1e-9 ? (this.live = this.n) : this.live
+    const re = this.re, im = this.im, cr = this.cr, ci = this.ci, amp = this.amp
     for (let j = 0; j < n; j++) {
       const r0 = re[j], i0 = im[j]
       re[j] = cr[j] * r0 - ci[j] * i0 + e
@@ -205,6 +209,18 @@ class PhResonator {
       y += im[j] * amp[j]
     }
     return y * 0.7
+  }
+  /**
+   * Once a block: let the top modes that have died away go. High modes die fastest, so a
+   * struck plate's long tail is a handful of modes, not all thirty-two; working out the
+   * silent ones too is what made a few ringing plates choke the audio.
+   */
+  trim() {
+    if (this.wave) return
+    let n = this.live
+    const re = this.re, im = this.im
+    while (n > 0 && Math.abs(re[n - 1]) + Math.abs(im[n - 1]) < 1e-6) { re[n - 1] = 0; im[n - 1] = 0; n-- }
+    this.live = n
   }
 }
 
@@ -381,6 +397,8 @@ class PhysicalProcessor extends LatticeInstrument {
       v.t++
       v.level = Math.max(Math.abs(out), v.level * 0.9995)
     }
+    a.trim()
+    if (v.bodyOn) b.trim()
     // done once the hits are over and what rings has died away
     const hitting = v.pT >= 0 || v.hits < v.maxHits || (ex === 3 && v.t < v.len)
     const held = PH_SUSTAINED.includes(ex) && (v.gateOpen || v.env > 1e-4)

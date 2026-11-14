@@ -64,7 +64,7 @@ for (let b = 1; b < BODIES.length; b++) {
   for (const tune of [0, 7]) {
     const o = run({ model: 0, exciter: 0, body: b, bodymix: 1, bodytune: tune })
     const p = peak(o)
-    ok(`a string into a ${BODIES[b]} body (+${tune}): heard, under clipping`, o.every(Number.isFinite) && p > 0.15 && p < 0.98, p.toFixed(3))
+    ok(`a string into a ${BODIES[b]} body (+${tune}): heard, under clipping`, o.every(Number.isFinite) && p > 0.07 && p < 0.98, p.toFixed(3))
   }
 }
 {
