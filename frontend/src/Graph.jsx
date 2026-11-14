@@ -1294,7 +1294,8 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
     for (const n of project.nodes) {
       if (!SOURCE_TYPES.has(n.type)) continue
       const rgb = rgbOf(colorFor(nodeSrc(n, project), project.song?.colors))
-      for (const k of litPaths.nodes.get(n.id) ?? []) map.set(k, rgb)
+      // its own sounds only: a rhythm machine also carries the colours of what's wired in
+      for (const k of litPaths.nodes.get(n.id) ?? []) if (k === n.id || k.startsWith(`${n.id}|`)) map.set(k, rgb)
     }
     return map
   }, [project, litPaths])

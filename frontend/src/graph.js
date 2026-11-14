@@ -49,6 +49,9 @@ function sendCode(x, ctx, d, sends) {
 const beatSeconds = (ctx) => 1 / ((ctx?.cps || 0.5) * (ctx?.beats || 4))
 /** Mark what a source makes with the node it came from, so the patch can light up (flow.js). */
 const fromNode = (x, id) => `${x}.fmap((v) => ({ ...v, _n: '${id}' }))`
+// a rhythm machine's hits keep the node that made the sound (what's wired in), so the patch
+// lights that node and its wire in, not just the machine (flow.js); its own sounds are its own
+const fromMachine = (x, id) => `${x}.fmap((v) => ({ ...v, _n: v._n ?? '${id}' }))`
 
 function fmapWith(x, ctx, d, keys, body, fmts = {}) {
   const autos = keys.filter((k) => isAuto(ctx, k))
@@ -1019,13 +1022,13 @@ export function graphCode(project, { solo = null, song = null, audition = false,
       const offMainIds = new Set(Object.entries(node.data?.offMain ?? {}).filter(([k, v]) => v === true && wiredOut(k)).map(([k]) => k))
       const main = built.filter((p) => p.expr && !offMainIds.has(p.id)).map((p) => p.expr)
       const name = nodeVar(id)
-      lines.push(`// ${node.data.name ?? spec.label}`, `const ${name} = ${fromNode(main.length > 1 ? `stack(${main.join(', ')})` : main[0] ?? 'silence', id)}`)
+      lines.push(`// ${node.data.name ?? spec.label}`, `const ${name} = ${fromMachine(main.length > 1 ? `stack(${main.join(', ')})` : main[0] ?? 'silence', id)}`)
       exprs.set(id, name)
       // layers wired out on their own ports: a line each
       for (const p of built) {
         if (!edges.some((e) => e.source === id && outChannel(e.sourceHandle) === p.id)) continue
         const pv = `${name}_${p.id}`
-        lines.push(`const ${pv} = ${fromNode(p.expr ?? 'silence', id)}`)
+        lines.push(`const ${pv} = ${fromMachine(p.expr ?? 'silence', id)}`)
         partVars.set(`${id}:${p.id}`, pv)
       }
       return name

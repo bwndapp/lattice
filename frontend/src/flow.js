@@ -45,6 +45,9 @@ export function flowPaths(project, { sourceTypes, splitOf }) {
     else if (sourceTypes.has(node.type)) {
       const chans = node.type === 'pattern' ? (project.patterns.find((p) => p.id === node.data.patternId)?.channels ?? []) : []
       keys = chans.length ? chans.map((c) => key(id, c.id)) : [id]
+      // a source with inputs (a rhythm machine) also carries what's wired into it
+      const fed = project.edges.filter((e) => e.target === id)
+      if (fed.length) keys = [...new Set([...keys, ...fed.flatMap((e) => keysOfEdge(e, trail))])]
     } else {
       keys = [...new Set(project.edges.filter((e) => e.target === id).flatMap((e) => keysOfEdge(e, trail)))]
     }
