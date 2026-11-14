@@ -708,6 +708,7 @@ export const INSTRUMENTS = [
   { key: 'pluck', label: 'pluck', kind: 'synth', patch: { sound: 'triangle', note: 'c4', params: { delay: 0.3 }, fx: '.decay(.12).sustain(0)' } },
   { key: 'piano', label: 'piano', kind: 'synth', patch: { sound: 'piano', note: 'c4' } },
   { key: 'syrup', label: 'syrup', kind: 'synth', patch: { sound: engineSound('syrup'), note: 'c3', engine: { type: 'syrup', data: {} } } },
+  { key: 'physical', label: 'physical', kind: 'synth', patch: { sound: engineSound('physical'), note: 'c3', engine: { type: 'physical', data: {} } } },
   { key: 'code', label: 'code', kind: 'code', patch: {} },
 ]
 

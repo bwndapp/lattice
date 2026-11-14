@@ -1,4 +1,5 @@
 import kick from './kick.js'
+import physical from './physical.js'
 import syrup from './syrup/index.js'
 
 /**
@@ -36,7 +37,7 @@ import syrup from './syrup/index.js'
  *   rig(ac, node, voices) (optional) audio outside the processor for those outputs:
  *                         { update({ data, cps, beats }), target(noteValue), dispose() }
  */
-export const ENGINES = Object.fromEntries([kick, syrup].map((e) => [e.type, e]))
+export const ENGINES = Object.fromEntries([kick, syrup, physical].map((e) => [e.type, e]))
 
 /** Engines that were called something else once: what a saved track may still say. */
 export const WAS_CALLED = { phyllo: 'syrup' }
