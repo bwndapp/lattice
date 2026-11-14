@@ -6,14 +6,14 @@
   color: var(--paper);
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 12px;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.75);
+  border-radius: 3px;
+  box-shadow: none;
 }
 .versions-dialog::backdrop { background: rgba(0, 0, 0, 0.7); }
 .vs-body { display: grid; gap: 0.7rem; padding: 1rem 1.1rem 1.1rem; }
 .vs-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .vs-title { margin: 0; font-family: var(--display); font-weight: 900; font-stretch: 118%; font-size: 24px; line-height: 1; letter-spacing: -0.02em; }
-.vs-head .btn { border-radius: 999px; }
+.vs-head .btn { border-radius: 3px; }
 .vs-note { margin: 0; font-size: 11.5px; line-height: 1.55; color: var(--muted); max-width: 60ch; }
 .vs-error { margin: 0; font-size: 12px; color: var(--danger); }
 .vs-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; overflow-y: auto; max-height: min(460px, calc(100vh - 220px)); }
@@ -25,7 +25,7 @@
   padding: 0.55rem 0.7rem;
   background: var(--canvas);
   border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
+  border-radius: 3px;
 }
 .vs-row:first-child { border-color: rgba(228, 255, 26, 0.35); }
 .vs-row.empty .vs-summary { color: var(--danger); }
@@ -34,7 +34,7 @@
 .vs-ago { font-size: 10px; color: var(--muted); }
 .vs-name { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .vs-summary { font-size: 10.5px; color: var(--muted); }
-.btn.vs-open { border-radius: 999px; padding: 0.25rem 0.75rem; font-size: 11.5px; }
+.btn.vs-open { border-radius: 3px; padding: 0.25rem 0.75rem; font-size: 11.5px; }
 @media (max-width: 560px) {
   .vs-row { grid-template-columns: minmax(0, 1fr) auto; }
   .vs-when { grid-column: 1 / -1; }

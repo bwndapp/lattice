@@ -11,9 +11,8 @@
   padding: 7px 9px;
   background: rgba(10, 10, 14, 0.72);
   border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 999px;
-  backdrop-filter: blur(10px);
-  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45);
+  border-radius: 3px;
+  box-shadow: none;
 }
 
 .peer-faces { display: flex; align-items: center; gap: 5px; }

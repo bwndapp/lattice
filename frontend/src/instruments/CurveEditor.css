@@ -9,7 +9,7 @@
   background: var(--ph-well, var(--well));
   border: 1px solid var(--ph-line, var(--sunk));
   border-radius: 2px;
-  box-shadow: inset 0 1px 8px rgba(0, 0, 0, 0.9);
+  box-shadow: none;
   overflow: hidden;
 }
 .curve-editor svg { display: block; overflow: visible; }
@@ -18,20 +18,20 @@
 .ce-grid.edge { stroke: rgba(255, 255, 255, 0.08); }
 .ce-grid.zero { stroke: color-mix(in srgb, var(--ce-ink) 45%, transparent); stroke-dasharray: 3 3; }
 .ce-area { fill: var(--ce-ink); opacity: 0.12; }
-.ce-line { fill: none; stroke: var(--ce-ink); stroke-width: 1.8; stroke-linejoin: round; filter: drop-shadow(0 0 3px color-mix(in srgb, var(--ce-ink) 55%, transparent)); }
+.ce-line { fill: none; stroke: var(--ce-ink); stroke-width: 1.8; stroke-linejoin: round;}
 .ce-hit { fill: transparent; }
 .ce-point { cursor: grab; }
 .ce-point .ce-knob { fill: var(--well); stroke: var(--ce-ink); stroke-width: 1.6; transition: r 0.08s; }
 .ce-point.hot .ce-knob { fill: color-mix(in srgb, var(--ce-ink) 35%, var(--well)); }
 .ce-point.active { cursor: grabbing; }
-.ce-point.active .ce-knob { fill: var(--ce-ink); filter: drop-shadow(0 0 5px var(--ce-ink)); }
+.ce-point.active .ce-knob { fill: var(--ce-ink);}
 .ce-bend { cursor: ns-resize; }
 .ce-bend .ce-bend-mark { fill: var(--well); stroke: color-mix(in srgb, var(--ce-ink) 55%, transparent); stroke-width: 1.2; }
 .ce-bend.bent .ce-bend-mark { stroke: var(--ce-ink); }
 .ce-bend.hot .ce-bend-mark { fill: var(--ce-ink); stroke: var(--ce-ink); }
 .ce-dot {
   position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border-radius: 50%;
-  background: #fff; box-shadow: 0 0 0 2px var(--ce-ink), 0 0 12px var(--ce-ink);
+  background: #fff; box-shadow: 0 0 0 2px var(--ce-ink), 0 0 0 1px var(--ce-ink);
   pointer-events: none; will-change: transform; opacity: 0;
 }
 @media (prefers-reduced-motion: reduce) { .ce-dot { display: none; } }

@@ -19,11 +19,9 @@
   font-family: var(--mono);
   color: var(--paper);
   background: rgb(43 43 48 / 0.78);
-  backdrop-filter: blur(28px) saturate(1.5);
-  -webkit-backdrop-filter: blur(28px) saturate(1.5);
   border: 1px solid rgb(255 255 255 / 0.09);
-  border-radius: 16px;
-  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.6), 0 24px 70px rgb(0 0 0 / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.06);
+  border-radius: 3px;
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.6);
   animation: am-pop 0.14s cubic-bezier(0.2, 0.9, 0.3, 1.2);
 }
 @keyframes am-fade { from { opacity: 0; } }
@@ -46,7 +44,7 @@
   caret-color: var(--acid);
 }
 .am-search::placeholder { color: var(--dim); }
-.am-where { flex: none; padding: 0.15rem 0.55rem; font-size: 10px; color: var(--acid); border: 1px solid rgb(224 163 60 / 0.45); border-radius: 999px; }
+.am-where { flex: none; padding: 0.15rem 0.55rem; font-size: 10px; color: var(--acid); border: 1px solid rgb(224 163 60 / 0.45); border-radius: 3px; }
 .am-hint { margin: -0.45rem 1.1rem 0.5rem 3.05rem; font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .am-tabs { display: flex; gap: 0.3rem; padding: 0.15rem 0.8rem 0.6rem; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid rgb(255 255 255 / 0.07); }
@@ -62,7 +60,7 @@
   color: var(--muted);
   background: rgb(255 255 255 / 0.04);
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: 3px;
   cursor: var(--ring);
 }
 .am-tab:hover { color: var(--paper); background: rgb(255 255 255 / 0.08); }
@@ -86,7 +84,7 @@
   color: inherit;
   background: none;
   border: 0;
-  border-radius: 8px;
+  border-radius: 3px;
   cursor: var(--ring);
 }
 .am-row.cursor { background: rgb(224 163 60 / 0.9); color: var(--ink); }
@@ -105,10 +103,10 @@
   color: var(--tile);
   background: color-mix(in srgb, var(--tile) 16%, rgb(20 20 23 / 0.8));
   border: 1px solid color-mix(in srgb, var(--tile) 35%, transparent);
-  border-radius: 7px;
+  border-radius: 3px;
 }
 .am-row.cursor .am-tile { background: rgb(20 20 16 / 0.85); }
-.am-tile.big { width: 64px; height: 64px; font-size: 32px; border-radius: 16px; }
+.am-tile.big { width: 64px; height: 64px; font-size: 32px; border-radius: 3px; }
 .am-empty { margin: 1.5rem 0.6rem; font-size: 12px; color: var(--muted); text-align: center; }
 
 .am-preview {

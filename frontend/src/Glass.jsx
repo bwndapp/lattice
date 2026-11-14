@@ -104,7 +104,7 @@ const refracts = () => {
   if (/iPhone|iPad|iPod/.test(navigator.userAgent)) return false
   // iPadOS says it's a Mac: a Mac with a touchscreen is an iPad
   if (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) return false
-  return !!navigator.userAgentData?.brands?.some((b) => /Chrom/.test(b.brand))
+  return false // flat now: no bent glass anywhere (see flat.css)
 }
 
 /** A glass element: pass the className and it bends whatever sits behind it. */

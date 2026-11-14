@@ -35,7 +35,7 @@
   color: var(--well);
   background: var(--peer);
   border-radius: 3px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  box-shadow: none;
 }
 
 /* What someone else has hold of, wherever it's drawn (a node, a clip, a note). */

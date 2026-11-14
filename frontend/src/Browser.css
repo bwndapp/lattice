@@ -34,13 +34,10 @@
   display: grid;
   grid-template-columns: repeat(var(--n), minmax(0, 1fr));
   padding: var(--pad);
-  border-radius: 999px;
+  border-radius: 3px;
   /* the same etched lattice as the canvas switch, for the glass to bend */
-  background:
-    repeating-linear-gradient(45deg, rgba(242, 240, 230, 0.05) 0 1px, transparent 1px 6px),
-    repeating-linear-gradient(-45deg, rgba(242, 240, 230, 0.05) 0 1px, transparent 1px 6px),
-    linear-gradient(145deg, var(--well), var(--canvas));
-  box-shadow: inset 3px 3px 8px rgba(0, 0, 0, 0.85), inset -2px -2px 6px rgba(255, 255, 255, 0.04), 0 0 0 1px rgba(255, 255, 255, 0.03);
+  background: var(--well);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.03);
 }
 .b-switch-thumb {
   position: absolute;
@@ -49,23 +46,20 @@
   left: var(--pad);
   width: calc((100% - 2 * var(--pad)) / var(--n));
   z-index: 2;
-  border-radius: 999px;
+  border-radius: 3px;
   pointer-events: none;
   /* a glass lens over the labels (see Glass.jsx); fallback: a light frost and a rim */
   background: rgba(242, 240, 230, 0.06);
-  -webkit-backdrop-filter: blur(1.5px) brightness(1.25);
-  backdrop-filter: blur(1.5px) brightness(1.25);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.55), inset 1px 1px 0 rgba(255, 255, 255, 0.22), inset -1px -1px 0 rgba(255, 255, 255, 0.05);
+  box-shadow: none;
   transform: translateX(calc(var(--at) * 100%));
   transition: transform 0.35s cubic-bezier(0.34, 1.35, 0.5, 1);
 }
 .b-switch-thumb.refracting {
   background: rgba(242, 240, 230, 0.035);
-  backdrop-filter: var(--glass) brightness(1.18);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.55);
+  box-shadow: none;
 }
 @media (prefers-reduced-transparency: reduce) {
-  .b-switch-thumb, .b-switch-thumb.refracting { backdrop-filter: none; background: var(--sunk); box-shadow: 0 3px 8px rgba(0, 0, 0, 0.55), inset 1px 1px 0 rgba(255, 255, 255, 0.1); }
+  .b-switch-thumb, .b-switch-thumb.refracting {background: var(--sunk); box-shadow: none; }
 }
 .b-switch-opt {
   position: relative;
@@ -84,7 +78,7 @@
   color: var(--muted);
   background: none;
   border: 0;
-  border-radius: 999px;
+  border-radius: 3px;
   cursor: var(--ring);
   transition: color 0.25s ease;
 }
@@ -101,11 +95,11 @@
   gap: 0.5rem;
   padding: 0 0.8rem;
   height: 2.4rem;
-  border-radius: 999px;
+  border-radius: 3px;
   background: var(--well);
-  box-shadow: inset 2px 2px 6px rgba(0, 0, 0, 0.8), inset -1px -1px 4px rgba(255, 255, 255, 0.035), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
-.b-search:focus-within { box-shadow: inset 2px 2px 6px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(242, 240, 230, 0.35); }
+.b-search:focus-within { box-shadow: 0 0 0 1px rgba(242, 240, 230, 0.35); }
 .b-search svg { flex: none; width: 14px; height: 14px; fill: none; stroke: var(--muted); stroke-width: 1.6; stroke-linecap: round; }
 .b-search input { flex: 1; min-width: 0; font: inherit; font-size: 12px; color: var(--paper); background: none; border: 0; outline: none; }
 .b-search input::placeholder { color: var(--muted); }
@@ -132,16 +126,16 @@
   text-transform: uppercase;
   text-decoration: none;
   color: var(--paper);
-  background: linear-gradient(145deg, var(--sunk), var(--canvas));
+  background: var(--sunk);
   border: 0;
-  border-radius: 999px;
-  box-shadow: 3px 3px 8px rgba(0, 0, 0, 0.7), -2px -2px 6px rgba(255, 255, 255, 0.035), inset 1px 1px 0 rgba(255, 255, 255, 0.06);
+  border-radius: 3px;
+  box-shadow: none;
   cursor: var(--ring);
   transition: transform 0.15s ease, box-shadow 0.15s ease, color 0.15s ease;
 }
 .b-button:hover { color: #fff; }
-.b-button:active { transform: translateY(1px); box-shadow: inset 2px 2px 6px rgba(0, 0, 0, 0.8); }
-.b-button.primary { color: var(--ink); background: var(--acid); box-shadow: 3px 3px 8px rgba(0, 0, 0, 0.7); }
+.b-button:active { transform: translateY(1px); box-shadow: none; }
+.b-button.primary { color: var(--ink); background: var(--acid); box-shadow: none; }
 .b-button.primary:hover { color: var(--ink); filter: brightness(1.06); }
 .b-button:focus-visible { outline: 1px solid var(--paper); outline-offset: 2px; }
 
@@ -165,13 +159,13 @@
   display: grid;
   gap: 0.7rem;
   padding: 0.7rem 0.7rem 0.75rem;
-  border-radius: 15px;
-  background: linear-gradient(145deg, var(--canvas), var(--canvas));
-  box-shadow: 4px 4px 12px rgba(0, 0, 0, 0.6), -2px -2px 8px rgba(255, 255, 255, 0.025), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  border-radius: 3px;
+  background: var(--canvas);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
   transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
-.b-card:hover { transform: translateY(-2px); box-shadow: 6px 10px 22px rgba(0, 0, 0, 0.72), -2px -2px 8px rgba(255, 255, 255, 0.03), 0 0 0 1px rgba(255, 255, 255, 0.08); }
-.b-card.active { box-shadow: 4px 4px 12px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(228, 255, 26, 0.45); }
+.b-card:hover { transform: translateY(-2px); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08); }
+.b-card.active { box-shadow: 0 0 0 1px rgba(228, 255, 26, 0.45); }
 
 /*
  * The arrangement, pressed into the card like a panel in the rack: the same etched lattice
@@ -181,12 +175,10 @@
 .b-art {
   position: relative;
   aspect-ratio: 16 / 5.2;
-  border-radius: 10px;
+  border-radius: 3px;
   overflow: hidden;
-  background:
-    repeating-linear-gradient(45deg, rgba(242, 240, 230, 0.045) 0 1px, transparent 1px 7px),
-    linear-gradient(160deg, var(--well), var(--well));
-  box-shadow: inset 3px 3px 8px rgba(0, 0, 0, 0.85), inset -1px -1px 4px rgba(255, 255, 255, 0.03), 0 0 0 1px rgba(255, 255, 255, 0.045);
+  background: var(--well);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.045);
 }
 .b-map { width: 100%; height: 100%; display: block; }
 .b-map-bar { stroke: rgba(242, 240, 230, 0.08); stroke-width: 1; }
@@ -201,7 +193,7 @@
 .b-art-tag {
   position: absolute; top: 0.4rem; right: 0.5rem; z-index: 1;
   font-size: 9.5px; letter-spacing: 0.06em; color: var(--muted); font-variant-numeric: tabular-nums;
-  background: rgba(7, 7, 6, 0.72); border-radius: 999px; padding: 0.05rem 0.4rem;
+  background: rgba(7, 7, 6, 0.72); border-radius: 3px; padding: 0.05rem 0.4rem;
 }
 .b-art-tag i { font-style: normal; margin-left: 0.2em; opacity: 0.65; }
 /* it waits in the corner of the panel until you're on the card */
@@ -219,8 +211,8 @@
   border-radius: 50%;
   opacity: 0;
   transform: translateY(5px) scale(0.92);
-  background: linear-gradient(145deg, var(--sunk), var(--canvas));
-  box-shadow: 3px 3px 8px rgba(0, 0, 0, 0.8), -1px -1px 5px rgba(255, 255, 255, 0.04), inset 1px 1px 0 rgba(255, 255, 255, 0.07);
+  background: var(--sunk);
+  box-shadow: none;
   cursor: var(--ring);
   transition: opacity 0.18s ease, transform 0.22s cubic-bezier(0.34, 1.4, 0.5, 1), box-shadow 0.15s ease;
 }
@@ -228,10 +220,10 @@
 .b-play svg { width: 14px; height: 14px; margin-left: 2px; fill: var(--paper); }
 .b-play:hover svg { fill: var(--acid); }
 /* while it's playing it stays up, shows a stop square, and is the acid one on the card */
-.b-play.on { opacity: 1; transform: none; background: var(--acid); box-shadow: 0 0 0 1px rgb(228 255 26 / 0.5), 0 3px 10px rgba(0, 0, 0, 0.7); }
+.b-play.on { opacity: 1; transform: none; background: var(--acid); box-shadow: 0 0 0 1px rgb(228 255 26 / 0.5); }
 .b-play.on svg { margin-left: 0; fill: var(--ink); }
 .b-play.on:hover svg { fill: var(--ink); }
-.b-play:active { box-shadow: inset 2px 2px 6px rgba(0, 0, 0, 0.85); }
+.b-play:active { box-shadow: none; }
 @media (hover: none) { .b-play { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .b-play { transition: opacity 0.18s ease; transform: none; } }
 .b-card-body { display: grid; gap: 0.2rem; min-width: 0; padding-inline: 0.25rem; }
@@ -271,7 +263,7 @@
 }
 .b-card-meta .liked { color: var(--acid); }
 .b-card-time { margin-left: auto; }
-.b-tag { padding: 0.05rem 0.45rem; border-radius: 999px; font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--paper); background: rgba(255, 255, 255, 0.06); }
+.b-tag { padding: 0.05rem 0.45rem; border-radius: 3px; font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--paper); background: rgba(255, 255, 255, 0.06); }
 .b-tag.on { color: var(--ink); background: var(--acid); }
 
 .b-card.skeleton { height: 12.5rem; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.03); background: linear-gradient(100deg, var(--canvas) 30%, var(--canvas) 50%, var(--canvas) 70%); background-size: 300% 100%; animation: b-shimmer 1.4s ease-in-out infinite; }
@@ -298,7 +290,7 @@
   font: inherit; font-size: 11px; color: var(--paper);
   background: rgb(228 255 26 / 0.08); border: 0;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--acid) 35%, var(--line));
-  border-radius: 999px; padding: 0.3rem 0.75rem; cursor: var(--ring);
+  border-radius: 3px; padding: 0.3rem 0.75rem; cursor: var(--ring);
 }
 .b-narrowed:hover { background: rgb(228 255 26 / 0.15); }
 .b-narrowed-what { font-weight: 700; }
@@ -326,7 +318,7 @@ button.b-card-about {
   position: relative; z-index: 2; order: -1;
   font: inherit; font-size: 10px; letter-spacing: 0.04em; color: var(--acid);
   background: rgb(228 255 26 / 0.08); border: 1px solid color-mix(in srgb, var(--acid) 32%, var(--line));
-  border-radius: 999px; padding: 0.05rem 0.45rem; cursor: var(--ring);
+  border-radius: 3px; padding: 0.05rem 0.45rem; cursor: var(--ring);
   transition: background 0.12s ease, color 0.12s ease;
 }
 button.b-card-about:hover { background: var(--acid); color: var(--ink); }
@@ -337,7 +329,7 @@ button.b-card-from {
   display: inline-flex; align-items: center; gap: 0.3rem;
   overflow: hidden; white-space: nowrap;
   font: inherit; font-size: 10px; color: var(--muted);
-  background: rgb(228 255 26 / 0.07); border: 0; border-radius: 999px;
+  background: rgb(228 255 26 / 0.07); border: 0; border-radius: 3px;
   padding: 0.1rem 0.5rem 0.1rem 0.4rem;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--acid) 28%, transparent);
   cursor: var(--ring);
@@ -354,7 +346,7 @@ button.b-card-from:hover b { color: var(--paper); }
 .b-card-tag {
   position: relative; z-index: 2;
   font: inherit; font-size: 9.5px; letter-spacing: 0.06em; color: var(--muted);
-  background: rgba(7, 7, 6, 0.72); border: 0; border-radius: 999px; padding: 0.05rem 0.4rem;
+  background: rgba(7, 7, 6, 0.72); border: 0; border-radius: 3px; padding: 0.05rem 0.4rem;
   cursor: var(--ring); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .b-card-tag:hover { color: var(--paper); }

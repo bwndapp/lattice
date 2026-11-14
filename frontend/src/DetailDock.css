@@ -7,7 +7,7 @@
   min-height: 160px;
   background: var(--panel);
   border-top: 1px solid var(--line);
-  box-shadow: 0 -12px 28px rgba(0, 0, 0, 0.5);
+  box-shadow: none;
 }
 /* the top edge drags the dock taller or shorter */
 .dd-grip { position: absolute; top: -4px; left: 0; right: 0; height: 9px; cursor: ns-resize; touch-action: none; z-index: 2; }
@@ -21,13 +21,13 @@
 }
 .dd-name:hover, .dd-name:focus { border-bottom-color: var(--acid); outline: none; }
 .dd-field { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 11px; color: var(--muted); }
-.dd-field .select { padding: 0.15rem 0.35rem; font-size: 11px; border-radius: 999px; background: var(--canvas); border-color: var(--line); }
+.dd-field .select { padding: 0.15rem 0.35rem; font-size: 11px; border-radius: 3px; background: var(--canvas); border-color: var(--line); }
 .dd-uses { font-size: 10px; color: var(--muted); }
-.dd-tabs { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 999px; background: var(--canvas); max-width: min(40vw, 34rem); overflow-x: auto; }
+.dd-tabs { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 3px; background: var(--canvas); max-width: min(40vw, 34rem); overflow-x: auto; }
 .dd-tabs.instruments { border-color: rgba(255, 255, 255, 0.07); }
 .dd-tab {
   font: inherit; font-size: 11px; white-space: nowrap;
-  padding: 0.18rem 0.7rem; border: 0; border-radius: 999px;
+  padding: 0.18rem 0.7rem; border: 0; border-radius: 3px;
   color: var(--muted); background: none; cursor: var(--ring);
 }
 .dd-tab:hover { color: var(--paper); }
@@ -35,15 +35,15 @@
 .dd-tab:disabled { color: var(--dim); cursor: var(--dot); }
 .dd-spacer { flex: 1; }
 /* the computer keyboard as a piano, and which octave it plays */
-.dd-keys { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 999px; background: var(--canvas); }
+.dd-keys { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 3px; background: var(--canvas); }
 .dd-keys-on {
   font: inherit; font-size: 10px; letter-spacing: 0.07em; text-transform: uppercase;
-  padding: 0.18rem 0.6rem; border: 0; border-radius: 999px;
+  padding: 0.18rem 0.6rem; border: 0; border-radius: 3px;
   color: var(--muted); background: none; cursor: var(--ring);
 }
 .dd-keys-on:hover { color: var(--paper); }
 .dd-keys-on.on { color: var(--ink); background: var(--acid); }
-.dd-oct { width: 1.3rem; font: inherit; font-size: 12px; line-height: 1; padding: 0.1rem 0; color: var(--paper); background: none; border: 0; border-radius: 999px; cursor: var(--ring); }
+.dd-oct { width: 1.3rem; font: inherit; font-size: 12px; line-height: 1; padding: 0.1rem 0; color: var(--paper); background: none; border: 0; border-radius: 3px; cursor: var(--ring); }
 .dd-oct:hover:not(:disabled) { color: var(--acid); }
 .dd-oct:disabled { color: var(--dim); cursor: var(--dot); }
 .dd-oct-at { min-width: 4rem; text-align: center; font-size: 10.5px; color: var(--paper); font-variant-numeric: tabular-nums; }

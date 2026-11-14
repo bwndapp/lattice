@@ -5,12 +5,9 @@
   display: inline-grid;
   grid-template-columns: repeat(var(--n), minmax(0, 1fr));
   padding: var(--pad);
-  border-radius: 999px;
-  background:
-    repeating-linear-gradient(45deg, rgba(242, 240, 230, 0.05) 0 1px, transparent 1px 6px),
-    repeating-linear-gradient(-45deg, rgba(242, 240, 230, 0.05) 0 1px, transparent 1px 6px),
-    linear-gradient(145deg, var(--well), var(--canvas));
-  box-shadow: inset 2px 2px 6px rgba(0, 0, 0, 0.85), inset -2px -2px 5px rgba(255, 255, 255, 0.04), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  border-radius: 3px;
+  background: var(--well);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 .gswitch-thumb {
   position: absolute;
@@ -19,17 +16,15 @@
   bottom: var(--pad);
   left: var(--pad);
   width: calc((100% - 2 * var(--pad)) / var(--n));
-  border-radius: 999px;
+  border-radius: 3px;
   pointer-events: none;
   transform: translateX(calc(var(--at) * 100%));
   transition: transform 0.35s cubic-bezier(0.34, 1.35, 0.5, 1);
   /* fallback (Safari, Firefox): a light frost and a rim */
   background: rgba(242, 240, 230, 0.06);
-  -webkit-backdrop-filter: blur(1.5px) brightness(1.25);
-  backdrop-filter: blur(1.5px) brightness(1.25);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55), inset 1px 1px 0 rgba(255, 255, 255, 0.22), inset -1px -1px 0 rgba(255, 255, 255, 0.05);
+  box-shadow: none;
 }
-.gswitch-thumb.refracting { background: rgba(242, 240, 230, 0.035); backdrop-filter: var(--glass) brightness(1.18); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55); }
+.gswitch-thumb.refracting { background: rgba(242, 240, 230, 0.035);box-shadow: none; }
 .gswitch-opt {
   position: relative;
   z-index: 1;
@@ -45,7 +40,7 @@
   color: var(--muted);
   background: none;
   border: 0;
-  border-radius: 999px;
+  border-radius: 3px;
   cursor: var(--ring);
   transition: color 0.25s ease;
 }
@@ -54,4 +49,4 @@
 .gswitch-opt:focus-visible { outline: 1px solid var(--acid); outline-offset: -3px; }
 .gswitch.sm .gswitch-opt { padding: 0.22rem 0.55rem; font-size: 0.62rem; letter-spacing: 0.05em; }
 @media (prefers-reduced-motion: reduce) { .gswitch-thumb, .gswitch-opt { transition: none; } }
-@media (prefers-reduced-transparency: reduce) { .gswitch-thumb, .gswitch-thumb.refracting { backdrop-filter: none; background: var(--sunk); } }
+@media (prefers-reduced-transparency: reduce) { .gswitch-thumb, .gswitch-thumb.refracting {background: var(--sunk); } }

@@ -9,7 +9,7 @@
   color: var(--paper);
   background: var(--canvas);
   border: 1px solid var(--line);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
+  box-shadow: none;
   pointer-events: none;
   transform: translate(calc(-50% + var(--shift, 0px)), 0);
 }

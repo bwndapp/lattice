@@ -1,6 +1,6 @@
 /* the cube's window: the puzzle on the left, its four drums on the right */
 .cube-panel { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(300px, 1fr); gap: 0.9rem; padding: 0.8rem; }
-.cube-stage { position: relative; min-height: 360px; background: var(--well); border-radius: 10px; overflow: hidden; cursor: grab; touch-action: none; }
+.cube-stage { position: relative; min-height: 360px; background: var(--well); border-radius: 3px; overflow: hidden; cursor: grab; touch-action: none; }
 .cube-stage:active { cursor: grabbing; }
 .cube-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .cube-side { display: flex; flex-direction: column; gap: 0.7rem; min-width: 0; }

@@ -4,11 +4,11 @@
 .stream-switch {
   display: inline-flex; align-items: center; gap: 0.35rem;
   padding: 0.15rem 0.55rem; font: inherit; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--muted); background: var(--sunk); border: 1px solid var(--line); border-radius: 999px; cursor: var(--ring);
+  color: var(--muted); background: var(--sunk); border: 1px solid var(--line); border-radius: 3px; cursor: var(--ring);
 }
 .stream-switch.on { color: var(--paper); border-color: var(--muted); }
 .stream-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); }
-.stream-dot.live { background: var(--acid); box-shadow: 0 0 6px var(--acid); animation: stream-pulse 1.6s ease-in-out infinite; }
+.stream-dot.live { background: var(--acid); box-shadow: 0 0 0 1px var(--acid); animation: stream-pulse 1.6s ease-in-out infinite; }
 @keyframes stream-pulse { 50% { opacity: 0.45; } }
 @media (prefers-reduced-motion: reduce) { .stream-dot.live { animation: none; } }
 .stream-status { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -28,6 +28,6 @@
 .stream-open {
   margin-top: 0.4rem; padding: 0.15rem 0.6rem; font: inherit; font-family: var(--mono); font-size: 10px;
   letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
-  background: var(--sunk); border: 1px solid var(--line); border-radius: 999px; cursor: var(--ring);
+  background: var(--sunk); border: 1px solid var(--line); border-radius: 3px; cursor: var(--ring);
 }
 .stream-open:hover { color: var(--paper); border-color: var(--muted); }

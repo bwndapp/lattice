@@ -108,7 +108,7 @@ body.dragging, body.dragging * { user-select: none !important; -webkit-user-sele
 #root ::-webkit-scrollbar-thumb {
   background: var(--sunk);
   border: 2px solid transparent;
-  border-radius: 999px;
+  border-radius: 3px;
   background-clip: content-box;
 }
 #root ::-webkit-scrollbar-thumb:hover { background: var(--line); background-clip: content-box; }
@@ -267,7 +267,7 @@ body.dragging, body.dragging * { user-select: none !important; -webkit-user-sele
 /* the finishing move, so it carries the accent: a tint that fills in on hover */
 .btn.bar-export {
   display: inline-flex; align-items: center; gap: 0.4rem; flex: none;
-  font-weight: 700; font-size: 11.5px; padding: 0.26rem 0.75rem; border-radius: 999px;
+  font-weight: 700; font-size: 11.5px; padding: 0.26rem 0.75rem; border-radius: 3px;
   color: var(--acid);
   border-color: color-mix(in srgb, var(--acid) 42%, var(--line));
   background: color-mix(in srgb, var(--acid) 9%, transparent);
@@ -286,17 +286,11 @@ body.dragging, body.dragging * { user-select: none !important; -webkit-user-sele
   flex: none;
   margin-inline: 0.75rem;
   padding: 4px;
-  border-radius: 999px;
+  border-radius: 3px;
   /* a faint lattice etched into the track, so the glass has something to bend */
-  background:
-    repeating-linear-gradient(45deg, rgba(242, 240, 230, 0.05) 0 1px, transparent 1px 6px),
-    repeating-linear-gradient(-45deg, rgba(242, 240, 230, 0.05) 0 1px, transparent 1px 6px),
-    linear-gradient(145deg, var(--well), var(--canvas));
+  background: var(--well);
   /* pressed into the bar: dark below-right, faint light above-left */
-  box-shadow:
-    inset 4px 4px 9px rgba(0, 0, 0, 0.85),
-    inset -3px -3px 8px rgba(255, 255, 255, 0.045),
-    0 0 0 1px rgba(255, 255, 255, 0.035);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.035);
 }
 /* the thumb is a glass lens sliding over the labels (see Glass.jsx) */
 .cs-thumb {
@@ -306,26 +300,20 @@ body.dragging, body.dragging * { user-select: none !important; -webkit-user-sele
   bottom: 4px;
   left: 4px;
   width: var(--cs-w);
-  border-radius: 999px;
+  border-radius: 3px;
   pointer-events: none;
   /* fallback (Safari, Firefox): a light frost and a rim */
   background: rgba(242, 240, 230, 0.06);
-  -webkit-backdrop-filter: blur(1.5px) brightness(1.25);
-  backdrop-filter: blur(1.5px) brightness(1.25);
-  box-shadow:
-    0 3px 8px rgba(0, 0, 0, 0.55),
-    inset 1px 1px 0 rgba(255, 255, 255, 0.22),
-    inset -1px -1px 0 rgba(255, 255, 255, 0.05);
+  box-shadow: none;
   transition: transform 0.38s cubic-bezier(0.34, 1.42, 0.5, 1), opacity 0.2s ease;
 }
 /* Chromium: real refraction, and the rim light comes from the filter */
 .cs-thumb.refracting {
   background: rgba(242, 240, 230, 0.035);
-  backdrop-filter: var(--glass) brightness(1.18);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.55);
+  box-shadow: none;
 }
 @media (prefers-reduced-transparency: reduce) {
-  .cs-thumb, .cs-thumb.refracting { backdrop-filter: none; background: var(--sunk); box-shadow: 0 3px 8px rgba(0, 0, 0, 0.55), inset 1px 1px 0 rgba(255, 255, 255, 0.1); }
+  .cs-thumb, .cs-thumb.refracting {background: var(--sunk); box-shadow: none; }
 }
 .canvas-switch.at-second .cs-thumb { transform: translateX(100%); }
 .canvas-switch.at-neither .cs-thumb { opacity: 0; transform: translateX(50%) scale(0.85); }
@@ -342,7 +330,7 @@ body.dragging, body.dragging * { user-select: none !important; -webkit-user-sele
   color: var(--muted);
   background: none;
   border: 0;
-  border-radius: 999px;
+  border-radius: 3px;
   cursor: var(--ring);
   transition: color 0.25s ease;
 }
@@ -494,7 +482,7 @@ button.lcd-unit:hover { color: var(--acid); }
 .main.sheeting > .canvas-slot { position: absolute; inset: 0; z-index: 1; }
 .main.sheeting > .browse-sheet {
   position: absolute; inset: 0; z-index: 3; background: var(--canvas); will-change: transform;
-  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.7);
+  box-shadow: none;
 }
 .main.sheeting > .browse-sheet.coming { animation: sheet-down 0.34s cubic-bezier(0.22, 0.9, 0.24, 1) both; }
 .main.sheeting > .browse-sheet.going { animation: sheet-up 0.34s cubic-bezier(0.45, 0, 0.75, 0.2) both; }
@@ -681,8 +669,8 @@ button.lcd-unit:hover { color: var(--acid); }
 .step.bar-start, .rstep.bar-start { box-shadow: -2px 0 0 var(--dim); }
 .steps > :first-child { box-shadow: none; }
 .step:hover { border-color: var(--paper); }
-.step.on { background: var(--acid); border-color: var(--acid); box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.22); }
-.step.on.bar-start { box-shadow: -2px 0 0 var(--dim), inset 0 -3px 0 rgba(0, 0, 0, 0.22); }
+.step.on { background: var(--acid); border-color: var(--acid); box-shadow: none; }
+.step.on.bar-start { box-shadow: -2px 0 0 var(--dim); }
 
 /* the bar ruler at the top of the rack: counts the bars and carries the playhead */
 .ch.ch-ruler {
@@ -762,7 +750,7 @@ button.lcd-unit:hover { color: var(--acid); }
   max-width: calc(100vw - 24px); max-height: calc(100vh - 24px);
   display: flex; flex-direction: column;
   background: var(--panel); border: 2px solid var(--acid);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+  box-shadow: none;
   resize: both; overflow: hidden;
 }
 .pattern-pop.expanded { inset: 3vh 2.5vw; width: auto; height: auto; max-width: none; max-height: none; resize: none; }
@@ -827,7 +815,7 @@ button.lcd-unit:hover { color: var(--acid); }
 .sound-picker {
   position: fixed; z-index: 60; width: min(520px, calc(100vw - 24px)); height: min(420px, 70vh);
   display: flex; flex-direction: column; background: var(--panel); border: 2px solid var(--acid);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+  box-shadow: none;
 }
 .sp-head { display: flex; gap: 0.4rem; padding: 0.5rem; border-bottom: 1px solid var(--line); align-items: center; }
 .sp-search { flex: 1; font-size: 13px; }
@@ -874,7 +862,7 @@ button.lcd-unit:hover { color: var(--acid); }
 .pr-grid { display: block; touch-action: none; }
 .piano-roll.panning, .piano-roll.panning * { cursor: var(--ring) !important; }
 .pr-backdrop { position: fixed; inset: 0; z-index: 80; background: rgba(0, 0, 0, 0.72); }
-.pr.full .pr-panel { position: fixed; inset: 3vh 2.5vw; z-index: 81; border: 2px solid var(--acid); box-shadow: 0 24px 80px rgba(0, 0, 0, 0.8); }
+.pr.full .pr-panel { position: fixed; inset: 3vh 2.5vw; z-index: 81; border: 2px solid var(--acid); box-shadow: none; }
 .pr.full .piano-roll { flex: 1; height: auto; resize: none; }
 .pr-cursor { position: absolute; top: 0; bottom: 0; left: 0; background: rgba(242, 240, 230, 0.12); border-left: 2px solid var(--paper); pointer-events: none; }
 .pop-uses { font-size: 11px; color: var(--muted); }
@@ -988,20 +976,18 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
   display: inline-flex; align-items: center; gap: 0.4rem;
   font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
   background: rgb(24 24 21 / 0.82); border: 1px solid var(--line); border-radius: 3px;
-  padding: 0.2rem 0.5rem; backdrop-filter: blur(6px);
-}
+  padding: 0.2rem 0.5rem;}
 .wire-slack:hover { color: var(--paper); }
 .wire-slack input { width: 5.5rem; accent-color: var(--acid); cursor: var(--ring); }
 .flow-toggle {
   display: inline-flex; align-items: center; gap: 0.35rem;
   font: inherit; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase;
   color: var(--muted); background: rgb(24 24 21 / 0.82); border: 1px solid var(--line);
-  padding: 0.18rem 0.45rem 0.18rem 0.35rem; cursor: var(--ring); backdrop-filter: blur(6px);
-}
+  padding: 0.18rem 0.45rem 0.18rem 0.35rem; cursor: var(--ring);}
 .flow-toggle:hover { color: var(--paper); border-color: var(--muted); }
 .flow-toggle.on { color: var(--paper); border-color: color-mix(in srgb, var(--acid) 45%, var(--line)); }
 .flow-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--line); }
-.flow-toggle.on .flow-dot { background: var(--acid); box-shadow: 0 0 6px rgb(228 255 26 / 0.8); }
+.flow-toggle.on .flow-dot { background: var(--acid); box-shadow: 0 0 0 1px rgb(228 255 26 / 0.8); }
 
 /* signal flow: a hit lights its source and every wire that carries it onward (flow.js) */
 @property --lit { syntax: '<number>'; inherits: true; initial-value: 0; }
@@ -1040,11 +1026,10 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
 .graph-canvas .react-flow__edge[style*="--lit"] .react-flow__edge-path {
   stroke: color-mix(in srgb, var(--glow, var(--acid)) calc(var(--lit) * 100%), var(--line));
   stroke-width: calc(3.4px + var(--lit) * 1.6px);
-  filter: drop-shadow(0 0 calc(var(--lit) * 6px) color-mix(in srgb, var(--glow, var(--acid)) calc(var(--lit) * 65%), transparent));
 }
 .react-flow__node[style*="--lit"] .gnode {
   border-color: color-mix(in srgb, var(--glow, var(--tint, var(--acid))) calc(var(--lit) * 90%), var(--line));
-  box-shadow: 0 0 calc(var(--lit) * 18px) color-mix(in srgb, var(--glow, var(--acid)) calc(var(--lit) * 32%), transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--glow, var(--acid)) calc(var(--lit) * 32%), transparent);
 }
 .react-flow__node[style*="--lit"] .node-head { background: color-mix(in srgb, var(--head-lit) calc(var(--lit) * 50%), var(--head-bg)); }
 .node-chans .chan[style*="--lit"] { background: color-mix(in srgb, var(--tint, var(--acid)) calc(var(--lit) * 20%), transparent); }
@@ -1057,12 +1042,12 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
  * on the header at the top and on whatever runs full width at the bottom.
  */
 .gnode {
-  --node-radius: 6px;
+  --node-radius: 3px;
   width: 250px; font-size: 12px; color: var(--paper); cursor: var(--ring);
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--node-radius);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 18px rgba(0, 0, 0, 0.35);
+  box-shadow: none;
 }
 .gnode > :last-child, .node-body > :last-child {
   border-end-start-radius: calc(var(--node-radius) - 1px);
@@ -1072,7 +1057,7 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
 .gnode .nodrag, .gnode input, .gnode select, .gnode textarea, .gnode button { cursor: auto; }
 .gnode button, .gnode select { cursor: var(--ring); }
 .gnode .knob svg { cursor: ns-resize; }
-.gnode.selected { border-color: var(--acid); box-shadow: 0 0 0 1.5px var(--acid), 0 8px 22px rgba(0, 0, 0, 0.5); }
+.gnode.selected { border-color: var(--acid); box-shadow: 0 0 0 1.5px var(--acid); }
 .gnode.soloing { outline: 2px dashed var(--acid); outline-offset: 4px; }
 /* a node's header brightens toward whatever colour is running through it */
 .gnode { --head-bg: var(--line); --head-ink: var(--paper); --head-lit: var(--glow, var(--acid)); }
@@ -1212,7 +1197,7 @@ button.chan-synth:hover span { color: var(--acid); }
 }
 .slot-meter i:first-child { --w: calc(var(--l, 0) * 100%); }
 .slot-meter i:last-child { --w: calc(var(--r, 0) * 100%); }
-.slot-meter.over i::after { box-shadow: 0 0 7px rgb(255 90 67 / 0.9); }
+.slot-meter.over i::after { box-shadow: 0 0 0 1px rgb(255 90 67 / 0.9); }
 .slot.off .slot-name { opacity: 0.4; text-decoration: line-through; }
 .slot.free .slot-name { color: var(--muted); }
 .slot-ctl { display: inline-flex; flex: none; gap: 0.2rem; margin-left: auto; }
@@ -1254,7 +1239,7 @@ button.chan-synth:hover span { color: var(--acid); }
 /* dragging one along the chain: it lifts and follows, and a line shows where it lands */
 .fx-unit.held {
   z-index: 4; position: relative; opacity: 0.92;
-  border-color: var(--acid); box-shadow: 0 6px 18px rgb(0 0 0 / 0.55);
+  border-color: var(--acid); box-shadow: none;
 }
 .fx-unit.held .fx-unit-head { background: rgb(228 255 26 / 0.08); }
 .fx-unit.land-before::before, .fx-unit.land-after::after {
@@ -1379,7 +1364,7 @@ button.chan-synth:hover span { color: var(--acid); }
 .gframe {
   --frame: var(--dim);
   position: relative; width: 100%; height: 100%; box-sizing: border-box;
-  border-radius: 10px;
+  border-radius: 3px;
   background: color-mix(in srgb, var(--frame) 13%, transparent);
   border: 1px solid color-mix(in srgb, var(--frame) 60%, transparent);
 }
@@ -1388,7 +1373,7 @@ button.chan-synth:hover span { color: var(--acid); }
   pointer-events: all; cursor: grab;
   display: flex; align-items: center; gap: 0.35rem; height: 26px; padding: 0 0.4rem 0 0.7rem;
   background: color-mix(in srgb, var(--frame) 42%, transparent);
-  border-radius: 9px 9px 0 0;
+  border-radius: 3px 3px 0 0;
   color: var(--paper); font-family: var(--display); font-weight: 800; font-size: 12px;
 }
 .react-flow__node.dragging .frame-bar { cursor: grabbing; }
@@ -1398,7 +1383,7 @@ button.chan-synth:hover span { color: var(--acid); }
 .frame-fold { margin-left: -0.45rem; font-size: 11px; }
 /* collapsed: just the bar; the wires of what it hides meet its left and right edges */
 .gframe.collapsed { overflow: visible; }
-.gframe.collapsed .frame-bar { border-radius: 9px; }
+.gframe.collapsed .frame-bar { border-radius: 3px; }
 .gframe .react-flow__handle.frame-port { visibility: hidden; pointer-events: none; width: 7px; height: 7px; min-width: 0; min-height: 0; border: none; background: color-mix(in srgb, var(--frame) 60%, var(--paper)); }
 .gframe.collapsed .react-flow__handle.frame-port { visibility: visible; }
 .frame-name {
@@ -1416,7 +1401,7 @@ button.chan-synth:hover span { color: var(--acid); }
 .frame-colors {
   pointer-events: all; position: absolute; top: 30px; right: 6px; z-index: 1;
   display: flex; gap: 5px; padding: 6px;
-  background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 3px;
 }
 .frame-colors button {
   width: 16px; height: 16px; padding: 0; border-radius: 50%; cursor: pointer;

@@ -6,7 +6,7 @@ import App from './App.jsx'
 import { handleCallback } from './bwnd'
 import { BASE, elsewhere } from './base'
 import './index.css'
-import './clay.css' // last: the material over everything (see clay.css)
+import './flat.css' // last: the flat, technical skin over everything (see flat.css)
 
 /*
  * Sign-in may only come back to an https address, so a page opened over http can't start
