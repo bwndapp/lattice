@@ -1,5 +1,6 @@
 import { parse } from 'acorn'
-import { NODE_TYPES, defaultData, demoGraph, graphCode, normalizeGraph, outChannel, patternChanVar, patternHeldVar, patternVar, splitPatternIds } from './graph.js'
+import { defaultData, demoGraph, graphCode, isTrigger, normalizeGraph, patternChanVar, patternVar, splitPatternIds, triggerOf } from './graph.js'
+import { abstractParts } from './abstract/index.js'
 import { normalizeSong, shiftedAuto, songActive, songExpr } from './song.js'
 import { automationCode, channelTarget } from './automation.js'
 import { GLOBAL_DELAY, GLOBAL_REVERB } from './fxbus.js'
@@ -479,12 +480,46 @@ export function generateCode(project, { solo = null, laneSolo = null, audition =
   }
   // patterns whose instruments leave their node one by one get a variable each
   const split = splitPatternIds(project)
+  // instruments a rhythm machine triggers (graph.js triggerOf): the machine's layer says
+  // when, the instrument says what — its held version, every hit taking the note held then.
+  // It plays where the machine's clips are, as the machine is the part on the timeline.
+  const triggers = new Map() // `${patternId}:${channelId}` → [{ machine, layer }]
+  for (const e of project.edges ?? []) {
+    if (!isTrigger(e)) continue
+    const machine = project.nodes.find((n) => n.id === e.source)
+    const pnode = project.nodes.find((n) => n.id === e.target)
+    if (!machine || pnode?.type !== 'pattern') continue
+    const key = `${pnode.data.patternId}:${triggerOf(e.targetHandle)}`
+    triggers.set(key, [...(triggers.get(key) ?? []), { machine, layer: triggerOf(e.sourceHandle) }])
+    split.add(pnode.data.patternId)
+  }
+  const triggered = (pattern, ch) => {
+    const list = triggers.get(`${pattern.id}:${ch.id}`)
+    if (!list) return null
+    if (ch.mute) return 'silence'
+    const exprs = list.map(({ machine, layer }) => {
+      const part = abstractParts(machine).find((p) => p.id === layer)
+      if (!part?.drive) return null
+      // each layer plays an engine on an instance of its own (instruments/host.js)
+      const e = part.drive(`${heldChannelCode(ch, pattern, auto)}.fmap((v) => ({ ...v, _r: '${machine.id}.${layer}' }))`)
+      return song ? song(`node:${machine.id}`, () => e) : e
+    }).filter(Boolean)
+    return exprs.length ? (exprs.length === 1 ? exprs[0] : `stack(\n${exprs.join(',\n')}\n)`) : 'silence'
+  }
   for (const pattern of project.patterns) {
     const variations = pattern.parent ? [] : project.patterns.filter((v) => v.parent === pattern.id)
     if (split.has(pattern.id) && pattern.channels.length) {
       lines.push(`// pattern: ${commentText(pattern.name)}, an instrument at a time`)
       const names = []
       for (const [i, ch] of pattern.channels.entries()) {
+        const name0 = patternChanVar(pattern.id, ch.id)
+        const fired = triggered(pattern, ch)
+        if (fired !== null) {
+          // triggered: the machine's rhythm instead of its steps, while the trigger's wired
+          names.push(fired === 'silence' ? null : name0)
+          lines.push(`const ${name0} = ${fired}`)
+          continue
+        }
         // a variation's instrument in the same place plays out of the same port
         const own = [pattern, ...variations].map((p) => {
           const c = p === pattern ? ch : p.channels[i]
@@ -509,30 +544,8 @@ export function generateCode(project, { solo = null, laneSolo = null, audition =
     }
     lines.push(`const ${patternVar(pattern.id)} = ${value}`)
   }
-  // patterns wired straight into a rhythm machine's layer (the cube, fibonacci…) also get a
-  // held version: the machine's rhythm says when, the pattern only says what. On the song
-  // it plays where the machine's clips are (graph.js gates it there), not the pattern's own
-  const held = new Set()
-  for (const e of project.edges ?? []) {
-    const src = project.nodes.find((n) => n.id === e.source)
-    const dst = project.nodes.find((n) => n.id === e.target)
-    if (src?.type !== 'pattern' || !NODE_TYPES[dst?.type]?.abstract) continue
-    const pattern = project.patterns.find((p) => p.id === src.data.patternId)
-    if (!pattern) continue
-    const chan = outChannel(e.sourceHandle)
-    const name = patternHeldVar(pattern.id, chan)
-    if (held.has(name)) continue
-    const chans = pattern.channels.filter((c) => !c.mute && (chan ? c.id === chan : !src.data.offMain?.[c.id]))
-    const gated = (shift) => {
-      const exprs = chans.map((c) => heldChannelCode(c, pattern, autoAt(shift))).filter((x) => !x.endsWith(' silence'))
-      return exprs.length ? (exprs.length === 1 ? exprs[0] : `stack(${exprs.join(', ')})`) : 'silence'
-    }
-    const plain = gated(0)
-    lines.push(`const ${name} = ${plain}`)
-    held.add(name)
-  }
   const patternSolo = typeof solo === 'string' && solo.startsWith('pattern:') && project.patterns.some((p) => `pattern:${p.id}` === solo)
-  const graph = graphCode(project, { solo: patternSolo ? null : solo, song, auto, laneSolo, audition, held })
+  const graph = graphCode(project, { solo: patternSolo ? null : solo, song, auto, laneSolo, audition })
   lines.push('', ...graph.lines.map((l) => (l.startsWith('// ') ? `// ${commentText(l.slice(3))}` : l)))
   if (patternSolo) lines.push('', '// auditioning one pattern', ...graph.lanes.map((l) => `_${l.replace(/^_/, '')}`), `solo: ${patternVar(solo.slice(8))}`)
   else lines.push('', solo ? '// auditioning one node' : '// output', ...(graph.lanes.length ? graph.lanes : ['$: silence']))

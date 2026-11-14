@@ -50,9 +50,9 @@ export function abstractNodeTypes() {
     group: 'source',
     label: d.label,
     blurb: d.blurb,
-    inputs: d.layers ?? 0,
-    // a layer fires everything wired into it: two or three sounds on one rhythm
-    many: (d.layers ?? []).map((_, i) => `in-${i}`),
+    // it makes rhythms, not sound from sound: each layer triggers instruments on pattern
+    // nodes (graph.js triggerOf), and its out carries the layers that play their own sound
+    inputs: 0,
     params: [],
     abstract: true,
     code: (data) => mainCode(d, data),

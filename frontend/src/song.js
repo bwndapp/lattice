@@ -12,7 +12,7 @@
  * at its end. The patch still decides what the parts go through. Sources that only drive
  * a sidechain's trigger keep running, so ducking doesn't vanish.
  */
-import { NODE_TYPES } from './graph'
+import { NODE_TYPES, isTrigger, triggerOf } from './graph'
 import { AUTO_PREFIX, autoName, normalizeAutos } from './automation.js'
 
 const num = (v, fallback, lo, hi) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : fallback)
@@ -57,11 +57,20 @@ export function inMachine(project, nodeId) {
   return walk(nodeId) && reached
 }
 
-/** A pattern (by any of its variations) whose every node is inside a rhythm machine. */
+/**
+ * A pattern (by any of its variations) that only plays as rhythm machines say: every one of
+ * its instruments is triggered by a machine's layer (graph.js triggerOf), or every node of
+ * it feeds a machine. The machines' clips are its clips, so it isn't a part of the song.
+ * One with an instrument left playing its own steps stays a part, for that instrument.
+ */
 export function patternInMachine(project, patternId) {
   const rootId = project.patterns.find((p) => p.id === patternId)?.parent ?? patternId
   const nodes = project.nodes.filter((n) => n.type === 'pattern' && n.data?.patternId === rootId)
-  return nodes.length > 0 && nodes.every((n) => inMachine(project, n.id))
+  if (!nodes.length) return false
+  const live = (project.patterns.find((p) => p.id === rootId)?.channels ?? []).filter((c) => !c.mute)
+  const fired = (n, c) => project.edges.some((e) => isTrigger(e) && e.target === n.id && triggerOf(e.targetHandle) === c.id)
+  if (live.length && nodes.every((n) => live.every((c) => fired(n, c)))) return true
+  return nodes.every((n) => inMachine(project, n.id))
 }
 
 /** Everything that can go on the timeline, in sidebar order. `autos` defaults to the song's. */

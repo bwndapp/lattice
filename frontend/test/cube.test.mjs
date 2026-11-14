@@ -76,26 +76,35 @@ made = graphCode({ ...held, patterns: [], bpm: 120, beats: 4 }).lines?.join('\n'
 assert.doesNotMatch(mainLine(made), /sd/)
 console.log('cube ports ok')
 
-// ── a sound wired into a layer plays on that layer's rhythm; the other layers keep their drums ──
-const fedRaw = {
+// ── a layer that triggers an instrument goes quiet on the cube's out; the others keep their drums ──
+const trigPatterns = [{ id: 'p', channels: [{ id: 'k', kind: 'synth', name: 'k' }] }]
+const trigRaw = {
   nodes: [
-    { id: 'm', type: 'notes', data: { mini: 'c3 e3', sound: 'sawtooth' } },
+    { id: 'pn', type: 'pattern', data: { patternId: 'p' } },
     { id: 'c', type: 'cube', data: { state: { rows: KIT } } },
     { id: 'o', type: 'output', data: {} },
   ],
   edges: [
-    { source: 'm', target: 'c', targetHandle: 'in-0' },
+    { source: 'c', sourceHandle: 'trig-r0', target: 'pn', targetHandle: 'trig-k' },
+    { source: 'c', sourceHandle: 'trig-r9', target: 'pn', targetHandle: 'trig-k' }, // no such layer
+    { source: 'c', sourceHandle: 'trig-r0', target: 'pn', targetHandle: 'trig-zz' }, // no such instrument
     { source: 'c', target: 'o', targetHandle: 'in-0' },
   ],
 }
-const fed = normalizeGraph(fedRaw, [])
-assert.equal(fed.edges.length, 2, 'a layer takes a wire')
-const fedCode = String(graphCode({ ...fed, patterns: [], bpm: 120, beats: 4 }).lines?.join('\n') ?? graphCode({ ...fed, patterns: [], bpm: 120, beats: 4 }))
-const cubeLine = fedCode.split('\n').find((l) => l.startsWith('const n_c = '))
-assert.match(cubeLine, /n_m\.fmap\(\(v\) => \(\{ \.\.\.v, _r: 'c\.r0' \}\)\)\.struct\("t ~ ~ ~ t/, 'the top layer chops the melody on the kick\'s rhythm, on an instance of its own')
-assert.doesNotMatch(cubeLine, /s\("bd/, 'and no longer plays its kick')
+const trig = normalizeGraph(trigRaw, trigPatterns)
+assert.equal(trig.edges.length, 2, 'a trigger from a real layer to a real instrument is kept, others dropped')
+assert.ok(trig.edges.some((e) => e.sourceHandle === 'trig-r0' && e.targetHandle === 'trig-k'))
+const trigCode = String(graphCode({ ...trig, patterns: trigPatterns, bpm: 120, beats: 4 }).lines?.join('\n') ?? '')
+const cubeLine = trigCode.split('\n').find((l) => l.startsWith('const n_c = '))
+assert.doesNotMatch(cubeLine, /s\("bd/, 'the triggering layer no longer plays its kick out of the cube')
 assert.match(cubeLine, /s\("~ ~ ~ ~ sd/, 'the other layers keep their own sounds')
-console.log('cube inputs ok')
+// an old track's wire into a layer is turned round into a trigger (graph.js machinesToTriggers)
+const old = normalizeGraph({ nodes: trigRaw.nodes, edges: [{ source: 'pn', target: 'c', targetHandle: 'in-0' }, { source: 'c', target: 'o', targetHandle: 'in-0' }] }, trigPatterns)
+assert.ok(old.edges.some((e) => e.source === 'c' && e.sourceHandle === 'trig-r0' && e.target === 'pn' && e.targetHandle === 'trig-k'), 'the layer triggers what was wired into it')
+assert.ok(old.edges.some((e) => e.source === 'pn' && e.target === 'o'), 'and the pattern takes the cube\'s place on the output')
+assert.ok(old.edges.some((e) => e.source === 'c' && e.target === 'o'), 'the cube stays on it for its own drums')
+assert.ok(!old.edges.some((e) => e.target === 'c'), 'nothing goes into the cube any more')
+console.log('cube triggers ok')
 
 // held back from main only while wired out: unwire the layer and it's back in the mix
 const unwired = normalizeGraph({ ...raw, edges: raw.edges.filter((e) => e.sourceHandle !== 'out-r1'), nodes: raw.nodes.map((n) => (n.id === 'c' ? { ...n, data: { ...n.data, offMain: { r1: true } } } : n)) }, [])

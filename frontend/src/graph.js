@@ -813,6 +813,88 @@ const slotIndex = (handle) => {
   return m ? Number(m[1]) : 0
 }
 
+/**
+ * Triggers. A rhythm machine (the cube, fibonacci…) says when; an instrument says what. A
+ * layer's trigger port (`trig-<layer>`) wires into an instrument's trigger port on a pattern
+ * node (`trig-<channel>`), and while it's wired that instrument plays on the layer's rhythm
+ * instead of its own steps; its sound goes on from the pattern node like any other.
+ */
+export const triggerOf = (handle) => /^trig-([\w-]{1,40})$/.exec(String(handle ?? ''))?.[1] ?? null
+export const isTrigger = (e) => !!triggerOf(e?.sourceHandle)
+
+/**
+ * Tracks made before triggers wired sounds *into* a machine's layers, and the machine's out
+ * on to the effects. Turned round: each layer triggers the instruments that were wired into
+ * it, and those patterns take the machine's place on its outgoing wires (several into one
+ * input get a stack between). The machine keeps its out for the layers that still play their
+ * own sound. Runs on every load; once turned round there's nothing left for it to do.
+ */
+function machinesToTriggers(nodes, byId, rawEdges, channelsIn) {
+  const into = rawEdges.filter((e) => NODE_TYPES[byId.get(String(e?.target))?.type]?.abstract && /^in-\d+$/.test(String(e?.targetHandle)))
+  if (!into.length) return rawEdges
+  let out = rawEdges.filter((e) => !into.includes(e))
+  const machines = new Set(into.map((e) => String(e.target)))
+  for (const mid of machines) {
+    const machine = byId.get(mid)
+    const parts = abstractParts(machine)
+    const fedLayers = new Set()
+    const feeders = [] // [{ source, handle, layers }]: the patterns that played through it
+    for (const e of into.filter((x) => String(x.target) === mid)) {
+      const layer = parts[slotIndex(e.targetHandle)]
+      const src = byId.get(String(e.source))
+      if (!layer || src?.type !== 'pattern') continue // only an instrument can take a trigger
+      const chan = outChannel(e.sourceHandle)
+      const all = channelsIn(src.data.patternId) ?? []
+      const chans = chan ? [chan] : all.filter((c) => !src.data.offMain?.[c.id]).map((c) => c.id)
+      for (const c of chans) out.push({ source: mid, sourceHandle: `trig-${layer.id}`, target: src.id, targetHandle: `trig-${c}` })
+      fedLayers.add(layer.id)
+      let f = feeders.find((x) => x.source === src.id)
+      if (!f) feeders.push(f = { source: src.id, chans: new Set(), wasOut: rawEdges.some((x) => String(x.source) === src.id && !outChannel(x.sourceHandle) && x !== e) })
+      chans.forEach((c) => f.chans.add(c))
+    }
+    // a pattern now carries its triggered instruments out of its main port; what else it
+    // has stays off that port if the port wasn't wired before (it wasn't heard then either)
+    for (const f of feeders) {
+      const node = byId.get(f.source)
+      for (const c of channelsIn(node.data.patternId) ?? []) {
+        if (f.chans.has(c.id)) { if (node.data.offMain) delete node.data.offMain[c.id] } else if (!f.wasOut) node.data.offMain = { ...(node.data.offMain ?? {}), [c.id]: true }
+      }
+      if (node.data.offMain && !Object.keys(node.data.offMain).length) delete node.data.offMain
+    }
+    const ownLeft = parts.some((p) => p.expr && !fedLayers.has(p.id))
+    const outs = out.filter((e) => String(e.source) === mid && !triggerOf(e.sourceHandle))
+    out = out.filter((e) => !outs.includes(e))
+    outs.forEach((e, k) => {
+      const layer = outChannel(e.sourceHandle)
+      const mine = feeders.filter((f) => !layer || into.some((x) => String(x.source) === f.source && String(x.target) === mid && parts[slotIndex(x.targetHandle)]?.id === layer))
+      const from = [...mine.map((f) => ({ source: f.source, sourceHandle: 'out' })), ...(ownLeft && !(layer && fedLayers.has(layer)) ? [{ source: mid, sourceHandle: e.sourceHandle ?? 'out' }] : [])]
+      const target = byId.get(String(e.target))
+      const tspec = NODE_TYPES[target?.type]
+      const many = tspec?.inputs === 'many' || tspec?.many?.includes(e.targetHandle)
+      if (from.length <= 1 || many) {
+        // a many-input node: the first takes the machine's old slot, the rest the next free ones
+        const first = e.targetHandle
+        const used = () => Math.max(-1, ...out.filter((x) => String(x.target) === String(e.target)).map((x) => slotIndex(x.targetHandle)), slotIndex(first))
+        if (tspec?.inputs === 'many') {
+          from.forEach((f, i) => out.push({ ...f, target: e.target, targetHandle: i === 0 ? first : `in-${used() + 1}` }))
+          return
+        }
+        for (const f of from) out.push({ ...f, target: e.target, targetHandle: e.targetHandle })
+        return
+      }
+      const sid = `stack${mid.slice(-6)}${k || ''}`.replace(/\W/g, '')
+      if (!byId.has(sid)) {
+        const n = { id: sid, type: 'stack', x: machine.x + 40, y: machine.y + 260, data: defaultData('stack') }
+        nodes.push(n)
+        byId.set(sid, n)
+      }
+      from.forEach((f, i) => out.push({ ...f, target: sid, targetHandle: `in-${i}` }))
+      out.push({ source: sid, sourceHandle: 'out', target: e.target, targetHandle: e.targetHandle })
+    })
+  }
+  return out
+}
+
 /** Clean nodes and wires from a (possibly hand-edited) project header. */
 export function normalizeGraph(raw, patterns) {
   const patternIds = new Set(patterns instanceof Set ? patterns : patterns.map((p) => p.id))
@@ -860,10 +942,25 @@ export function normalizeGraph(raw, patterns) {
   const byId = new Map(nodes.map((n) => [n.id, n]))
   const edges = []
   const taken = new Set()
-  for (const e of Array.isArray(raw?.edges) ? raw.edges : []) {
+  const rawEdges = machinesToTriggers(nodes, byId, Array.isArray(raw?.edges) ? raw.edges : [], channelsIn)
+  for (const e of rawEdges) {
     const source = byId.get(String(e?.source))
     const target = byId.get(String(e?.target))
     if (!source || !target || source.id === target.id) continue
+    // a trigger: a rhythm machine's layer into one instrument of a pattern (see triggerOf)
+    const fromLayer = triggerOf(e?.sourceHandle)
+    const toChan = triggerOf(e?.targetHandle)
+    if (fromLayer || toChan) {
+      if (!fromLayer || !toChan || !NODE_TYPES[source.type]?.abstract || target.type !== 'pattern') continue
+      if (!abstractParts(source).some((p) => p.id === fromLayer)) continue
+      const chans = channelsIn(target.data.patternId)
+      if (chans && !chans.some((c) => c.id === toChan)) continue
+      const key = `trig:${source.id}:${fromLayer}:${target.id}:${toChan}`
+      if (taken.has(key)) continue
+      taken.add(key)
+      edges.push({ id: `t_${source.id}_${fromLayer}_${target.id}_${toChan}`, source: source.id, sourceHandle: `trig-${fromLayer}`, target: target.id, targetHandle: `trig-${toChan}` })
+      continue
+    }
     const spec = NODE_TYPES[target.type]
     if (!spec.inputs) continue
     if ((source.type === 'output') !== (target.type === 'stream')) continue
@@ -919,8 +1016,6 @@ export const nodeVar = (id) => `n_${id}`
 export const patternVar = (id) => `p_${id}`
 /** One instrument of a pattern, as its own variable (project.js writes these out). */
 export const patternChanVar = (patternId, channelId) => `p_${patternId}_${channelId}`
-/** A pattern (or one instrument of it) as a rhythm machine plays it: every note held (see project.js). */
-export const patternHeldVar = (patternId, channelId = null) => `p_${patternId}${channelId ? `_${channelId}` : ''}_held`
 /** The instrument a wire leaves a pattern node by, or null for its main out. */
 export const outChannel = (handle) => /^out-(.+)$/.exec(String(handle ?? ''))?.[1] ?? null
 
@@ -939,8 +1034,10 @@ export function splitPatternIds(project) {
  * Code for the graph: one `const` per node that makes a pattern, in dependency order,
  * then one lane per wire into each output node. `solo` (a node id) plays only that node.
  */
-export function graphCode(project, { solo = null, song = null, audition = false, auto = null, laneSolo = null, held = null } = {}) {
-  const { nodes, edges } = project
+export function graphCode(project, { solo = null, song = null, audition = false, auto = null, laneSolo = null } = {}) {
+  const { nodes } = project
+  // triggers carry rhythm, not sound: the patterns they fire make their own code (project.js)
+  const edges = project.edges.filter((e) => !isTrigger(e))
   const byId = new Map(nodes.map((n) => [n.id, n]))
   const patternIds = new Set(project.patterns.map((p) => p.id))
   const exprs = new Map() // id → variable name, or null when the node makes nothing
@@ -1014,18 +1111,11 @@ export function graphCode(project, { solo = null, song = null, audition = false,
       route.orbit = branch
     }
     if (spec.abstract) {
-      // an abstract instrument: each layer plays its own sound, when the song says, or
-      // whatever's wired into that layer on the layer's rhythm (see abstract/index.js)
+      // a rhythm machine: its out plays the layers that make their own sound, when the song
+      // says; a layer that triggers instruments plays through them instead (project.js)
       const gate = (e) => (song ? song(`node:${id}`, () => e) : e)
-      // a pattern wired straight in plays its held version (project.js): an empty synth
-      // holds its own note and a drum its own sound, so every hit of the rhythm fires it
-      const fed = wires.filter((w) => exprs.get(w.source)).map((w, k) => {
-        const src = byId.get(w.source)
-        const hv = src?.type === 'pattern' ? patternHeldVar(src.data.patternId, outChannel(w.sourceHandle)) : null
-        // whatever's wired in is part of this machine: it plays where the machine's clips are
-        return gate(hv && held?.has(hv) ? fromNode(hv, src.id) : inputs[k])
-      })
-      const built = abstractBuild(node, fed, slots).map((p) => ({ ...p, expr: p.expr && (p.own ? gate(p.expr) : p.expr) }))
+      const triggering = new Set(project.edges.filter((e) => e.source === id && isTrigger(e)).map((e) => triggerOf(e.sourceHandle)))
+      const built = abstractBuild(node).map((p) => ({ ...p, expr: p.expr && !triggering.has(p.id) ? gate(p.expr) : null }))
       // a layer is held back from the main out only while it's wired out on its own port —
       // unwire it and it's back in the mix (its "main" button goes with the wire)
       const wiredOut = (pid) => edges.some((e) => e.source === id && outChannel(e.sourceHandle) === pid)
