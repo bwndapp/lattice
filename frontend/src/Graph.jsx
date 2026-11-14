@@ -1361,7 +1361,10 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
   useEffect(() => {
     const onMove = (e) => { pointerRef.current = { x: e.clientX, y: e.clientY } }
     const onKey = (e) => {
-      if (e.code !== 'KeyA' || !e.shiftKey || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return
+      // Shift + A, or Ctrl + Space (the launcher key)
+      const shiftA = e.code === 'KeyA' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey
+      const ctrlSpace = e.code === 'Space' && e.ctrlKey && !e.shiftKey && !e.metaKey && !e.altKey
+      if ((!shiftA && !ctrlSpace) || e.repeat) return
       if (e.target.closest?.('input, textarea, select, [contenteditable="true"], dialog, .pattern-pop, .add-menu')) return
       const canvas = wrapRef.current?.querySelector('.react-flow')
       if (!canvas) return

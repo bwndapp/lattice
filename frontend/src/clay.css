@@ -109,8 +109,17 @@ html .tempo:focus-within, html .tempo.editing, html .tempo.dragging { box-shadow
 
 /* ── panels: popovers and menus are slabs ────────────── */
 html .popover { border: 0; border-radius: 16px; background: var(--slab); box-shadow: var(--raise-slab); }
-html .am-main, html .am-flyout { border: 0; border-radius: 14px; background: var(--slab); box-shadow: var(--raise-slab); }
-html .am-row.cursor, html .am-row:hover, html .am-row.open { background: var(--well-g); box-shadow: var(--press-xs); border-color: transparent; }
+/* the add picker: a slab lifted off the patch, the picked row carved into it, kinds in grey */
+html .add-menu { border: 0; border-radius: 18px; background: var(--slab); box-shadow: var(--raise-slab), 0 30px 80px rgba(0, 0, 0, 0.55); backdrop-filter: none; -webkit-backdrop-filter: none; }
+html .am-row.cursor { background: var(--well-g); box-shadow: var(--press-xs); color: #e2e2e2; }
+html .am-row.cursor .am-kind { color: var(--muted); }
+html .am-row.cursor .am-tile { background: var(--slab); }
+html .am-tile { color: #cfcfcf; background: var(--slab); border: 0; box-shadow: var(--raise-slab); }
+html .am-tile.big { box-shadow: var(--raise-slab), 0 8px 24px rgba(0, 0, 0, 0.4); }
+html .am-tab-glyph { color: inherit; }
+html .am-tab.on { background: var(--well-g); box-shadow: var(--press-xs); border-color: transparent; }
+html .am-where { color: #cfcfcf; border-color: rgba(255, 255, 255, 0.14); }
+html .add-menu kbd { background: var(--slab); border: 0; box-shadow: var(--raise-slab); }
 html .file-item:hover:not(:disabled), html .file-item:focus-visible { background: var(--well-g); box-shadow: var(--press-xs); border-radius: 8px; }
 
 /* ── the step grid: off is a carved well, on is a lit key standing out of it ── */
