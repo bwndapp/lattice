@@ -24,6 +24,15 @@
  */
 export const NEWS = [
   {
+    id: '2026-11-14',
+    date: '2026-11-14',
+    version: '0.12.1',
+    title: 'Every Fibonacci hit on the timeline',
+    items: [
+      '**Fibonacci in bar timing**: its clip now shows every hit, even on loops of 21, 34 and 55',
+    ],
+  },
+  {
     id: '2026-11-11-2',
     date: '2026-11-11',
     version: '0.12.0',
