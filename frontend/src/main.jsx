@@ -1,3 +1,4 @@
+import './pace.js' // first: frames and audio paced for fast machines (see pace.js)
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { useEffect, useRef, useState } from 'react'
