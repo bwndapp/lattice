@@ -22,6 +22,7 @@
  * Code pasted somewhere without this app plays dry.
  */
 import { getAudioContext, getSuperdoughAudioController } from '@strudel/webaudio'
+import { guardMaster } from './master.js'
 import { hasGesture } from './activation.js'
 import { tuned } from './tuning.js'
 
@@ -120,6 +121,7 @@ function install() {
   }
   if (!ctl) return false
   controller = ctl
+  guardMaster(ctl) // nothing leaves above full scale (master.js)
   const getBus = ctl.getBus.bind(ctl)
   ctl.getBus = (id) => (routers.has(id) ? routerNode(id) : getBus(id))
   return true

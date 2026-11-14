@@ -344,7 +344,7 @@ class PhysicalProcessor extends LatticeInstrument {
     const k = this.k
     this.setup(v)
     const ex = Math.round(k.exciter)
-    const gain = 10 ** (k.level / 20)
+    const gain = 10 ** (k.level / 20) * 0.5 // -6 dB: a struck note sits with the other instruments instead of over them
     const a = v.a, b = v.b
     const posLag = Math.max(1, Math.min(PH_LINE - 1, Math.round(a.period * k.position)))
     const mixB = v.bodyOn ? k.bodymix : 0

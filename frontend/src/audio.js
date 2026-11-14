@@ -1,3 +1,4 @@
+import { guardMaster } from './master.js'
 import { getAudioContext, getSampleBuffer, getSampleInfo, getSound, getSuperdoughAudioController, initAudio, resetGlobalEffects, soundMap, superdough } from '@strudel/webaudio'
 import { getFontBufferSource } from '@strudel/soundfonts'
 import { getSoundIndex } from '@strudel/core'
@@ -128,7 +129,7 @@ export function forgetAudio() {
 }
 /** Start the audio engine (context + effect worklets) once; safe to call from any gesture. */
 export function ensureAudio() {
-  if (!audioReady) audioReady = initAudio().then(() => prepareInstruments()).catch(() => {})
+  if (!audioReady) audioReady = initAudio().then(() => { guardMaster(getSuperdoughAudioController()); return prepareInstruments() }).catch(() => {})
   const ac = getAudioContext()
   if (ac.state !== 'running') ac.resume().catch(() => {})
   return audioReady

@@ -13,6 +13,7 @@
  */
 import { evaluate } from '@strudel/core'
 import { transpiler } from '@strudel/transpiler'
+import { guardMaster } from './master.js'
 import { getAudioContext, getSuperdoughAudioController, initAudio, resetGlobalEffects, setAudioContext, setSuperdoughAudioController, superdough } from '@strudel/webaudio'
 import { AudioBufferSource, BufferTarget, Mp3OutputFormat, Mp4OutputFormat, Output, WavOutputFormat, canEncodeAudio } from 'mediabunny'
 import { registerMp3Encoder } from '@mediabunny/mp3-encoder'
@@ -98,7 +99,7 @@ export async function renderProject(project, { from = 0, to = 4, tail = 2, sampl
   const offline = new OfflineAudioContext(2, Math.ceil(seconds * sampleRate), sampleRate)
   setAudioContext(offline)
   setSuperdoughAudioController(null)
-  getSuperdoughAudioController() // built for the offline context
+  guardMaster(getSuperdoughAudioController()) // built for the offline context, with the master's safety (master.js)
   silenceFx() // effects belong to the context they were built in
   await initAudio({})
   await prepareInserts() // the offline render can't wait for the worklet by itself
