@@ -157,20 +157,29 @@ export const SKETCH_BARS = 32
 const gcd = (a, b) => (b ? gcd(b, a % b) : a)
 
 /**
- * What it plays, as a drum pattern of sixteenths for the timeline to sketch. In drift that's
+ * What it plays, as a drum pattern for the timeline to sketch. In drift that's sixteenths,
  * every bar until the loops line up again (up to SKETCH_BARS), so a clip shows them sliding.
+ * In bar each loop fills one bar, so the grid is fine enough for the longest loop (a 21 gets
+ * 32 slots a bar, a 55 gets 64) and every hit lands in a slot of its own.
  */
 export function asPattern(state) {
   const live = state.layers.filter((l) => !l.mute)
-  const period = state.timing === 'drift' ? live.reduce((a, l) => (a * l.steps) / gcd(a, l.steps), 16) : 16
+  const drift = state.timing === 'drift'
+  const period = drift ? live.reduce((a, l) => (a * l.steps) / gcd(a, l.steps), 16) : 16
   const bars = Math.min(SKETCH_BARS, period / 16)
+  const grid = drift ? 16 : 16 * Math.ceil(Math.max(16, ...state.layers.map((l) => l.steps)) / 16)
   return {
     bars,
-    stepsPerBar: 16,
+    stepsPerBar: grid,
     channels: state.layers.map((l, i) => {
       const vals = layerSteps(l)
-      const at = (s) => (state.timing === 'drift' ? vals[s % vals.length] : vals[Math.floor(((s % 16) * vals.length) / 16)])
-      return { id: `l${i}`, kind: 'drum', mute: l.mute, steps: Array.from({ length: bars * 16 }, (_, s) => (at(s) ? 1 : 0)) }
+      let steps
+      if (drift) steps = Array.from({ length: bars * 16 }, (_, s) => (vals[s % vals.length] ? 1 : 0))
+      else {
+        steps = Array(grid).fill(0)
+        vals.forEach((v, k) => { if (v) steps[Math.round((k * grid) / vals.length)] = 1 })
+      }
+      return { id: `l${i}`, kind: 'drum', mute: l.mute, steps }
     }),
   }
 }
