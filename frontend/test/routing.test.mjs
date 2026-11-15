@@ -54,5 +54,45 @@ const plain = m.normalizeProject({
 })
 ok('a reverb before any bus is still a send', m.generateCode(plain).includes("['rv_verb'"))
 
+const bass = { id: 'pb', name: 'bass', bars: 1, stepsPerBar: 16, channels: [{ id: 'b', kind: 'drum', name: 'bass', sound: 'bd', bank: 'RolandTR909', steps: [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0], params: {} }] }
+const project = (nodes, edges) => m.normalizeProject({ v: 3, bpm: 120, beats: 4, patterns: [drums, bass], nodes: [node('out', 'output', { muted: {} }), ...nodes], edges, song: { on: false, clips: [] } })
+const routing = (p) => { const code = m.generateCode(p); return { code, ...m.declaredRouting() } }
+const orbitIn = (inserts, key) => [...inserts].find(([, list]) => list.some((i) => i.key === key))?.[0]
+const lineOf = (code, v) => code.split('\n').find((l) => l.startsWith(`const ${v} =`)) ?? ''
+
+// two sounds, each with its own insert, ducked by one sidechain
+{
+  const { code, inserts, routes } = routing(project(
+    [node('d', 'pattern', { patternId: 'pd' }), node('b', 'pattern', { patternId: 'pb' }), node('hs', 'haas'), node('wd', 'widener'), node('sc', 'sidechain')],
+    [edge('b', 'hs'), edge('d', 'wd'), edge('hs', 'sc', 'in-0'), edge('wd', 'sc', 'in-0'), edge('b', 'sc', 'in-1'), edge('sc', 'out', 'in-0')],
+  ))
+  const hs = orbitIn(inserts, 'hs'); const wd = orbitIn(inserts, 'wd')
+  ok('two ducked sounds keep their own inserts', hs != null && wd != null && hs !== wd && !lineOf(code, 'n_sc').includes(`.orbit(${hs})`))
+  const duck = Number(/duckorbit\((\d+)\)/.exec(code)?.[1])
+  ok('they play into the sidechain\'s own bus, which is the one ducked', routes.get(hs)?.has(duck) && routes.get(wd)?.has(duck) && duck !== hs && duck !== wd)
+}
+
+// a split bus: one branch dry, one sidechained, joined again
+{
+  const { code, inserts, routes } = routing(project(
+    [node('d', 'pattern', { patternId: 'pd' }), node('b', 'pattern', { patternId: 'pb' }), node('ba', 'bus', { name: 'a' }), node('sat', 'saturator'), node('sc', 'sidechain'), node('bb', 'bus', { name: 'b' })],
+    [edge('d', 'ba', 'in-0'), edge('ba', 'sat'), edge('ba', 'sc', 'in-0'), edge('b', 'sc', 'in-1'), edge('sat', 'bb', 'in-0'), edge('sc', 'bb', 'in-1'), edge('bb', 'out', 'in-0')],
+  ))
+  const a = orbitIn(inserts, 'ba')
+  const duck = Number(/duckorbit\((\d+)\)/.exec(code)?.[1])
+  ok('a sidechain on one branch ducks only that branch', duck !== a && routes.get(a)?.has(duck))
+  const joined = lineOf(code, 'n_bb')
+  ok('the branches joined again play the notes once (plus the trigger)', /n_sat/.test(joined) && !/n_sc[,)]/.test(joined) && /n_sc_trigger/.test(joined))
+}
+
+// a split bus where one branch changes the notes, then has an insert
+{
+  const { inserts } = routing(project(
+    [node('d', 'pattern', { patternId: 'pd' }), node('ba', 'bus', { name: 'a' }), node('sat', 'saturator'), node('fx', 'fast'), node('f', 'filter'), node('bb', 'bus', { name: 'b' })],
+    [edge('d', 'ba', 'in-0'), edge('ba', 'sat'), edge('ba', 'fx'), edge('fx', 'f'), edge('sat', 'bb', 'in-0'), edge('f', 'bb', 'in-1'), edge('bb', 'out', 'in-0')],
+  ))
+  ok('an insert further down a branch never lands on the split bus', orbitIn(inserts, 'f') !== orbitIn(inserts, 'ba') && orbitIn(inserts, 'f') !== orbitIn(inserts, 'sat'))
+}
+
 if (fails) { console.log(`\n${fails} failing`); process.exit(1) }
 console.log('\nrouting ok')

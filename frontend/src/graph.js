@@ -434,12 +434,23 @@ export const NODE_TYPES = {
       const sounds = xs.filter((_, i) => ctx.slots[i] === 'in-0')
       const trigger = xs[ctx.slots.indexOf('in-1')]
       if (!sounds.length) return null
+      const at = xs.map((_, i) => i).filter((i) => ctx.slots[i] === 'in-0')
       const sound = sounds.length === 1 ? sounds[0] : `stack(${sounds.join(', ')})`
-      if (!trigger) { if (ctx.route) ctx.route.orbit = sounds.length === 1 ? ctx.inputOrbits?.[ctx.slots.indexOf('in-0')] ?? null : null; return sound }
-      // a sound already on its own bus (a haas or widener before this) keeps it, so both work;
-      // several of them move onto the first one's, since ducking is one curve on one bus
-      const orbit = ctx.inputOrbits?.[ctx.slots.indexOf('in-0')] ?? ctx.orbit
+      if (!trigger) { if (ctx.route) ctx.route.orbit = sounds.length === 1 ? ctx.inputOrbits?.[at[0]] ?? null : null; return sound }
+      // One sound already on a bus of its own (a haas or widener before this): duck that bus,
+      // so both work. Several sounds, or one on a bus another path hears as well (after a
+      // split): the sidechain gets a bus of its own, and each sound plays into it — through
+      // its own inserts, from its own bus, so ducking one path never pumps another.
+      const first = ctx.inputOrbits?.[at[0]] ?? null
+      const own = sounds.length > 1 || (first != null && ctx.inputShared?.[at[0]])
+      const orbit = own ? ctx.orbit : first ?? ctx.orbit
       if (ctx.route) ctx.route.orbit = orbit
+      const placed = at.map((i) => {
+        const from = ctx.inputOrbits?.[i] ?? null
+        if (from == null) return `${xs[i]}.orbit(${orbit})` // notes with no bus play onto this one
+        if (from !== orbit) { ctx.routeBus(from, orbit, 1); return xs[i] } // a bus plays in, notes as they were
+        return xs[i]
+      })
       // A silent trigger only has to exist for its onset. Left as the instrument it came
       // from, it takes one of that instrument's voices at the very moment the sound it's
       // ducking needs one — and an engine with a single voice (the kick synth) has none to
@@ -447,7 +458,15 @@ export const NODE_TYPES = {
       const trig = d.hear === 'silent'
         ? `${trigger}.fmap((v) => ({ ...v, s: 'sine', bank: undefined, _c: undefined, postgain: 0 }))`
         : trigger
-      return `stack(${sounds.map((x) => `${x}.orbit(${orbit})`).join(', ')}, ${trig}.duckorbit(${orbit}).duckonset(${K(ctx, d, 'attack')}).duckattack(${K(ctx, d, 'release')}).duckdepth(${K(ctx, d, 'depth')}))`
+      // on its own bus nothing else plays there, so a silent trigger does: the bus has to
+      // exist for the first duck to land on it
+      const onIt = own && d.hear === 'silent' ? `.orbit(${orbit})` : ''
+      const duck = `${trig}${onIt}.duckorbit(${orbit}).duckonset(${K(ctx, d, 'attack')}).duckattack(${K(ctx, d, 'release')}).duckdepth(${K(ctx, d, 'depth')})`
+      if (!own) return `stack(${placed.map((x) => (x.endsWith(`.orbit(${orbit})`) ? x : `${x}.orbit(${orbit})`)).join(', ')}, ${duck})`
+      // its notes are the sounds' (those that kept their own bus are the same notes) and the trigger
+      const trigVar = ctx.define ? ctx.define('trigger', duck) : duck
+      ctx.setAtoms?.([...placed.flatMap((x, n) => (x === xs[at[n]] && ctx.atomsOf ? ctx.atomsOf(x) : [x])), trigVar])
+      return `stack(${[...placed, trigVar].join(', ')})`
     },
   },
   eq3: {
@@ -617,11 +636,9 @@ export const NODE_TYPES = {
         if (from !== orbit) ctx.routeBus(from, orbit, fader)
         // two branches of one split bus bring the same notes: they play once, and each
         // branch is heard through its own route
-        const notes = ctx.notesOf ? ctx.notesOf(x) : x
-        if (seen.has(notes)) return null
-        seen.add(notes)
-        return x
+        return ctx.takeNew ? ctx.takeNew(x, seen) : x
       }).filter(Boolean)
+      ctx.setAtoms?.(parts.flatMap((x) => (ctx.atomsOf ? ctx.atomsOf(x) : [x])))
       ctx.declare(orbit, ctx.nodeId, 'fader', { gain: d.vol, pan: d.pan })
       ctx.route.orbit = orbit
       return parts.length === 1 ? parts[0] : `stack(${parts.join(', ')})`
@@ -1115,7 +1132,25 @@ export function graphCode(project, { solo = null, song = null, audition = false,
   // same notes back together (a dry and a wet branch into one mixer bus) they play once.
   const sameAs = new Map()
   const notesOf = (x) => sameAs.get(x) ?? x
+  // What notes an expression plays, as the smallest pieces that can be told apart: a node
+  // that only adds to what it was given (a sidechain adds its trigger) lists its input's
+  // pieces and the new one, so a merge point can take only what it isn't playing already.
+  const atomsMap = new Map()
+  const atomsOf = (x) => atomsMap.get(x) ?? (sameAs.has(x) ? atomsOf(sameAs.get(x)) : [x])
+  /** Of `x`'s notes, those not in `seen` (which takes them): `x` itself, a stack of the rest, or null. */
+  const takeNew = (x, seen) => {
+    const atoms = atomsOf(x)
+    const fresh = atoms.filter((a) => !seen.has(a))
+    for (const a of fresh) seen.add(a)
+    if (!fresh.length) return null
+    return fresh.length === atoms.length ? x : fresh.length === 1 ? fresh[0] : `stack(${fresh.join(', ')})`
+  }
   const fanout = (id) => edges.filter((e) => e.source === id && byId.get(e.target)).length
+  // A node whose sound is on a bus that something else also hears from (it's downstream of
+  // a split, with nothing since giving it a bus of its own): anything that works on the bus
+  // from here on needs a branch, or it would act on the other paths too.
+  const sharedOf = new Map()
+  const onShared = (src) => orbitOf.get(src) != null && (fanout(src) > 1 || !!sharedOf.get(src))
   const partVars = new Map() // `${node}:${part}` → an abstract instrument's part, wired out on its own
   const channelsOf = (pid) => project.patterns.find((p) => p.id === pid)?.channels ?? []
   /** What a wire carries: one instrument of a pattern, or everything the source node makes. */
@@ -1154,11 +1189,14 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     // to a dry and a wet path), these inserts get a branch of their own, fed from it, so
     // they only touch the sound on this wire.
     const feeder = wires.find((w) => exprs.get(w.source))?.source
-    if (route.orbit != null && (STEREO_TYPES.has(node.type) || SPACE_TYPES.has(node.type) || node.type === 'fxrack') && node.type !== 'bus' && feeder && fanout(feeder) > 1) {
+    let shared = route.orbit != null && !!feeder && onShared(feeder)
+    if (shared && (STEREO_TYPES.has(node.type) || SPACE_TYPES.has(node.type) || node.type === 'fxrack') && node.type !== 'bus') {
       const branch = stereoOrbit(`branch:${id}`)
       declareBranch(inserts, route.orbit, branch)
       route.orbit = branch
+      shared = false
     }
+    const inputShared = wires.filter((w) => exprs.get(w.source)).map((w) => onShared(w.source))
     if (spec.abstract) {
       // a rhythm machine: its out plays the layers that make their own sound, when the song
       // says; a layer that triggers instruments plays through them instead (project.js)
@@ -1195,13 +1233,19 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     const mixChannels = (pid) => (off.size
       ? channelsOf(pid).filter((c) => !off.has(c.id)).map((c) => patternChanVar(pid, c.id))
       : null)
-    let expr = spec.code(node.data, inputs, { patternIds, mixChannels, slots, inputKeys, notesOf, nodeId: id, orbit: 2 + sidechains.indexOf(id), cps, beats, route, inputOrbits, stereoOrbit, declare, routeBus, auto: nodeAuto, autoOf, declareFx: (key, kind, params) => declareFx(fx, key, kind, params) })
+    const define = (suffix, code) => { const v = `${nodeVar(id)}_${suffix}`; lines.push(`const ${v} = ${code}`); return v }
+    let atoms = null // what notes it plays, when a node says (see atomsOf)
+    const setAtoms = (list) => { atoms = list }
+    let expr = spec.code(node.data, inputs, { patternIds, mixChannels, slots, inputKeys, notesOf, atomsOf, takeNew, inputShared, define, setAtoms, nodeId: id, orbit: 2 + sidechains.indexOf(id), cps, beats, route, inputOrbits, stereoOrbit, declare, routeBus, auto: nodeAuto, autoOf, declareFx: (key, kind, params) => declareFx(fx, key, kind, params) })
     if (!expr) { exprs.set(id, null); return null }
     if (songPart) { const marked = expr; expr = song(`node:${id}`, (shift, read) => marked.replace(/\u0001(\w+)\u0001/g, (_, a) => read(a))) }
     if (spec.group === 'source') expr = fromNode(expr, id)
     if (route.orbit != null) orbitOf.set(id, route.orbit)
+    // still on the bus it was handed, and that bus is shared: so is this node's sound
+    if (route.orbit != null && shared && route.orbit === inputOrbits[0]) sharedOf.set(id, true)
     const name = nodeVar(id)
     if (inputs.length === 1 && expr === inputs[0] && route.orbit != null) sameAs.set(name, notesOf(inputs[0]))
+    if (atoms) atomsMap.set(name, atoms)
     // `codeLabel` keeps a renamed node's comment as it was, so saved tracks make the same code
     lines.push(`// ${node.data.name ?? spec.codeLabel ?? spec.label}`, `const ${name} = ${expr}`)
     exprs.set(id, name)
@@ -1229,8 +1273,7 @@ export function graphCode(project, { solo = null, song = null, audition = false,
         if (muted || bus == null || what !== v) { lanes.push(`${muted ? '_' : ''}${lane}: ${what}`); continue }
         // a bus on a lane is heard from the speakers even when it's also routed on
         declareSpeakers(inserts, bus)
-        lanes.push(`${lane}: ${playing.has(notesOf(v)) ? 'silence' : v}`)
-        playing.add(notesOf(v))
+        lanes.push(`${lane}: ${takeNew(v, playing) ?? 'silence'}`)
       }
     }
   }
