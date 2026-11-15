@@ -611,7 +611,7 @@ function StudioNode({ id, selected }) {
 
   return (
     <div
-      className={`gnode g-${spec.group} t-${node.type} ${selected ? 'selected' : ''} ${soloing ? 'soloing' : ''} ${!LISTENS.has(node.type) && !ctx.heard.has(id) ? 'unheard' : ''} ${heldBy ? 'peer-held' : ''}`}
+      className={`gnode g-${spec.group} t-${node.type} ${node.data?.mute === true ? 'muted' : ''} ${selected ? 'selected' : ''} ${soloing ? 'soloing' : ''} ${!LISTENS.has(node.type) && !ctx.heard.has(id) ? 'unheard' : ''} ${heldBy ? 'peer-held' : ''}`}
       style={{ ...(tint ? { '--tint': tint, '--tint-ink': inkFor(tint) } : {}), ...(heldBy ? { '--peer': heldBy.color } : {}) }}
       title={heldBy ? `${heldBy.name} has this selected` : undefined}
       onClick={(e) => {
@@ -623,6 +623,7 @@ function StudioNode({ id, selected }) {
       {spec.inputs === 1 && <Handle type="target" position={Position.Left} id="in" className="port in" />}
       <div className="node-head">
         <span className="node-kind">{spec.label}</span>
+        {node.data?.mute === true && <span className="node-muted" title="Muted: it makes no sound and nothing gets through it · ctrl + M to unmute">muted</span>}
         {BUS_NODES.has(node.type) && (
           <span className="node-bus" title="Runs on the bus: it works on everything mixed into it, after every per-note effect in the patch">bus</span>
         )}
@@ -1835,7 +1836,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
     const onKey = (e) => {
       if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return
       const key = e.key.toLowerCase()
-      if (!['c', 'x', 'v', 'd', 'g', 'f', 'a'].includes(key)) return
+      if (!['c', 'x', 'v', 'd', 'g', 'f', 'a', 'm'].includes(key)) return
       if (e.target.closest?.('input, textarea, select, [contenteditable="true"], dialog, [role="dialog"], .pattern-pop, .add-menu')) return
       if (key === 'c' && window.getSelection()?.toString()) return // copying text on the page
       let selected = nodesRef.current.filter((n) => n.selected).map((n) => n.id)
@@ -1847,6 +1848,23 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
         e.preventDefault()
         setFrameSel(null)
         setNodes((ns) => ns.map((n) => { const on = n.type !== 'frame' && !n.hidden; return n.selected === on ? n : { ...n, selected: on } }))
+        return
+      }
+      if (key === 'm') {
+        // mute or unmute what's picked (a picked frame: what's in it). Mixed: all go quiet.
+        const frame = (projectRef.current.frames ?? []).find((f) => f.id === frameSelRef.current)
+        const ids = new Set(selected.length ? selected : frame?.members ?? [])
+        const targets = projectRef.current.nodes.filter((n) => ids.has(n.id) && n.type !== 'output' && n.type !== 'stream')
+        if (!targets.length) return
+        e.preventDefault()
+        const mute = targets.some((n) => n.data?.mute !== true)
+        onUpdateProject((p) => {
+          for (const n of p.nodes) {
+            if (!ids.has(n.id) || n.type === 'output' || n.type === 'stream') continue
+            if (mute) n.data.mute = true
+            else delete n.data.mute
+          }
+        })
         return
       }
       if (key === 'f') {
@@ -2298,7 +2316,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
               ? <>auditioning <b>{nodeTitle(project.nodes.find((n) => n.id === solo), project)}</b> · <button className="linkish" onClick={() => onSolo(null)}>back to the output</button></>
               : frameSel && project.frames?.find((f) => f.id === frameSel)?.collapsed ? <>collapsed frame · <b>▸</b> or a double-click on the bar opens it · drag it to move what it holds · <b>delete</b> removes the frame and shows its nodes again</>
               : frameSel ? <>frame · <b>▾</b> collapses it · drag its title to move it and what's in it · double-click the title to rename · <b>delete</b> removes the frame, not its nodes</>
-              : selectedCount > 1 ? <><b>ctrl/cmd + F</b> frames them · <b>ctrl/cmd + G</b> folds effects into one fx rack · <b>ctrl/cmd + D</b> duplicates · <b>shift + right-drag</b> across wires puts a node inline on them</>
+              : selectedCount > 1 ? <><b>ctrl + M</b> mutes them · <b>ctrl/cmd + F</b> frames them · <b>ctrl/cmd + G</b> folds effects into one fx rack · <b>ctrl/cmd + D</b> duplicates · <b>shift + right-drag</b> across wires puts a node inline on them</>
               : selected ? (
                 <>
                   {NODE_TYPES[selected.type]?.blurb}

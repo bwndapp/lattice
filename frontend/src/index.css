@@ -1430,3 +1430,8 @@ img.photo { display: inline-block; border-radius: 50%; object-fit: cover; backgr
 /* an unnamed node says where its name goes, once you're over its head */
 .node-title:empty::before { content: 'name…'; font-style: italic; opacity: 0; transition: opacity 0.12s ease; }
 .node-head:hover .node-title:empty::before { opacity: 0.45; }
+
+/* muted (ctrl + M): still there, plainly not playing */
+.gnode.muted { opacity: 0.45; }
+.gnode.muted .node-body { filter: grayscale(1); }
+.node-muted { font-size: 8px; letter-spacing: 0.08em; text-transform: uppercase; padding: 0 3px; line-height: 1.4; color: var(--ink); background: var(--muted); }

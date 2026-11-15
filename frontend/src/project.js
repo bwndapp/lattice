@@ -498,6 +498,7 @@ export function generateCode(project, { solo = null, laneSolo = null, audition =
     if (!list) return null
     if (ch.mute) return 'silence'
     const exprs = list.map(({ machine, layer }) => {
+      if (machine.data?.mute === true) return null // a muted machine fires nothing
       const part = abstractParts(machine).find((p) => p.id === layer)
       if (!part?.drive) return null
       // each layer plays an engine on an instance of its own (instruments/host.js)

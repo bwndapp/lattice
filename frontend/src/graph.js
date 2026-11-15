@@ -955,6 +955,7 @@ export function normalizeGraph(raw, patterns) {
       // saved with the track any more — App picks up an old one as your own when you open it)
     }
     if (typeof n.data?.name === 'string' && n.data.name.trim()) data.name = n.data.name.slice(0, 40)
+    if (n.type !== 'output' && n.data?.mute === true) data.mute = true
     nodes.push({ id, type: n.type, x: Math.round(clampNum(n.x, 0, -20000, 20000)), y: Math.round(clampNum(n.y, 0, -20000, 20000)), data })
   }
   const byId = new Map(nodes.map((n) => [n.id, n]))
@@ -1106,6 +1107,8 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     const node = byId.get(id)
     const spec = node && NODE_TYPES[node.type]
     if (!spec || node.type === 'output' || node.type === 'stream') { exprs.set(id, null); return null }
+    // muted (ctrl + M): it makes nothing, and nothing gets through it
+    if (node.data?.mute === true) { exprs.set(id, null); return null }
     const wires = inputsOf(edges, id)
     const inputs = []
     const slots = []
