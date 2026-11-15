@@ -22,7 +22,7 @@ import { Glass } from './Glass.jsx'
 import { AutomationEditor } from './Automation.jsx'
 import { routeVoice } from './fxbus.js'
 import { A4, TUNING_MAX, TUNING_MIN, setTuning } from './tuning.js'
-import { setStreamProject, setStreamTrack, setStreamTransport, streamHit, streamTransport } from './stream.js'
+import { setStreamMeta, setStreamProject, setStreamTrack, setStreamTransport, streamHit, streamTransport } from './stream.js'
 import Versions from './Versions.jsx'
 import ExportDialog from './ExportDialog.jsx'
 import Tooltip from './Tooltip.jsx'
@@ -207,6 +207,14 @@ export default function App() {
   // the stream (stream.js): which track, and the names behind its ids
   useEffect(() => setStreamTrack(trackId), [trackId])
   useEffect(() => setStreamProject(project), [project])
+  // and its name, who made it, its tags (a new, unsaved track is yours, by whatever you're called)
+  useEffect(() => setStreamMeta({
+    id: track?.id ?? null,
+    title: title || track?.title || '',
+    artist: track?.author ?? user?.name ?? null,
+    tags: track?.tags ?? [],
+    visibility: track?.visibility ?? null,
+  }), [track?.id, track?.title, track?.author, track?.tags, track?.visibility, title, user?.name])
   useEffect(() => {
     const sch = () => editorRef.current?.repl?.scheduler
     setStreamTransport({

@@ -23,6 +23,9 @@
  *                instrument and each patch part is right now, from its notes: up on a hit
  *                (velocity × gain), held while the note lasts, falling away after it }
  *   transport  play or stop: { t, playing, bpm, beats }
+ *   track      what's playing, sent on connecting and whenever any of it changes:
+ *              { t, id, title, artist, url, bpm, beats, a4, bars, seconds, tags,
+ *                visibility, parts: [{ id, name, kind }], instruments: [{ id, name, part }] }
  *   audio-format  before any sound, when audio is on: { rate, channels }
  *
  * Audio (the stream node's `audio`, off unless asked): the master as heard, lossless —
@@ -37,6 +40,7 @@
 import { getAudioContext, getSuperdoughAudioController } from '@strudel/webaudio'
 import { API_ROOT } from './base'
 import { currentA4, midiOf } from './tuning.js'
+import { BASE } from './base'
 
 let RATE = 60 // the stream node's settings: frames a second, and spectrum bins
 let BINS = 64
@@ -55,6 +59,9 @@ export const streamState = () => state
 
 let track = 'scratch'
 let names = { nodes: new Map(), insts: new Map(), patterns: new Set() }
+let meta = {} // the track's name, artist and so on (App), and what the project says (below)
+let projectMeta = {}
+let sentMeta = ''
 let transport = { playing: () => false, cycle: () => 0, cps: () => 0.5, beats: () => 4 }
 let ws = null
 let retry = 0
@@ -118,6 +125,8 @@ export function setStreamProject(project) {
     nodes.set(n.id, n.data?.name || pattern?.name || n.type)
   }
   names = { nodes, insts, patterns: new Set((project?.nodes ?? []).filter((n) => n.type === 'pattern').map((n) => n.id)) }
+  projectMeta = project ? projectInfo(project, nodes) : {}
+  sendMeta()
   if (!project) return
   // the stream node: its settings, and taking it off the patch switches the stream off
   const node = project.nodes?.find((n) => n.type === 'stream')
@@ -130,6 +139,48 @@ export function setStreamProject(project) {
     RATE = rate
     if (frameTimer) { clearInterval(frameTimer); frameTimer = setInterval(frame, 1000 / RATE) }
   }
+}
+
+/** The track's own details (App): { id, title, artist, tags, visibility }. */
+export function setStreamMeta(m) {
+  meta = { ...m }
+  sendMeta()
+}
+
+/** What the project says about itself: tempo, metre, tuning, length, and what's in it. */
+function projectInfo(project, nodes) {
+  const beats = Number(project.beats) || 4
+  const bpmNow = Number(project.bpm) || 140
+  // the song's length: to the end of its last clip when the song is on, else the longest pattern
+  const clipsEnd = (project.song?.clips ?? []).reduce((m, c) => Math.max(m, (Number(c.start) || 0) + (Number(c.len) || 0)), 0)
+  const bars = project.song?.on !== false && clipsEnd > 0 ? clipsEnd : Math.max(1, ...(project.patterns ?? []).map((p) => Number(p.bars) || 1))
+  const SOUNDLESS = new Set(['output', 'stream'])
+  return {
+    bpm: Math.round(bpmNow * 100) / 100,
+    beats,
+    a4: Number(project.tuning) || 440,
+    bars: Math.round(bars * 1000) / 1000,
+    seconds: Math.round(((bars * beats * 60) / bpmNow) * 100) / 100,
+    parts: (project.nodes ?? []).filter((n) => !SOUNDLESS.has(n.type)).map((n) => ({ id: n.id, name: nodes.get(n.id), kind: n.type })),
+    instruments: (project.patterns ?? []).flatMap((p) => (p.channels ?? []).map((c) => ({ id: c.id, name: c.name, part: p.name }))),
+  }
+}
+
+/** The track message, sent when any of it changes (and to every new connection). */
+function sendMeta() {
+  const info = {
+    id: meta.id ?? null,
+    title: meta.title || 'untitled',
+    artist: meta.artist || null,
+    url: meta.id ? `${window.location.origin}${BASE}/t/${meta.id}` : null,
+    ...projectMeta,
+    tags: meta.tags ?? [],
+    visibility: meta.visibility ?? null,
+  }
+  const text = JSON.stringify(info)
+  if (text === sentMeta || ws?.readyState !== WebSocket.OPEN) return
+  sentMeta = text
+  send({ type: 'track', t: Date.now(), ...info })
 }
 
 /** How to ask where the song is: { playing(), cycle(), cps(), beats() }. */
@@ -173,7 +224,7 @@ function connect() {
   const sock = new WebSocket(streamUrl().replace(`/stream/${state.key}`, `/stream/pub/${state.key}`))
   ws = sock
   sock.binaryType = 'arraybuffer'
-  sock.onopen = () => { retry = 0; sentFormat = false; set({ connected: true }); send({ type: 'transport', t: Date.now(), playing: !!transport.playing(), bpm: bpm(), beats: transport.beats() }) }
+  sock.onopen = () => { retry = 0; sentFormat = false; sentMeta = ''; set({ connected: true }); send({ type: 'transport', t: Date.now(), playing: !!transport.playing(), bpm: bpm(), beats: transport.beats() }); sendMeta() }
   sock.onmessage = (e) => {
     try { const m = JSON.parse(e.data); if (m.type === 'listeners') set({ listeners: m.n }) } catch { /* not ours */ }
   }

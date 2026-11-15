@@ -41,6 +41,7 @@ class Room:
         self.audio_subs: dict[object, asyncio.Queue] = {}
         self.fmt = {"rate": 48000, "channels": 2, "bits": 16}
         self.fmt_known = asyncio.Event()
+        self.track: str | None = None  # the latest `track` message, for whoever arrives later
 
 
 rooms: dict[str, Room] = {}
@@ -78,13 +79,42 @@ def _pour(room: Room, chunk: bytes):
         q.put_nowait(chunk)
 
 
-def _wav_header(fmt: dict) -> bytes:
+def _info_chunk(track: dict | None) -> bytes:
+    """The track's name and artist as a WAV's LIST/INFO tags, which players show."""
+    if not track:
+        return b""
+    tags = [
+        (b"INAM", track.get("title")),
+        (b"IART", track.get("artist")),
+        (b"ICMT", f"{track.get('bpm')} bpm, {track.get('beats')}/4" if track.get("bpm") else None),
+        (b"ISFT", "Lattice"),
+    ]
+    body = b"INFO"
+    for tag, value in tags:
+        if not value:
+            continue
+        text = str(value).encode("utf-8")[:200] + b"\0"
+        if len(text) % 2:
+            text += b"\0"  # chunks are padded to even lengths
+        body += tag + struct.pack("<I", len(text)) + text
+    return b"LIST" + struct.pack("<I", len(body)) + body
+
+
+def _wav_header(fmt: dict, track: dict | None = None) -> bytes:
     """A WAV header for a stream with no end: the sizes say 'as long as it goes'."""
     ch, rate, bits = fmt["channels"], fmt["rate"], fmt["bits"]
     block = ch * bits // 8
     return (b"RIFF" + struct.pack("<I", 0xFFFFFFFF) + b"WAVE"
             + b"fmt " + struct.pack("<IHHIIHH", 16, 1, ch, rate, rate * block, block, bits)
+            + _info_chunk(track)
             + b"data" + struct.pack("<I", 0xFFFFFFFF))
+
+
+def _track(room: Room) -> dict | None:
+    try:
+        return json.loads(room.track) if room.track else None
+    except ValueError:
+        return None
 
 
 @router.get("/{key}/status")
@@ -95,6 +125,7 @@ async def status(key: str):
         "listeners": len(room.subs) if room else 0,
         "audio": bool(room and room.fmt_known.is_set() and room.pub),
         "audioListeners": len(room.audio_subs) if room else 0,
+        "track": {k: v for k, v in (_track(room) or {}).items() if k not in ("type", "t")} if room else None,
     }
 
 
@@ -112,7 +143,7 @@ async def audio_wav(key: str):
 
     async def body():
         try:
-            yield _wav_header(room.fmt)
+            yield _wav_header(room.fmt, _track(room))
             while True:
                 yield await q.get()
         finally:
@@ -197,6 +228,26 @@ browser slows this down when the Lattice tab is in the background; hits are not 
 
 Bands and spectrum map -100 ... -10 dBFS onto 0 ... 1: silence is 0, a loud kick's low
 end is near 1.
+
+### track: what's playing
+
+Sent when you connect (the latest one), and again whenever any of it changes: a rename,
+a tempo change, parts added or taken out.
+
+    {{"type": "track", "t": 1763130000000, "id": "GW3psHgl", "title": "DELTA - wifi type beat",
+     "artist": "James Kemp", "url": "https://.../t/GW3psHgl", "bpm": 140, "beats": 4,
+     "a4": 440, "bars": 32, "seconds": 54.86, "tags": ["dnb"], "visibility": "public",
+     "parts": [{{"id": "pattern5kcgy", "name": "drums", "kind": "pattern"}}, ...],
+     "instruments": [{{"id": "p9f5n5xa", "name": "kick", "part": "drums"}}, ...]}}
+
+- id / url: the saved track (null while it's new and unsaved); title, artist (who made it)
+- bpm, beats (per bar), a4 (tuning, Hz)
+- bars, seconds: how long the song is (to the end of its last clip)
+- parts / instruments: everything that plays, by id and name: the same names as `levels`
+  in frames and `nodeName` / `instName` in hits
+
+The same is at GET {http}/status (as `track`), and the WAV below carries the title and
+artist as tags.
 
 ### transport: play or stop
 
@@ -351,6 +402,16 @@ async def publish(ws: WebSocket, key: str):
             text = msg.get("text")
             if text is None:
                 continue
+            if '"track"' in text[:24]:
+                room.track = text  # kept for listeners who arrive later
+                for q in room.audio_subs.values():
+                    if getattr(q, "text_ok", False):
+                        if q.full():
+                            try:
+                                q.get_nowait()
+                            except asyncio.QueueEmpty:
+                                pass
+                        q.put_nowait(text)
             if '"audio-format"' in text[:64]:
                 # what the sound is, before any of it: kept for whoever opens it later
                 try:
@@ -378,12 +439,19 @@ async def listen_audio(ws: WebSocket, key: str):
     await ws.accept()
     room = _room(key)
     q: asyncio.Queue = asyncio.Queue(maxsize=AUDIO_QUEUE)
+    q.text_ok = True  # this one takes the track's text frames too (the WAV can't)
     room.audio_subs[ws] = q
     await ws.send_text(json.dumps({"type": "audio-format", "encoding": "s16le", **{k: room.fmt[k] for k in ("rate", "channels")}, "live": room.pub is not None}))
+    if room.track:
+        await ws.send_text(room.track)
 
     async def pump():
         while True:
-            await ws.send_bytes(await q.get())
+            item = await q.get()
+            if isinstance(item, str):
+                await ws.send_text(item)
+            else:
+                await ws.send_bytes(item)
 
     async def drain():
         while True:
@@ -409,6 +477,8 @@ async def listen(ws: WebSocket, key: str):
     q: asyncio.Queue = asyncio.Queue(maxsize=QUEUE)
     room.subs[ws] = q
     await ws.send_text(json.dumps({"type": "status", "live": room.pub is not None}))
+    if room.track:
+        await ws.send_text(room.track)
     if room.pub is not None:
         try:
             await room.pub.send_text(json.dumps({"type": "listeners", "n": len(room.subs)}))
