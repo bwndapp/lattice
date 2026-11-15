@@ -192,6 +192,8 @@ export default function App() {
     return ['browse', 'graph', 'song', 'code'].includes(kept) ? kept : 'graph'
   })
   const codeViewRef = useRef(null)
+  const drawerRef = useRef(null) // the editor's drawer, and whether playback wants it (it runs only with the code on screen)
+  const codeShownRef = useRef(false)
   const lastViewRef = useRef('graph') // where ctrl/cmd+J returns to from the code
   const lastCanvasRef = useRef('graph') // where browse goes back to
   const toggleView = useCallback(() => setView((v) => (v === 'code' ? lastViewRef.current : 'code')), [])
@@ -459,11 +461,38 @@ export default function App() {
         })
       },
     })
+    /*
+     * The editor's drawer runs every frame while playing: it queries the song once more on
+     * top of the scheduler, and lights each playing note in the code. Only the code view
+     * shows that, so it only runs while the code is on screen — on a busy song (an evolving
+     * Fibonacci is thirteen versions of every loop) it was costing the patch its frame rate.
+     */
+    const drawer = editorRef.current.drawer
+    const startDrawer = drawer.start.bind(drawer)
+    const stopDrawer = drawer.stop.bind(drawer)
+    drawerRef.current = { wanted: false, scheduler: null, start: startDrawer, stop: stopDrawer }
+    drawer.start = (scheduler) => {
+      Object.assign(drawerRef.current, { wanted: true, scheduler })
+      if (codeShownRef.current) startDrawer(scheduler)
+    }
+    drawer.stop = () => { drawerRef.current.wanted = false; stopDrawer() }
     editorRef.current.setFontFamily('"Martian Mono", ui-monospace, monospace')
     transport.scheduler = editorRef.current.repl.scheduler
     readOnlyRef.current = new Compartment()
     editorRef.current.editor.dispatch({ effects: StateEffect.appendConfig.of(readOnlyRef.current.of(EditorState.readOnly.of(false))) })
   }, [transport])
+
+  // the drawer follows the code view (see where the editor is made)
+  useEffect(() => {
+    codeShownRef.current = view === 'code'
+    const d = drawerRef.current
+    if (!d) return
+    if (view === 'code' && d.wanted && d.scheduler) d.start(d.scheduler)
+    else {
+      d.stop()
+      try { editorRef.current?.highlight([], 0) } catch { /* nothing lit */ }
+    }
+  }, [view])
 
   // generated code is read-only; detach the project to edit it by hand
   const isProject = !!project
