@@ -24,6 +24,22 @@
  */
 export const NEWS = [
   {
+    id: '2026-11-15',
+    date: '2026-11-15',
+    version: '0.13.0',
+    title: 'Physical, triggers and a flat look',
+    items: [
+      '**Physical**: a new synth — pluck, strike, bow or blow a string, bar, drum skin, plate, bell and more, with 29 presets',
+      '**Triggers**: rhythm machines fire instruments on your patterns through square trigger ports',
+      '**Rhythm machine layers take any number of wires**, and what they fire lights up on the patch',
+      '**A cleaner, flat look**: gold only for what\u2019s live',
+      '**Ctrl+Space** opens the add picker as a search bar, with a preview of each thing',
+      '**Tuning**: set A4 beside the tempo, every pitched note follows it',
+      '**Stream node**: send hits and the spectrum live to TouchDesigner and the like',
+      '**Steadier playback**: fewer dropped or late notes, especially on busy patches and fast screens',
+    ],
+  },
+  {
     id: '2026-11-14',
     date: '2026-11-14',
     version: '0.12.1',
