@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { BANKS } from '../../project.js'
-import { FIB, MAX_LAYERS, addLayer, layerSteps, removeLayer, roll } from './model.js'
+import { EVOLVE_EVERY, FIB, GENERATIONS, MAX_LAYERS, addLayer, generationAt, layerAt, layerSteps, removeLayer, roll } from './model.js'
 import './fib.css'
 
 // '' first: no sound of its own (play what's wired in)
@@ -40,6 +40,9 @@ export default function FibPanel({ state, change, position, playing }) {
   const heads = useRef([])
   const live = useRef({ state, position, playing })
   live.current = { state, position, playing }
+  // evolving: the generation playing now, so the rings show the loops as they are this moment
+  const [gen, setGen] = useState(0)
+  const genRef = useRef(0)
 
   // the playheads move every frame without React: just their place on the ring
   useEffect(() => {
@@ -48,6 +51,8 @@ export default function FibPanel({ state, change, position, playing }) {
       raf = requestAnimationFrame(frame)
       const { state: st, position: pos, playing: on } = live.current
       const p = on?.() ? pos?.() ?? 0 : null
+      const g = p == null ? 0 : generationAt(st, p)
+      if (g !== genRef.current) { genRef.current = g; setGen(g) }
       st.layers.forEach((l, i) => {
         const el = heads.current[i]
         if (!el) return
@@ -65,7 +70,7 @@ export default function FibPanel({ state, change, position, playing }) {
     return () => cancelAnimationFrame(raf)
   }, [])
 
-  const loops = useMemo(() => state.layers.map(layerSteps), [state])
+  const loops = useMemo(() => state.layers.map((l, i) => layerSteps(state.evolve ? layerAt(l, i, gen) : l)), [state, gen])
   const setLayer = (i, patch) => change((st) => ({
     ...st,
     layers: st.layers.map((l, k) => {
@@ -105,6 +110,19 @@ export default function FibPanel({ state, change, position, playing }) {
               <button key={t} type="button" className={state.timing === t ? 'on' : ''} aria-pressed={state.timing === t} onClick={() => change((st) => ({ ...st, timing: t }))} title={tip}>{t}</button>
             ))}
           </span>
+          <button
+            type="button"
+            className={`fib-evolve ${state.evolve ? 'on' : ''}`}
+            aria-pressed={state.evolve}
+            onClick={() => change((st) => ({ ...st, evolve: !st.evolve }))}
+            title={`Evolve: the loops change as the song plays, through ${GENERATIONS} generations and round again. Layer one changes every generation, then every 2, 3, 5, 8; the Fibonacci word picks a turn by the golden angle or the next Fibonacci number of hits`}
+          >evolve</button>
+          {state.evolve && (
+            <span className="fib-every">
+              every <Cycle list={EVOLVE_EVERY} value={state.every} onChange={(v) => change((st) => ({ ...st, every: v }))} label="bars per generation" /> bar{state.every === 1 ? '' : 's'}
+              <span className="fib-gen" title="The generation playing now">gen {gen + 1}/{GENERATIONS}</span>
+            </span>
+          )}
           <select className="select fib-kit" value={state.bank} onChange={(e) => change((st) => ({ ...st, bank: e.target.value }))} aria-label="Drum kit" title="Drum kit">
             {(BANKS.includes(state.bank) ? BANKS : [state.bank, ...BANKS]).map((b) => <option key={b} value={b}>{b || 'default sounds'}</option>)}
           </select>

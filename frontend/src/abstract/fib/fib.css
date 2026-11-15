@@ -50,3 +50,9 @@
 .fib-add { align-self: flex-start; border: 1px dashed var(--line); border-radius: 3px; padding: 0.35rem 0.8rem; font: inherit; font-size: 12px; background: transparent; color: var(--muted); cursor: pointer; }
 .fib-add:hover:not(:disabled) { color: var(--paper); border-color: var(--muted); }
 .fib-add:disabled { opacity: 0.4; cursor: default; }
+
+/* evolve: on, it's lit; its bars-per-generation and where it's got to sit beside it */
+.fib-evolve { border: 1px solid var(--line); border-radius: 3px; padding: 0.25rem 0.6rem; font: inherit; font-size: 12px; background: transparent; color: var(--muted); cursor: pointer; }
+.fib-evolve.on { color: var(--ink); background: var(--acid); border-color: var(--acid); }
+.fib-every { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.fib-gen { font-variant-numeric: tabular-nums; color: var(--paper); margin-left: 0.2rem; }

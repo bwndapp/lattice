@@ -115,3 +115,43 @@ console.log('fib ok')
   assert.match(line(m.generateCode(old), 'p_syn_c1'), /_r: 'f\.l0'.*\.struct\(/, 'and it plays as it did')
   console.log('fib triggers ok')
 }
+
+// ── evolve: the loops change through 13 generations, when and how by Fibonacci ──
+{
+  const { GENERATIONS, asPattern, layerAt, layerSteps, normalize, parts } = await import('../src/abstract/fib/model.js')
+  // Strudel from the app's own bundle, its strings mini-notation as in the app
+  const { bundle } = await import('./lib/bundle.mjs')
+  const sm = await bundle({ '../node_modules/@strudel/core': ['s', 'arrange'], '../node_modules/@strudel/mini': ['miniAllStrings', 'mini'] }, 'fibevolve')
+  sm.miniAllStrings()
+  // the app's transpiler turns every "…" into mini-notation before it runs; so does this
+  const evaluate = async (expr) => ({ pattern: new Function('s', 'arrange', 'mini', `return ${expr.replace(/"([^"]*)"/g, 'mini("$1")')}`)(sm.s, sm.arrange, sm.mini) })
+  const base = normalize({ layers: [{ mode: 'even', hits: 3, steps: 8, sound: 'bd' }, { mode: 'even', hits: 2, steps: 5, sound: 'sd' }, { mode: 'golden', steps: 13, sound: 'hh' }], every: 2 })
+  assert.equal(base.evolve, false, 'evolve is off unless asked')
+  const evo = normalize({ ...base, evolve: true })
+  assert.deepEqual(normalize(JSON.parse(JSON.stringify(evo))), evo, 'it saves')
+  assert.equal(normalize({ ...evo, every: 7 }).every, 2, 'every is a Fibonacci number of bars')
+  const loop = (l, i, g) => layerSteps(layerAt(l, i, g)).join('')
+  // when: layer one changes every generation, layer two only every second one
+  assert.notEqual(loop(evo.layers[0], 0, 1), loop(evo.layers[0], 0, 0), 'layer one changes at generation 1')
+  assert.equal(loop(evo.layers[1], 1, 1), loop(evo.layers[1], 1, 0), 'layer two holds through generation 1')
+  assert.notEqual(loop(evo.layers[1], 1, 2), loop(evo.layers[1], 1, 0), 'and changes at generation 2')
+  // what: hits stay Fibonacci, loop lengths never change
+  for (let g = 0; g < GENERATIONS; g++) for (const [i, l] of evo.layers.entries()) {
+    const at = layerAt(l, i, g)
+    assert.equal(at.steps, l.steps)
+    assert.ok([1, 2, 3, 5, 8, 13, 21, 34, 55].includes(at.hits))
+  }
+  // it plays: generation by generation, and round again after 13
+  const onsets = async (expr, from, to) => (await evaluate(expr)).pattern.queryArc(from, to).filter((h) => h.hasOnset()).map((h) => +(h.whole.begin.valueOf() - from).toFixed(4)).sort((a, b) => a - b).join(' ')
+  const drum = parts(evo)[0].expr
+  assert.match(drum, /arrange\(/, 'an evolving loop is an arrange of its generations')
+  assert.notEqual(await onsets(drum, 0, 1), await onsets(drum, 2, 3), 'generation 1 (bars 3-4) plays differently from generation 0')
+  const round = GENERATIONS * evo.every
+  assert.equal(await onsets(drum, 0, 4), await onsets(drum, round, round + 4), 'after 13 generations it comes round again')
+  assert.equal(await onsets(parts(base)[0].expr, 0, 1), await onsets(drum, 0, 1), 'generation 0 is the loop as set')
+  // the rhythm drives what's wired in the same way
+  assert.match(parts(evo)[0].drive('x'), /^x\.struct\(arrange\(/)
+  // the sketch covers every generation
+  assert.equal(asPattern(evo).bars, Math.min(32, round))
+  console.log('fib evolve ok')
+}

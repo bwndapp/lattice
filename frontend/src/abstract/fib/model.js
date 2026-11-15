@@ -11,6 +11,18 @@
  * against each other and the bar only lines up again much later; `bar` squeezes each loop
  * into one bar, so 5 steps become quintuplets.
  *
+ * Evolve (off unless asked): the loops change as the song goes, through GENERATIONS
+ * generations of `every` bars each, then round again — and the changes are Fibonacci too:
+ *
+ *   when    layer one changes every generation, layer two every 2, then every 3, 5, 8 …:
+ *           the loops mutate on nested time scales, fast inside slow, like the rhythm itself
+ *   what    the Fibonacci word decides, a letter per change (offset per layer, so they don't
+ *           move together): a 1 turns the loop by the golden angle (0.382 of it), a 0 moves
+ *           its hits on to the next Fibonacci number that fits
+ *
+ * It's worked out from the generation alone, never from what played before, so any point in
+ * the song always sounds the same: seeking, looping and exporting all agree.
+ *
  * Pure functions, no UI: FibPanel.jsx draws this, the patch plays it.
  */
 
@@ -18,6 +30,9 @@ export const FIB = [1, 2, 3, 5, 8, 13, 21, 34, 55]
 export const MAX_LAYERS = 16
 export const MODES = ['even', 'golden']
 export const TIMINGS = ['drift', 'bar']
+/** Evolve: bars per generation, and how many generations before it comes round again. */
+export const EVOLVE_EVERY = [1, 2, 3, 5, 8, 13]
+export const GENERATIONS = 13
 const PHI = (1 + Math.sqrt(5)) / 2
 
 /** Hits spread evenly: `hits` in `steps`, the first on step 0. */
@@ -96,6 +111,8 @@ export function normalize(raw) {
   return {
     layers,
     timing: pick(r.timing, TIMINGS, 'drift'),
+    evolve: r.evolve === true,
+    every: pick(Number(r.every), EVOLVE_EVERY, 2),
     bank: typeof r.bank === 'string' ? r.bank.replace(/\W/g, '').slice(0, 40) : 'RolandTR909',
   }
 }
@@ -114,6 +131,30 @@ export function roll(state, rand = Math.random) {
   }
 }
 
+// ── evolving ────────────────────────────────────────────────────────────────
+
+/** How many generations apart layer `i`'s changes come: 1, 2, 3, 5, 8, then round again. */
+const PERIODS = [1, 2, 3, 5, 8]
+/** Layer `i` as it is at generation `g` (generation 0 is the layer as set). */
+export function layerAt(layer, i, g) {
+  if (!(g > 0)) return layer
+  const period = PERIODS[i % PERIODS.length]
+  const word = goldenRhythm(GENERATIONS + 1, i * 3) // its own stretch of the Fibonacci word
+  const fits = FIB.filter((n) => n <= layer.steps)
+  let { hits, rotate } = layer
+  let e = 0
+  for (let k = period; k <= g; k += period) {
+    if (word[e % word.length]) rotate += Math.max(1, Math.round(layer.steps * (2 - PHI))) // the golden angle
+    else if (layer.mode === 'golden') rotate += FIB[e % FIB.length] // the window slides on
+    else hits = fits[(Math.max(0, fits.indexOf(hits)) + 1) % fits.length] // the next Fibonacci number that fits
+    e++
+  }
+  return { ...layer, hits: Math.min(hits, layer.steps), rotate: rotate % 999 }
+}
+
+/** Which generation a song position (in bars) is in. */
+export const generationAt = (state, bar) => (state.evolve ? Math.floor(Math.max(0, bar) / state.every) % GENERATIONS : 0)
+
 // ── what it plays ───────────────────────────────────────────────────────────
 
 const GAIN = ['0', '0.7', '1']
@@ -122,25 +163,48 @@ const VELOCITY = ['0', '0.7', '1']
 /** A layer's tokens as mini-notation: sixteenths that drift, or the whole loop in one bar. */
 const seq = (tokens, timing) => (timing === 'drift' ? `{${tokens.join(' ')}}%16` : tokens.join(' '))
 
+/**
+ * One layer's tokens as a pattern, turned into mini-notation by `tok`. Still: the loop.
+ * Evolving: an arrange of its generations, one section a run of generations that don't
+ * change it. In drift each section starts where the sixteenths have got to by then, so the
+ * loop runs on through a change instead of jumping back to its start.
+ */
+function layerPattern(state, l, i, tok) {
+  if (!state.evolve) return `"${seq(layerSteps(l).map(tok), state.timing)}"`
+  const sections = []
+  for (let g = 0; g < GENERATIONS; g++) {
+    const at = layerAt(l, i, g)
+    const last = sections[sections.length - 1]
+    if (last && last.hits === at.hits && last.rotate === at.rotate) { last.bars += state.every; continue }
+    let vals = layerSteps(at)
+    if (state.timing === 'drift') {
+      const phase = (16 * state.every * g) % vals.length
+      vals = [...vals.slice(phase), ...vals.slice(0, phase)]
+    }
+    sections.push({ hits: at.hits, rotate: at.rotate, bars: state.every, text: seq(vals.map(tok), state.timing) })
+  }
+  return sections.length === 1 ? `"${sections[0].text}"` : `arrange(${sections.map((x) => `[${x.bars}, "${x.text}"]`).join(', ')})`
+}
+
 /** Its layers: [{ id, name, expr, drive }] (see abstract/index.js). */
 export function parts(state) {
   return state.layers.map((l, i) => {
-    const vals = layerSteps(l)
-    const live = !l.mute && vals.some(Boolean)
+    const gens = state.evolve ? Array.from({ length: GENERATIONS }, (_, g) => layerSteps(layerAt(l, i, g))) : [layerSteps(l)]
+    const live = !l.mute && gens.some((vals) => vals.some(Boolean))
     const snd = soundToken(l.sound)
     let expr = null
     if (live && snd) {
-      expr = `s("${seq(vals.map((v) => (v ? snd : '~')), state.timing)}")`
+      expr = `s(${layerPattern(state, l, i, (v) => (v ? snd : '~'))})`
       if (state.bank) expr += `.bank("${state.bank}")`
-      expr += `.gain("${seq(vals.map((v) => GAIN[v]), state.timing)}")`
+      expr += `.gain(${layerPattern(state, l, i, (v) => GAIN[v])})`
     }
-    const struct = seq(vals.map((v) => (v ? 't' : '~')), state.timing)
-    const vel = seq(vals.map((v) => VELOCITY[v]), state.timing)
+    const struct = layerPattern(state, l, i, (v) => (v ? 't' : '~'))
+    const vel = layerPattern(state, l, i, (v) => VELOCITY[v])
     return {
       id: `l${i}`,
       name: snd || 'no sound',
       expr,
-      drive: (x) => (live ? `${x}.struct("${struct}").velocity("${vel}")` : null),
+      drive: (x) => (live ? `${x}.struct(${struct}).velocity(${vel})` : null),
     }
   })
 }
@@ -166,18 +230,22 @@ export function asPattern(state) {
   const live = state.layers.filter((l) => !l.mute)
   const drift = state.timing === 'drift'
   const period = drift ? live.reduce((a, l) => (a * l.steps) / gcd(a, l.steps), 16) : 16
-  const bars = Math.min(SKETCH_BARS, period / 16)
+  // evolving, it comes round once every generation has played
+  const bars = Math.min(SKETCH_BARS, state.evolve ? GENERATIONS * state.every : period / 16)
   const grid = drift ? 16 : 16 * Math.ceil(Math.max(16, ...state.layers.map((l) => l.steps)) / 16)
+  const valsAt = (l, i, bar) => layerSteps(layerAt(l, i, generationAt(state, bar)))
   return {
     bars,
     stepsPerBar: grid,
     channels: state.layers.map((l, i) => {
-      const vals = layerSteps(l)
       let steps
-      if (drift) steps = Array.from({ length: bars * 16 }, (_, s) => (vals[s % vals.length] ? 1 : 0))
+      if (drift) steps = Array.from({ length: bars * 16 }, (_, s) => { const vals = valsAt(l, i, Math.floor(s / 16)); return vals[s % vals.length] ? 1 : 0 })
       else {
-        steps = Array(grid).fill(0)
-        vals.forEach((v, k) => { if (v) steps[Math.round((k * grid) / vals.length)] = 1 })
+        steps = Array(grid * bars).fill(0)
+        for (let b = 0; b < bars; b++) {
+          const vals = valsAt(l, i, b)
+          vals.forEach((v, k) => { if (v) steps[b * grid + Math.round((k * grid) / vals.length)] = 1 })
+        }
       }
       return { id: `l${i}`, kind: 'drum', mute: l.mute, steps }
     }),
