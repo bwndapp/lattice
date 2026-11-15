@@ -186,8 +186,25 @@ function layerPattern(state, l, i, tok) {
   return sections.length === 1 ? `"${sections[0].text}"` : `arrange(${sections.map((x) => `[${x.bars}, "${x.text}"]`).join(', ')})`
 }
 
+/**
+ * The patch asks for these on every draw (ports, wire names, the timeline's sketch), and
+ * an evolving machine is worth working out once: the last few answers, by what was asked.
+ */
+function remember(fn, size = 8) {
+  const kept = new Map()
+  return (state) => {
+    const key = JSON.stringify(state)
+    if (kept.has(key)) return kept.get(key)
+    const value = fn(state)
+    kept.set(key, value)
+    if (kept.size > size) kept.delete(kept.keys().next().value)
+    return value
+  }
+}
+
 /** Its layers: [{ id, name, expr, drive }] (see abstract/index.js). */
-export function parts(state) {
+export const parts = remember(partsOf)
+function partsOf(state) {
   return state.layers.map((l, i) => {
     const gens = state.evolve ? Array.from({ length: GENERATIONS }, (_, g) => layerSteps(layerAt(l, i, g))) : [layerSteps(l)]
     const live = !l.mute && gens.some((vals) => vals.some(Boolean))
@@ -226,14 +243,17 @@ const gcd = (a, b) => (b ? gcd(b, a % b) : a)
  * In bar each loop fills one bar, so the grid is fine enough for the longest loop (a 21 gets
  * 32 slots a bar, a 55 gets 64) and every hit lands in a slot of its own.
  */
-export function asPattern(state) {
+export const asPattern = remember(patternOf)
+function patternOf(state) {
   const live = state.layers.filter((l) => !l.mute)
   const drift = state.timing === 'drift'
   const period = drift ? live.reduce((a, l) => (a * l.steps) / gcd(a, l.steps), 16) : 16
   // evolving, it comes round once every generation has played
   const bars = Math.min(SKETCH_BARS, state.evolve ? GENERATIONS * state.every : period / 16)
   const grid = drift ? 16 : 16 * Math.ceil(Math.max(16, ...state.layers.map((l) => l.steps)) / 16)
-  const valsAt = (l, i, bar) => layerSteps(layerAt(l, i, generationAt(state, bar)))
+  // each layer's loop worked out once a generation, not once a step
+  const gens = state.layers.map((l, i) => Array.from({ length: state.evolve ? GENERATIONS : 1 }, (_, g) => layerSteps(layerAt(l, i, g))))
+  const valsAt = (l, i, bar) => gens[i][generationAt(state, bar)]
   return {
     bars,
     stepsPerBar: grid,
