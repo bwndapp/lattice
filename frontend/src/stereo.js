@@ -85,6 +85,111 @@ class CrushProcessor extends AudioWorkletProcessor {
 registerProcessor('lattice-crush', CrushProcessor)
 
 /*
+ * Granulizer: the bus is recorded into a few seconds of tape, and short windowed grains
+ * are played back out of it, each from somewhere a little in the past, at its own pitch,
+ * maybe backwards, panned somewhere in the stereo field. Freeze stops the recording, so
+ * the grains keep chewing on what's there; feedback records the grains back onto the tape,
+ * so they pile up on themselves. Grains overlap, so the level is evened out by how many
+ * are sounding at once.
+ */
+class GrainProcessor extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [
+      { name: 'size', defaultValue: 0.08, minValue: 0.005, maxValue: 0.5, automationRate: 'k-rate' },
+      { name: 'density', defaultValue: 20, minValue: 1, maxValue: 120, automationRate: 'k-rate' },
+      { name: 'position', defaultValue: 0.1, minValue: 0, maxValue: 3, automationRate: 'k-rate' },
+      { name: 'spray', defaultValue: 0.05, minValue: 0, maxValue: 1.5, automationRate: 'k-rate' },
+      { name: 'pitch', defaultValue: 0, minValue: -24, maxValue: 24, automationRate: 'k-rate' },
+      { name: 'pitchRand', defaultValue: 0, minValue: 0, maxValue: 24, automationRate: 'k-rate' },
+      { name: 'reverse', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+      { name: 'spread', defaultValue: 0.5, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+      { name: 'freeze', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+      { name: 'feedback', defaultValue: 0, minValue: 0, maxValue: 0.95, automationRate: 'k-rate' },
+      { name: 'mix', defaultValue: 0.6, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+    ]
+  }
+  constructor() {
+    super()
+    this.size = Math.ceil(4 * sampleRate) // four seconds of tape
+    this.tape = [new Float32Array(this.size), new Float32Array(this.size)]
+    this.at = 0
+    this.next = 0 // samples until the next grain starts
+    this.grains = []
+    this.wet = [0, 0]
+  }
+  read(ch, pos) {
+    const size = this.size
+    let p = pos % size
+    if (p < 0) p += size
+    const i = Math.floor(p)
+    const f = p - i
+    const a = this.tape[ch][i]
+    const b = this.tape[ch][(i + 1) % size]
+    return a + (b - a) * f
+  }
+  spawn(P) {
+    if (this.grains.length >= 96) return
+    const len = Math.max(32, Math.round(P.size * sampleRate))
+    const semis = P.pitch + (Math.random() * 2 - 1) * P.pitchRand
+    const back = Math.random() < P.reverse
+    const rate = Math.pow(2, semis / 12) * (back ? -1 : 1)
+    // how far behind the record head it starts: never so close that a fast grain runs
+    // past the present into tape that hasn't been written yet
+    const reach = len * Math.max(1, Math.abs(rate)) + 64
+    const delay = Math.min(this.size - reach - 64, Math.max(reach, (P.position + Math.random() * P.spray) * sampleRate))
+    const start = this.at - delay + (back ? len * Math.abs(rate) : 0)
+    const pan = 0.5 + (Math.random() - 0.5) * P.spread
+    // overlapping grains add up: each is turned down by how many were meant to sound with
+    // it, fixed when it starts, so pulling density down mid-cloud doesn't spike
+    const g = 1.41 / Math.sqrt(Math.max(1, P.density * P.size))
+    this.grains.push({ pos: start, rate, len, age: 0, l: g * Math.cos(pan * Math.PI / 2), r: g * Math.sin(pan * Math.PI / 2) })
+  }
+  process(inputs, outputs, params) {
+    const input = inputs[0]
+    const output = outputs[0]
+    if (!output || !output.length) return true
+    const P = {}
+    for (const k in params) P[k] = params[k][0]
+    const frozen = P.freeze >= 0.5
+    const n = output[0].length
+    const inL = (input && input[0]) || null
+    const inR = (input && (input[1] || input[0])) || null
+    const every = sampleRate / Math.max(0.5, P.density)
+    const fb = P.feedback
+    for (let i = 0; i < n; i++) {
+      if (--this.next <= 0) { this.spawn(P); this.next += every * (0.75 + Math.random() * 0.5) }
+      let wl = 0
+      let wr = 0
+      for (let g = this.grains.length - 1; g >= 0; g--) {
+        const gr = this.grains[g]
+        const w = 0.5 - 0.5 * Math.cos((2 * Math.PI * gr.age) / gr.len) // a Hann window: no clicks at the ends
+        wl += this.read(0, gr.pos) * w * gr.l
+        wr += this.read(1, gr.pos) * w * gr.r
+        gr.pos += gr.rate
+        if (++gr.age >= gr.len) this.grains.splice(g, 1)
+      }
+      // a soft ceiling: near-straight at normal levels, a swell rather than a blast when
+      // feedback and pitch piles grains onto each other
+      wl = Math.tanh(wl)
+      wr = Math.tanh(wr)
+      const dl = inL ? inL[i] : 0
+      const dr = inR ? inR[i] : 0
+      if (!frozen) {
+        // feedback goes back on the tape through a soft clip, so it swells instead of exploding
+        this.tape[0][this.at] = dl + Math.tanh(wl * fb)
+        this.tape[1][this.at] = dr + Math.tanh(wr * fb)
+        this.at = (this.at + 1) % this.size
+      }
+      const m = P.mix
+      output[0][i] = dl * (1 - m) + wl * m
+      if (output[1]) output[1][i] = dr * (1 - m) + wr * m
+    }
+    return true
+  }
+}
+registerProcessor('lattice-grain', GrainProcessor)
+
+/*
  * Pitch: the bus moved up or down without moving the tempo.
  *
  * Everything written is kept in a ring, and two read heads run through it at the speed the
@@ -834,6 +939,24 @@ const UNITS = {
         node = null
       },
     }
+  },
+
+  /** Granulizer: grains out of a few seconds of the bus (see the grain worklet above). */
+  grain(ac) {
+    const n = (v, lo, hi, def) => Math.min(hi, Math.max(lo, Number.isFinite(+v) ? +v : def))
+    return workletInsert(ac, 'lattice-grain', (p) => ({
+      size: n(p.size, 0.005, 0.5, 0.08),
+      density: n(p.density, 1, 120, 20),
+      position: n(p.position, 0, 3, 0.1),
+      spray: n(p.spray, 0, 1.5, 0.05),
+      pitch: n(p.pitch, -24, 24, 0),
+      pitchRand: n(p.pitchRand, 0, 24, 0),
+      reverse: n(p.reverse, 0, 1, 0),
+      spread: n(p.spread, 0, 1, 0.5),
+      freeze: n(p.freeze, 0, 1, 0),
+      feedback: n(p.feedback, 0, 0.95, 0),
+      mix: n(p.mix, 0, 1, 0.6),
+    }))
   },
 
   /** Bitcrush: bits, rate and mix (see the crush worklet above). */

@@ -1011,6 +1011,7 @@ const SEARCH_WORDS = {
   tremolo: 'modulation volume pulse lfo wobble',
   vowel: 'formant voice talk mouth',
   lofi: 'coarse bitcrush downsample grit crush retro',
+  granulizer: 'granular grain grains granulator cloud smear glitch stutter freeze texture scatter spray',
   bitcrush: 'crush bits 8bit lofi digital decimate downsample',
   eq3: 'eq equalizer equaliser three band 3 bass low mid high boost cut tone mixing',
   saturator: 'saturation distortion warm tape tube harmonics drive grit bass mixing',

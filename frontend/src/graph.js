@@ -354,6 +354,24 @@ export const NODE_TYPES = {
     params: [{ key: 'coarse', type: 'int', label: 'grit', min: 1, max: 32, def: 6 }],
     code: stereoCode('lofi', (d) => ({ coarse: d.coarse })),
   },
+  granulizer: {
+    group: 'effect', cat: 'mod', label: 'granulizer', blurb: 'Chop the sound into tiny grains and spray them back: smears, clouds, glitches',
+    inputs: 1,
+    params: [
+      { key: 'size', type: 'knob', label: 'size', min: 0.005, max: 0.5, def: 0.08, log: true, unit: 's' },
+      { key: 'density', type: 'knob', label: 'density', min: 1, max: 120, def: 20, log: true, unit: 'hz' },
+      { key: 'position', type: 'knob', label: 'position', min: 0, max: 3, def: 0.1, unit: 's' },
+      { key: 'spray', type: 'knob', label: 'spray', min: 0, max: 1.5, def: 0.05, unit: 's' },
+      { key: 'pitch', type: 'knob', label: 'pitch', min: -24, max: 24, def: 0, unit: 'st', origin: 0 },
+      { key: 'pitchRand', type: 'knob', label: 'pitch rand', min: 0, max: 24, def: 0, unit: 'st' },
+      { key: 'reverse', type: 'knob', label: 'reverse', min: 0, max: 1, def: 0 },
+      { key: 'spread', type: 'knob', label: 'spread', min: 0, max: 1, def: 0.5 },
+      { key: 'freeze', type: 'knob', label: 'freeze', min: 0, max: 1, def: 0 },
+      { key: 'feedback', type: 'knob', label: 'feedback', min: 0, max: 0.95, def: 0 },
+      { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 0.6 },
+    ],
+    code: stereoCode('grain', (d) => ({ size: d.size, density: d.density, position: d.position, spray: d.spray, pitch: d.pitch, pitchRand: d.pitchRand, reverse: d.reverse, spread: d.spread, freeze: d.freeze, feedback: d.feedback, mix: d.mix })),
+  },
   bitcrush: {
     group: 'effect', cat: 'drive', label: 'bitcrush', blurb: 'Fewer bits, lower rate: crunchy and digital',
     inputs: 1,
@@ -701,7 +719,7 @@ function stereoCode(kind, params) {
   return code
 }
 const STEREO_TYPES = new Set(['haas', 'widener', 'utility', 'bus', 'eq3', 'saturator', 'distortion', 'clipper', 'softclip', 'compressor', 'limiter',
-  'filter', 'djfilter', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi', 'bitcrush', 'pitch', 'freqshift'])
+  'filter', 'djfilter', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi', 'bitcrush', 'granulizer', 'pitch', 'freqshift'])
 
 /**
  * Nodes that are real audio on a bus rather than settings on each note: they work on
@@ -711,7 +729,7 @@ const STEREO_TYPES = new Set(['haas', 'widener', 'utility', 'bus', 'eq3', 'satur
 export const BUS_NODES = new Set([...STEREO_TYPES, 'reverb', 'delay'])
 
 /** Effects that can sit inside an fx rack: every plain effect node. */
-export const FX_UNITS = ['eq3', 'compressor', 'limiter', 'saturator', 'distortion', 'clipper', 'softclip', 'punch', 'haas', 'widener', 'utility', 'filter', 'djfilter', 'reverb', 'delay', 'space', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi', 'bitcrush', 'pitch', 'freqshift']
+export const FX_UNITS = ['eq3', 'compressor', 'limiter', 'saturator', 'distortion', 'clipper', 'softclip', 'punch', 'haas', 'widener', 'utility', 'filter', 'djfilter', 'reverb', 'delay', 'space', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi', 'bitcrush', 'granulizer', 'pitch', 'freqshift']
 
 /**
  * Effects an instrument's lane can stack: the ones that are real audio on a bus. Reverb and
