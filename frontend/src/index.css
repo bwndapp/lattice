@@ -1427,3 +1427,6 @@ button.chan-synth:hover span { color: var(--acid); }
 
 /* a profile picture from blue wind (BotFace.jsx Photo / MyFace) */
 img.photo { display: inline-block; border-radius: 50%; object-fit: cover; background: var(--well); flex: none; }
+/* an unnamed node says where its name goes, once you're over its head */
+.node-title:empty::before { content: 'name…'; font-style: italic; opacity: 0; transition: opacity 0.12s ease; }
+.node-head:hover .node-title:empty::before { opacity: 0.45; }
