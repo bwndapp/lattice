@@ -21,7 +21,7 @@ import { knobsSource } from './dsp.js'
  *               stretches the ratios apart, position weights the modes the way a strike there
  *               would
  *
- * Played from steps (no note) it sits at C3. Velocity brightens the hit. The lists only ever
+ * Played from steps (no note) it sits at C3, moved by pitch and fine. Velocity brightens the hit. The lists only ever
  * grow at the end: a saved sound holds an index into them.
  */
 export const MODELS = ['string', 'harmonic', 'bar', 'membrane', 'plate', 'bell', 'tube', 'glass', 'bowl', 'gong', 'spring']
@@ -34,7 +34,10 @@ const PARAMS = [
   { key: 'hardness', group: 'exciter', label: 'hardness', min: 0, max: 1, def: 0.55 },
   { key: 'length', group: 'exciter', label: 'length', min: 0.001, max: 2, def: 0.02, log: true, unit: 's' },
   { key: 'position', group: 'exciter', label: 'position', min: 0.02, max: 0.5, def: 0.18 },
-  // what rings
+  // what rings, and at what pitch: every note moved by this much, so a sound with no notes
+  // written (played from steps, or fired by a rhythm machine) can sit at any pitch
+  { key: 'pitch', group: 'resonator', label: 'pitch', min: -36, max: 36, def: 0, unit: 'st', origin: 0 },
+  { key: 'fine', group: 'resonator', label: 'fine', min: -100, max: 100, def: 0, unit: 'ct', origin: 0 },
   { key: 'model', group: 'resonator', label: 'model', min: 0, max: MODELS.length - 1, def: 0, choices: MODELS },
   { key: 'decay', group: 'resonator', label: 'decay', min: 0.05, max: 20, def: 2.5, log: true, unit: 's' },
   { key: 'material', group: 'resonator', label: 'material', min: 0, max: 1, def: 0.45 },
@@ -256,7 +259,7 @@ class PhysicalProcessor extends LatticeInstrument {
   }
   noteOn(v, note, vel) {
     const k = this.k
-    v.f0 = 440 * 2 ** (((note >= 0 ? note : 48) - 69) / 12)
+    v.f0 = 440 * 2 ** (((note >= 0 ? note : 48) + k.pitch + k.fine / 100 - 69) / 12)
     v.vel = vel
     v.t = 0
     v.gateOpen = true
