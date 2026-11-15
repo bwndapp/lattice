@@ -115,7 +115,10 @@ browser slows this down when the Lattice tab is in the background; hits are not 
      "rms": 0.21, "peak": 0.74, "db": -13.6,
      "bands": {{"sub": 0.62, "bass": 0.71, "lowmid": 0.48, "mid": 0.44,
                "highmid": 0.37, "presence": 0.30, "air": 0.18}},
-     "centroid": 1840, "flux": 0.12, "spectrum": [0.31, 0.44, ...]}}
+     "centroid": 1840, "flux": 0.12, "spectrum": [0.31, 0.44, ...],
+     "wave": [0.0, 0.12, 0.31, ...],
+     "levels": {{"inst": {{"kick": 0.9, "hat": 0.0, "bass": 0.55}},
+                "node": {{"drums": 0.9, "bass": 0.55}}}}}}
 
 - playing, bpm, beats (per bar)
 - cycle (bars from the start, fractional), bar and beat (both counted from 1)
@@ -125,6 +128,13 @@ browser slows this down when the Lattice tab is in the background; hits are not 
 - centroid: brightness, Hz
 - flux: 0 ... 1, how much the spectrum rose since the last frame; spikes on every hit
 - spectrum: 16, 32 or 64 values 0 ... 1, log-spaced 20 Hz ... 20 kHz, low to high
+- wave: 128 values -1 ... 1, the master's waveform over about 21 ms, starting on a rising
+  zero crossing so a scope drawn from it holds still
+- levels: how loud each instrument (inst) and each part on the patch (node) is right now,
+  0 ... 1, keyed by name. Worked out from the notes, not measured: it jumps to the note's
+  velocity x gain when it's heard, holds while the note lasts, and falls away over about
+  0.15 s after. Everything that plays is always listed (0 while silent), so channels don't
+  come and go. A name used twice gets "#id" added.
 
 Bands and spectrum map -100 ... -10 dBFS onto 0 ... 1: silence is 0, a loud kick's low
 end is near 1.
@@ -175,6 +185,9 @@ picks up again when it comes back.
 
    (`energy`: a Constant CHOP with 7 channels; `hits`: a Table DAT.) For the spectrum,
    write `m['spectrum']` into a Script CHOP or a Table DAT and convert with DAT to CHOP.
+3. Waveform: write `m['wave']` into a Script CHOP (one channel, 128 samples) for a scope.
+   Levels: one Constant CHOP channel per name in `m['levels']['inst']`, so "bass" can
+   drive a scale, "kick" a flash, and so on.
 
 ## Notes
 

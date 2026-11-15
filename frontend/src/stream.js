@@ -16,7 +16,12 @@
  *                rms, peak (0 … 1, linear), db (rms in dBFS),
  *                bands { sub, bass, lowmid, mid, highmid, presence, air } (0 … 1),
  *                centroid (Hz: how bright), flux (0 … 1: how much changed since the last
- *                frame — spikes on every hit), spectrum [16, 32 or 64 × 0 … 1, 20 Hz – 20 kHz, log] }
+ *                frame — spikes on every hit), spectrum [16, 32 or 64 × 0 … 1, 20 Hz – 20 kHz, log],
+ *                wave [128 × -1 … 1: the master's waveform, starting on a rising zero
+ *                crossing so a scope drawn from it stands still],
+ *                levels { inst: { name: 0 … 1 }, node: { name: 0 … 1 } } — how loud each
+ *                instrument and each patch part is right now, from its notes: up on a hit
+ *                (velocity × gain), held while the note lasts, falling away after it }
  *   transport  play or stop: { t, playing, bpm, beats }
  *   status     (from the server) whether anyone's publishing: { live }
  *
@@ -43,7 +48,7 @@ export const subscribeStream = (fn) => { subs.add(fn); return () => subs.delete(
 export const streamState = () => state
 
 let track = 'scratch'
-let names = { nodes: new Map(), insts: new Map() }
+let names = { nodes: new Map(), insts: new Map(), patterns: new Set() }
 let transport = { playing: () => false, cycle: () => 0, cps: () => 0.5, beats: () => 4 }
 let ws = null
 let retry = 0
@@ -54,6 +59,11 @@ let tapped = null
 let time = null
 let freq = null
 let lastSpec = null
+const WAVE = 128 // points in a frame's waveform
+const WAVE_SPAN = 1024 // samples they're drawn from (about 21 ms at 48 kHz)
+const RELEASE = 0.15 // seconds a level takes to fall away once its note ends
+let sounding = [] // notes heard lately: { inst, node, from, to (epoch ms), amp }
+const players = new Set() // patch parts that have played a note: the ones levels list
 
 const storeKey = () => `lattice:stream:${track}`
 const readSaved = () => { try { return JSON.parse(localStorage.getItem(storeKey())) } catch { return null } }
@@ -96,7 +106,7 @@ export function setStreamProject(project) {
     const pattern = n.type === 'pattern' ? project.patterns?.find((p) => p.id === n.data?.patternId) : null
     nodes.set(n.id, n.data?.name || pattern?.name || n.type)
   }
-  names = { nodes, insts }
+  names = { nodes, insts, patterns: new Set((project?.nodes ?? []).filter((n) => n.type === 'pattern').map((n) => n.id)) }
   if (!project) return
   // the stream node: its settings, and taking it off the patch switches the stream off
   const node = project.nodes?.find((n) => n.type === 'stream')
@@ -187,6 +197,50 @@ export function streamHit(value, deadline, duration, cycle) {
     pan: round(Number(value.pan ?? 0.5)),
   }
   setTimeout(() => send(msg), Math.max(0, deadline) * 1000)
+  // for the levels: this note, from when it's heard to when it ends
+  const amp = Math.max(0, Math.min(1, Number(value.velocity ?? 1) * Number(value.gain ?? 1)))
+  if (amp > 0) {
+    if (value._n) players.add(value._n)
+    sounding.push({ inst: value._c ?? null, node: value._n ?? null, from: at, to: at + Math.max(0.03, Number(duration) || 0) * 1000, amp })
+    if (sounding.length > 512) sounding = sounding.slice(-256)
+  }
+}
+
+/** Each instrument's and part's level now, keyed by name (a name used twice gets its id). */
+function levels(now) {
+  const inst = new Map()
+  const node = new Map()
+  const keep = []
+  for (const n of sounding) {
+    if (now > n.to + RELEASE * 4000) continue // long gone
+    keep.push(n)
+    if (now < n.from) continue // not heard yet
+    const v = now <= n.to ? n.amp : n.amp * Math.exp(-(now - n.to) / (RELEASE * 1000))
+    if (n.inst) inst.set(n.inst, Math.max(inst.get(n.inst) ?? 0, v))
+    if (n.node) node.set(n.node, Math.max(node.get(n.node) ?? 0, v))
+  }
+  sounding = keep
+  const named = (heard, lookup, listed) => {
+    const out = {}
+    // everything that plays is listed, at 0 while silent, so a listener's channels stay put
+    for (const id of listed) if (lookup.has(id) && !heard.has(id)) heard.set(id, 0)
+    for (const [id, v] of heard) {
+      let k = lookup.get(id) || id
+      if (k in out) k = `${k}#${id}`
+      out[k] = round(v, 3)
+    }
+    return out
+  }
+  const parts = new Set([...names.patterns, ...players])
+  return { inst: named(inst, names.insts, names.insts.keys()), node: named(node, names.nodes, parts) }
+}
+
+/** A frame's waveform: WAVE points across WAVE_SPAN samples, from a rising zero crossing. */
+function waveform(t) {
+  let from = 0
+  for (let i = 1; i < t.length - WAVE_SPAN; i++) if (t[i - 1] < 0 && t[i] >= 0) { from = i; break }
+  const step = WAVE_SPAN / WAVE
+  return Array.from({ length: WAVE }, (_, i) => round(Math.max(-1, Math.min(1, t[from + Math.floor(i * step)] || 0)), 3))
 }
 
 /** Play or stop. */
@@ -265,7 +319,9 @@ function frame() {
       centroid: den > 0 ? Math.round(num / den) : 0,
       flux: round(Math.min(1, flux / (BINS / 8)), 3),
       spectrum,
+      wave: waveform(time),
     })
   }
+  msg.levels = levels(msg.t)
   send(msg)
 }
