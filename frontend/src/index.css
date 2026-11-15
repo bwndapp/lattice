@@ -1081,7 +1081,11 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
 .g-output .node-head { border-start-start-radius: calc(var(--node-radius) - 2px); border-start-end-radius: calc(var(--node-radius) - 2px); }
 .node-kind { font-family: var(--display); font-weight: 900; font-stretch: 112%; font-size: 13px; }
 .node-bus { font-size: 8px; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.5; border: 1px solid currentColor; padding: 0 2px; line-height: 1.4; }
-.node-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; opacity: 0.85; }
+.node-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; opacity: 0.85; min-height: 1.2em; cursor: text; }
+.node-name {
+  flex: 1; min-width: 0; font: inherit; font-size: 11px; color: var(--paper);
+  background: var(--canvas); border: 1px solid var(--acid); border-radius: 2px; padding: 0 0.3rem;
+}
 .node-btn { font: inherit; font-size: 10px; line-height: 1.5; color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 3px; padding: 0 0.32rem; cursor: var(--ring); opacity: 0.75; }
 .node-btn:hover { opacity: 1; }
 .node-btn.on { background: var(--canvas); color: var(--acid); border-color: var(--ink); opacity: 1; }

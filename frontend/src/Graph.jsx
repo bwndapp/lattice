@@ -568,6 +568,7 @@ function AbstractFace({ node }) {
 function StudioNode({ id, selected }) {
   const ctx = useContext(Ctx)
   const heldBy = useHolders('graph').get(id) // someone else has this one selected
+  const [naming, setNaming] = useState(false) // its name is being typed, in the head
   const node = ctx.project.nodes.find((n) => n.id === id)
   const updateInternals = useUpdateNodeInternals()
   const spec = node && NODE_TYPES[node.type]
@@ -577,6 +578,21 @@ function StudioNode({ id, selected }) {
   const slotKey = `${wires.map((w) => w.targetHandle).join(',')}|${(patternOf ? patternOf.channels : []).map((c) => c.id).join(',')}|${node && NODE_TYPES[node.type]?.abstract ? abstractParts(node).length : ''}`
   useEffect(() => { updateInternals(id) }, [id, slotKey, updateInternals])
   if (!node || !spec) return null
+
+  /**
+   * A name of its own, so two cubes or three racks aren't all just "cube" on wires, in the
+   * mixer and in automation. A pattern node's name is its pattern's, which the timeline
+   * shows too; anything else keeps it on the node. Clearing it goes back to the type.
+   */
+  const rename = (text) => {
+    setNaming(false)
+    const name = text.trim().slice(0, 40)
+    if (node.type === 'pattern') {
+      if (name && patternOf && name !== patternOf.name) ctx.onUpdateProject((p) => { const pt = p.patterns.find((x) => x.id === patternOf.id); if (pt) pt.name = name })
+    } else if (name !== (node.data.name ?? '')) {
+      ctx.updateNode(id, (d) => { if (name) d.name = name; else delete d.name })
+    }
+  }
 
   const multi = spec.inputs === 'many'
   const offMain = node?.data?.offMain ?? {}
@@ -610,7 +626,29 @@ function StudioNode({ id, selected }) {
         {BUS_NODES.has(node.type) && (
           <span className="node-bus" title="Runs on the bus: it works on everything mixed into it, after every per-note effect in the patch">bus</span>
         )}
-        <span className="node-title">{node.type === 'pattern' ? pattern?.name ?? 'no pattern' : node.data.name ?? ''}</span>
+        {naming ? (
+          <input
+            className="node-name nodrag"
+            autoFocus
+            maxLength={40}
+            defaultValue={node.type === 'pattern' ? pattern?.name ?? '' : node.data.name ?? ''}
+            placeholder={spec.label}
+            aria-label="Name"
+            onFocus={(e) => e.currentTarget.select()}
+            onBlur={(e) => rename(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              e.stopPropagation() // typing a name mustn't delete nodes or play notes
+              if (e.key === 'Enter') rename(e.currentTarget.value)
+              if (e.key === 'Escape') setNaming(false)
+            }}
+          />
+        ) : (
+          <span
+            className="node-title"
+            title="Double-click to rename"
+            onDoubleClick={(e) => { if (node.type !== 'pattern' || pattern) { e.stopPropagation(); setNaming(true) } }}
+          >{node.type === 'pattern' ? pattern?.name ?? 'no pattern' : node.data.name ?? ''}</span>
+        )}
         {!LISTENS.has(node.type) && (
           <button
             className={`node-btn nodrag ${soloing ? 'on' : ''}`}
@@ -2119,6 +2157,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
             onNodeDoubleClick={(e, n) => {
               // double-click a pattern node (not its controls) to open its rack
               const node = project.nodes.find((x) => x.id === n.id)
+              if (e.target.closest('.node-title, .node-name')) return // that's renaming it
               if (NODE_TYPES[node?.type]?.abstract && !e.target.closest('input, select, textarea, button')) return openAbstract(node.id)
               if (node?.type !== 'pattern' || e.target.closest('input, select, textarea, button')) return
               if (project.patterns.some((p) => p.id === node.data.patternId)) ctx.editPattern(node.data.patternId, e)
