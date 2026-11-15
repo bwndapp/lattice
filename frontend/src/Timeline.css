@@ -211,8 +211,9 @@
   overflow: hidden;
   padding: 0 0.5rem;
   color: var(--clip-ink, var(--well));
-  /* see-through a touch, as FL's clips: the grid shows faintly behind the pattern */
-  background: rgba(255, 255, 255, 0.16), color-mix(in srgb, var(--clip) 85%, transparent);
+  /* see-through a touch, as FL's clips: the grid shows faintly behind the pattern (one
+     colour: a list of plain colours isn't a background, and the browser drops the line) */
+  background: color-mix(in srgb, var(--clip) 85%, transparent);
   border: 1px solid var(--rim);
   border-radius: 3px;
   box-shadow: none;
