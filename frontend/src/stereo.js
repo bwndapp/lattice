@@ -9,6 +9,7 @@
  */
 import { getAudioContext, getSuperdoughAudioController } from '@strudel/webaudio'
 import { hasGesture } from './activation.js'
+import { makeSendEffect } from './fxbus.js'
 
 /**
  * The inserts that need to see the sound sample by sample, which only a worklet can do, so
@@ -482,6 +483,14 @@ export function declareBranch(list, from, to) {
   if (!list.inserts.has(to)) list.inserts.set(to, [])
 }
 
+/** What the latest generated code declared: inserts by bus, and where each bus plays into (for tests). */
+export function declaredRouting() {
+  return {
+    inserts: new Map([...declared].map(([o, list]) => [o, list.map((i) => ({ key: i.key, kind: i.kind }))])),
+    routes: new Map([...routed].map(([o, to]) => [o, new Map(to)])),
+  }
+}
+
 /** A bus that also plays to the speakers, though it's routed somewhere else as well. */
 export function declareSpeakers(list, orbit) {
   list.speakers.add(orbit)
@@ -937,6 +946,36 @@ const UNITS = {
         gone = true
         for (const audio of [input, output, node]) audio?.disconnect()
         node = null
+      },
+    }
+  },
+
+  /**
+   * A reverb or delay on a bus (graph.js spaceOnBus): the bus goes straight through, and the
+   * effect, fed from it at its mix, plays in on top, the way a send's return would — only
+   * here its tail stays on this bus.
+   */
+  sendfx(ac) {
+    const input = new GainNode(ac, { channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' })
+    const output = new GainNode(ac, { gain: 1, channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' })
+    input.connect(output)
+    let wet = null
+    let kind = null
+    return {
+      input,
+      output,
+      set(params) {
+        const k = params.kind === 'delay' ? 'delay' : 'reverb'
+        if (wet && kind === k) { wet.set(params); return }
+        wet?.destroy()
+        wet = makeSendEffect(k, ac, params)
+        kind = k
+        input.connect(wet.input)
+        wet.output.connect(output)
+      },
+      dispose() {
+        try { input.disconnect(); output.disconnect() } catch { /* gone */ }
+        wet?.destroy()
       },
     }
   },

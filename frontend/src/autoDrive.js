@@ -33,7 +33,8 @@ export function appParamValue(app, value) {
 }
 function setAppParam(app, v) {
   const patch = { [app.param]: v }
-  if (app.where === 'fx') setFxParams(app.key, patch)
+  // a reverb or delay is a send, or an insert when it's on a bus (graph.js spaceOnBus)
+  if (app.where === 'fx') { setFxParams(app.key, patch); setInsertParams(app.key, patch) }
   else if (app.where === 'engine') setEngineParams(app.key, patch)
   else setInsertParams(app.key, patch)
 }

@@ -42,6 +42,20 @@ const K = (ctx, d, key, fmt = tidy) => ctx?.autoOf?.(key) ?? fmt(d[key])
  * [effect key, the knob that sets how much]. An automated amount rides on each note;
  * otherwise the effect's input turns with the knob, ringing tails included.
  */
+/**
+ * A reverb or delay on a sound that's already on a bus — after a mixer bus, or on one branch
+ * of a split one — works on that bus, as an insert, rather than as a send on each note. Its
+ * tail stays on that path instead of going back to where the notes started (which is before
+ * the split, so the dry branch would hear it too), and the notes are left as they are, so
+ * two branches that come back together still play them once. Returns null when the sound
+ * isn't on a bus, or the mix follows automation (which is read at each note): a send, then.
+ */
+function spaceOnBus(x, ctx, key, kind, params, mixKey = 'mix') {
+  if (ctx?.route?.orbit == null || isAuto(ctx, mixKey)) return null
+  ctx.declare(ctx.route.orbit, key, 'sendfx', { ...params, kind })
+  return x
+}
+
 function sendCode(x, ctx, d, sends) {
   if (!sends.length) return x
   return fmapWith(x, ctx, d, sends.map(([, k]) => k), (val) => `{ ...v, fxsends: [...(v.fxsends ?? []), ${sends.map(([key, k]) => `['${key}', ${isAuto(ctx, k) ? val(k) : 1}]`).join(', ')}] }`)
@@ -208,6 +222,12 @@ export const NODE_TYPES = {
     // delay nodes for every setting
     code: (d, [x], ctx) => {
       const sends = []
+      // on a bus, both are inserts on it (see spaceOnBus)
+      if (ctx?.route?.orbit != null && !isAuto(ctx, 'room') && !isAuto(ctx, 'delay')) {
+        if (d.room > 0) spaceOnBus(x, ctx, `rv_${ctx.nodeId}`, 'reverb', { ...REVERB_DEFAULTS, mix: d.room }, 'room')
+        if (d.delay > 0) spaceOnBus(x, ctx, `dl_${ctx.nodeId}`, 'delay', { ...DELAY_DEFAULTS, mix: d.delay, seconds: d.delaytime * beatSeconds(ctx) * (ctx?.beats || 4) }, 'delay')
+        return x
+      }
       if (d.room > 0 || isAuto(ctx, 'room')) {
         ctx?.declareFx?.(`rv_${ctx.nodeId}`, 'reverb', { ...REVERB_DEFAULTS, mix: d.room, automatedMix: isAuto(ctx, 'room') })
         sends.push([`rv_${ctx?.nodeId}`, 'room'])
@@ -234,7 +254,10 @@ export const NODE_TYPES = {
     code: (d, [x], ctx) => {
       if (!(d.mix > 0) && !isAuto(ctx, 'mix')) return x
       const key = `rv_${ctx?.nodeId}`
-      ctx?.declareFx?.(key, 'reverb', { mix: d.mix, size: d.size, predelay: d.predelay, tone: d.tone, lowcut: d.lowcut, width: d.width, automatedMix: isAuto(ctx, 'mix') })
+      const params = { mix: d.mix, size: d.size, predelay: d.predelay, tone: d.tone, lowcut: d.lowcut, width: d.width }
+      const onBus = spaceOnBus(x, ctx, key, 'reverb', params)
+      if (onBus != null) return onBus
+      ctx?.declareFx?.(key, 'reverb', { ...params, automatedMix: isAuto(ctx, 'mix') })
       return sendCode(x, ctx, d, [[key, 'mix']])
     },
   },
@@ -252,7 +275,10 @@ export const NODE_TYPES = {
       if (!(d.mix > 0) && !isAuto(ctx, 'mix')) return x
       const key = `dl_${ctx?.nodeId}`
       const seconds = (DELAY_DIVISIONS[d.time] ?? 0.75) * beatSeconds(ctx)
-      ctx?.declareFx?.(key, 'delay', { mix: d.mix, seconds, feedback: d.feedback, tone: d.tone, mode: d.mode, automatedMix: isAuto(ctx, 'mix') })
+      const params = { mix: d.mix, seconds, feedback: d.feedback, tone: d.tone, mode: d.mode }
+      const onBus = spaceOnBus(x, ctx, key, 'delay', params)
+      if (onBus != null) return onBus
+      ctx?.declareFx?.(key, 'delay', { ...params, automatedMix: isAuto(ctx, 'mix') })
       return sendCode(x, ctx, d, [[key, 'mix']])
     },
   },
@@ -718,6 +744,8 @@ function stereoCode(kind, params) {
   code.insert = { kind, params }
   return code
 }
+/** Reverb and delay: sends on each note, or inserts on a bus when the sound is on one (spaceOnBus). */
+const SPACE_TYPES = new Set(['reverb', 'delay', 'space'])
 const STEREO_TYPES = new Set(['haas', 'widener', 'utility', 'bus', 'eq3', 'saturator', 'distortion', 'clipper', 'softclip', 'compressor', 'limiter',
   'filter', 'djfilter', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi', 'bitcrush', 'granulizer', 'pitch', 'freqshift'])
 
@@ -1126,7 +1154,7 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     // to a dry and a wet path), these inserts get a branch of their own, fed from it, so
     // they only touch the sound on this wire.
     const feeder = wires.find((w) => exprs.get(w.source))?.source
-    if (route.orbit != null && (STEREO_TYPES.has(node.type) || node.type === 'fxrack') && node.type !== 'bus' && feeder && fanout(feeder) > 1) {
+    if (route.orbit != null && (STEREO_TYPES.has(node.type) || SPACE_TYPES.has(node.type) || node.type === 'fxrack') && node.type !== 'bus' && feeder && fanout(feeder) > 1) {
       const branch = stereoOrbit(`branch:${id}`)
       declareBranch(inserts, route.orbit, branch)
       route.orbit = branch

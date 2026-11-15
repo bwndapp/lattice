@@ -142,7 +142,7 @@ export async function renderProject(project, { from = 0, to = 4, tail = 2, sampl
         const bar = from + t * cps
         for (const a of moving) {
           const patch = { [a.app.param]: a.value(bar) * (a.app.scale ?? 1) }
-          if (a.app.where === 'fx') setFxParams(a.app.key, patch)
+          if (a.app.where === 'fx') { setFxParams(a.app.key, patch); setInsertParams(a.app.key, patch) } // a send, or an insert on a bus
           else if (a.app.where === 'engine') setEngineParams(a.app.key, patch)
           else setInsertParams(a.app.key, patch)
         }
