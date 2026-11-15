@@ -24,6 +24,23 @@
  */
 export const NEWS = [
   {
+    id: '2026-11-15-2',
+    date: '2026-11-15',
+    version: '0.14.0',
+    title: 'Granulizer, evolving Fibonacci and tighter routing',
+    items: [
+      '**Granulizer**: chop any sound into grains and spray them back — tiny buzzing grains to long smears, with freeze, feedback, glide, chaos and pitch steps',
+      '**Fibonacci evolves**: switch it on and the loops change as the song plays, on Fibonacci timing, so the groove keeps growing',
+      '**Tune Physical**: pitch and fine knobs, so a sound fired by a rhythm machine can sit at any note',
+      '**Rename any node**: double-click its title — two cubes or racks no longer both say “cube” in the mixer',
+      '**Ctrl + M** mutes or unmutes the selected nodes',
+      '**Routing does what the wires say**: a reverb or delay after a split stays on its branch, sidechains keep each sound’s effects, and split paths joined again play once',
+      '**Automation clips** on the timeline are coloured again',
+      '**Stream**: a waveform and a level for each instrument, for TouchDesigner and the like',
+      '**Smoother playback** on busy songs',
+    ],
+  },
+  {
     id: '2026-11-15',
     date: '2026-11-15',
     version: '0.13.0',
