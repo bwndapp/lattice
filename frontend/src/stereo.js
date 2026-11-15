@@ -96,12 +96,16 @@ registerProcessor('lattice-crush', CrushProcessor)
 class GrainProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
-      { name: 'size', defaultValue: 0.08, minValue: 0.005, maxValue: 0.5, automationRate: 'k-rate' },
-      { name: 'density', defaultValue: 20, minValue: 1, maxValue: 120, automationRate: 'k-rate' },
+      { name: 'size', defaultValue: 0.08, minValue: 0.001, maxValue: 1, automationRate: 'k-rate' },
+      { name: 'density', defaultValue: 20, minValue: 1, maxValue: 1000, automationRate: 'k-rate' },
       { name: 'position', defaultValue: 0.1, minValue: 0, maxValue: 3, automationRate: 'k-rate' },
-      { name: 'spray', defaultValue: 0.05, minValue: 0, maxValue: 1.5, automationRate: 'k-rate' },
-      { name: 'pitch', defaultValue: 0, minValue: -24, maxValue: 24, automationRate: 'k-rate' },
-      { name: 'pitchRand', defaultValue: 0, minValue: 0, maxValue: 24, automationRate: 'k-rate' },
+      { name: 'spray', defaultValue: 0.05, minValue: 0, maxValue: 3, automationRate: 'k-rate' },
+      { name: 'pitch', defaultValue: 0, minValue: -48, maxValue: 48, automationRate: 'k-rate' },
+      { name: 'pitchRand', defaultValue: 0, minValue: 0, maxValue: 48, automationRate: 'k-rate' },
+      { name: 'steps', defaultValue: 0, minValue: 0, maxValue: 3, automationRate: 'k-rate' }, // random pitch: free, semitones, fifths, octaves
+      { name: 'glide', defaultValue: 0, minValue: -48, maxValue: 48, automationRate: 'k-rate' }, // semitones each grain slides over its life
+      { name: 'chaos', defaultValue: 0.25, minValue: 0, maxValue: 1, automationRate: 'k-rate' }, // 0 grains on a clock (a buzz) … 1 anywhere
+      { name: 'shape', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' }, // 0 smooth window … 1 hard edges
       { name: 'reverse', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
       { name: 'spread', defaultValue: 0.5, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
       { name: 'freeze', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
@@ -130,20 +134,29 @@ class GrainProcessor extends AudioWorkletProcessor {
   }
   spawn(P) {
     if (this.grains.length >= 96) return
-    const len = Math.max(32, Math.round(P.size * sampleRate))
-    const semis = P.pitch + (Math.random() * 2 - 1) * P.pitchRand
+    const len = Math.max(16, Math.round(P.size * sampleRate))
+    // a random pitch, snapped to semitones, fifths or octaves when asked: harmonic clouds
+    let wobble = (Math.random() * 2 - 1) * P.pitchRand
+    const step = [0, 1, 7, 12][Math.round(P.steps)] || 0
+    if (step) wobble = Math.round(wobble / step) * step
+    const semis = P.pitch + wobble
     const back = Math.random() < P.reverse
     const rate = Math.pow(2, semis / 12) * (back ? -1 : 1)
+    // glide: the grain's speed changes by this ratio, a little each sample, over its life
+    const slide = Math.pow(2, P.glide / 12 / len)
+    const fastest = Math.abs(rate) * Math.max(1, Math.pow(2, P.glide / 12))
     // how far behind the record head it starts: never so close that a fast grain runs
     // past the present into tape that hasn't been written yet
-    const reach = len * Math.max(1, Math.abs(rate)) + 64
+    const reach = len * Math.max(1, fastest) + 64
     const delay = Math.min(this.size - reach - 64, Math.max(reach, (P.position + Math.random() * P.spray) * sampleRate))
     const start = this.at - delay + (back ? len * Math.abs(rate) : 0)
     const pan = 0.5 + (Math.random() - 0.5) * P.spread
     // overlapping grains add up: each is turned down by how many were meant to sound with
     // it, fixed when it starts, so pulling density down mid-cloud doesn't spike
-    const g = 1.41 / Math.sqrt(Math.max(1, P.density * P.size))
-    this.grains.push({ pos: start, rate, len, age: 0, l: g * Math.cos(pan * Math.PI / 2), r: g * Math.sin(pan * Math.PI / 2) })
+    const g = 1.41 / Math.sqrt(Math.min(96, Math.max(1, P.density * P.size)))
+    // hard edges: a window that's flat but for a few samples at each end (clicks and crunch)
+    const edge = Math.max(2, Math.min(len / 2, 48))
+    this.grains.push({ pos: start, rate, slide, len, age: 0, hard: P.shape, edge, l: g * Math.cos(pan * Math.PI / 2), r: g * Math.sin(pan * Math.PI / 2) })
   }
   process(inputs, outputs, params) {
     const input = inputs[0]
@@ -158,15 +171,17 @@ class GrainProcessor extends AudioWorkletProcessor {
     const every = sampleRate / Math.max(0.5, P.density)
     const fb = P.feedback
     for (let i = 0; i < n; i++) {
-      if (--this.next <= 0) { this.spawn(P); this.next += every * (0.75 + Math.random() * 0.5) }
+      if (--this.next <= 0) { this.spawn(P); this.next += every * (1 + (Math.random() * 2 - 1) * P.chaos) }
       let wl = 0
       let wr = 0
       for (let g = this.grains.length - 1; g >= 0; g--) {
         const gr = this.grains[g]
-        const w = 0.5 - 0.5 * Math.cos((2 * Math.PI * gr.age) / gr.len) // a Hann window: no clicks at the ends
+        let w = 0.5 - 0.5 * Math.cos((2 * Math.PI * gr.age) / gr.len) // a Hann window: no clicks at the ends
+        if (gr.hard > 0) w += (Math.min(1, gr.age / gr.edge, (gr.len - gr.age) / gr.edge) - w) * gr.hard
         wl += this.read(0, gr.pos) * w * gr.l
         wr += this.read(1, gr.pos) * w * gr.r
         gr.pos += gr.rate
+        gr.rate *= gr.slide
         if (++gr.age >= gr.len) this.grains.splice(g, 1)
       }
       // a soft ceiling: near-straight at normal levels, a swell rather than a blast when
@@ -685,6 +700,9 @@ export function setInsertParams(key, patch) {
  * the module, then in line. `shape` turns the node's knobs into the processor's parameters,
  * and whatever was set while it was still loading is applied the moment it arrives.
  */
+/** The granulizer's pitch steps, as its node offers them (graph.js) and its worklet counts them. */
+export const GRAIN_STEPS = ['free', 'semitones', 'fifths', 'octaves']
+
 function workletInsert(ac, name, shape) {
   const input = new GainNode(ac, { channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' })
   const output = new GainNode(ac, { gain: 1 })
@@ -984,12 +1002,16 @@ const UNITS = {
   grain(ac) {
     const n = (v, lo, hi, def) => Math.min(hi, Math.max(lo, Number.isFinite(+v) ? +v : def))
     return workletInsert(ac, 'lattice-grain', (p) => ({
-      size: n(p.size, 0.005, 0.5, 0.08),
-      density: n(p.density, 1, 120, 20),
+      size: n(p.size, 0.001, 1, 0.08),
+      density: n(p.density, 1, 1000, 20),
       position: n(p.position, 0, 3, 0.1),
-      spray: n(p.spray, 0, 1.5, 0.05),
-      pitch: n(p.pitch, -24, 24, 0),
-      pitchRand: n(p.pitchRand, 0, 24, 0),
+      spray: n(p.spray, 0, 3, 0.05),
+      pitch: n(p.pitch, -48, 48, 0),
+      pitchRand: n(p.pitchRand, 0, 48, 0),
+      steps: Math.max(0, GRAIN_STEPS.indexOf(p.steps)),
+      glide: n(p.glide, -48, 48, 0),
+      chaos: n(p.chaos, 0, 1, 0.25),
+      shape: n(p.shape, 0, 1, 0),
       reverse: n(p.reverse, 0, 1, 0),
       spread: n(p.spread, 0, 1, 0.5),
       freeze: n(p.freeze, 0, 1, 0),

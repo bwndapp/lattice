@@ -14,7 +14,7 @@
  */
 
 import { parse } from 'acorn'
-import { STEREO_ORBIT_BASE, beginInserts, commitInserts, declareBranch, declareInsert, declareRoute, declareSpeakers } from './stereo'
+import { GRAIN_STEPS, STEREO_ORBIT_BASE, beginInserts, commitInserts, declareBranch, declareInsert, declareRoute, declareSpeakers } from './stereo'
 import { abstractBuild, abstractNodeTypes, abstractOf, abstractParts, packState } from './abstract/index.js'
 import { DELAY_DEFAULTS, DELAY_DIVISIONS, GLOBAL_DELAY, GLOBAL_REVERB, REVERB_DEFAULTS, beginFx, commitFx, declareFx } from './fxbus.js'
 
@@ -384,19 +384,23 @@ export const NODE_TYPES = {
     group: 'effect', cat: 'mod', label: 'granulizer', blurb: 'Chop the sound into tiny grains and spray them back: smears, clouds, glitches',
     inputs: 1,
     params: [
-      { key: 'size', type: 'knob', label: 'size', min: 0.005, max: 0.5, def: 0.08, log: true, unit: 's' },
-      { key: 'density', type: 'knob', label: 'density', min: 1, max: 120, def: 20, log: true, unit: 'hz' },
+      { key: 'size', type: 'knob', label: 'size', min: 0.001, max: 1, def: 0.08, log: true, unit: 's' },
+      { key: 'density', type: 'knob', label: 'density', min: 1, max: 1000, def: 20, log: true, unit: 'hz' },
       { key: 'position', type: 'knob', label: 'position', min: 0, max: 3, def: 0.1, unit: 's' },
-      { key: 'spray', type: 'knob', label: 'spray', min: 0, max: 1.5, def: 0.05, unit: 's' },
-      { key: 'pitch', type: 'knob', label: 'pitch', min: -24, max: 24, def: 0, unit: 'st', origin: 0 },
-      { key: 'pitchRand', type: 'knob', label: 'pitch rand', min: 0, max: 24, def: 0, unit: 'st' },
+      { key: 'spray', type: 'knob', label: 'spray', min: 0, max: 3, def: 0.05, unit: 's' },
+      { key: 'pitch', type: 'knob', label: 'pitch', min: -48, max: 48, def: 0, unit: 'st', origin: 0 },
+      { key: 'pitchRand', type: 'knob', label: 'pitch rand', min: 0, max: 48, def: 0, unit: 'st' },
+      { key: 'steps', type: 'select', label: 'steps', options: GRAIN_STEPS, def: 'free' },
+      { key: 'glide', type: 'knob', label: 'glide', min: -48, max: 48, def: 0, unit: 'st', origin: 0 },
+      { key: 'chaos', type: 'knob', label: 'chaos', min: 0, max: 1, def: 0.25 },
+      { key: 'shape', type: 'knob', label: 'shape', min: 0, max: 1, def: 0 },
       { key: 'reverse', type: 'knob', label: 'reverse', min: 0, max: 1, def: 0 },
       { key: 'spread', type: 'knob', label: 'spread', min: 0, max: 1, def: 0.5 },
       { key: 'freeze', type: 'knob', label: 'freeze', min: 0, max: 1, def: 0 },
       { key: 'feedback', type: 'knob', label: 'feedback', min: 0, max: 0.95, def: 0 },
       { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 0.6 },
     ],
-    code: stereoCode('grain', (d) => ({ size: d.size, density: d.density, position: d.position, spray: d.spray, pitch: d.pitch, pitchRand: d.pitchRand, reverse: d.reverse, spread: d.spread, freeze: d.freeze, feedback: d.feedback, mix: d.mix })),
+    code: stereoCode('grain', (d) => ({ size: d.size, density: d.density, position: d.position, spray: d.spray, pitch: d.pitch, pitchRand: d.pitchRand, steps: d.steps, glide: d.glide, chaos: d.chaos, shape: d.shape, reverse: d.reverse, spread: d.spread, freeze: d.freeze, feedback: d.feedback, mix: d.mix })),
   },
   bitcrush: {
     group: 'effect', cat: 'drive', label: 'bitcrush', blurb: 'Fewer bits, lower rate: crunchy and digital',
