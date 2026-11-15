@@ -878,7 +878,7 @@ function StudioNode({ id, selected }) {
           <button type="button" className="stream-open nodrag" onClick={ctx.addStream}
             title="Stream what you hear as data (every hit, the spectrum, the energy) to TouchDesigner, Max or an agent">stream →</button>
         )}
-        {node.type === 'stream' && <StreamPanel />}
+        {node.type === 'stream' && <StreamPanel audio={node.data?.audio === 'on'} />}
       </div>
 
       {!LISTENS.has(node.type) && !outInList && <Handle type="source" position={Position.Right} id="out" className="port out" />}

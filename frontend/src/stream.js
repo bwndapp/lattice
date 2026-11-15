@@ -23,6 +23,11 @@
  *                instrument and each patch part is right now, from its notes: up on a hit
  *                (velocity × gain), held while the note lasts, falling away after it }
  *   transport  play or stop: { t, playing, bpm, beats }
+ *   audio-format  before any sound, when audio is on: { rate, channels }
+ *
+ * Audio (the stream node's `audio`, off unless asked): the master as heard, lossless —
+ * 16-bit little-endian PCM, interleaved, in binary frames of about 40 ms up the same
+ * socket. The server hands it on as an endless WAV and as raw frames (src/api/stream.py).
  *   status     (from the server) whether anyone's publishing: { live }
  *
  * Spectrum and bands are dB mapped -100 … -10 dBFS onto 0 … 1, so a quiet hiss is near 0
@@ -35,6 +40,7 @@ import { currentA4, midiOf } from './tuning.js'
 
 let RATE = 60 // the stream node's settings: frames a second, and spectrum bins
 let BINS = 64
+let AUDIO = false // and whether the sound goes too
 const BANDS = [['sub', 20, 60], ['bass', 60, 250], ['lowmid', 250, 500], ['mid', 500, 2000], ['highmid', 2000, 4000], ['presence', 4000, 6000], ['air', 6000, 20000]]
 const FLOOR = -100
 const CEIL = -10
@@ -79,6 +85,11 @@ export function streamGuideUrl(key = state.key) {
   return key ? `${window.location.origin}${API_ROOT}/stream/${key}/guide` : ''
 }
 
+/** The sound, as an endless WAV (when the stream node's audio is on). */
+export function streamAudioUrl(key = state.key) {
+  return key ? `${window.location.origin}${API_ROOT}/stream/${key}/audio.wav` : ''
+}
+
 /** Where to listen: the websocket URL for this stream. */
 export function streamUrl(key = state.key) {
   if (!key) return ''
@@ -113,6 +124,8 @@ export function setStreamProject(project) {
   if (!node) { if (state.on) stop(true); return }
   const rate = Number(node.data?.rate) || 60
   BINS = Number(node.data?.bins) || 64
+  const audio = node.data?.audio === 'on'
+  if (audio !== AUDIO) { AUDIO = audio; if (!audio) untapAudio() }
   if (rate !== RATE) {
     RATE = rate
     if (frameTimer) { clearInterval(frameTimer); frameTimer = setInterval(frame, 1000 / RATE) }
@@ -144,6 +157,7 @@ function start(save = false) {
 }
 
 function stop(save = false) {
+  untapAudio()
   clearTimeout(retryTimer)
   clearInterval(frameTimer)
   frameTimer = null
@@ -158,7 +172,8 @@ function connect() {
   if (!state.on || !state.key) return
   const sock = new WebSocket(streamUrl().replace(`/stream/${state.key}`, `/stream/pub/${state.key}`))
   ws = sock
-  sock.onopen = () => { retry = 0; set({ connected: true }); send({ type: 'transport', t: Date.now(), playing: !!transport.playing(), bpm: bpm(), beats: transport.beats() }) }
+  sock.binaryType = 'arraybuffer'
+  sock.onopen = () => { retry = 0; sentFormat = false; set({ connected: true }); send({ type: 'transport', t: Date.now(), playing: !!transport.playing(), bpm: bpm(), beats: transport.beats() }) }
   sock.onmessage = (e) => {
     try { const m = JSON.parse(e.data); if (m.type === 'listeners') set({ listeners: m.n }) } catch { /* not ours */ }
   }
@@ -254,11 +269,16 @@ export function streamTransport(playing) {
 function tap() {
   const ac = getAudioContext()
   const master = getSuperdoughAudioController()?.output?.destinationGain
-  if (!ac || !master) return null
+  // made before the page may make sound (the stream comes back on as a track opens, before
+  // any click), an analyser can stay deaf for good: wait until the audio is running
+  if (!ac || !master || ac.state !== 'running') return null
   if (analyser && tapped === master && analyser.context === ac) return analyser
-  try { tapped?.disconnect(analyser) } catch { /* gone with its context */ }
+  try { tapped?.disconnect(analyser); analyser?.disconnect() } catch { /* gone with its context */ }
   analyser = new AnalyserNode(ac, { fftSize: 4096, smoothingTimeConstant: 0.5, minDecibels: FLOOR, maxDecibels: CEIL })
   master.connect(analyser)
+  // an analyser nobody pulls from isn't run, and reads silence for ever: a silent wire on
+  // to the speakers keeps it listening
+  analyser.connect(new GainNode(ac, { gain: 0 })).connect(ac.destination)
   tapped = master
   time = new Float32Array(analyser.fftSize)
   freq = new Float32Array(analyser.frequencyBinCount)
@@ -324,4 +344,85 @@ function frame() {
   }
   msg.levels = levels(msg.t)
   send(msg)
+  if (AUDIO) tapAudio()
+}
+
+
+// ── the sound itself ──────────────────────────────────────────────────────
+
+/*
+ * An audio-thread tap on what's heard (after the master's safety, master.js): it turns
+ * each block into 16-bit samples, gathers about 40 ms, and hands them over; they go up the
+ * socket as they come. A socket already backed up skips a chunk rather than queueing
+ * seconds of the past.
+ */
+const TAP = `
+class StreamTap extends AudioWorkletProcessor {
+  constructor() { super(); this.n = 0; this.buf = new Int16Array(1920 * 2) }
+  process(inputs) {
+    const input = inputs[0]
+    const L = input && input[0]
+    const R = input && (input[1] || input[0])
+    for (let i = 0; i < 128; i++) {
+      const l = L ? L[i] : 0
+      const r = R ? R[i] : 0
+      this.buf[this.n++] = Math.max(-32768, Math.min(32767, Math.round(l * 32767)))
+      this.buf[this.n++] = Math.max(-32768, Math.min(32767, Math.round(r * 32767)))
+      if (this.n >= this.buf.length) {
+        this.port.postMessage(this.buf.buffer, [this.buf.buffer])
+        this.buf = new Int16Array(1920 * 2)
+        this.n = 0
+      }
+    }
+    return true
+  }
+}
+registerProcessor('lattice-stream-tap', StreamTap)
+`
+const tapLoaded = new WeakMap() // audio context → the module being added to it
+let tapNode = null
+let tapFrom = null
+let tapSink = null
+let sentFormat = false
+const BACKLOG = 512 * 1024 // bytes waiting on the socket past which a chunk is skipped
+
+function tapAudio() {
+  let ac, heard
+  try {
+    ac = getAudioContext()
+    const gain = getSuperdoughAudioController()?.output?.destinationGain
+    heard = gain?.__heard ?? gain
+  } catch { return }
+  if (!ac?.audioWorklet || !heard || ac.state !== 'running') return
+  if (tapNode && tapFrom === heard && tapNode.context === ac) {
+    if (!sentFormat && state.connected) { sentFormat = true; send({ type: 'audio-format', rate: ac.sampleRate, channels: 2 }) }
+    return
+  }
+  untapAudio()
+  tapFrom = heard
+  if (!tapLoaded.has(ac)) tapLoaded.set(ac, ac.audioWorklet.addModule(URL.createObjectURL(new Blob([TAP], { type: 'text/javascript' }))))
+  tapLoaded.get(ac).then(() => {
+    if (!AUDIO || !state.on || tapFrom !== heard || tapNode) return
+    const node = new AudioWorkletNode(ac, 'lattice-stream-tap', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1], channelCount: 2, channelCountMode: 'explicit' })
+    node.port.onmessage = (e) => {
+      if (ws?.readyState !== WebSocket.OPEN || ws.bufferedAmount > BACKLOG) return
+      if (!sentFormat) { sentFormat = true; send({ type: 'audio-format', rate: ac.sampleRate, channels: 2 }) }
+      ws.send(e.data)
+    }
+    // a node nobody pulls from doesn't run: a silent wire on to the speakers keeps it going
+    tapSink = new GainNode(ac, { gain: 0 })
+    heard.connect(node)
+    node.connect(tapSink).connect(ac.destination)
+    tapNode = node
+  }).catch((err) => console.warn('[stream] no audio tap', err))
+}
+
+function untapAudio() {
+  try { tapFrom?.disconnect(tapNode) } catch { /* gone with its context */ }
+  try { tapNode?.disconnect(); tapSink?.disconnect() } catch { /* gone */ }
+  if (tapNode) tapNode.port.onmessage = null
+  tapNode = null
+  tapFrom = null
+  tapSink = null
+  sentFormat = false
 }

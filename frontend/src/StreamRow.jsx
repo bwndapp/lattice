@@ -1,5 +1,5 @@
 import { useState, useSyncExternalStore } from 'react'
-import { newStreamLink, streamGuideUrl, streamState, streamUrl, subscribeStream, toggleStream } from './stream.js'
+import { newStreamLink, streamAudioUrl, streamGuideUrl, streamState, streamUrl, subscribeStream, toggleStream } from './stream.js'
 import './StreamRow.css'
 
 /** One address with a copy button. */
@@ -24,9 +24,9 @@ function Link({ label, url, open = false, note }) {
 /**
  * The stream node's face: on/off, who's listening, where to listen, and the guide — one
  * page that explains every message, made to hand to an agent (or a person) as it is.
- * Its two settings (frames a second, spectrum bins) are ordinary params above this.
+ * Its settings (frames a second, spectrum bins, audio on or off) are ordinary params above this.
  */
-export default function StreamPanel() {
+export default function StreamPanel({ audio = false }) {
   const s = useSyncExternalStore(subscribeStream, streamState)
   const status = !s.on ? 'off' : !s.connected ? 'connecting…' : s.listeners ? `${s.listeners} listening` : 'live · nobody listening yet'
   return (
@@ -42,6 +42,7 @@ export default function StreamPanel() {
       {s.on && (
         <>
           <Link label="listen" url={streamUrl(s.key)} note="a websocket: TouchDesigner's WebSocket DAT, Max, Python…" />
+          {audio && <Link label="audio" url={streamAudioUrl(s.key)} note="the sound, lossless: an endless WAV for VLC, ffmpeg, OBS (raw frames too: see the guide)" />}
           <Link label="guide" url={streamGuideUrl(s.key)} open note="everything it sends, how to use it: give this to an agent" />
           <p className="stream-sends"><code>hit</code> every sound · <code>frame</code> spectrum, bands, energy, beat · <code>transport</code> play / stop</p>
           <button type="button" className="stream-new" onClick={newStreamLink} title="Anyone with the old link stops receiving">new link</button>

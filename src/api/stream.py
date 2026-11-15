@@ -5,8 +5,11 @@ The browser playing the track publishes; anything else listens. The server only 
 keeps nothing, parses nothing, and a listener that can't keep up loses frames instead of
 holding up the others.
 
-    publish   ws  /api/stream/pub/{key}      the browser (one at a time: a new one takes over)
+    publish   ws  /api/stream/pub/{key}      the browser (one at a time: a new one takes over);
+                                             text frames are data, binary frames audio
     listen    ws  /api/stream/{key}          anyone holding the key, as many as like
+    audio     GET /api/stream/{key}/audio.wav   the sound itself, as an endless WAV
+              ws  /api/stream/{key}/audio       the same, as raw PCM frames
     look      GET /api/stream/{key}/status   is anyone publishing, how many listening
     read      GET /api/stream/{key}/guide    everything above, as one page to hand an agent
 
@@ -18,20 +21,26 @@ see frontend/src/stream.js for what's in them.
 import asyncio
 import json
 import re
+import struct
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 
 router = APIRouter()
 
 KEY = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
 QUEUE = 240  # frames a listener may fall behind by (about four seconds) before it starts losing them
+AUDIO_QUEUE = 48  # audio chunks (about 40 ms each) a listener may fall behind by: two seconds
 
 
 class Room:
     def __init__(self):
         self.pub: WebSocket | None = None
         self.subs: dict[WebSocket, asyncio.Queue] = {}
+        # the sound: 16-bit little-endian PCM, interleaved, at whatever rate the browser runs
+        self.audio_subs: dict[object, asyncio.Queue] = {}
+        self.fmt = {"rate": 48000, "channels": 2, "bits": 16}
+        self.fmt_known = asyncio.Event()
 
 
 rooms: dict[str, Room] = {}
@@ -45,7 +54,7 @@ def _room(key: str) -> Room:
 
 def _tidy(key: str):
     room = rooms.get(key)
-    if room and room.pub is None and not room.subs:
+    if room and room.pub is None and not room.subs and not room.audio_subs:
         rooms.pop(key, None)
 
 
@@ -59,19 +68,69 @@ def _say(room: Room, text: str):
         q.put_nowait(text)
 
 
+def _pour(room: Room, chunk: bytes):
+    for q in room.audio_subs.values():
+        if q.full():
+            try:
+                q.get_nowait()  # behind: drop the oldest, so it stays near now
+            except asyncio.QueueEmpty:
+                pass
+        q.put_nowait(chunk)
+
+
+def _wav_header(fmt: dict) -> bytes:
+    """A WAV header for a stream with no end: the sizes say 'as long as it goes'."""
+    ch, rate, bits = fmt["channels"], fmt["rate"], fmt["bits"]
+    block = ch * bits // 8
+    return (b"RIFF" + struct.pack("<I", 0xFFFFFFFF) + b"WAVE"
+            + b"fmt " + struct.pack("<IHHIIHH", 16, 1, ch, rate, rate * block, block, bits)
+            + b"data" + struct.pack("<I", 0xFFFFFFFF))
+
+
 @router.get("/{key}/status")
 async def status(key: str):
     room = rooms.get(key) if KEY.match(key) else None
-    return {"live": bool(room and room.pub), "listeners": len(room.subs) if room else 0}
+    return {
+        "live": bool(room and room.pub),
+        "listeners": len(room.subs) if room else 0,
+        "audio": bool(room and room.fmt_known.is_set() and room.pub),
+        "audioListeners": len(room.audio_subs) if room else 0,
+    }
+
+
+@router.get("/{key}/audio.wav")
+async def audio_wav(key: str):
+    """The sound as one endless WAV: open it in VLC, ffmpeg, OBS, a browser's <audio>."""
+    room = _room(key)
+    try:
+        await asyncio.wait_for(room.fmt_known.wait(), timeout=3)
+    except asyncio.TimeoutError:
+        pass  # nobody's sending sound yet: start with the usual format, sound arrives when it does
+    q: asyncio.Queue = asyncio.Queue(maxsize=AUDIO_QUEUE)
+    token = object()
+    room.audio_subs[token] = q
+
+    async def body():
+        try:
+            yield _wav_header(room.fmt)
+            while True:
+                yield await q.get()
+        finally:
+            room.audio_subs.pop(token, None)
+            _tidy(key)
+
+    return StreamingResponse(body(), media_type="audio/wav", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
 
 GUIDE = """# Lattice stream
 
 Live data from a track playing in Lattice (a browser music studio): every sound as it
-starts, plus the master output's spectrum and energy many times a second. It's data, not
-audio: JSON text messages over a websocket.
+starts, plus the master output's spectrum and energy many times a second, as JSON text
+messages over a websocket. The sound itself is here too, lossless, when the stream node's
+`audio` setting is on: see Audio below.
 
 Status right now: {status}
+Audio right now: {audio}
 
 ## Connect
 
@@ -150,6 +209,54 @@ end is near 1.
 live false: Lattice stopped streaming (switched off, tab closed). Stay connected; it
 picks up again when it comes back.
 
+## Audio: the sound itself
+
+Lossless: 16-bit PCM, stereo, at the browser's rate (usually 48000 Hz), exactly what the
+master output plays (after its safety limiter). Only while the stream node's `audio`
+setting is on, and only while Lattice is open and streaming. About 1.5 Mbit/s.
+
+### As an endless WAV over HTTP (simplest)
+
+    {http}/audio.wav
+
+Open it like any audio URL: it starts with a WAV header that says "no end" and keeps
+going. Allow a second or so of buffering; a slow listener skips ahead rather than falling
+behind.
+
+    ffplay -fflags nobuffer {http}/audio.wav            # listen
+    ffmpeg -i {http}/audio.wav -c copy take.wav         # record
+    vlc {http}/audio.wav                                 # listen
+    OBS: Media Source, untick "Local File", input = the URL above
+
+### As raw PCM over a websocket (for code)
+
+    {ws}/audio
+
+First a text frame: {{"type": "audio-format", "encoding": "s16le", "rate": 48000,
+"channels": 2, "live": true}}. Then binary frames, each about 40 ms of interleaved samples
+(L R L R …), little-endian signed 16-bit. Divide by 32768 for -1 ... 1.
+
+    import asyncio, json, websockets, numpy as np, sounddevice as sd
+
+    async def main():
+        async with websockets.connect("{ws}/audio") as ws:
+            fmt = json.loads(await ws.recv())
+            out = sd.OutputStream(samplerate=fmt["rate"], channels=fmt["channels"], dtype="int16")
+            out.start()
+            async for chunk in ws:
+                out.write(np.frombuffer(chunk, dtype="<i2").reshape(-1, fmt["channels"]))
+
+    asyncio.run(main())
+
+### TouchDesigner
+
+The cleanest, lowest-latency way to get Lattice's sound into TouchDesigner is a virtual
+audio device: route the browser's output to BlackHole (Mac) or VB-Cable (Windows) and read
+it with an Audio Device In CHOP. Use this stream's hits and frames alongside it for the
+exact events. To pull the sound over the network instead (Lattice on another machine), run
+ffmpeg or the Python above on the TouchDesigner machine and play it into that same
+virtual device.
+
 ## Python
 
     import asyncio, json, websockets
@@ -208,7 +315,9 @@ async def guide(key: str, request: Request):
     path = request.url.path[: -len("/guide")]
     room = rooms.get(key)
     status = "live" if room and room.pub else "not streaming at the moment (switch it on in Lattice)"
+    audio = "on" if room and room.pub and room.fmt_known.is_set() else "off (set the stream node's audio to on)"
     return GUIDE.format(
+        audio=audio,
         ws=f"{'wss' if proto == 'https' else 'ws'}://{host}{path}",
         http=f"{proto}://{host}{path}",
         status=status,
@@ -232,7 +341,24 @@ async def publish(ws: WebSocket, key: str):
     await ws.send_text(json.dumps({"type": "listeners", "n": len(room.subs)}))
     try:
         while True:
-            text = await ws.receive_text()
+            msg = await ws.receive()
+            if msg.get("type") == "websocket.disconnect":
+                break
+            if msg.get("bytes") is not None:
+                if room.pub is ws:
+                    _pour(room, msg["bytes"])
+                continue
+            text = msg.get("text")
+            if text is None:
+                continue
+            if '"audio-format"' in text[:64]:
+                # what the sound is, before any of it: kept for whoever opens it later
+                try:
+                    f = json.loads(text)
+                    room.fmt = {"rate": int(f["rate"]), "channels": int(f["channels"]), "bits": 16}
+                    room.fmt_known.set()
+                except (ValueError, KeyError, TypeError):
+                    pass
             _say(room, text)
     except (WebSocketDisconnect, RuntimeError):
         pass
@@ -240,6 +366,36 @@ async def publish(ws: WebSocket, key: str):
         if room.pub is ws:
             room.pub = None
             _say(room, json.dumps({"type": "status", "live": False}))
+        _tidy(key)
+
+
+@router.websocket("/{key}/audio")
+async def listen_audio(ws: WebSocket, key: str):
+    """The sound as raw PCM: a text frame saying its format, then binary frames of it."""
+    if not KEY.match(key):
+        await ws.close(code=4404)
+        return
+    await ws.accept()
+    room = _room(key)
+    q: asyncio.Queue = asyncio.Queue(maxsize=AUDIO_QUEUE)
+    room.audio_subs[ws] = q
+    await ws.send_text(json.dumps({"type": "audio-format", "encoding": "s16le", **{k: room.fmt[k] for k in ("rate", "channels")}, "live": room.pub is not None}))
+
+    async def pump():
+        while True:
+            await ws.send_bytes(await q.get())
+
+    async def drain():
+        while True:
+            await ws.receive()
+
+    tasks = [asyncio.create_task(pump()), asyncio.create_task(drain())]
+    try:
+        await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        for t in tasks:
+            t.cancel()
+        room.audio_subs.pop(ws, None)
         _tidy(key)
 
 

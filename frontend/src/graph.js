@@ -680,6 +680,8 @@ export const NODE_TYPES = {
     params: [
       { key: 'rate', type: 'select', label: 'frames/s', options: ['15', '30', '60'], def: '60' },
       { key: 'bins', type: 'select', label: 'spectrum', options: ['16', '32', '64'], def: '64' },
+      // the sound itself, lossless (about 1.5 Mbit/s): off unless asked
+      { key: 'audio', type: 'select', label: 'audio', options: ['off', 'on'], def: 'off' },
     ],
     code: () => null,
   },

@@ -34,6 +34,7 @@ function guard(output) {
   into.connect(shaper)
   shaper.connect(ac.destination)
   gain.__guarded = true
+  gain.__heard = shaper // the last thing before the speakers: what's heard, for the stream to tap
 }
 
 /** Put the safety on a Strudel audio controller's output (and keep it there). */
