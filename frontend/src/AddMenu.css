@@ -165,9 +165,12 @@
   border: 1px solid var(--muted);
   border-radius: 50%;
   cursor: var(--ring);
-  opacity: 0.85;
+  opacity: 0;
+  pointer-events: none;
   transition: opacity 0.12s, color 0.12s, border-color 0.12s;
 }
-.wire-add:hover, .wire-add:focus-visible { opacity: 1; color: var(--ink); background: var(--acid); border-color: var(--acid); outline: none; }
+/* only on the wire under the pointer, or the selected one (WireEdge.jsx) */
+.wire-add.shown { opacity: 0.9; pointer-events: all; }
+.wire-add:hover, .wire-add:focus-visible { opacity: 1; pointer-events: all; color: var(--ink); background: var(--acid); border-color: var(--acid); outline: none; }
 @media (prefers-reduced-motion: reduce) { .wire-add { transition: none; } }
 .wire-add.small { width: 16px; height: 16px; font-size: 12px; }

@@ -60,21 +60,45 @@ function useSag(sourceX, sourceY, targetX, targetY) {
   return sag
 }
 
+const BACK = 40 // a wire whose end is less than this right of its start runs back round
+
 /**
- * A wire with a small + in the middle: click it to add a node into this wire. React Flow's
- * bezier gives the shape; the sag pulls its middle down so the wire has some weight in it.
+ * A wire's path, and where its middle is (for the +). Forwards it's an S that leaves its
+ * port sideways and arrives sideways, with the sag (if any) pulling its middle down: two
+ * curves through a low middle, as one curve bent enough to hang tips both ends off at an
+ * angle. Backwards (into a node to its left) it doesn't loop through everything between:
+ * it turns down out of its port, runs back underneath along one level, and turns up into
+ * the input — the way you'd dress a cable round a rack.
  */
-export function WireEdge({ id, sourceX, sourceY, targetX, targetY, data, style, markerEnd, interactionWidth }) {
-  const pull = data?.tension ?? 1
+function wirePath(sx, sy, tx, ty, sag) {
+  if (tx < sx + BACK) {
+    const r = 46
+    const low = Math.max(sy, ty) + 64 + sag * 0.5
+    const path = `M${sx},${sy} C${sx + r},${sy} ${sx + r},${low} ${sx},${low} L${tx},${low} C${tx - r},${low} ${tx - r},${ty} ${tx},${ty}`
+    return { path, midX: (sx + tx) / 2, midY: low }
+  }
+  const midX = (sx + tx) / 2
+  const midY = (sy + ty) / 2 + sag
+  const reach = Math.max(34, (tx - sx) * 0.28)
+  const path = `M${sx},${sy} C${sx + reach},${sy} ${midX - reach},${midY} ${midX},${midY}`
+    + ` C${midX + reach},${midY} ${tx - reach},${ty} ${tx},${ty}`
+  return { path, midX, midY }
+}
+
+/**
+ * A wire, taut unless the slack says otherwise. Its + (add a node into it) only shows while
+ * the pointer is on the wire or it's selected, so a busy patch isn't covered in circles.
+ */
+export function WireEdge({ id, sourceX, sourceY, targetX, targetY, data, style, markerEnd, interactionWidth, selected }) {
+  const pull = data?.tension ?? 0
   const sag = useSag(sourceX, sourceY, targetX, targetY) * pull
-  // Two curves through a low middle, rather than one bowed line. A wire has to leave its
-  // port sideways and arrive at the next one sideways — the dip belongs in between, which
-  // one curve can't do: bending it enough to hang tips both ends off at an angle.
-  const midX = (sourceX + targetX) / 2
-  const midY = (sourceY + targetY) / 2 + sag
-  const reach = Math.max(34, Math.abs(targetX - sourceX) * 0.28 + Math.max(0, sourceX - targetX) * 0.5)
-  const path = `M${sourceX},${sourceY} C${sourceX + reach},${sourceY} ${midX - reach},${midY} ${midX},${midY}`
-    + ` C${midX + reach},${midY} ${targetX - reach},${targetY} ${targetX},${targetY}`
+  const { path, midX, midY } = wirePath(sourceX, sourceY, targetX, targetY, sag)
+  // hovering: on the wire, or on its + (a moment's grace to get from one to the other)
+  const [hover, setHover] = useState(false)
+  const leave = useRef(0)
+  const enter = () => { clearTimeout(leave.current); setHover(true) }
+  const exit = () => { clearTimeout(leave.current); leave.current = setTimeout(() => setHover(false), 220) }
+  useEffect(() => () => clearTimeout(leave.current), [])
   const length = Math.hypot(targetX - sourceX, targetY - sourceY)
   const small = length < 90
   const lift = length < 36 ? 17 : 0 // no room between the dots: sit just above the wire instead
@@ -85,13 +109,16 @@ export function WireEdge({ id, sourceX, sourceY, targetX, targetY, data, style, 
       <path className="wire-casing" d={path} style={style} />
       <BaseEdge id={id} path={path} style={style} markerEnd={markerEnd} interactionWidth={interactionWidth} />
       <path className="wire-sheen" d={path} style={style} />
+      <path className="wire-hover" d={path} onPointerEnter={enter} onPointerLeave={exit} />
       {!data?.closed && <EdgeLabelRenderer>
         <button
           type="button"
-          className={`wire-add nodrag nopan ${small ? 'small' : ''}`}
+          className={`wire-add nodrag nopan ${small ? 'small' : ''} ${hover || selected ? 'shown' : ''}`}
           style={{ transform: `translate(-50%, -50%) translate(${midX}px, ${midY - lift}px)` }}
           title="Add a node into this wire"
           aria-label="Add a node into this wire"
+          onPointerEnter={enter}
+          onPointerLeave={exit}
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation()

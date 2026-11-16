@@ -1005,6 +1005,12 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
 
 
 .graph-canvas .wire-casing, .graph-canvas .wire-sheen { fill: none; pointer-events: none; stroke-linecap: round; }
+.graph-canvas .wire-hover { fill: none; stroke: transparent; stroke-width: 18; pointer-events: stroke; }
+/* a node selected: its wires come forward, the rest step back */
+.graph-canvas .react-flow__edge { transition: opacity 0.15s ease; }
+.graph-canvas .react-flow__edge.faded { opacity: 0.16; }
+.graph-canvas .react-flow__edge.focus .react-flow__edge-path { stroke: color-mix(in srgb, var(--wire, var(--paper)) 75%, var(--paper)); }
+.graph-canvas .react-flow__edge.focus .wire-sheen { opacity: 0.7; }
 .graph-canvas .wire-casing {
   stroke: var(--canvas);
   stroke-width: 6;

@@ -1599,11 +1599,15 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
   const nodesRef = useRef(nodes)
   nodesRef.current = nodes
 
-  // how much weight the wires hang with; 0 pulls them taut
+  // how much weight the wires hang with; 0 (the default) pulls them taut. A new key: the
+  // old one was written for everyone at the old default, so it can't tell a choice apart
   const [tension, setTension] = useState(() => {
-    try { const v = Number(localStorage.getItem('lattice:wire-slack')); return Number.isFinite(v) && v >= 0 ? v : 1 } catch { return 1 }
+    try { const raw = localStorage.getItem('lattice:wire-slack:v2'); const v = Number(raw); return raw !== null && Number.isFinite(v) && v >= 0 ? v : 0 } catch { return 0 }
   })
-  useEffect(() => { try { localStorage.setItem('lattice:wire-slack', String(tension)) } catch { /* storage unavailable */ } }, [tension])
+  useEffect(() => { try { localStorage.setItem('lattice:wire-slack:v2', String(tension)) } catch { /* storage unavailable */ } }, [tension])
+  // the selected nodes, as a string so dragging them doesn't redraw every wire: their wires
+  // light up and the rest step back
+  const focusIds = nodes.filter((n) => n.selected && n.type !== 'frame').map((n) => n.id).join(' ')
   const [spliceTarget, setSpliceTarget] = useState(null) // wire a dragged node would drop into
   const [detaching, setDetaching] = useState(null) // wire being pulled off its input (for its look)
   const [knifeHits, setKnifeHits] = useState(() => new Set()) // wires the knife is across now
@@ -1623,10 +1627,10 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
     data: { tension, closed: isTrigger(e) || machines.split(' ').includes(e.target) },
     style: wireTint.get(e.id) ? { '--wire': wireTint.get(e.id) } : undefined,
     animated: started,
-    className: `${isTrigger(e) ? 'trigger ' : ''}${e.id === spliceTarget || knifeHits.has(e.id) ? 'splice-target' : e.id === detaching ? 'detaching' : ''}`,
+    className: `${isTrigger(e) ? 'trigger ' : ''}${focusIds ? (focusIds.split(' ').some((id) => id === e.source || id === e.target) ? 'focus ' : 'faded ') : ''}${e.id === spliceTarget || knifeHits.has(e.id) ? 'splice-target' : e.id === detaching ? 'detaching' : ''}`,
     domAttributes: { 'data-touches': `${e.source} ${e.target}`, ...(isTrigger(e) || machines.split(' ').includes(e.target) ? { 'data-closed': '' } : {}) },
     ...routeEdge(e, frameHosts),
-  })), [project.edges, machines, started, spliceTarget, detaching, tension, wireTint, frameHosts, knifeHits])
+  })), [project.edges, machines, started, spliceTarget, detaching, tension, wireTint, frameHosts, knifeHits, focusIds])
   const [edges, setEdges] = useState(rfEdges)
   useEffect(() => setEdges((prev) => {
     const sel = new Set(prev.filter((e) => e.selected).map((e) => e.id))
@@ -2227,7 +2231,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
               <span className="flow-dot" aria-hidden />
               flow
             </button>
-            <label className="wire-slack nodrag" data-tip="How much weight the wires hang with">
+            <label className="wire-slack nodrag" data-tip="How much weight the wires hang with (left: taut)">
               <span>slack</span>
               <input
                 type="range"
