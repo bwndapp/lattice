@@ -298,7 +298,7 @@ export function KnobReadout({ control, text }) {
   return createPortal(<div className="knob-readout" style={{ left: r.left + r.width / 2, top: r.top }} aria-hidden>{text}</div>, document.body)
 }
 
-/** The small field for typing a value, over the control (double-click, or Enter). */
+/** The small field for typing a value, over the control (Enter). */
 export function KnobTypeInput({ control, label }) {
   if (control.typing === null) return null
   return (

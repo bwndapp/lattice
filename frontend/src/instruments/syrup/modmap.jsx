@@ -101,8 +101,8 @@ const AMOUNT = { key: 'amt', label: 'amount', min: -1, max: 1, def: 0, unit: 'bi
 
 /**
  * Turning a route's amount (useKnobControl): its ring round a knob, alt-dragging the knob,
- * or the slider in its row. Drag either way (shift: finer), scroll, double-click to type,
- * ctrl/cmd-click or Home for none. `extra` adds to the options.
+ * or the slider in its row. Drag either way (shift: finer), scroll, Enter to type,
+ * double-click, ctrl/cmd-click or Home for none. `extra` adds to the options.
  */
 export function useAmountControl(ui, route, extra = null) {
   const amt = route?.amt ?? 0
@@ -206,12 +206,12 @@ function AmountSlider({ ui, route, name }) {
         aria-valuemax={1}
         aria-valuenow={amt}
         aria-valuetext={formatValue(amt, AMOUNT)}
-        title={`Amount · drag or scroll · double-click to type · ${RESET_HINT.replace(' to reset', '')} for none`}
+        title="Amount · drag or scroll · Enter to type · double-click for none"
         onPointerEnter={control.onPointerEnter}
         onPointerLeave={control.onPointerLeave}
         onPointerMove={control.onPointerMove}
         onPointerDown={control.onPointerDown}
-        onDoubleClick={() => control.startTyping()}
+        onDoubleClick={() => control.reset()}
         onKeyDown={(e) => {
           if (e.key === 'Enter') { e.preventDefault(); control.startTyping() }
           else control.onKeyDown(e)

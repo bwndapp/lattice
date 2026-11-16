@@ -3,14 +3,14 @@ import { useAutoLive, useAutomation } from './autoLive.js'
 import { KnobMenu } from './KnobMenu.jsx'
 import { knobBridge } from './knobBridge.js'
 import { clamp, formatValue, fromPos, parseKnobValue, readoutText, snapValue, stepOf, toPos } from './knobMath.js'
-import { KnobReadout, KnobTypeInput, RESET_HINT, useKnobControl } from './useKnobControl.jsx'
+import { KnobReadout, KnobTypeInput, useKnobControl } from './useKnobControl.jsx'
 
 // the readout lives with the rest of the knob arithmetic, where it's tested
 export { formatValue, gainDb, readoutText } from './knobMath.js'
 
 /**
- * A knob: drag up or down (shift for fine), scroll, arrow keys, double-click (or
- * Enter) to type a value, ctrl/cmd-click, alt-click or Home to reset (see useKnobControl).
+ * A knob: drag up or down (shift for fine), scroll, arrow keys, Enter to type a value,
+ * double-click, ctrl/cmd-click, alt-click or Home to reset (see useKnobControl).
  * With a `target` (see automation.js), right-click offers to automate it; an automated knob
  * wears a mark and, while the song plays, turns with its curve, and the sound follows a
  * turn at once where the app can move it (knobBridge.js).
@@ -63,7 +63,7 @@ export default function Knob({ def, value, onChange, target = null }) {
   return (
     <div
       className={`knob ${changed ? 'changed' : ''} ${automated ? 'automated' : ''} ${following !== undefined ? 'following' : ''}`}
-      title={`${def.label}: ${formatValue(shown, def)}${automated ? ' · automated in the song' : ''} · drag, scroll, double-click to type · ${RESET_HINT}${target && automation ? ' · right-click to automate' : ''}`}
+      title={`${def.label}: ${formatValue(shown, def)}${automated ? ' · automated in the song' : ''} · drag, scroll, Enter to type · double-click to reset${target && automation ? ' · right-click to automate' : ''}`}
       onContextMenu={(e) => {
         if (!target || !automation) return
         e.preventDefault()
@@ -88,7 +88,7 @@ export default function Knob({ def, value, onChange, target = null }) {
         onPointerLeave={control.onPointerLeave}
         onPointerMove={control.onPointerMove}
         onPointerDown={control.onPointerDown}
-        onDoubleClick={(e) => { e.stopPropagation(); control.startTyping() }}
+        onDoubleClick={(e) => { e.stopPropagation(); control.reset() }}
         onKeyDown={(e) => {
           if (e.key === 'Enter') { e.preventDefault(); control.startTyping() }
           else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); control.reset() }
