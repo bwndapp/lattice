@@ -213,8 +213,8 @@ export default function Browser({ user, login, activeId, refreshKey, onPick, onN
         ) : error ? (
           <div className="b-empty"><p>Couldn’t load tracks: {error}</p></div>
         ) : tracks === null ? (
-          <ul className="b-grid" aria-busy="true">
-            {Array.from({ length: 6 }, (_, i) => <li key={i} className="b-card skeleton" aria-hidden />)}
+          <ul className="b-list" aria-busy="true">
+            {Array.from({ length: 8 }, (_, i) => <li key={i} className="b-row skeleton" aria-hidden />)}
           </ul>
         ) : tracks.length === 0 ? (
           <div className="b-empty">
@@ -222,61 +222,68 @@ export default function Browser({ user, login, activeId, refreshKey, onPick, onN
             {!q && view !== 'liked' && <button type="button" className="b-button primary" onClick={() => onNew('blank')}>New track</button>}
           </div>
         ) : (
-          <ul className="b-grid">
+          /* one row a track: play it, see its shape, who made it, and how it's doing */
+          <ul className="b-list">
+            <li className="b-row b-row-head" aria-hidden>
+              <span />
+              <span />
+              <span>track</span>
+              <span className="b-col-tags">tags</span>
+              <span className="b-num">bpm</span>
+              <span className="b-num">♥</span>
+              <span className="b-num">opens</span>
+              <span className="b-num">updated</span>
+            </li>
             {tracks.map((t) => (
-              <li key={t.id} className={`b-card ${t.id === activeId ? 'active' : ''}`}>
-                <LiveOnTrack trackId={t.id} />
-                <div className="b-art">
-                  <TrackMap shape={t.shape} />
-                  <button
-                    type="button"
-                    className={`b-play ${playing === t.id ? 'on' : ''}`}
-                    aria-label={`${playing === t.id ? 'Stop' : 'Play'} ${t.title}`}
-                    title={playing === t.id ? 'Stop' : 'Play'}
-                    onClick={() => hear(t)}
-                  >
-                    <svg viewBox="0 0 16 16" aria-hidden>
-                      {playing === t.id
-                        ? <rect x="4.5" y="4.5" width="7" height="7" rx="1.2" />
-                        : <path d="M5 3.5v9l8-4.5z" />}
-                    </svg>
-                  </button>
-                  {t.shape?.bpm ? <span className="b-art-tag">{t.shape.bpm}<i>bpm</i></span> : null}
-                </div>
-                <div className="b-card-body">
-                  <button type="button" className="b-card-title" onClick={() => setPage(t.id)} title={t.title}>{t.title}</button>
-                  <button
-                    type="button"
-                    className="b-card-author"
-                    onClick={() => narrow({ author: t.author_id, name: t.author })}
-                    data-tip={`Everything ${t.author} has shared`}
-                  ><Photo src={faceUrl(t.face)} className="b-card-photo" />{t.author}</button>
-                  {t.tags?.length > 0 && (
-                    <div className="b-card-tags">
-                      {t.tags.slice(0, 4).map((tag) => (
-                        <button key={tag} type="button" className="b-card-tag" onClick={() => byTag(tag)} data-tip={`Tracks tagged ${tag}`}>#{tag}</button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="b-card-meta">
-                  <span className={t.liked ? 'liked' : ''}>♥ {t.likes}</span>
-                  <span>{t.plays} open{t.plays === 1 ? '' : 's'}</span>
-                  <span className="b-card-time">{timeAgo(t.updated_at)}</span>
-                  {view === 'mine' && t.visibility !== 'public' && <span className="b-tag">{t.visibility}</span>}
-                  {t.id === activeId && <span className="b-tag on">open</span>}
-                  {t.parent && (
+              <li key={t.id} className={`b-row ${t.id === activeId ? 'active' : ''} ${playing === t.id ? 'playing' : ''}`}>
+                <button
+                  type="button"
+                  className={`b-play ${playing === t.id ? 'on' : ''}`}
+                  aria-label={`${playing === t.id ? 'Stop' : 'Play'} ${t.title}`}
+                  title={playing === t.id ? 'Stop' : 'Play'}
+                  onClick={() => hear(t)}
+                >
+                  <svg viewBox="0 0 16 16" aria-hidden>
+                    {playing === t.id
+                      ? <rect x="4.5" y="4.5" width="7" height="7" rx="1.2" />
+                      : <path d="M5 3.5v9l8-4.5z" />}
+                  </svg>
+                </button>
+                <div className="b-art"><TrackMap shape={t.shape} /></div>
+                <div className="b-row-name">
+                  <button type="button" className="b-row-title" onClick={() => setPage(t.id)} title={t.title}>{t.title}</button>
+                  <span className="b-row-by">
                     <button
                       type="button"
-                      className="b-card-from"
-                      onClick={() => setPage(t.parent.id)}
-                      data-tip={`Opens ${t.parent.title} by ${t.parent.author}, the track this branched off`}
-                    ><BranchMark />branch of <b>{t.parent.title}</b></button>
-                  )}
-                  {t.forked_from && !t.parent && (
-                    <span className="b-tag quiet" data-tip="Branched off a track that isn't shared"><BranchMark />branch</span>
-                  )}
+                      className="b-row-author"
+                      onClick={() => narrow({ author: t.author_id, name: t.author })}
+                      data-tip={`Everything ${t.author} has shared`}
+                    ><Photo src={faceUrl(t.face)} className="b-row-photo" />{t.author}</button>
+                    <LiveOnTrack trackId={t.id} />
+                    {view === 'mine' && t.visibility !== 'public' && <span className="b-tag">{t.visibility === 'unlisted' ? 'link only' : t.visibility}</span>}
+                    {t.id === activeId && <span className="b-tag on">open</span>}
+                    {t.parent && (
+                      <button
+                        type="button"
+                        className="b-row-from"
+                        onClick={() => setPage(t.parent.id)}
+                        data-tip={`Opens ${t.parent.title} by ${t.parent.author}, the track this branched off`}
+                      ><BranchMark />{t.parent.title}</button>
+                    )}
+                    {t.forked_from && !t.parent && (
+                      <span className="b-tag quiet" data-tip="Branched off a track that isn't shared"><BranchMark />branch</span>
+                    )}
+                  </span>
                 </div>
+                <div className="b-col-tags">
+                  {(t.tags ?? []).slice(0, 3).map((tag) => (
+                    <button key={tag} type="button" className="b-row-tag" onClick={() => byTag(tag)} data-tip={`Tracks tagged ${tag}`}>#{tag}</button>
+                  ))}
+                </div>
+                <span className="b-num">{t.shape?.bpm ?? '—'}</span>
+                <span className={`b-num ${t.liked ? 'liked' : ''}`}>{t.likes}</span>
+                <span className="b-num">{t.plays}</span>
+                <span className="b-num b-time">{timeAgo(t.updated_at)}</span>
               </li>
             ))}
           </ul>

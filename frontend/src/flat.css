@@ -34,7 +34,7 @@ html body { background: var(--shell); -webkit-font-smoothing: antialiased; }
 html :focus-visible { outline: 1px solid var(--acid); outline-offset: 1px; }
 
 /* nothing lifts or squashes: state is shown, not acted out */
-html .btn:active, html .b-button:active, html .b-card:hover, html .b-play:active { transform: none; }
+html .btn:active, html .b-button:active, html .b-play:active { transform: none; }
 
 /* the frame */
 html .bar { background: var(--shell); border-bottom: 1px solid var(--line); }

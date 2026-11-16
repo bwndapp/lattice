@@ -253,17 +253,22 @@ body.dragging, body.dragging * { user-select: none !important; -webkit-user-sele
  * rather than the most recently added thing pushing the save button off the end. In order
  * of what you'd miss least: the loop's bar numbers (the button still says loop), the
  * meter (it's in the project and rarely changed mid-song), the bar.beat clock (the
- * timeline's playhead says the same thing), then the octave (− and = still move it).
+ * timeline's playhead says the same thing), then the octave (− and = still move it). The
+ * share button (0.15) took about 80px, so each of these leaves that much sooner.
  */
-@media (max-width: 1600px) { .bar .loop-range { display: none; } }
-@media (max-width: 1460px) { .bar .lcd.meter { display: none; } }
-@media (max-width: 1320px) { .bar .position.clock { display: none; } }
-@media (max-width: 1180px) { .bar .lcd.oct { display: none; } }
-@media (max-width: 1080px) { .bar .btn.loop { display: none; } }
+@media (max-width: 1680px) { .bar .loop-range { display: none; } }
+@media (max-width: 1540px) { .bar .lcd.meter, .bar .lcd.tuning { display: none; } } /* A4: set once a track, like the meter */
+@media (max-width: 1400px) { .share-word { display: none; } }
+@media (max-width: 1540px) { .bar .track-heading, .bar .bar-like { display: none; } } /* someone else's track: who made it is on its page */
+.btn.share-btn { display: inline-flex; align-items: center; gap: 0.4rem; flex: none; }
+.btn.share-btn svg { display: block; }
+@media (max-width: 1400px) { .bar .position.clock { display: none; } }
+@media (max-width: 1260px) { .bar .lcd.oct { display: none; } }
+@media (max-width: 1160px) { .bar .btn.loop { display: none; } }
 .btn.browse-btn { display: inline-flex; align-items: center; gap: 0.4rem; flex: none; font-weight: 700; }
 .btn.browse-btn svg { display: block; color: var(--muted); }
 .btn.browse-btn:hover svg, .btn.browse-btn.on svg { color: inherit; }
-@media (max-width: 1180px) { .browse-word { display: none; } }
+@media (max-width: 1260px) { .browse-word { display: none; } }
 /* the finishing move, so it carries the accent: a tint that fills in on hover */
 .btn.bar-export {
   display: inline-flex; align-items: center; gap: 0.4rem; flex: none;
@@ -276,7 +281,7 @@ body.dragging, body.dragging * { user-select: none !important; -webkit-user-sele
 .btn.bar-export svg { display: block; }
 .btn.bar-export:hover:not(:disabled) { color: var(--ink); background: var(--acid); border-color: var(--acid); }
 .btn.bar-export:disabled { color: var(--muted); border-color: var(--line); background: transparent; opacity: 0.55; }
-@media (max-width: 1180px) { .export-word { display: none; } }
+@media (max-width: 1260px) { .export-word { display: none; } }
 
 .canvas-switch {
   --cs-w: 7.4rem; /* each option */

@@ -10,6 +10,7 @@ import { ensureAudio, preloadPattern, silenceNow } from './audio'
 import { prebake } from '@strudel/repl/prebake.mjs'
 import { useUser } from './bwnd'
 import { api, clearDraft, readDraft, timeAgo, trackUrl, writeDraft } from './api'
+import SharePanel from './SharePanel.jsx'
 import Browser from './Browser.jsx'
 import Graph from './Graph.jsx'
 import Timeline from './Timeline.jsx'
@@ -390,15 +391,6 @@ export default function App() {
   const [jam, setJam] = useState({ mode: 'open', key: null })
   useEffect(() => onJam(setJam), [])
   const inviteLink = useCallback(() => `${trackUrl(track.id)}?join=${encodeURIComponent(jam.key ?? '')}`, [track, jam])
-  const copyInvite = useCallback(async (minted = false) => {
-    const url = inviteLink()
-    try {
-      await navigator.clipboard.writeText(url)
-      flash(minted ? 'New invite link copied — the old one has stopped working' : 'Invite link copied')
-    } catch {
-      window.prompt('Copy this invite link', url)
-    }
-  }, [inviteLink, flash])
 
   const [openToAll, setOpenToAll] = useState(true)
   const wasAllowed = useRef(null)
@@ -1273,13 +1265,23 @@ export default function App() {
     }
   }
 
-  const share = async () => {
-    const url = trackUrl(track.id)
+  // sharing lives in one panel (SharePanel.jsx): who can open it, the link, the jam
+  const [showShare, setShowShare] = useState(false)
+  const share = () => setShowShare(true)
+  /**
+   * Who can open it, applied the moment it's picked: only the setting is saved, never the
+   * patch. A track that isn't saved yet keeps it for when it is.
+   */
+  const applyVisibility = async (v) => {
+    setVisibility(v)
+    if (isNew || !isOwner || !track || track.visibility === v) return
     try {
-      await navigator.clipboard.writeText(url)
-      flash(track.visibility === 'private' ? 'Link copied — but this track is private, only you can open it' : 'Link copied')
-    } catch {
-      window.prompt('Copy this link', url)
+      const t = await api(`/tracks/${track.id}`, { method: 'PUT', body: { visibility: v } })
+      setTrack((was) => (was ? { ...was, visibility: t.visibility } : was))
+      flash(v === 'private' ? 'Only you can open it now' : v === 'public' ? 'Listed in explore' : 'Anyone with the link can open it')
+    } catch (e) {
+      setVisibility(track.visibility)
+      flash(`Couldn't change who can open it: ${e.message}`)
     }
   }
 
@@ -1458,7 +1460,7 @@ export default function App() {
         (project || code) && { label: view === 'code' ? 'close the code' : 'view the code', shortcut: 'ctrl/cmd J', onSelect: toggleView, hint: 'The whole track as Strudel code' },
         codeChanged && track && !isOwner && { label: 'undo my changes', onSelect: () => revert() },
         track && 'line',
-        track && { label: 'copy link', onSelect: () => share() },
+        (track || isNew) && { label: 'share…', onSelect: () => share(), hint: 'Who can open it, its link, and jamming on it together' },
         'line',
         { label: 'what’s new…', onSelect: () => setShowNews(true), hint: 'Everything that has changed, newest first' },
         { label: 'about lattice…', onSelect: () => setShowAbout(true), hint: 'What this is, and where its source lives' },
@@ -1478,39 +1480,7 @@ export default function App() {
       items: [
         { heading: 'name' },
         { custom: <input className="tm-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="untitled" maxLength={80} aria-label="Track title" /> },
-        { heading: 'visible to' },
-        ...[['public', 'anyone', 'Listed in explore'], ['unlisted', 'anyone with the link', 'Not listed'], ['private', 'only me', 'Only you']].map(([v, label, hint]) => ({ label, hint, checked: visibility === v, onSelect: () => setVisibility(v) })),
-        isOwner && !isNew && 'line',
-        isOwner && !isNew && { heading: 'working on it together' },
-        isOwner && !isNew && {
-          label: 'anyone can drop in',
-          checked: jam.mode === 'open',
-          onSelect: () => jamIs(jam.mode === 'open' ? 'invite' : 'open'),
-          hint: jam.mode !== 'open'
-            ? 'Off: only a link carrying the invite key gets in, and the session is shown to nobody'
-            : visibility === 'private'
-              // "anyone" is nobody here, and the way out is counter-intuitive enough to say
-              ? 'This track is private, so nobody else can open it — turn this off for an invite link that lets someone in anyway'
-              : 'Anyone who can open this track can join the session, and it shows as live while you work',
-        },
-        isOwner && !isNew && jam.mode === 'invite' && jam.key && {
-          label: 'copy invite link',
-          onSelect: () => copyInvite(),
-          hint: 'The link that gets someone into this session, private track or not',
-        },
-        isOwner && !isNew && jam.mode === 'invite' && jam.key && {
-          label: 'new invite link',
-          onSelect: () => { jamIs('invite', true); setTimeout(() => copyInvite(true), 150) },
-          hint: 'Stops every link you have handed out. Anyone already here stays',
-        },
-        isOwner && !isNew && {
-          label: 'others can edit',
-          checked: openToAll,
-          onSelect: () => { setOpenToAll(!openToAll); openToOthers(!openToAll) },
-          hint: openToAll
-            ? 'Anyone signed in who opens the link can change this track while you both have it open. Saving is still only yours.'
-            : "Off: everyone else can watch and hear it, but it's yours to change",
-        },
+        { label: 'share…', onSelect: () => share(), hint: 'Who can open it, its link, and jamming on it together' },
         isOwner && 'line',
         isOwner && { label: 'delete track…', danger: true, onSelect: () => setConfirmDelete(true), hint: 'Remove the saved track for everyone' },
       ],
@@ -1668,6 +1638,7 @@ export default function App() {
               <button className={`btn save ${dirty || !user ? 'primary' : ''} ${user ? '' : 'signed-out'} ${justSaved && !dirty ? 'just-saved' : ''}`} onClick={() => save()} disabled={busy || (!!user && !dirty)} title={!user ? 'Sign in to save this track' : dirty ? (isNew ? 'Save as a track (ctrl/cmd + S)' : `Save “${track?.title}” (ctrl/cmd + S)`) : 'Everything is saved'}>
                 {busy ? 'saving…' : !user || dirty ? 'save' : justSaved ? 'saved ✓' : 'saved'}
               </button>
+              <button className={`btn share-btn ${showShare ? 'on' : ''}`} aria-expanded={showShare} onClick={() => setShowShare((o) => !o)} title="Share: who can open it, its link, jamming together"><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><circle cx="9" cy="2.6" r="1.6" /><circle cx="3" cy="6" r="1.6" /><circle cx="9" cy="9.4" r="1.6" /><path d="M4.4 5.2 7.6 3.4M4.4 6.8l3.2 1.8" /></svg><span className="share-word">share</span></button>
             </>
           ) : track ? (
             <>
@@ -1678,7 +1649,8 @@ export default function App() {
                 disabled={busy}
                 title={user ? 'Keep your own copy of this · the original is untouched' : 'Sign in to keep your own copy'}
               >{busy ? 'saving…' : 'save a copy'}</button>
-              <button className={`btn ${track.liked ? 'on' : ''}`} onClick={like} title="Like">♥{track.likes}</button>
+              <button className={`btn share-btn ${showShare ? 'on' : ''}`} aria-expanded={showShare} onClick={() => setShowShare((o) => !o)} title="Share: this track's link" aria-label="Share"><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><circle cx="9" cy="2.6" r="1.6" /><circle cx="3" cy="6" r="1.6" /><circle cx="9" cy="9.4" r="1.6" /><path d="M4.4 5.2 7.6 3.4M4.4 6.8l3.2 1.8" /></svg></button>
+              <button className={`btn bar-like ${track.liked ? 'on' : ''}`} onClick={like} title="Like">♥{track.likes}</button>
             </>
           ) : null}
           {track && (track.parent || track.remixes > 0) && (
@@ -1724,6 +1696,29 @@ export default function App() {
       </header>
 
       {showAbout && <About onClose={() => setShowAbout(false)} />}
+      {showShare && (
+        <SharePanel
+          track={track}
+          title={title}
+          isOwner={isOwner}
+          isNew={isNew}
+          signedIn={!!user}
+          dirty={dirty && !isNew}
+          busy={busy}
+          visibility={visibility}
+          onVisibility={applyVisibility}
+          onSave={() => save()}
+          onSignIn={() => login()}
+          trackLink={track ? trackUrl(track.id) : ''}
+          jam={jam}
+          onJam={(mode) => jamIs(mode, mode === 'invite' && !jam.key)}
+          inviteLink={track && jam.key ? inviteLink() : ''}
+          onNewInvite={() => { jamIs('invite', true); flash('New invite link: the old ones have stopped working') }}
+          editors={openToAll}
+          onEditors={(on) => { setOpenToAll(on); openToOthers(on) }}
+          onClose={() => setShowShare(false)}
+        />
+      )}
       {showNews && <WhatsNew since={news} onClose={closeNews} />}
       {showExport && project && (
         <ExportDialog

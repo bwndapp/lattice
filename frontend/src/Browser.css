@@ -9,21 +9,22 @@
 }
 
 /*
- * The controls sit over the results, centred, because they're about the whole list: which
- * tracks, which order, and what you're looking for. Down the side they read as belonging
- * to something beside the grid, which there isn't.
+ * The controls are one line over the list, lined up with it: which tracks, what you're
+ * looking for, in which order, and a new track at the end. They're about the whole list,
+ * so they sit above it, and one line is all they need.
  */
 .b-top {
   position: relative;
-  display: grid;
-  justify-items: center;
-  gap: 0.6rem;
-  padding: 1.2rem 1.4rem 1rem;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem 0.7rem;
+  padding: 0.7rem max(1.6rem, (100% - 82rem) / 2);
   border-bottom: 1px solid var(--line);
   background: var(--panel);
 }
-.b-top > .b-switch { width: min(27rem, 100%); }
-.b-find { display: flex; align-items: center; gap: 0.5rem; width: min(38rem, 100%); }
+.b-top > .b-switch { flex: none; width: 19rem; }
+.b-find { display: flex; align-items: center; gap: 0.5rem; flex: 1; min-width: 18rem; }
 .b-find .b-search { flex: 1; min-width: 0; }
 .b-find > .b-switch { flex: none; width: 14.5rem; }
 
@@ -109,7 +110,7 @@
 /* buttons */
 /* starting a track belongs with the controls, in the corner — out of the way of the
    results, and out of the way of the switch that's centred between them */
-.b-new { position: absolute; top: 1.2rem; right: 1.4rem; }
+.b-new { flex: none; }
 .b-button.small { height: 1.75rem; padding: 0 0.7rem; font-size: 0.62rem; gap: 0.3rem; }
 .b-button.small span { font-size: 0.8rem; line-height: 1; margin-top: -0.05em; }
 .b-button {
@@ -143,7 +144,7 @@
 /*
  * The results keep a measure of their own and sit in the middle of the window. The
  * centring is in this element's padding rather than auto margins on the children, because
- * a child that sets `margin: 0` for its own reasons — .b-grid does — would undo those.
+ * a child that sets `margin: 0` for its own reasons — .b-list does — would undo those.
  */
 .b-main {
   flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow-y: auto;
@@ -152,20 +153,6 @@
 .b-main-head { display: flex; align-items: center; flex-wrap: wrap; gap: 0.6rem; min-height: 2.1rem; margin-bottom: 1rem; }
 .b-main-head h3 { margin: 0; font-family: var(--display); font-weight: 800; font-stretch: 112%; font-size: 0.8rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
 .b-count { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
-
-.b-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(18.5rem, 1fr)); gap: 1.05rem; align-content: start; }
-.b-card {
-  position: relative;
-  display: grid;
-  gap: 0.7rem;
-  padding: 0.7rem 0.7rem 0.75rem;
-  border-radius: 3px;
-  background: var(--canvas);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
-}
-.b-card:hover { transform: translateY(-2px); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08); }
-.b-card.active { box-shadow: 0 0 0 1px rgba(228, 255, 26, 0.45); }
 
 /*
  * The arrangement, pressed into the card like a panel in the rack: the same etched lattice
@@ -184,7 +171,7 @@
 .b-map-bar { stroke: rgba(242, 240, 230, 0.08); stroke-width: 1; }
 .b-map-clip { opacity: 0.82; transition: opacity 0.18s ease; }
 .b-map-auto { opacity: 0.45; }
-.b-card:hover .b-map-clip { opacity: 1; }
+.b-row:hover .b-map-clip { opacity: 1; }
 .b-map.none {
   display: grid; place-items: center; width: 100%; height: 100%;
   font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim);
@@ -216,7 +203,6 @@
   cursor: var(--ring);
   transition: opacity 0.18s ease, transform 0.22s cubic-bezier(0.34, 1.4, 0.5, 1), box-shadow 0.15s ease;
 }
-.b-card:hover .b-play, .b-play:focus-visible { opacity: 1; transform: none; }
 .b-play svg { width: 14px; height: 14px; margin-left: 2px; fill: var(--paper); }
 .b-play:hover svg { fill: var(--acid); }
 /* while it's playing it stays up, shows a stop square, and is the acid one on the card */
@@ -226,49 +212,10 @@
 .b-play:active { box-shadow: none; }
 @media (hover: none) { .b-play { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .b-play { transition: opacity 0.18s ease; transform: none; } }
-.b-card-body { display: grid; gap: 0.2rem; min-width: 0; padding-inline: 0.25rem; }
-/* the title is a button now: the whole card opens the track's page */
-.b-card-title { font: inherit; text-align: left; background: none; border: 0; padding: 0; cursor: var(--ring); }
-.b-card-title {
-  font-family: var(--display);
-  font-weight: 800;
-  font-stretch: 108%;
-  font-size: 1rem;
-  line-height: 1.15;
-  color: var(--paper);
-  text-decoration: none;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-/* the title stretches an invisible cover over the card, so anywhere on it opens the
-   track's page — everything else you can click sits above that cover on z-index 2 */
-.b-card-title::after { content: ''; position: absolute; inset: 0; z-index: 1; border-radius: inherit; }
-.b-card-title:hover { color: #fff; }
-.b-card-title:focus-visible { outline: none; }
-.b-card:has(.b-card-title:focus-visible) { box-shadow: 0 0 0 1px var(--paper); }
-.b-card-author { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.b-card-meta .b-tag { position: relative; z-index: 2; }
-.b-card-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem 0.9rem;
-  margin-inline: 0.25rem;
-  padding-top: 0.55rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.055);
-  font-size: 10.5px;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-.b-card-meta .liked { color: var(--acid); }
-.b-card-time { margin-left: auto; }
 .b-tag { padding: 0.05rem 0.45rem; border-radius: 3px; font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--paper); background: rgba(255, 255, 255, 0.06); }
 .b-tag.on { color: var(--ink); background: var(--acid); }
 
-.b-card.skeleton { height: 12.5rem; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.03); background: linear-gradient(100deg, var(--canvas) 30%, var(--canvas) 50%, var(--canvas) 70%); background-size: 300% 100%; animation: b-shimmer 1.4s ease-in-out infinite; }
-@keyframes b-shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
-@media (prefers-reduced-motion: reduce) { .b-card, .b-card.skeleton { transition: none; animation: none; } }
+
 
 .b-empty { display: grid; justify-items: start; gap: 0.9rem; max-width: 26rem; padding: 1.2rem 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
 .b-empty p { margin: 0; }
@@ -276,12 +223,12 @@
 /* phones: the same column, tighter, one card wide */
 @media (max-width: 860px) {
   .b-top { padding: 0.9rem 1rem 0.8rem; gap: 0.5rem; }
-  .b-new { position: static; justify-self: center; }
+  .b-top > .b-switch { width: 100%; }
   .b-find { flex-wrap: wrap; }
   .b-find > .b-switch { width: 100%; }
   .b-main { padding: 1rem 1rem 5rem; }
-  .b-grid { grid-template-columns: minmax(0, 1fr); }
   .b-new { margin-left: auto; }
+  .b-find { min-width: 0; }
 }
 
 /* narrowed to one person, or to what came out of one track */
@@ -297,57 +244,78 @@
 .b-narrowed-out { font-size: 10px; color: var(--muted); }
 .b-narrowed:hover .b-narrowed-out { color: var(--paper); }
 
-/* an author's name is a way into everything they've shared */
-button.b-card-author {
-  font: inherit; font-size: inherit; color: inherit; background: none; border: 0; padding: 0;
-  text-align: left; cursor: var(--ring); text-decoration: underline; text-decoration-color: transparent;
-  transition: text-decoration-color 0.12s ease, color 0.12s ease;
-  /* the title stretches an invisible cover over the whole card so anywhere on it opens the
-     track; the author's name has to sit above that to be clickable at all */
-  position: relative; z-index: 2; justify-self: start;
-}
-button.b-card-author:hover { color: var(--paper); text-decoration-color: currentColor; }
-
 .b-end { display: flex; justify-content: center; padding: 1rem 0 2rem; }
 .b-end-note { font-size: 11px; color: var(--muted); }
 .b-tag.quiet { opacity: 0.6; }
 
 .browser.one { display: block; overflow: hidden; }
 .browser.one .tp { height: 100%; }
-button.b-card-about {
-  position: relative; z-index: 2; order: -1;
-  font: inherit; font-size: 10px; letter-spacing: 0.04em; color: var(--acid);
-  background: rgb(228 255 26 / 0.08); border: 1px solid color-mix(in srgb, var(--acid) 32%, var(--line));
-  border-radius: 3px; padding: 0.05rem 0.45rem; cursor: var(--ring);
-  transition: background 0.12s ease, color 0.12s ease;
-}
-button.b-card-about:hover { background: var(--acid); color: var(--ink); }
-
-/* a branch says so, and points back at the track it left */
-button.b-card-from {
-  position: relative; z-index: 2; max-width: 13rem;
-  display: inline-flex; align-items: center; gap: 0.3rem;
-  overflow: hidden; white-space: nowrap;
-  font: inherit; font-size: 10px; color: var(--muted);
-  background: rgb(228 255 26 / 0.07); border: 0; border-radius: 3px;
-  padding: 0.1rem 0.5rem 0.1rem 0.4rem;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--acid) 28%, transparent);
-  cursor: var(--ring);
-  transition: color 0.12s ease, background 0.12s ease;
-}
-button.b-card-from .branch-mark { color: var(--acid); }
-button.b-card-from b { font-weight: 700; color: #b9b9ae; overflow: hidden; text-overflow: ellipsis; }
-button.b-card-from:hover { color: var(--paper); background: rgb(228 255 26 / 0.14); }
-button.b-card-from:hover b { color: var(--paper); }
 .b-tag.quiet { display: inline-flex; align-items: center; gap: 0.25rem; }
 
-/* a track's tags on its card: quiet, like the tempo in the corner of its picture */
-.b-card-tags { display: flex; flex-wrap: wrap; gap: 0.2rem; margin-top: 0.15rem; min-width: 0; }
-.b-card-tag {
-  position: relative; z-index: 2;
-  font: inherit; font-size: 9.5px; letter-spacing: 0.06em; color: var(--muted);
-  background: rgba(7, 7, 6, 0.72); border: 0; border-radius: 3px; padding: 0.05rem 0.4rem;
-  cursor: var(--ring); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+
+/*
+ * The list: a row a track, like a library. Play it from the row, see its arrangement in
+ * a strip, who made it and what it's tagged, then the numbers in columns you can scan
+ * down. The title opens the track's page.
+ */
+.b-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.b-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 2rem 8.5rem minmax(0, 1fr) minmax(0, 13rem) 3.2rem 3rem 3.6rem 7.5rem;
+  align-items: center;
+  gap: 0 0.9rem;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+  transition: background 0.12s ease;
 }
-.b-card-tag:hover { color: var(--paper); }
-.b-card-photo { width: 14px; height: 14px; margin-right: 5px; vertical-align: -3px; }
+.b-row:hover { background: var(--panel); }
+.b-row.active { box-shadow: inset 2px 0 0 var(--acid); }
+.b-row.playing { background: color-mix(in srgb, var(--acid) 7%, transparent); }
+.b-row-head { padding-block: 0.3rem; font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); border-bottom-color: var(--line); }
+.b-row-head:hover { background: none; }
+
+.b-row .b-play {
+  position: static; opacity: 1; transform: none;
+  width: 1.9rem; height: 1.9rem; border-radius: 50%; background: var(--sunk);
+}
+.b-row .b-art { aspect-ratio: auto; height: 2.1rem; border-radius: 2px; }
+.b-row .b-map.none { font-size: 0; } /* too small to say 'nothing yet': an empty strip says it */
+
+.b-row-name { display: grid; gap: 0.15rem; min-width: 0; }
+.b-row-title {
+  font: inherit; text-align: left; background: none; border: 0; padding: 0; cursor: var(--ring);
+  font-family: var(--display); font-weight: 800; font-stretch: 108%; font-size: 0.95rem; line-height: 1.2;
+  color: var(--paper); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.b-row-title:hover { color: #fff; text-decoration: underline; text-underline-offset: 3px; }
+.b-row-by { display: flex; align-items: center; gap: 0.5rem; min-width: 0; font-size: 11px; color: var(--muted); }
+.b-row-author, .b-row-from, .b-row-tag {
+  font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: var(--ring);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+.b-row-author:hover, .b-row-from:hover, .b-row-tag:hover { color: var(--paper); }
+.b-row-photo { width: 14px; height: 14px; margin-right: 5px; vertical-align: -3px; }
+.b-row-from { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 10.5px; }
+.b-col-tags { display: flex; flex-wrap: wrap; gap: 0.2rem 0.5rem; min-width: 0; font-size: 11px; color: var(--muted); }
+.b-num { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.b-num.liked { color: var(--acid); }
+.b-time { position: relative; }
+/* who's in it right now: their faces beside who made it, not in a card's corner */
+.b-row .live-on { position: static; flex: none; }
+.b-row .live-on .live-bot { width: 18px; height: 18px; margin-left: -6px; }
+.b-row .live-on .live-bot:first-child { margin-left: 0; }
+
+.b-row.skeleton { height: 3.1rem; background: var(--canvas); animation: b-pulse 1.4s ease-in-out infinite; }
+@keyframes b-pulse { 50% { opacity: 0.5; } }
+@media (prefers-reduced-motion: reduce) { .b-row.skeleton { animation: none; } }
+
+/* narrower: tags and opens go, then the strip */
+@media (max-width: 1100px) {
+  .b-row { grid-template-columns: 2rem 7rem minmax(0, 1fr) 3rem 2.6rem 6.5rem; }
+  .b-row > .b-col-tags, .b-row > .b-num:nth-last-child(2) { display: none; }
+}
+@media (max-width: 640px) {
+  .b-row { grid-template-columns: 2rem minmax(0, 1fr) 2.4rem 5rem; gap: 0 0.6rem; }
+  .b-row > .b-art, .b-row > .b-num:nth-child(5) { display: none; }
+}

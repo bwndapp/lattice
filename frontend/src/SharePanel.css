@@ -1,0 +1,39 @@
+/* the share panel: hangs under the top bar's share button (see SharePanel.jsx) */
+.share-panel {
+  position: fixed; top: 58px; right: 12px; z-index: 90;
+  width: min(460px, calc(100vw - 24px)); max-height: calc(100vh - 80px); overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 2px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  animation: sh-in 0.14s ease-out;
+}
+@keyframes sh-in { from { opacity: 0; transform: translateY(-4px); } }
+.sh-head { display: flex; align-items: center; justify-content: space-between; padding: 0.7rem 0.9rem; border-bottom: 1px solid var(--line); }
+.sh-title { font-size: 12px; color: var(--muted); text-transform: lowercase; }
+.sh-title b { color: var(--paper); font-family: var(--display); font-weight: 800; font-stretch: 112%; font-size: 15px; margin-left: 0.3rem; }
+.sh-x { font: inherit; font-size: 16px; line-height: 1; color: var(--muted); background: none; border: 0; cursor: var(--ring); padding: 0.1rem 0.3rem; }
+.sh-x:hover { color: var(--paper); }
+.sh-section { display: grid; gap: 0.55rem; padding: 0.85rem 0.9rem; border-bottom: 1px solid var(--line); }
+.sh-section:last-child { border-bottom: 0; }
+.sh-label { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.sh-note { margin: 0; font-size: 11px; line-height: 1.5; color: var(--muted); }
+.sh-note .linkish { font-size: 11px; }
+.sh-warn { color: var(--paper); }
+.sh-first { justify-items: start; }
+
+.sh-choice { display: flex; border: 1px solid var(--line); border-radius: 2px; }
+.sh-choice button {
+  flex: 1; font: inherit; font-size: 11.5px; padding: 0.45rem 0.5rem; color: var(--muted);
+  background: transparent; border: 0; cursor: var(--ring); white-space: nowrap;
+}
+.sh-choice button + button { border-left: 1px solid var(--line); }
+.sh-choice button:hover:not(:disabled):not(.on) { color: var(--paper); background: var(--raised); }
+.sh-choice button.on { color: var(--ink); background: var(--acid); }
+.sh-choice button:disabled { opacity: 0.35; cursor: var(--dot); }
+
+.sh-field { display: grid; gap: 0.35rem; }
+.sh-link { display: flex; gap: 0.35rem; }
+.sh-url { flex: 1; min-width: 0; font: inherit; font-size: 11.5px; color: var(--paper); background: var(--sunk); border: 1px solid var(--line); border-radius: 2px; padding: 0.4rem 0.5rem; }
+.sh-copy { min-width: 5.2rem; }
+.sh-row { display: grid; grid-template-columns: 9.5rem 1fr; align-items: center; gap: 0.6rem; }
+.sh-rowname { font-size: 11px; color: var(--muted); }
+@media (max-width: 520px) { .sh-row { grid-template-columns: 1fr; gap: 0.3rem; } }
