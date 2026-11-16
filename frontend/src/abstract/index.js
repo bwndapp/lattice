@@ -1,6 +1,7 @@
 import cube from './cube/index.js'
 import fib from './fib/index.js'
 import groove from './groove/index.js'
+import harmony from './harmony/index.js'
 
 /**
  * Abstract instruments: sources that make music by some stranger means than steps and
@@ -31,7 +32,7 @@ import groove from './groove/index.js'
  * Its state lives on the node as `data.state`. To add one: a folder here, a line below and
  * a line in panels.js.
  */
-export const ABSTRACTS = Object.fromEntries([cube, fib, groove].map((d) => [d.type, d]))
+export const ABSTRACTS = Object.fromEntries([cube, fib, groove, harmony].map((d) => [d.type, d]))
 
 /** A node's abstract definition, or null. */
 export const abstractOf = (type) => ABSTRACTS[type] ?? null
