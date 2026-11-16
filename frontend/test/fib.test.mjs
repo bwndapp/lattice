@@ -108,7 +108,9 @@ console.log('fib ok')
   const ownLine = line(m.generateCode(own), 'p_syn_c1')
   assert.match(ownLine, /\.mask\("<0 1>"\)/, 'a fired pattern plays inside its own clips')
   assert.match(ownLine, /\.early\(1\)\)\.late\(1\)/, 'with the machine\'s rhythm kept to song time')
-  const none = proj({ song: { ...song, fired: true } })
+  // (something else on the timeline, so the song is on)
+  const none = proj({ song: { ...song, fired: true, clips: [{ id: 'z', src: 'pattern:drm', lane: 0, start: 0, len: 2 }] } })
+  assert.ok(!m.songParts(none).some((p) => p.src === 'node:f'), 'a machine with no sounds of its own isn\'t a part')
   assert.match(line(m.generateCode(none), 'p_syn_c1'), /silence/, 'with no clips of its own it is quiet')
   // an old track: sounds wired into the layers, the fib on to the output
   const old = proj({ edges: [

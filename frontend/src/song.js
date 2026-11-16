@@ -13,6 +13,7 @@
  * a sidechain's trigger keep running, so ducking doesn't vanish.
  */
 import { NODE_TYPES, isTrigger, triggerOf } from './graph'
+import { abstractParts } from './abstract/index.js'
 import { AUTO_PREFIX, autoName, normalizeAutos } from './automation.js'
 
 const num = (v, fallback, lo, hi) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : fallback)
@@ -20,10 +21,21 @@ const snapTo = (v, step) => Math.round(v / step) * step
 export const MAX_BARS = 512
 export const MAX_CLIPS = 400
 
-/** Source nodes that make sound by themselves (nothing wired into them). */
+/** Whether a rhythm machine plays any sound of its own (a layer with a sound picked). */
+export const machineSounds = (node) => abstractParts(node).some((p) => p.expr)
+
+/**
+ * Source nodes that make sound by themselves (nothing wired into them). A rhythm machine is
+ * one only while it plays a sound of its own: one that only fires instruments keeps time
+ * for the song without a clip, and what it fires has clips of its own.
+ */
 export function sourceNodes(project) {
-  // (an abstract instrument stays one even with something wired in: its own layers still play)
-  return project.nodes.filter((n) => NODE_TYPES[n.type]?.group === 'source' && n.type !== 'pattern' && (NODE_TYPES[n.type].abstract || !project.edges.some((e) => e.target === n.id)))
+  return project.nodes.filter((n) => {
+    const spec = NODE_TYPES[n.type]
+    if (spec?.group !== 'source' || n.type === 'pattern') return false
+    if (spec.abstract) return machineSounds(n)
+    return !project.edges.some((e) => e.target === n.id)
+  })
 }
 
 /** Nodes that only feed sidechain triggers: they keep running whatever the timeline says. */
@@ -147,8 +159,11 @@ export function normalizeSong(raw, project) {
   const valid = new Set(songParts(project, autos).map((p) => p.src))
   const seen = new Set()
   const clips = []
+  // a song from before keeps its machines' clips long enough to hand them on (fireAsBefore)
+  const before = raw?.fired !== true
+  const machineSrc = (src) => src.startsWith('node:') && !!NODE_TYPES[project.nodes.find((n) => `node:${n.id}` === src)?.type]?.abstract
   for (const c of Array.isArray(raw?.clips) ? raw.clips : []) {
-    if (!c || typeof c.src !== 'string' || !valid.has(c.src)) continue
+    if (!c || typeof c.src !== 'string' || !(valid.has(c.src) || (before && machineSrc(c.src)))) continue
     const id = String(c.id ?? '').replace(/\W/g, '').slice(0, 24)
     if (!id || seen.has(id)) continue
     seen.add(id)
@@ -159,7 +174,9 @@ export function normalizeSong(raw, project) {
     clips.push(clip)
     if (clips.length >= MAX_CLIPS) break
   }
-  if (raw?.fired !== true) fireAsBefore(project, clips)
+  if (before) fireAsBefore(project, clips)
+  // then only parts keep clips: a machine with no sound of its own has none
+  for (let i = clips.length - 1; i >= 0; i--) if (!valid.has(clips[i].src)) clips.splice(i, 1)
   // rows: a name and a mute each, kept only as far as the last one that has either
   const lanes = []
   for (const l of Array.isArray(raw?.lanes) ? raw.lanes.slice(0, 64) : []) {
