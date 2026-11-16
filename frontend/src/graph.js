@@ -833,7 +833,7 @@ export function makeFxUnit(type, id) {
  */
 export const GROUPS = [
   ['source', 'sources'],
-  ['machine', 'rhythm machines'],
+  ['machine', 'generators'],
   ['transform', 'pattern tools'],
   ['effect', 'effects'],
   ['combine', 'mix & arrange'],
