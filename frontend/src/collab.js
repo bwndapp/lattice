@@ -238,8 +238,14 @@ export function onRole(fn) {
 /** Say where ours is. `pos` is in cycles (bars), `cps` cycles a second. */
 export function sendPlay(on, pos, cps) {
   if (!canEdit()) return
-  sock.send(JSON.stringify({ t: 'play', on: !!on, pos, cps }))
+  // with the last word we heard, so the room can tell a tab that's behind (see collab.py)
+  sock.send(JSON.stringify({ t: 'play', on: !!on, pos, cps, ...(playN != null ? { base: playN } : {}) }))
+  // counted as taken straight away, so a seek right after a play isn't mistaken for a tab
+  // that's behind; if the room turns it down, it says where things stand and we take that
+  if (playN != null) playN++
 }
+
+let playN = null // the room's count of words on the transport, as far as we've heard
 
 const forgetClock = () => {
   skew = null
@@ -326,7 +332,9 @@ async function open(trackId) {
       return
     }
     if (msg.t === 'time') { tookClock(msg); return }
+    if (msg.t === 'playn') { if (Number.isInteger(msg.n)) playN = msg.n; return }
     if (msg.t === 'play') {
+      if (Number.isInteger(msg.n)) playN = msg.n
       if (typeof msg.at !== 'number') return
       // `at` is on the server's clock and has to come onto ours, which we haven't measured
       // yet on the way in — and on the way in is exactly when the room hands over what it

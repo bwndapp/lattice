@@ -129,6 +129,7 @@ class Room:
         self.doc = None      # the project, once somebody has sent theirs
         self.version = 0     # how many changes have been applied
         self.play = None     # the last thing said about the transport, stamped when it was said
+        self.play_n = 0      # how many times it's been said: a tab answering an older one is out of date
         self.open = True     # whether anyone but the owner may change it (the owner's call)
         self.jam = "open"    # whether anyone may walk in, or only with an invite
 
@@ -420,6 +421,8 @@ async def collab(ws: WebSocket, track_id: str):
             # somebody's playhead when nobody is playing is a worse surprise than silence.
             if room.play and room.play.get("on"):
                 await ws.send_text(json.dumps(room.play))
+        # which word on the transport is the latest, so what this tab says next counts
+        await ws.send_text(json.dumps({"t": "playn", "n": room.play_n}))
 
         window, moves, edits = time.monotonic(), 0, 0
         while True:
@@ -510,6 +513,16 @@ async def collab(ws: WebSocket, track_id: str):
                 # between its clock and everyone else's (the round trip is measured there)
                 await ws.send_text(json.dumps({"t": "time", "c": msg.get("c"), "s": time.time() * 1000}))
             elif kind == "play" and peer.edit:
+                # A tab says which word it last heard (`base`). One that hasn't heard the latest
+                # (a laptop asleep in the background, still "playing" after you stopped on the
+                # other machine) would otherwise start everyone up again: it's told how things
+                # stand instead, and lines up with that.
+                base = msg.get("base")
+                if isinstance(base, int) and base != room.play_n:
+                    now = room.play or {"t": "play", "id": None, "on": False, "pos": msg.get("pos"), "cps": msg.get("cps"), "at": time.time() * 1000, "n": room.play_n}
+                    await ws.send_text(json.dumps(now))
+                    continue
+                room.play_n += 1
                 # where the song is, and when: whoever hits play says so, everyone else lines up
                 said = {
                     "t": "play",
@@ -518,8 +531,10 @@ async def collab(ws: WebSocket, track_id: str):
                     "pos": msg.get("pos"),
                     "cps": msg.get("cps"),
                     "at": time.time() * 1000,  # stamped here, so it needs no clock of its own
+                    "n": room.play_n,
                 }
                 room.play = said  # the room is the thing that's playing, so the room holds it
+                await ws.send_text(json.dumps({"t": "playn", "n": room.play_n}))
                 await room.tell_others(peer.id, said)
             elif kind == "lock":
                 # only the owner, and everyone finds out at once: someone who has just

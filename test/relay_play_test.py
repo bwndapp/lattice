@@ -109,6 +109,33 @@ async def main():
                 seen = await until(e, 'time')
                 ok('a stopped room hands nobody a playhead', not any(m['t'] == 'play' for m in seen), seen)
 
+    # two tabs of one person: the laptop is behind (it never heard the stop), and says
+    # "playing" from where it last was. That must not start the room up again: the room
+    # tells the laptop how things stand instead.
+    async with websockets.connect(URL) as desk, websockets.connect(URL) as laptop:
+        await desk.send(json.dumps({'t': 'hello', 'token': 'owner', 'name': 'ana'}))
+        n0 = (await drain(desk, 'playn'))['n']
+        await laptop.send(json.dumps({'t': 'hello', 'token': 'owner', 'name': 'ana'}))
+        n_lap = (await drain(laptop, 'playn'))['n']
+        ok('a tab is told the latest word on the transport as it walks in', n_lap == n0, (n0, n_lap))
+        await desk.send(json.dumps({'t': 'play', 'on': True, 'pos': 0, 'cps': 0.5, 'base': n0}))
+        await drain(laptop, 'play')
+        await desk.send(json.dumps({'t': 'play', 'on': False, 'pos': 3, 'cps': 0.5, 'base': n0 + 1}))
+        await drain(desk, 'playn')
+        # the laptop never took either in: it answers from where it was
+        await laptop.send(json.dumps({'t': 'play', 'on': True, 'pos': 2, 'cps': 0.5, 'base': n_lap}))
+        told = await drain(laptop, 'play')
+        ok('a tab that is behind is told the room has stopped', told['on'] is False and told['pos'] == 3, told)
+        await laptop.send(json.dumps({'t': 'at', 'where': 'graph', 'x': 0, 'y': 0}))
+        seen = await until(desk, 'at')
+        ok('and the room does not start up again', not any(m['t'] == 'play' for m in seen), seen)
+        # one that is up to date is heard as ever, a seek straight after a play included
+        await laptop.send(json.dumps({'t': 'play', 'on': True, 'pos': 5, 'cps': 0.5, 'base': told['n']}))
+        await laptop.send(json.dumps({'t': 'play', 'on': True, 'pos': 6, 'cps': 0.5, 'base': told['n'] + 1}))
+        first = await drain(desk, 'play')
+        second = await drain(desk, 'play')
+        ok('an up-to-date tab moves everyone, twice in a row', first['pos'] == 5 and second['pos'] == 6, (first, second))
+
     print('\n' + (f'{len(fails)} failing: {fails}' if fails else 'all good'))
 
 
