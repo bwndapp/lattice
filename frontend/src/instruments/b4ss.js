@@ -32,6 +32,7 @@ const SYNC = ['song', 'note']
 const MODES = ['mono', 'poly']
 const SLIDES = ['legato', 'always']
 const SUB_OCT = ['note', '−1 oct']
+const TRIGGERS = ['auto', 'note length', 'one shot']
 
 const PARAMS = [
   // osc
@@ -52,7 +53,9 @@ const PARAMS = [
   { key: 'mode', group: 'pitch', label: 'voices', min: 0, max: 1, def: 0, choices: MODES },
   { key: 'slide', group: 'pitch', label: 'slide', min: 0, max: 1, def: 0, choices: SLIDES },
   { key: 'glide', group: 'pitch', label: 'glide', min: 0, max: 1, def: 0, unit: 's' },
-  // amp
+  // amp: how long a note lasts — auto plays a hit's whole decay (a drum step, or a sound with
+  // no sustain, like an 808, however short its step), and a sustained sound as long as it's held
+  { key: 'trigger', group: 'amp', label: 'trigger', min: 0, max: TRIGGERS.length - 1, def: 0, choices: TRIGGERS },
   { key: 'attack', group: 'amp', label: 'attack', min: 0, max: 1, def: 0.002, unit: 's' },
   { key: 'decay', group: 'amp', label: 'decay', min: 0.01, max: 8, def: 1.2, log: true, unit: 's' },
   { key: 'sustain', group: 'amp', label: 'sustain', min: 0, max: 1, def: 0.6 },
@@ -139,6 +142,10 @@ class B4ssProcessor extends LatticeInstrument {
     const mono = Math.round(k.mode) === 0
     const sliding = mono && v.active && k.glide > 0.0005 && (Math.round(k.slide) === 1 || v.gateOpen)
     v.target = n
+    const trig = Math.round(k.trigger)
+    // one shot: it plays attack and decay through, then lets go, whatever the note's length
+    // auto: a drum step, or a sound with no sustain (a hit that dies away, like an 808)
+    v.shot = trig === 2 || (trig === 0 && (note < 0 || k.sustain < 0.05))
     if (!sliding) {
       v.pitch = n
       // the amp starts over; a note slid into keeps it going, as an 808 slide does
@@ -201,7 +208,8 @@ class B4ssProcessor extends LatticeInstrument {
     const spread = k.detune * 0.6
     for (let i = from; i < to; i++) {
       // ── envelopes ──
-      if (v.gateOpen) {
+      const held = v.shot ? v.t < k.attack + k.decay : v.gateOpen
+      if (held) {
         if (v.stage === 0) { v.env += attackStep; if (v.env >= 1) { v.env = 1; v.stage = 1 } }
         else v.env = k.sustain + (v.env - k.sustain) * decayA
       } else {
@@ -312,11 +320,11 @@ registerProcessor('lattice-b4ss', B4ssProcessor)
 const ix = (list, name) => list.indexOf(name)
 const PRESETS = [
   // 808s
-  { name: 'clean 808', group: '808', data: { wave: 0, drop: 12, droptime: 0.05, decay: 1.6, sustain: 0, release: 0.2, octave: 0 } },
-  { name: 'distorted 808', group: '808', data: { wave: 0, drop: 14, droptime: 0.04, decay: 1.8, sustain: 0, release: 0.2, dtype: ix(DIRT, 'tape'), drive: 0.55, sub: 0.5 } },
+  { name: 'clean 808', group: '808', data: { trigger: 2, wave: 0, drop: 12, droptime: 0.05, decay: 1.6, sustain: 0, release: 0.2, octave: 0 } },
+  { name: 'distorted 808', group: '808', data: { trigger: 2, wave: 0, drop: 14, droptime: 0.04, decay: 1.8, sustain: 0, release: 0.2, dtype: ix(DIRT, 'tape'), drive: 0.55, sub: 0.5 } },
   { name: 'slide 808', group: '808', data: { wave: 0, drop: 10, droptime: 0.05, decay: 3, sustain: 0.35, release: 0.25, glide: 0.12, dtype: ix(DIRT, 'tape'), drive: 0.35, sub: 0.4 } },
   { name: 'drill 808', group: '808', data: { wave: 0.4, drop: 20, droptime: 0.03, decay: 2.2, sustain: 0.2, release: 0.15, glide: 0.08, slide: ix(SLIDES, 'always'), dtype: ix(DIRT, 'bite'), drive: 0.5, sub: 0.6, cutoff: 3000 } },
-  { name: 'knocking 808', group: '808', data: { wave: 0.2, drop: 24, droptime: 0.025, decay: 0.9, sustain: 0, release: 0.1, dtype: ix(DIRT, 'hard'), drive: 0.7, sub: 0.6, cutoff: 2500 } },
+  { name: 'knocking 808', group: '808', data: { trigger: 2, wave: 0.2, drop: 24, droptime: 0.025, decay: 0.9, sustain: 0, release: 0.1, dtype: ix(DIRT, 'hard'), drive: 0.7, sub: 0.6, cutoff: 2500 } },
   // dubstep
   { name: 'wobble', group: 'dubstep', data: { wave: 2, unison: 3, detune: 0.2, sub: 0.6, suboct: 1, ftype: ix(FILTERS, 'low'), cutoff: 2800, reso: 0.55, rate: ix(RATES, '1/8'), lshape: ix(LFO_SHAPES, 'sine'), depth: 0.8, dtype: ix(DIRT, 'tape'), drive: 0.4, decay: 2, sustain: 0.9, release: 0.1 } },
   { name: 'growl', group: 'dubstep', data: { wave: 2.4, fm: 0.35, ratio: ix(RATIOS, '1'), sub: 0.6, suboct: 1, ftype: ix(FILTERS, 'band'), cutoff: 1200, reso: 0.6, rate: ix(RATES, '1/16'), lshape: ix(LFO_SHAPES, 'triangle'), depth: 0.6, lfm: 0.4, dtype: ix(DIRT, 'fold'), drive: 0.55, decay: 2, sustain: 0.9, release: 0.08 } },
@@ -344,12 +352,14 @@ export default {
   kinds: ['synth', 'drum'],
   processor: 'lattice-b4ss',
   voices: 6,
-  oneShot: false,
+  // auto: a hit (a drum step, or no sustain) plays through; a sustained note lasts as long as it's held
+  oneShot: (d, midi) => { const t = Math.round(d?.trigger ?? 0); return t === 2 || (t === 0 && (midi == null || (d?.sustain ?? 0.6) < 0.05)) },
   params: PARAMS,
   presets: PRESETS,
   width: 1100,
   groups: [['osc', 'osc'], ['sub', 'sub'], ['pitch', 'pitch'], ['amp', 'amp'], ['dirt', 'dirt'], ['filter', 'filter'], ['wobble', 'wobble'], ['out', 'out']],
   voicesFor: (d) => (Math.round(d.mode ?? 0) === 0 ? 1 : 6),
-  tail: (d) => (d.release ?? 0.15) + 0.05,
+  // the release falls 5 time-constants in its time; to near silence takes about twice that
+  tail: (d, shot) => (shot ? (d.attack ?? 0) + (d.decay ?? 1.2) : 0) + (d.release ?? 0.15) * 2 + 0.05,
   dsp: DSP,
 }

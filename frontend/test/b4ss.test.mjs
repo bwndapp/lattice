@@ -96,5 +96,15 @@ for (const pr of spec.presets) {
   ok('a note let go stops', peak(L.slice(sr * 0.7)) < 1e-3, peak(L.slice(sr * 0.7)))
 }
 
+// a hit on a short step plays its whole decay: an 808 isn't choked by a 16th
+{
+  const { L } = run({ wave: 0, sustain: 0, decay: 1.5, release: 0.1 }, { notes: [{ at: 0, note: 36, len: 0.1 }], secs: 1 })
+  ok('an 808 on a short step rings past the step', peak(L.slice(sr * 0.4, sr * 0.6)) > 0.05, peak(L.slice(sr * 0.4, sr * 0.6)).toFixed(3))
+  const { L: L2 } = run({ wave: 0, sustain: 0, decay: 1.5, release: 0.1, trigger: 1 }, { notes: [{ at: 0, note: 36, len: 0.1 }], secs: 1 })
+  ok('unless it is set to note length', peak(L2.slice(sr * 0.4, sr * 0.6)) < 0.01, peak(L2.slice(sr * 0.4, sr * 0.6)).toFixed(3))
+  ok('the host knows: a hit is one-shot, a sustained note is not', spec.oneShot({ sustain: 0 }, 36) && !spec.oneShot({ sustain: 0.6 }, 36) && spec.oneShot({ sustain: 0.6 }, null))
+  ok('and its tail covers the decay', spec.tail({ attack: 0, decay: 1.5, release: 0.1 }, true) >= 1.7)
+}
+
 if (fails) { console.log(`\n${fails} failing`); process.exit(1) }
 console.log('b4ss ok')

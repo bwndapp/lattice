@@ -225,19 +225,22 @@ function createInstance(ac, channelId, type) {
       param(`v${slot}_trig`).setValueAtTime(trig, t)
       const gateOff = t + Math.max(0.001, duration)
       param(`v${slot}_gate`).setValueAtTime(0, gateOff)
-      const tail = Math.max(0.01, spec.tail(current))
-      const end = spec.oneShot ? t + tail : gateOff + tail
+      // one-shot can depend on the settings and the note (an engine says with a function)
+      const shot = typeof spec.oneShot === 'function' ? !!spec.oneShot(current, midi) : !!spec.oneShot
+      const tail = Math.max(0.01, spec.tail(current, shot))
+      const end = shot ? t + tail : gateOff + tail
       const note = tapNote(ac, node, slot, t, end, () => { if (voice.note === note) { voice.note = null; voice.until = 0 } })
       voice.note = note
       voice.started = t
       voice.until = end
       note.gateOff = (at) => { param(`v${slot}_gate`).cancelScheduledValues(at); param(`v${slot}_gate`).setValueAtTime(0, at) }
       /** Let go of the key at `at`: the release plays out, then the voice is free. */
+      note.shot = shot
       note.release = (at) => {
         const from = Math.max(at, t + 0.02, ac.currentTime)
         note.gateOff(from)
-        if (spec.oneShot) return // a one-shot plays its whole shape anyway
-        const done = from + Math.max(0.01, spec.tail(current))
+        if (shot) return // a one-shot plays its whole shape anyway
+        const done = from + Math.max(0.01, spec.tail(current, shot))
         if (done < end) {
           note.cut(done)
           if (voice.note === note) voice.until = done
@@ -340,7 +343,7 @@ export function registerEngineSounds() {
       }
       return {
         node: note.tap,
-        stop: (when) => { note.gateOff(when); if (spec.oneShot) note.cut(when) },
+        stop: (when) => { note.gateOff(when); if (note.shot) note.cut(when) },
       }
     }
     registerSound(engineSound(spec.type), play, { type: 'engine', prebake: true })

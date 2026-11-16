@@ -18,7 +18,9 @@ import b4ss from './b4ss.js'
  *   kinds       which instruments can use it: 'drum' (steps), 'synth' (notes)
  *   processor   the name its audio-thread processor registers under
  *   voices      how many notes it can sound at once (one output each)
- *   oneShot     whether a hit plays its whole shape whatever the note's length
+ *   oneShot     whether a hit plays its whole shape whatever the note's length; or
+ *               (data, midi) => that, for an engine where it's a setting (midi null: a drum step)
+ *   tail(data, shot)  (shot: whether this note is played as a one-shot)
  *   params      its knobs: { key, group, label, min, max, def, log?, unit?, origin? }; one
  *               with `choices` (names) holds an index into them, 0 … choices.length - 1
  *   groups      [group key, title] in the order the window shows them
