@@ -81,6 +81,14 @@ export const STYLES = {
     hats: 'x7r7x7x7x7r7x7r7',
     perc: '...3......3..4..',
   },
+  dubstep: {
+    // half-time: the snare on three, the kick lurching round it, hats sparse with rolls
+    label: 'dubstep',
+    kick: 'X.....4...3..2..',
+    snare: '.....g..X.....g3',
+    hats: 'x.4.x.r.x.4.x.r4',
+    perc: '...4.....3...3..',
+  },
   dembow: {
     label: 'dembow',
     kick: 'X...x...X...x...',
