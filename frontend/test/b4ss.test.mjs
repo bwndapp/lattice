@@ -58,13 +58,13 @@ for (const pr of spec.presets) {
 
 // in tune: A2 = 110 Hz on a plain sine
 {
-  const { L } = run({ wave: 0, sustain: 1 }, { notes: [{ at: 0, note: 45, len: 1 }], secs: 1 })
+  const { L } = run({ wave: 0, sustain: 1, octave: 0 }, { notes: [{ at: 0, note: 45, len: 1 }], secs: 1 })
   const hz = hzOf(L.slice(sr * 0.2, sr * 0.9))
   ok('A2 is 110 Hz', Math.abs(hz - 110) < 1, hz.toFixed(2))
 }
 // an 808's drop: starts high, lands on the note
 {
-  const { L } = run({ wave: 0, drop: 24, droptime: 0.2, sustain: 1 }, { notes: [{ at: 0, note: 45, len: 1 }], secs: 1 })
+  const { L } = run({ wave: 0, drop: 24, droptime: 0.2, sustain: 1, octave: 0 }, { notes: [{ at: 0, note: 45, len: 1 }], secs: 1 })
   const early = hzOf(L.slice(0, sr * 0.05))
   const late = hzOf(L.slice(sr * 0.5, sr * 0.95))
   ok('the drop starts above the note', early > 200, early.toFixed(1))
@@ -73,7 +73,7 @@ for (const pr of spec.presets) {
 // mono glide: a note slid into (still held) glides and keeps its level
 {
   const notes = [{ at: 0, note: 45, len: 0.55 }, { at: 0.5, note: 57, len: 0.5 }]
-  const { L } = run({ wave: 0, sustain: 1, glide: 0.2 }, { notes, secs: 1.1 })
+  const { L } = run({ wave: 0, sustain: 1, glide: 0.2, octave: 0 }, { notes, secs: 1.1 })
   const mid = hzOf(L.slice(sr * 0.52, sr * 0.6))
   const end = hzOf(L.slice(sr * 0.85, sr * 1.0))
   ok('a slid note is on its way between the two', mid > 112 && mid < 215, mid.toFixed(1))
@@ -104,6 +104,13 @@ for (const pr of spec.presets) {
   ok('unless it is set to note length', peak(L2.slice(sr * 0.4, sr * 0.6)) < 0.01, peak(L2.slice(sr * 0.4, sr * 0.6)).toFixed(3))
   ok('the host knows: a hit is one-shot, a sustained note is not', spec.oneShot({ sustain: 0 }, 36) && !spec.oneShot({ sustain: 0.6 }, 36) && spec.oneShot({ sustain: 0.6 }, null))
   ok('and its tail covers the decay', spec.tail({ attack: 0, decay: 1.5, release: 0.1 }, true) >= 1.7)
+}
+
+// out of the box it sits in the sub: C2 plays C1, about 33 Hz
+{
+  const { L } = run({ wave: 0, sustain: 1 }, { notes: [{ at: 0, note: 36, len: 1 }], secs: 1 })
+  const hz = hzOf(L.slice(sr * 0.2, sr * 0.9))
+  ok('by default C2 plays in the sub, at C1', Math.abs(hz - 32.7) < 1, hz.toFixed(2))
 }
 
 if (fails) { console.log(`\n${fails} failing`); process.exit(1) }

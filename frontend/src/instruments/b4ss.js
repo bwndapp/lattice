@@ -46,7 +46,7 @@ const PARAMS = [
   { key: 'sub', group: 'sub', label: 'sub', min: 0, max: 1, def: 0 },
   { key: 'suboct', group: 'sub', label: 'octave', min: 0, max: 1, def: 0, choices: SUB_OCT },
   // pitch
-  { key: 'octave', group: 'pitch', label: 'octave', min: -3, max: 2, def: 0, unit: 'oct', origin: 0, step: 1 },
+  { key: 'octave', group: 'pitch', label: 'octave', min: -3, max: 2, def: -1, unit: 'oct', origin: 0, step: 1 },
   { key: 'fine', group: 'pitch', label: 'fine', min: -100, max: 100, def: 0, unit: 'ct', origin: 0 },
   { key: 'drop', group: 'pitch', label: 'drop', min: 0, max: 48, def: 0, unit: 'st' },
   { key: 'droptime', group: 'pitch', label: 'drop time', min: 0.005, max: 1, def: 0.06, log: true, unit: 's' },
@@ -320,29 +320,29 @@ registerProcessor('lattice-b4ss', B4ssProcessor)
 const ix = (list, name) => list.indexOf(name)
 const PRESETS = [
   // 808s
-  { name: 'clean 808', group: '808', data: { trigger: 2, wave: 0, drop: 12, droptime: 0.05, decay: 1.6, sustain: 0, release: 0.2, octave: 0 } },
+  { name: 'clean 808', group: '808', data: { trigger: 2, wave: 0, drop: 12, droptime: 0.05, decay: 1.6, sustain: 0, release: 0.2 } },
   { name: 'distorted 808', group: '808', data: { trigger: 2, wave: 0, drop: 14, droptime: 0.04, decay: 1.8, sustain: 0, release: 0.2, dtype: ix(DIRT, 'tape'), drive: 0.55, sub: 0.5 } },
   { name: 'slide 808', group: '808', data: { wave: 0, drop: 10, droptime: 0.05, decay: 3, sustain: 0.35, release: 0.25, glide: 0.12, dtype: ix(DIRT, 'tape'), drive: 0.35, sub: 0.4 } },
   { name: 'drill 808', group: '808', data: { wave: 0.4, drop: 20, droptime: 0.03, decay: 2.2, sustain: 0.2, release: 0.15, glide: 0.08, slide: ix(SLIDES, 'always'), dtype: ix(DIRT, 'bite'), drive: 0.5, sub: 0.6, cutoff: 3000 } },
   { name: 'knocking 808', group: '808', data: { trigger: 2, wave: 0.2, drop: 24, droptime: 0.025, decay: 0.9, sustain: 0, release: 0.1, dtype: ix(DIRT, 'hard'), drive: 0.7, sub: 0.6, cutoff: 2500 } },
   // dubstep
-  { name: 'wobble', group: 'dubstep', data: { wave: 2, unison: 3, detune: 0.2, sub: 0.6, suboct: 1, ftype: ix(FILTERS, 'low'), cutoff: 2800, reso: 0.55, rate: ix(RATES, '1/8'), lshape: ix(LFO_SHAPES, 'sine'), depth: 0.8, dtype: ix(DIRT, 'tape'), drive: 0.4, decay: 2, sustain: 0.9, release: 0.1 } },
-  { name: 'growl', group: 'dubstep', data: { wave: 2.4, fm: 0.35, ratio: ix(RATIOS, '1'), sub: 0.6, suboct: 1, ftype: ix(FILTERS, 'band'), cutoff: 1200, reso: 0.6, rate: ix(RATES, '1/16'), lshape: ix(LFO_SHAPES, 'triangle'), depth: 0.6, lfm: 0.4, dtype: ix(DIRT, 'fold'), drive: 0.55, decay: 2, sustain: 0.9, release: 0.08 } },
-  { name: 'yoi', group: 'dubstep', data: { wave: 2, fm: 0.2, ratio: ix(RATIOS, '2'), sub: 0.6, suboct: 1, ftype: ix(FILTERS, 'vowel'), cutoff: 400, reso: 0.7, fenv: 0.6, fdecay: 0.35, dtype: ix(DIRT, 'tape'), drive: 0.6, decay: 2, sustain: 0.9, release: 0.1 } },
-  { name: 'talking', group: 'dubstep', data: { wave: 2.6, ftype: ix(FILTERS, 'vowel'), cutoff: 600, reso: 0.75, rate: ix(RATES, '1/4 t'), lshape: ix(LFO_SHAPES, 'triangle'), depth: 0.55, sub: 0.5, suboct: 1, dtype: ix(DIRT, 'bite'), drive: 0.45, decay: 2, sustain: 0.9, release: 0.1 } },
+  { name: 'wobble', group: 'dubstep', data: { octave: 0, wave: 2, unison: 3, detune: 0.2, sub: 0.6, suboct: 1, ftype: ix(FILTERS, 'low'), cutoff: 2800, reso: 0.55, rate: ix(RATES, '1/8'), lshape: ix(LFO_SHAPES, 'sine'), depth: 0.8, dtype: ix(DIRT, 'tape'), drive: 0.4, decay: 2, sustain: 0.9, release: 0.1 } },
+  { name: 'growl', group: 'dubstep', data: { octave: 0, wave: 2.4, fm: 0.35, ratio: ix(RATIOS, '1'), sub: 0.6, suboct: 1, ftype: ix(FILTERS, 'band'), cutoff: 1200, reso: 0.6, rate: ix(RATES, '1/16'), lshape: ix(LFO_SHAPES, 'triangle'), depth: 0.6, lfm: 0.4, dtype: ix(DIRT, 'fold'), drive: 0.55, decay: 2, sustain: 0.9, release: 0.08 } },
+  { name: 'yoi', group: 'dubstep', data: { octave: 0, wave: 2, fm: 0.2, ratio: ix(RATIOS, '2'), sub: 0.6, suboct: 1, ftype: ix(FILTERS, 'vowel'), cutoff: 400, reso: 0.7, fenv: 0.6, fdecay: 0.35, dtype: ix(DIRT, 'tape'), drive: 0.6, decay: 2, sustain: 0.9, release: 0.1 } },
+  { name: 'talking', group: 'dubstep', data: { octave: 0, wave: 2.6, ftype: ix(FILTERS, 'vowel'), cutoff: 600, reso: 0.75, rate: ix(RATES, '1/4 t'), lshape: ix(LFO_SHAPES, 'triangle'), depth: 0.55, sub: 0.5, suboct: 1, dtype: ix(DIRT, 'bite'), drive: 0.45, decay: 2, sustain: 0.9, release: 0.1 } },
   // riddim
-  { name: 'riddim', group: 'riddim', data: { wave: 3, fm: 0.25, ratio: ix(RATIOS, '½'), sub: 0.7, suboct: 1, ftype: ix(FILTERS, 'low'), cutoff: 1800, reso: 0.4, rate: ix(RATES, '1/16'), lshape: ix(LFO_SHAPES, 'square'), sync: 1, depth: 0.7, dtype: ix(DIRT, 'rectify'), drive: 0.6, crush: 0.35, decay: 2, sustain: 0.95, release: 0.05 } },
-  { name: 'riddim saw chop', group: 'riddim', data: { wave: 2, unison: 2, detune: 0.1, sub: 0.7, suboct: 1, cutoff: 2400, reso: 0.3, rate: ix(RATES, '1/8 t'), lshape: ix(LFO_SHAPES, 'saw'), depth: 0.9, dtype: ix(DIRT, 'hard'), drive: 0.7, crush: 0.5, decay: 2, sustain: 0.95, release: 0.04 } },
-  { name: 'random riddim', group: 'riddim', data: { wave: 3, fm: 0.4, ratio: ix(RATIOS, '3'), sub: 0.7, suboct: 1, ftype: ix(FILTERS, 'band'), cutoff: 1500, reso: 0.5, rate: ix(RATES, '1/16'), lshape: ix(LFO_SHAPES, 'random'), depth: 0.6, lfm: 0.5, dtype: ix(DIRT, 'fold'), drive: 0.5, crush: 0.25, decay: 2, sustain: 0.95, release: 0.05 } },
+  { name: 'riddim', group: 'riddim', data: { octave: 0, wave: 3, fm: 0.25, ratio: ix(RATIOS, '½'), sub: 0.7, suboct: 1, ftype: ix(FILTERS, 'low'), cutoff: 1800, reso: 0.4, rate: ix(RATES, '1/16'), lshape: ix(LFO_SHAPES, 'square'), sync: 1, depth: 0.7, dtype: ix(DIRT, 'rectify'), drive: 0.6, crush: 0.35, decay: 2, sustain: 0.95, release: 0.05 } },
+  { name: 'riddim saw chop', group: 'riddim', data: { octave: 0, wave: 2, unison: 2, detune: 0.1, sub: 0.7, suboct: 1, cutoff: 2400, reso: 0.3, rate: ix(RATES, '1/8 t'), lshape: ix(LFO_SHAPES, 'saw'), depth: 0.9, dtype: ix(DIRT, 'hard'), drive: 0.7, crush: 0.5, decay: 2, sustain: 0.95, release: 0.04 } },
+  { name: 'random riddim', group: 'riddim', data: { octave: 0, wave: 3, fm: 0.4, ratio: ix(RATIOS, '3'), sub: 0.7, suboct: 1, ftype: ix(FILTERS, 'band'), cutoff: 1500, reso: 0.5, rate: ix(RATES, '1/16'), lshape: ix(LFO_SHAPES, 'random'), depth: 0.6, lfm: 0.5, dtype: ix(DIRT, 'fold'), drive: 0.5, crush: 0.25, decay: 2, sustain: 0.95, release: 0.05 } },
   // space & reese
-  { name: 'space bass', group: 'space', data: { wave: 2, unison: 7, detune: 0.55, width: 1, sub: 0.6, cutoff: 900, reso: 0.25, fenv: 0.35, fdecay: 1.2, attack: 0.04, decay: 3, sustain: 0.8, release: 0.6, dtype: ix(DIRT, 'tape'), drive: 0.2 } },
-  { name: 'reese', group: 'space', data: { wave: 2, unison: 2, detune: 0.35, width: 0.7, sub: 0.6, cutoff: 1400, reso: 0.2, dtype: ix(DIRT, 'tape'), drive: 0.3, decay: 3, sustain: 0.9, release: 0.2 } },
-  { name: 'neuro reese', group: 'space', data: { wave: 2.5, unison: 4, detune: 0.4, width: 0.8, fm: 0.2, sub: 0.6, suboct: 1, ftype: ix(FILTERS, 'band'), cutoff: 1100, reso: 0.5, rate: ix(RATES, '1 bar'), lshape: ix(LFO_SHAPES, 'triangle'), depth: 0.5, dtype: ix(DIRT, 'fold'), drive: 0.45, decay: 3, sustain: 0.9, release: 0.2 } },
+  { name: 'space bass', group: 'space', data: { octave: 0, wave: 2, unison: 7, detune: 0.55, width: 1, sub: 0.6, cutoff: 900, reso: 0.25, fenv: 0.35, fdecay: 1.2, attack: 0.04, decay: 3, sustain: 0.8, release: 0.6, dtype: ix(DIRT, 'tape'), drive: 0.2 } },
+  { name: 'reese', group: 'space', data: { octave: 0, wave: 2, unison: 2, detune: 0.35, width: 0.7, sub: 0.6, cutoff: 1400, reso: 0.2, dtype: ix(DIRT, 'tape'), drive: 0.3, decay: 3, sustain: 0.9, release: 0.2 } },
+  { name: 'neuro reese', group: 'space', data: { octave: 0, wave: 2.5, unison: 4, detune: 0.4, width: 0.8, fm: 0.2, sub: 0.6, suboct: 1, ftype: ix(FILTERS, 'band'), cutoff: 1100, reso: 0.5, rate: ix(RATES, '1 bar'), lshape: ix(LFO_SHAPES, 'triangle'), depth: 0.5, dtype: ix(DIRT, 'fold'), drive: 0.45, decay: 3, sustain: 0.9, release: 0.2 } },
   // grime & trap
-  { name: 'grime square', group: 'grime', data: { wave: 3, sub: 0.3, cutoff: 2200, reso: 0.2, fenv: 0.4, fdecay: 0.15, decay: 0.25, sustain: 0.2, release: 0.06, dtype: ix(DIRT, 'hard'), drive: 0.3 } },
-  { name: 'eskibeat', group: 'grime', data: { wave: 1, fm: 0.5, ratio: ix(RATIOS, '2'), sub: 0.4, decay: 0.3, sustain: 0.1, release: 0.05, drop: 5, droptime: 0.02, dtype: ix(DIRT, 'bite'), drive: 0.4 } },
+  { name: 'grime square', group: 'grime', data: { octave: 0, wave: 3, sub: 0.3, cutoff: 2200, reso: 0.2, fenv: 0.4, fdecay: 0.15, decay: 0.25, sustain: 0.2, release: 0.06, dtype: ix(DIRT, 'hard'), drive: 0.3 } },
+  { name: 'eskibeat', group: 'grime', data: { octave: 0, wave: 1, fm: 0.5, ratio: ix(RATIOS, '2'), sub: 0.4, decay: 0.3, sustain: 0.1, release: 0.05, drop: 5, droptime: 0.02, dtype: ix(DIRT, 'bite'), drive: 0.4 } },
   { name: 'pure sub', group: 'grime', data: { wave: 0, decay: 2, sustain: 1, release: 0.1 } },
-  { name: 'trap distorted', group: 'grime', data: { wave: 0.6, drop: 16, droptime: 0.04, decay: 2.5, sustain: 0.3, release: 0.2, glide: 0.06, dtype: ix(DIRT, 'fold'), drive: 0.45, sub: 0.6, cutoff: 4000 } },
+  { name: 'trap distorted', group: 'grime', data: { octave: 0, wave: 0.6, drop: 16, droptime: 0.04, decay: 2.5, sustain: 0.3, release: 0.2, glide: 0.06, dtype: ix(DIRT, 'fold'), drive: 0.45, sub: 0.6, cutoff: 4000 } },
 ]
 
 export default {
