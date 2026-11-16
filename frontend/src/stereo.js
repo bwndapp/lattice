@@ -215,7 +215,8 @@ registerProcessor('lattice-grain', GrainProcessor)
  *   ring    the trigger's raw waveform, signed: gain = 1 - depth x trigger, at audio rate,
  *           the gritty, tonal side of a ring modulator
  *
- * 'drive' is how hard the trigger counts (a quiet kick can still duck all the way).
+ * The trigger is measured against its own recent peak, so a quiet kick and one slammed
+ * through a saturator both duck all the way at full depth; 'drive' is how far past that.
  */
 class RingSideProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
@@ -223,11 +224,11 @@ class RingSideProcessor extends AudioWorkletProcessor {
       { name: 'depth', defaultValue: 0.85, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
       { name: 'attack', defaultValue: 0.002, minValue: 0, maxValue: 0.1, automationRate: 'k-rate' },
       { name: 'release', defaultValue: 0.25, minValue: 0.005, maxValue: 1, automationRate: 'k-rate' },
-      { name: 'drive', defaultValue: 2, minValue: 0.1, maxValue: 16, automationRate: 'k-rate' },
+      { name: 'drive', defaultValue: 1, minValue: 0.5, maxValue: 4, automationRate: 'k-rate' },
       { name: 'mode', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' }, // 0 clean, 1 ring
     ]
   }
-  constructor() { super(); this.env = 0; this.g = 1 }
+  constructor() { super(); this.env = 0; this.g = 1; this.peak = 0.05 }
   process(inputs, outputs, params) {
     const input = inputs[0]
     const side = inputs[1]
@@ -246,8 +247,14 @@ class RingSideProcessor extends AudioWorkletProcessor {
     // the gain glides a touch between samples in clean mode, so a hard edge in the trigger
     // doesn't click; ring mode follows the waveform as it is
     const glide = 1 - Math.exp(-1 / (0.0005 * sampleRate))
+    // the trigger's recent peak: up at once, down over a few seconds, never so low that
+    // silence gets turned up into something
+    const fall = Math.exp(-1 / (3 * sampleRate))
     for (let i = 0; i < n; i++) {
-      const sc = sL ? (sL[i] + sR[i]) * 0.5 * drive : 0
+      const raw = sL ? (sL[i] + sR[i]) * 0.5 : 0
+      const mag = raw < 0 ? -raw : raw
+      this.peak = Math.max(0.05, mag, this.peak * fall)
+      const sc = (raw / this.peak) * drive
       let gain
       if (ring) {
         gain = 1 - depth * Math.max(-1, Math.min(1, sc))
@@ -1128,7 +1135,7 @@ const UNITS = {
           depth: n(p.depth, 0, 1, 0.85),
           attack: n(p.attack, 0, 0.1, 0.002),
           release: n(p.release, 0.005, 1, 0.25),
-          drive: n(p.drive, 0.1, 16, 2),
+          drive: n(p.drive, 0.5, 4, 1),
           mode: p.mode === 'ring' ? 1 : 0,
         }
         push()

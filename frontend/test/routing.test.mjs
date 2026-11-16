@@ -142,5 +142,18 @@ const lineOf = (code, v) => code.split('\n').find((l) => l.startsWith(`const ${v
   ok('without a solo everything plays', /const n_other = /.test(m.generateCode(p)))
 }
 
+// a sidechain after a bus that has a path of its own inside it (a distortion into the bus):
+// the bus's notes stay where they are, so the distortion still gets its sound
+{
+  const { code, inserts } = routing(project(
+    [node('b', 'pattern', { patternId: 'pb' }), node('d', 'pattern', { patternId: 'pd' }), node('dist', 'distortion'), node('mix', 'bus', { name: 'mix' }), node('sc', 'sidechain')],
+    [edge('b', 'dist'), edge('b', 'mix', 'in-0'), edge('dist', 'mix', 'in-1'), edge('mix', 'sc', 'in-0'), edge('d', 'sc', 'in-1'), edge('sc', 'out', 'in-0')],
+  ))
+  const distBus = orbitIn(inserts, 'dist')
+  const line = lineOf(code, 'n_sc')
+  ok('a sidechain after a bus leaves the bus\'s notes where they are', /stack\(n_mix, /.test(line) && !/n_mix\.orbit/.test(line), line)
+  ok('so a distortion inside the bus still plays on its own bus', new RegExp(`\\.orbit\\(${distBus}\\)`).test(lineOf(code, 'n_dist')))
+}
+
 if (fails) { console.log(`\n${fails} failing`); process.exit(1) }
 console.log('\nrouting ok')

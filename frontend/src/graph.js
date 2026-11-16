@@ -430,7 +430,7 @@ export const NODE_TYPES = {
       { key: 'depth', type: 'knob', label: 'depth', min: 0, max: 1, def: 0.85 },
       { key: 'attack', type: 'knob', label: 'attack', min: 0, max: 0.1, def: 0.005, unit: 's' },
       { key: 'release', type: 'knob', label: 'release', min: 0.02, max: 1, def: 0.25, unit: 's' },
-      { key: 'drive', type: 'knob', label: 'drive', min: 0.25, max: 16, def: 2, log: true, unit: 'x' },
+      { key: 'drive', type: 'knob', label: 'drive', min: 0.5, max: 4, def: 1, log: true, unit: 'x' },
       { key: 'mode', type: 'select', label: 'mode', options: ['clean', 'ring'], def: 'clean' },
       { key: 'hear', type: 'select', label: 'trigger', options: ['silent', 'audible'], def: 'silent' },
     ],
@@ -471,7 +471,9 @@ export const NODE_TYPES = {
       ctx.sideTo?.(keyOrbit, key)
       if (d.hear === 'audible') ctx.toSpeakers?.(keyOrbit)
       const trig = `${trigger}.fmap((v) => ({ ...v, _r: 'sc.${ctx.nodeId}' })).orbit(${keyOrbit})`
-      if (!own) return `stack(${placed.map((x) => (x.endsWith(`.orbit(${orbit})`) ? x : `${x}.orbit(${orbit})`)).join(', ')}, ${trig})`
+      // the sounds as placed above: notes already on a bus stay where they are (a bus's own
+      // paths, a distortion inside it, keep their inserts), only those with none come here
+      if (!own) return `stack(${[...placed, trig].join(', ')})`
       // its notes are the sounds' (those that kept their own bus are the same notes) and the trigger
       const trigVar = ctx.define ? ctx.define('trigger', trig) : trig
       ctx.setAtoms?.([...placed.flatMap((x, n) => (x === xs[at[n]] && ctx.atomsOf ? ctx.atomsOf(x) : [x])), trigVar])
