@@ -1452,3 +1452,33 @@ img.photo { display: inline-block; border-radius: 50%; object-fit: cover; backgr
 .gnode.muted { opacity: 0.45; }
 .gnode.muted .node-body { filter: grayscale(1); }
 .node-muted { font-size: 8px; letter-spacing: 0.08em; text-transform: uppercase; padding: 0 3px; line-height: 1.4; color: var(--ink); background: var(--muted); }
+
+/*
+ * ── finish: the small things everything shares ──────────────────────────────
+ * Written with :where() so each rule weighs nothing: anything more particular above (a
+ * save button's slow fade, a control that moves every frame) still wins.
+ */
+body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
+/* a trackpad swipe sideways on the timeline is a scroll, never the browser's "back" */
+html, body { overscroll-behavior: none; }
+* { -webkit-tap-highlight-color: transparent; }
+::placeholder { color: var(--dim); opacity: 1; }
+button:disabled { cursor: var(--dot); }
+/* states ease in rather than snap (steps are left out: they light up with the playhead) */
+:where(button:not(.step), .select, select, input, textarea, .knob-track, .knob-value) {
+  transition: color 0.12s ease, background-color 0.12s ease, border-color 0.12s ease, opacity 0.12s ease, stroke 0.12s ease, fill 0.12s ease;
+}
+/* a press you can feel */
+:where(.btn, .node-btn, .led, .fx-toggle):active:not(:disabled) { filter: brightness(0.85); }
+/* a knob lifts a little under the pointer, so you know which one a drag will take */
+.knob:hover .knob-track { stroke: #4a4a52; }
+.knob:hover .knob-value { stroke: var(--paper); }
+.knob.changed:hover .knob-value { stroke: var(--acid); }
+/* menus, popovers and windows arrive instead of appearing */
+@keyframes finish-fade { from { opacity: 0; } }
+@keyframes finish-slide { from { opacity: 0; transform: translateX(14px); } }
+.popover, .knob-menu, .synth-window { animation: finish-fade 0.12s ease-out; }
+.rack-side { animation: finish-slide 0.16s cubic-bezier(0.2, 0.9, 0.3, 1); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+}
