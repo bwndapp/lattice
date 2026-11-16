@@ -337,8 +337,11 @@ export default function App() {
   // for a second", not a decision about the track, so it stays on this keyboard and never
   // reaches the other people in the room. Muting is the track's, and is shared.
   const [laneSolo, setLaneSolo] = useState({})
-  const genRef = useRef({ solo: null, laneSolo: {} })
-  genRef.current = { solo, laneSolo }
+  // and a whole line through one node (alt + S on the patch): the same kind of listening
+  const [lineSolo, setLineSolo] = useState(null)
+  useEffect(() => setLineSolo(null), [trackId]) // a new track starts with everything heard
+  const genRef = useRef({ solo: null, laneSolo: {}, lineSolo: null })
+  genRef.current = { solo, laneSolo, lineSolo }
   const readOnlyRef = useRef(null)
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState(null) // { msg, action: { label, run } }
@@ -600,7 +603,7 @@ export default function App() {
   // listening to a different lane is heard straight away, without touching the track
   const heardSolo = useRef(null)
   useEffect(() => {
-    const key = JSON.stringify(laneSolo)
+    const key = JSON.stringify([laneSolo, lineSolo])
     if (heardSolo.current === null) { heardSolo.current = key; return } // nothing to redo on the way in
     if (heardSolo.current === key) return
     heardSolo.current = key
@@ -609,7 +612,7 @@ export default function App() {
     if (!p) return
     const text = generateCode(p, genRef.current)
     if (text !== editor.code) { replaceCode(text); liveUpdate() }
-  }, [laneSolo, replaceCode, liveUpdate])
+  }, [laneSolo, lineSolo, replaceCode, liveUpdate])
 
   // Everyone's pointer, everywhere: one listener that names whichever region it's over
   // (surfaces.jsx). The three surfaces with coordinates of their own report for themselves.
@@ -1858,6 +1861,8 @@ export default function App() {
                 onSolo={setSolo}
                 laneSolo={laneSolo}
                 onLaneSolo={setLaneSolo}
+                lineSolo={lineSolo}
+                onLineSolo={setLineSolo}
                 transport={transport}
               />
             </div>

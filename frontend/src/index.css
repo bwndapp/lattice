@@ -1493,3 +1493,7 @@ button:disabled { cursor: var(--dot); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
 }
+
+/* soloing a line (alt + S): what's on it stays as it is, the rest steps back */
+.gnode.off-line { opacity: 0.28; filter: grayscale(0.8); }
+.gnode.on-line { box-shadow: 0 0 0 1px color-mix(in srgb, var(--acid) 55%, transparent); }

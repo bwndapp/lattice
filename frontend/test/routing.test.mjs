@@ -126,5 +126,21 @@ const lineOf = (code, v) => code.split('\n').find((l) => l.startsWith(`const ${v
   ok('a sound on one path is left as it is', !/_r:/.test(single))
 }
 
+// soloing a line (alt + S): what feeds the node, what it goes on through, and a sidechain's
+// trigger on the way; nothing else
+{
+  const p = project(
+    [node('b', 'pattern', { patternId: 'pb' }), node('d', 'pattern', { patternId: 'pd' }), node('dist', 'distortion'),
+      node('sc', 'sidechain'), node('mix', 'bus', { name: 'mix' }), node('other', 'sound', { mini: 'hh*8' })],
+    [edge('b', 'dist'), edge('dist', 'sc', 'in-0'), edge('d', 'sc', 'in-1'), edge('sc', 'mix', 'in-0'), edge('other', 'mix', 'in-1'), edge('d', 'mix', 'in-2'), edge('mix', 'out', 'in-0')],
+  )
+  const solo = m.generateCode(p, { lineSolo: 'dist' })
+  ok('a soloed line plays the sound through it', /const n_dist = /.test(solo) && /const n_mix = /.test(solo))
+  ok('and nothing else mixed in on the way', !/const n_other = /.test(solo))
+  ok('a sidechain on the line still has its trigger', /_r: 'sc\.sc'/.test(solo))
+  ok('the trigger only drives the duck: its own wire into the mix is off the line', !/n_patternd\.orbit|n_d\.orbit\(\d+\)\)?,? n_/.test(solo.split('const n_mix')[1] ?? ''))
+  ok('without a solo everything plays', /const n_other = /.test(m.generateCode(p)))
+}
+
 if (fails) { console.log(`\n${fails} failing`); process.exit(1) }
 console.log('\nrouting ok')

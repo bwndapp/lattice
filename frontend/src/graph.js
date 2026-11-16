@@ -1121,13 +1121,65 @@ export function splitPatternIds(project) {
 }
 
 /**
+ * A node's line, for soloing it: every wire that feeds it (all the way back), every wire on
+ * from it that reaches an output, and what triggers any sidechain on the way, so it still
+ * ducks. { nodes: Set(id), edges: Set(edge) }, or null when there's no such node.
+ */
+export function lineOf(project, id) {
+  const byId = new Map(project.nodes.map((n) => [n.id, n]))
+  if (!byId.has(id)) return null
+  const edges = project.edges.filter((e) => !isTrigger(e) && byId.has(e.source) && byId.has(e.target))
+  const into = (n) => edges.filter((e) => e.target === n)
+  const outOf = (n) => edges.filter((e) => e.source === n)
+  const keep = new Set()
+  const nodes = new Set([id])
+  const upFrom = (start) => {
+    const todo = [start]
+    while (todo.length) {
+      const n = todo.pop()
+      for (const e of into(n)) {
+        if (keep.has(e)) continue
+        keep.add(e)
+        if (!nodes.has(e.source)) { nodes.add(e.source); todo.push(e.source) }
+      }
+    }
+  }
+  upFrom(id)
+  // on from it: only the way to an output (a wire into a dead end isn't part of what's heard)
+  const reaches = new Set(project.nodes.filter((n) => n.type === 'output').map((n) => n.id))
+  for (let grew = true; grew;) {
+    grew = false
+    for (const e of edges) if (reaches.has(e.target) && !reaches.has(e.source)) { reaches.add(e.source); grew = true }
+  }
+  const down = [id]
+  const seen = new Set([id])
+  while (down.length) {
+    const n = down.pop()
+    for (const e of outOf(n)) {
+      if (!reaches.has(e.target) && byId.get(e.target)?.type !== 'output') continue
+      keep.add(e)
+      nodes.add(e.target)
+      if (!seen.has(e.target)) { seen.add(e.target); down.push(e.target) }
+      // a sidechain on the way still needs what triggers it
+      if (byId.get(e.target)?.type === 'sidechain') {
+        for (const t of into(e.target).filter((w) => w.targetHandle === 'in-1')) { keep.add(t); nodes.add(t.source); upFrom(t.source) }
+      }
+    }
+  }
+  return { nodes, edges: keep }
+}
+
+/**
  * Code for the graph: one `const` per node that makes a pattern, in dependency order,
  * then one lane per wire into each output node. `solo` (a node id) plays only that node.
  */
-export function graphCode(project, { solo = null, song = null, audition = false, auto = null, laneSolo = null } = {}) {
+export function graphCode(project, { solo = null, song = null, audition = false, auto = null, laneSolo = null, lineSolo = null } = {}) {
   const { nodes } = project
   // triggers carry rhythm, not sound: the patterns they fire make their own code (project.js)
-  const edges = project.edges.filter((e) => !isTrigger(e))
+  let edges = project.edges.filter((e) => !isTrigger(e))
+  // soloing a line (alt + S): only its wires are followed, so nothing else is reached
+  const line = lineSolo ? lineOf(project, lineSolo) : null
+  if (line) edges = edges.filter((e) => line.edges.has(e))
   const byId = new Map(nodes.map((n) => [n.id, n]))
   const patternIds = new Set(project.patterns.map((p) => p.id))
   const exprs = new Map() // id → variable name, or null when the node makes nothing

@@ -4,7 +4,7 @@ import {
   applyNodeChanges, applyEdgeChanges, useNodesInitialized, useReactFlow, useUpdateNodeInternals, useViewport,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { APPLY, BUS_NODES, CHANNEL_FADER, FX_CATS, FX_UNITS, GROUPS, MENU_SUBS, NODE_TYPES, channelGain, defaultData, effectsByCat, inputKey, inputsOf, isTrigger, makeFxUnit, makesCycle, menuGroup, triggerOf } from './graph'
+import { APPLY, BUS_NODES, CHANNEL_FADER, FX_CATS, FX_UNITS, GROUPS, MENU_SUBS, NODE_TYPES, channelGain, defaultData, effectsByCat, inputKey, inputsOf, isTrigger, lineOf, makeFxUnit, makesCycle, menuGroup, triggerOf } from './graph'
 import { ENGINES } from './instruments/index.js'
 import { openAbstract, openCode, openSynth } from './instruments/windows.js'
 import { abstractOf, abstractParts, abstractState } from './abstract/index.js'
@@ -683,7 +683,7 @@ function StudioNode({ id, selected }) {
 
   return (
     <div
-      className={`gnode g-${spec.group} t-${node.type} ${node.data?.mute === true ? 'muted' : ''} ${selected ? 'selected' : ''} ${soloing ? 'soloing' : ''} ${!LISTENS.has(node.type) && !ctx.heard.has(id) ? 'unheard' : ''} ${heldBy ? 'peer-held' : ''}`}
+      className={`gnode g-${spec.group} t-${node.type} ${node.data?.mute === true ? 'muted' : ''} ${selected ? 'selected' : ''} ${soloing ? 'soloing' : ''} ${!LISTENS.has(node.type) && !ctx.heard.has(id) ? 'unheard' : ''} ${heldBy ? 'peer-held' : ''} ${ctx.line ? (ctx.line.nodes.has(id) ? 'on-line' : 'off-line') : ''}`}
       style={{ ...(tint ? { '--tint': tint, '--tint-ink': inkFor(tint) } : {}), ...(heldBy ? { '--peer': heldBy.color } : {}) }}
       title={heldBy ? `${heldBy.name} has this selected` : undefined}
       onClick={(e) => {
@@ -1428,7 +1428,7 @@ function Palette({ onAdd, unused = [], onForget }) {
   )
 }
 
-function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onLaneSolo, transport }) {
+function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onLaneSolo, lineSolo = null, onLineSolo = () => {}, transport }) {
   const flow = useReactFlow()
   const wrapRef = useRef(null)
   const dock = useRollDock() // the pattern's rack and notes live along the bottom
@@ -2009,7 +2009,26 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
   const rackNode = rackSide ? project.nodes.find((n) => n.id === rackSide && n.type === 'fxrack') : null
   const closeRack = useCallback(() => setRackSide(null), [])
 
+  // the line being soloed (alt + S): what's on it stays lit, the rest dims
+  const line = useMemo(() => (lineSolo ? lineOf(project, lineSolo) : null), [project, lineSolo])
+  const lineRef = useRef(lineSolo)
+  lineRef.current = lineSolo
+  useEffect(() => {
+    // alt + S: solo the line through the picked node, or stop; the key, not the letter (on a
+    // Mac, alt + S types ß)
+    const onKey = (e) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey || e.code !== 'KeyS') return
+      if (e.target.closest?.('input, textarea, select, [contenteditable="true"], dialog, [role="dialog"], .add-menu')) return
+      e.preventDefault()
+      const picked = nodesRef.current.find((n) => n.selected && n.type !== 'frame')?.id ?? null
+      onLineSolo(!picked || picked === lineRef.current ? null : picked)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onLineSolo])
+
   const ctx = useMemo(() => ({
+    line,
     project,
     rackSide,
     openRack: setRackSide,
@@ -2053,7 +2072,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
       })
       dock?.open(patternId, null, 'rack')
     },
-  }), [project, rackSide, heard, solo, onSolo, laneSolo, onLaneSolo, updateNode, addStream, removeNodes, frameSel, selectFrame, updateFrame, removeFrame, toggleFrame, onUpdateProject, automation, dock])
+  }), [project, line, rackSide, heard, solo, onSolo, laneSolo, onLaneSolo, updateNode, addStream, removeNodes, frameSel, selectFrame, updateFrame, removeFrame, toggleFrame, onUpdateProject, automation, dock])
 
   // what we have selected, so the others see it ringed on their canvas
   useEffect(() => { selectionIs('graph', nodes.filter((n) => n.selected && n.type !== 'frame').map((n) => n.id)) }, [nodes])
@@ -2405,7 +2424,9 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
           </ReactFlow>
           <svg className="knife-line" style={{ display: 'none' }} aria-hidden="true"><line ref={knifeLine} /></svg>
           <div className="graph-tip" aria-live="polite">
-            {solo
+            {lineSolo && line
+              ? <>soloing the line through <b>{nodeTitle(project.nodes.find((n) => n.id === lineSolo), project)}</b> · <b>alt + S</b> again or <button className="linkish" onClick={() => onLineSolo(null)}>hear everything</button></>
+              : solo
               ? <>auditioning <b>{nodeTitle(project.nodes.find((n) => n.id === solo), project)}</b> · <button className="linkish" onClick={() => onSolo(null)}>back to the output</button></>
               : frameSel && project.frames?.find((f) => f.id === frameSel)?.collapsed ? <>collapsed frame · <b>▸</b> or a double-click on the bar opens it · drag it to move what it holds · <b>delete</b> removes the frame and shows its nodes again</>
               : frameSel ? <>frame · <b>▾</b> collapses it · drag its title to move it and what's in it · double-click the title to rename · <b>delete</b> removes the frame, not its nodes</>
