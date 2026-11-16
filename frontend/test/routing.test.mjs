@@ -178,5 +178,15 @@ const lineOf = (code, v) => code.split('\n').find((l) => l.startsWith(`const ${v
   ok('a silent trigger that only feeds the sidechain is kept off the speakers', satBus != null && quiet.has(satBus))
 }
 
+// bypassed (alt + B): what comes in goes straight out
+{
+  const { code, inserts } = routing(project(
+    [node('b', 'pattern', { patternId: 'pb' }), node('d', 'pattern', { patternId: 'pd' }), node('dist', 'distortion', { bypass: true }), node('sc', 'sidechain', { bypass: true })],
+    [edge('b', 'dist'), edge('dist', 'sc', 'in-0'), edge('d', 'sc', 'in-1'), edge('sc', 'out', 'in-0')],
+  ))
+  ok('a bypassed effect passes its sound through untouched', lineOf(code, 'n_dist') === 'const n_dist = n_b' && orbitIn(inserts, 'dist') == null)
+  ok('a bypassed sidechain passes its sounds, not its trigger, and ducks nothing', lineOf(code, 'n_sc') === 'const n_sc = n_dist' && orbitIn(inserts, 'sc_sc') == null)
+}
+
 if (fails) { console.log(`\n${fails} failing`); process.exit(1) }
 console.log('\nrouting ok')

@@ -683,7 +683,7 @@ function StudioNode({ id, selected }) {
 
   return (
     <div
-      className={`gnode g-${spec.group} t-${node.type} ${node.data?.mute === true ? 'muted' : ''} ${selected ? 'selected' : ''} ${soloing ? 'soloing' : ''} ${!LISTENS.has(node.type) && !ctx.heard.has(id) ? 'unheard' : ''} ${heldBy ? 'peer-held' : ''} ${ctx.line ? (ctx.line.nodes.has(id) ? 'on-line' : 'off-line') : ''}`}
+      className={`gnode g-${spec.group} t-${node.type} ${node.data?.mute === true ? 'muted' : ''} ${node.data?.bypass === true ? 'bypassed' : ''} ${selected ? 'selected' : ''} ${soloing ? 'soloing' : ''} ${!LISTENS.has(node.type) && !ctx.heard.has(id) ? 'unheard' : ''} ${heldBy ? 'peer-held' : ''} ${ctx.line ? (ctx.line.nodes.has(id) ? 'on-line' : 'off-line') : ''}`}
       style={{ ...(tint ? { '--tint': tint, '--tint-ink': inkFor(tint) } : {}), ...(heldBy ? { '--peer': heldBy.color } : {}) }}
       title={heldBy ? `${heldBy.name} has this selected` : undefined}
       onClick={(e) => {
@@ -696,6 +696,7 @@ function StudioNode({ id, selected }) {
       <div className="node-head">
         <span className="node-kind">{spec.label}</span>
         {node.data?.mute === true && <span className="node-muted" title="Muted: it makes no sound and nothing gets through it · ctrl + M to unmute">muted</span>}
+        {node.data?.bypass === true && <span className="node-muted node-bypassed" title="Bypassed: what comes in goes straight out, untouched · alt + B to switch it back on">bypass</span>}
         {BUS_NODES.has(node.type) && (
           <span className="node-bus" title="Runs on the bus: it works on everything mixed into it, after every per-note effect in the patch">bus</span>
         )}
@@ -2014,18 +2015,28 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
   const lineRef = useRef(lineSolo)
   lineRef.current = lineSolo
   useEffect(() => {
-    // alt + S: solo the line through the picked node, or stop; the key, not the letter (on a
-    // Mac, alt + S types ß)
+    // alt + S: solo the line through the picked node, or stop; alt + B: bypass what's picked.
+    // The key, not the letter (on a Mac, alt + S types ß and alt + B ∫)
     const onKey = (e) => {
-      if (!e.altKey || e.ctrlKey || e.metaKey || e.code !== 'KeyS') return
+      if (!e.altKey || e.ctrlKey || e.metaKey || (e.code !== 'KeyS' && e.code !== 'KeyB')) return
       if (e.target.closest?.('input, textarea, select, [contenteditable="true"], dialog, [role="dialog"], .add-menu')) return
       e.preventDefault()
+      if (e.code === 'KeyB') {
+        // only what processes a sound can be bypassed; a mixed selection all goes one way
+        const ids = new Set(nodesRef.current.filter((n) => n.selected && n.type !== 'frame').map((n) => n.id))
+        const can = (n) => ids.has(n.id) && (NODE_TYPES[n.type]?.inputs === 1 || n.type === 'sidechain')
+        const targets = projectRef.current.nodes.filter(can)
+        if (!targets.length) return
+        const on = targets.some((n) => n.data?.bypass !== true)
+        onUpdateProject((p) => { for (const n of p.nodes) if (can(n)) { if (on) n.data.bypass = true; else delete n.data.bypass } })
+        return
+      }
       const picked = nodesRef.current.find((n) => n.selected && n.type !== 'frame')?.id ?? null
       onLineSolo(!picked || picked === lineRef.current ? null : picked)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onLineSolo])
+  }, [onLineSolo, onUpdateProject])
 
   const ctx = useMemo(() => ({
     line,
@@ -2430,7 +2441,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
               ? <>auditioning <b>{nodeTitle(project.nodes.find((n) => n.id === solo), project)}</b> · <button className="linkish" onClick={() => onSolo(null)}>back to the output</button></>
               : frameSel && project.frames?.find((f) => f.id === frameSel)?.collapsed ? <>collapsed frame · <b>▸</b> or a double-click on the bar opens it · drag it to move what it holds · <b>delete</b> removes the frame and shows its nodes again</>
               : frameSel ? <>frame · <b>▾</b> collapses it · drag its title to move it and what's in it · double-click the title to rename · <b>delete</b> removes the frame, not its nodes</>
-              : selectedCount > 1 ? <><b>ctrl + M</b> mutes them · <b>ctrl/cmd + F</b> frames them · <b>ctrl/cmd + G</b> folds effects into one fx rack · <b>ctrl/cmd + D</b> duplicates · <b>shift + right-drag</b> across wires puts a node inline on them</>
+              : selectedCount > 1 ? <><b>ctrl + M</b> mutes them · <b>alt + B</b> bypasses them · <b>ctrl/cmd + F</b> frames them · <b>ctrl/cmd + G</b> folds effects into one fx rack · <b>ctrl/cmd + D</b> duplicates · <b>shift + right-drag</b> across wires puts a node inline on them</>
               : selected ? (
                 <>
                   {NODE_TYPES[selected.type]?.blurb}

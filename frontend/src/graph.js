@@ -1043,6 +1043,7 @@ export function normalizeGraph(raw, patterns) {
     }
     if (typeof n.data?.name === 'string' && n.data.name.trim()) data.name = n.data.name.slice(0, 40)
     if (n.type !== 'output' && n.data?.mute === true) data.mute = true
+    if (n.data?.bypass === true) data.bypass = true
     nodes.push({ id, type: n.type, x: Math.round(clampNum(n.x, 0, -20000, 20000)), y: Math.round(clampNum(n.y, 0, -20000, 20000)), data })
   }
   const byId = new Map(nodes.map((n) => [n.id, n]))
@@ -1285,6 +1286,21 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     // to a dry and a wet path), these inserts get a branch of their own, fed from it, so
     // they only touch the sound on this wire.
     const feeder = wires.find((w) => exprs.get(w.source))?.source
+    // Bypassed (alt + B): what comes in goes straight out, untouched — for a sidechain, the
+    // sounds it ducks; the trigger has nothing to do. Saved with the track, like a mute.
+    if (node.data?.bypass === true && (spec.inputs === 1 || node.type === 'sidechain')) {
+      const pass = inputs.map((x, i) => [x, inputOrbits[i], slots[i]]).filter(([, , slot]) => node.type !== 'sidechain' || slot === 'in-0')
+      if (!pass.length) { exprs.set(id, null); return null }
+      const name = nodeVar(id)
+      if (pass.length === 1) {
+        if (pass[0][1] != null) orbitOf.set(id, pass[0][1])
+        sameAs.set(name, notesOf(pass[0][0]))
+        if (feeder && onShared(feeder)) sharedOf.set(id, true)
+      }
+      lines.push(`// ${node.data.name ?? spec.codeLabel ?? spec.label} (bypassed)`, `const ${name} = ${pass.length === 1 ? pass[0][0] : `stack(${pass.map((p) => p[0]).join(', ')})`}`)
+      exprs.set(id, name)
+      return name
+    }
     let shared = route.orbit != null && !!feeder && onShared(feeder)
     if (shared && (STEREO_TYPES.has(node.type) || SPACE_TYPES.has(node.type) || node.type === 'fxrack') && node.type !== 'bus') {
       const branch = stereoOrbit(`branch:${id}`)
