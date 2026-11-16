@@ -21,8 +21,14 @@ const snapTo = (v, step) => Math.round(v / step) * step
 export const MAX_BARS = 512
 export const MAX_CLIPS = 400
 
-/** Whether a rhythm machine plays any sound of its own (a layer with a sound picked). */
-export const machineSounds = (node) => abstractParts(node).some((p) => p.expr)
+/**
+ * Whether a rhythm machine plays any sound of its own: a layer with a sound picked that
+ * isn't firing an instrument (a layer that fires plays through what it fires instead).
+ */
+export function machineSounds(node, project) {
+  const firing = new Set((project?.edges ?? []).filter((e) => e.source === node.id && isTrigger(e)).map((e) => triggerOf(e.sourceHandle)))
+  return abstractParts(node).some((p) => p.expr && !firing.has(p.id))
+}
 
 /**
  * Source nodes that make sound by themselves (nothing wired into them). A rhythm machine is
@@ -33,7 +39,7 @@ export function sourceNodes(project) {
   return project.nodes.filter((n) => {
     const spec = NODE_TYPES[n.type]
     if (spec?.group !== 'source' || n.type === 'pattern') return false
-    if (spec.abstract) return machineSounds(n)
+    if (spec.abstract) return machineSounds(n, project)
     return !project.edges.some((e) => e.target === n.id)
   })
 }

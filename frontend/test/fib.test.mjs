@@ -111,6 +111,13 @@ console.log('fib ok')
   // (something else on the timeline, so the song is on)
   const none = proj({ song: { ...song, fired: true, clips: [{ id: 'z', src: 'pattern:drm', lane: 0, start: 0, len: 2 }] } })
   assert.ok(!m.songParts(none).some((p) => p.src === 'node:f'), 'a machine with no sounds of its own isn\'t a part')
+  // a layer with a sound picked that fires an instrument plays through it, not on its own
+  const firingSound = proj({ song: { ...song, fired: true } })
+  firingSound.nodes.find((n) => n.id === 'f').data.state.layers.forEach((l) => { l.sound = 'bd' })
+  const firingIds = new Set(firingSound.edges.filter((e) => e.source === 'f' && e.sourceHandle?.startsWith('trig-')).map((e) => e.sourceHandle.slice(5)))
+  if (firingIds.size === firingSound.nodes.find((n) => n.id === 'f').data.state.layers.length) {
+    assert.ok(!m.songParts(firingSound).some((p) => p.src === 'node:f'), 'a machine whose every layer fires isn\'t a part, whatever sounds they have picked')
+  }
   assert.match(line(m.generateCode(none), 'p_syn_c1'), /silence/, 'with no clips of its own it is quiet')
   // an old track: sounds wired into the layers, the fib on to the output
   const old = proj({ edges: [
