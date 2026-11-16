@@ -324,7 +324,8 @@ function tap() {
   // any click), an analyser can stay deaf for good: wait until the audio is running
   if (!ac || !master || ac.state !== 'running') return null
   if (analyser && tapped === master && analyser.context === ac) return analyser
-  try { tapped?.disconnect(analyser); analyser?.disconnect() } catch { /* gone with its context */ }
+  if (tapped && analyser) { try { tapped.disconnect(analyser) } catch { /* gone with its context */ } }
+  try { analyser?.disconnect() } catch { /* gone */ }
   analyser = new AnalyserNode(ac, { fftSize: 4096, smoothingTimeConstant: 0.5, minDecibels: FLOOR, maxDecibels: CEIL })
   master.connect(analyser)
   // an analyser nobody pulls from isn't run, and reads silence for ever: a silent wire on
@@ -449,6 +450,7 @@ function tapAudio() {
     if (!sentFormat && state.connected) { sentFormat = true; send({ type: 'audio-format', rate: ac.sampleRate, channels: 2 }) }
     return
   }
+  if (!tapNode && tapFrom === heard) return // still being made (the worklet module is loading)
   untapAudio()
   tapFrom = heard
   if (!tapLoaded.has(ac)) tapLoaded.set(ac, ac.audioWorklet.addModule(URL.createObjectURL(new Blob([TAP], { type: 'text/javascript' }))))
@@ -469,7 +471,9 @@ function tapAudio() {
 }
 
 function untapAudio() {
-  try { tapFrom?.disconnect(tapNode) } catch { /* gone with its context */ }
+  // only ever the tap's own wire: disconnect() with nothing given (a tap still loading) cuts
+  // every wire the master has, the one to the speakers included
+  if (tapFrom && tapNode) { try { tapFrom.disconnect(tapNode) } catch { /* gone with its context */ } }
   try { tapNode?.disconnect(); tapSink?.disconnect() } catch { /* gone */ }
   if (tapNode) tapNode.port.onmessage = null
   tapNode = null
