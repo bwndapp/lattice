@@ -48,13 +48,14 @@ const ok = (name, cond, extra) => {
 // ---- menu grouping
 const groupKeys = m.GROUPS.map(([k]) => k)
 const catKeys = m.FX_CATS.map(([k]) => k)
-ok('the add menu has at most 7 top groups (with instruments and recent)', groupKeys.length + 2 <= 7, groupKeys)
+// generators (the rhythm machines and the harmony engine) are a group of their own since 0.15
+ok('the add menu has at most 8 top groups (with instruments and recent)', groupKeys.length + 2 <= 8, groupKeys)
 ok('every node type is filed under a menu group', Object.keys(NODE_TYPES).every((t) => groupKeys.includes(m.menuGroup(t))),
   Object.keys(NODE_TYPES).filter((t) => !groupKeys.includes(m.menuGroup(t))))
 const effects = Object.keys(NODE_TYPES).filter((t) => m.menuGroup(t) === 'effect')
 ok('every effect has a known category', effects.every((t) => catKeys.includes(NODE_TYPES[t].cat)), effects.filter((t) => !catKeys.includes(NODE_TYPES[t].cat)))
 ok('only effects have a category', Object.keys(NODE_TYPES).filter((t) => NODE_TYPES[t].cat).every((t) => effects.includes(t)))
-ok('the sidechain sits with routing', m.menuGroup('sidechain') === 'combine')
+ok('the sidechain sits with the dynamics', m.menuGroup('sidechain') === 'effect' && NODE_TYPES.sidechain.cat === 'dynamics')
 ok('mixing tools are effects in the menu', m.menuGroup('compressor') === 'effect' && m.menuGroup('eq3') === 'effect')
 ok('a node keeps its own group (colours and wiring use it)', NODE_TYPES.compressor.group === 'mixing' && NODE_TYPES.sidechain.group === 'effect')
 const listed = m.effectsByCat()
