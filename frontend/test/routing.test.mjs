@@ -188,5 +188,17 @@ const lineOf = (code, v) => code.split('\n').find((l) => l.startsWith(`const ${v
   ok('a bypassed sidechain passes its sounds, not its trigger, and ducks nothing', lineOf(code, 'n_sc') === 'const n_sc = n_dist' && orbitIn(inserts, 'sc_sc') == null)
 }
 
+// adding an effect (into an fx rack, or a node of its own) moves no other bus: notes already
+// on their way still land where they were meant to
+{
+  const base = [node('b', 'pattern', { patternId: 'pb' }), node('d', 'pattern', { patternId: 'pd' }), node('rack', 'fxrack', { chain: [{ id: 'u1', type: 'filter', on: true, data: {} }] }), node('sat', 'saturator'), node('mix', 'bus', { name: 'mix' })]
+  const wires = [edge('b', 'rack'), edge('d', 'sat'), edge('rack', 'mix', 'in-0'), edge('sat', 'mix', 'in-1'), edge('mix', 'out', 'in-0')]
+  const before = routing(project(base, wires)).inserts
+  const busOf = (inserts, key) => orbitIn(inserts, key)
+  const more = base.map((n) => (n.id === 'rack' ? { ...n, data: { chain: [{ id: 'u0', type: 'distortion', on: true, data: {} }, ...n.data.chain] } } : n))
+  const after = routing(project([...more, node('extra', 'chorus')], [...wires])).inserts
+  ok('adding effects moves no other bus', ['sat', 'mix'].every((k) => busOf(before, k) === busOf(after, k)), ['sat', 'mix'].map((k) => `${k} ${busOf(before, k)}→${busOf(after, k)}`).join(' '))
+}
+
 if (fails) { console.log(`\n${fails} failing`); process.exit(1) }
 console.log('\nrouting ok')

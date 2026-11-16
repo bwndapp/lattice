@@ -1201,20 +1201,31 @@ export function graphCode(project, { solo = null, song = null, audition = false,
   const patternIds = new Set(project.patterns.map((p) => p.id))
   const exprs = new Map() // id → variable name, or null when the node makes nothing
   const lines = []
-  // each sidechain gets its own audio bus; bus 1 is where everything else plays
-  const sidechains = nodes.filter((n) => n.type === 'sidechain').map((n) => n.id)
   const cps = (Number(project.bpm) || 140) / (Number(project.beats) || 4) / 60
-  // stereo inserts: a bus each, numbered in patch order so the numbers stay put
-  const stereoKeys = []
-  for (const n of nodes) {
-    if (STEREO_TYPES.has(n.type)) stereoKeys.push(n.id)
-    for (const u of n.data?.chain ?? []) if (STEREO_TYPES.has(u.type)) stereoKeys.push(`${n.id}_${u.id}`)
+  /*
+   * Stereo inserts, branches and sidechains each get a bus, and its number comes from what
+   * it's for (a node's id), not from where it is in the patch. Numbered by position, adding
+   * or removing one effect (an fx rack's especially) moved every bus after it, and the
+   * notes already scheduled — the next third of a second — landed on buses set up for
+   * something else, often straight to the speakers: a burst of the unprocessed track.
+   */
+  const busFor = new Map()
+  const busTaken = new Set()
+  const stereoOrbit = (key) => {
+    if (busFor.has(key)) return busFor.get(key)
+    let h = 2166136261
+    for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619)
+    let orbit = STEREO_ORBIT_BASE + ((h >>> 0) % 900000)
+    while (busTaken.has(orbit)) orbit++ // two keys landing together: the later one steps on
+    busTaken.add(orbit)
+    busFor.set(key, orbit)
+    return orbit
   }
-  // branch buses (see below) come after, so adding one never renumbers the others
-  for (const n of nodes) stereoKeys.push(`branch:${n.id}`)
-  // and each sidechain's trigger bus after those, for the same reason
-  for (const n of nodes) if (n.type === 'sidechain') stereoKeys.push(`sckey:${n.id}`)
-  const stereoOrbit = (key) => STEREO_ORBIT_BASE + Math.max(0, stereoKeys.indexOf(key))
+  // claim them in patch order, so if two ever do land together it's settled the same way each time
+  for (const n of nodes) {
+    if (STEREO_TYPES.has(n.type)) stereoOrbit(n.id)
+    for (const u of n.data?.chain ?? []) if (STEREO_TYPES.has(u.type)) stereoOrbit(`${n.id}_${u.id}`)
+  }
   const inserts = beginInserts()
   // reverbs and delays: the patch's own, and the shared pair the instruments' knobs send to
   const fx = beginFx()
@@ -1357,7 +1368,7 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     const sideTo = (from, key) => declareSide(inserts, from, key)
     const toSpeakers = (orbit) => declareSpeakers(inserts, orbit)
     const unheard = (orbit) => declareQuiet(inserts, orbit)
-    let expr = spec.code(node.data, inputs, { patternIds, mixChannels, slots, inputKeys, notesOf, atomsOf, takeNew, inputShared, ownPath, define, setAtoms, inputFans, unheard, nodeId: id, orbit: 2 + sidechains.indexOf(id), cps, beats, route, inputOrbits, stereoOrbit, declare, routeBus, sideTo, toSpeakers, auto: nodeAuto, autoOf, declareFx: (key, kind, params) => declareFx(fx, key, kind, params) })
+    let expr = spec.code(node.data, inputs, { patternIds, mixChannels, slots, inputKeys, notesOf, atomsOf, takeNew, inputShared, ownPath, define, setAtoms, inputFans, unheard, nodeId: id, orbit: stereoOrbit(`scbus:${id}`), cps, beats, route, inputOrbits, stereoOrbit, declare, routeBus, sideTo, toSpeakers, auto: nodeAuto, autoOf, declareFx: (key, kind, params) => declareFx(fx, key, kind, params) })
     if (!expr) { exprs.set(id, null); return null }
     if (songPart) { const marked = expr; expr = song(`node:${id}`, (shift, read) => marked.replace(/\u0001(\w+)\u0001/g, (_, a) => read(a))) }
     if (spec.group === 'source') expr = fromNode(expr, id)
