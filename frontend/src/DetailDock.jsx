@@ -6,6 +6,10 @@ import { previewInPatch } from './audio'
 import { STEPS_PER_BAR, midiToNote, reshapePattern, stepDivision } from './project'
 import { useOctave } from './keyboard.js'
 import { useTypingKeys } from './typingKeys.js'
+import Knob from './Knob.jsx'
+import { formatValue } from './knobMath.js'
+import { CHANNEL_FADER, NODE_TYPES, channelGain, inputKey, inputsOf } from './graph'
+import { nodeTitle, originLabel } from './Graph.jsx'
 import './DetailDock.css'
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
@@ -25,7 +29,133 @@ export function readDockHeight() {
  * on, with its instruments (rack) or one instrument's notes (piano roll). It stays open
  * while you work on the patch or the timeline, and its top edge drags to resize.
  */
-export default function DetailDock({ project, at, transport, started, height, onUpdateProject, onHeight, onPick, onTab, onClose }) {
+export default function DetailDock(props) {
+  return props.at?.busId ? <BusDock {...props} /> : <PatternDock {...props} />
+}
+
+/** The dock's top edge: drag to resize, double-click for the usual height. */
+function Grip({ height, onHeight }) {
+  const dragRef = useRef(null)
+  return (
+    <div
+      className="dd-grip"
+      onPointerDown={(e) => {
+        if (e.button !== 0) return
+        e.preventDefault()
+        e.currentTarget.setPointerCapture(e.pointerId)
+        dragRef.current = { y: e.clientY, height }
+      }}
+      onPointerMove={(e) => { const d = dragRef.current; if (d) onHeight(clamp(d.height + (d.y - e.clientY), 160, window.innerHeight - 200)) }}
+      onPointerUp={() => { dragRef.current = null }}
+      onPointerCancel={() => { dragRef.current = null }}
+      onDoubleClick={() => onHeight(360)}
+      title="Drag to resize · double-click for the usual height"
+      aria-hidden
+    />
+  )
+}
+
+/**
+ * A mixer bus along the bottom: a strip a channel, each with its level, in the order they
+ * come into the bus. Drag a strip (or use its arrows) to reorder: the wires swap slots, the
+ * sound and each channel's level stay as they were.
+ */
+function BusDock({ project, at, height, onUpdateProject, onHeight, onClose }) {
+  const bus = project.nodes.find((n) => n.id === at.busId && n.type === 'bus')
+  useEffect(() => { if (!bus) onClose() }, [bus, onClose])
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return
+      if (e.target.closest?.('input:not([type=range]), textarea, select, [contenteditable="true"], dialog, .popover, .knob-menu, .synth-window')) return
+      onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  const [dragging, setDragging] = useState(null) // the wire id being dragged
+  const [over, setOver] = useState(null) // the index it would land at
+  if (!bus) return null
+  const wires = inputsOf(project.edges, bus.id)
+  const spec = NODE_TYPES.bus
+  const editBus = (fn) => onUpdateProject((p) => { const n = p.nodes.find((x) => x.id === bus.id); if (n) fn(n.data) })
+  // reorder: the bus's wires take slots in-0, in-1… in the new order
+  const move = (from, to) => {
+    if (from === to || to < 0 || to >= wires.length) return
+    const order = wires.map((w) => w.id)
+    const [it] = order.splice(from, 1)
+    order.splice(to, 0, it)
+    onUpdateProject((p) => {
+      for (const e of p.edges) {
+        const i = order.indexOf(e.id)
+        if (e.target === bus.id && i >= 0) e.targetHandle = `in-${i}`
+      }
+    })
+  }
+  const busParam = (key) => spec.params.find((p) => p.key === key)
+  return (
+    <section data-surface="dock" className="detail-dock" style={{ height }} aria-label={`${bus.data?.name || 'bus'}: channels`}>
+      <Grip height={height} onHeight={onHeight} />
+      <div className="dd-head">
+        <NameInput className="dd-name" value={bus.data?.name || 'bus'} maxLength={40} aria-label="Bus name" onCommit={(v) => editBus((d) => { d.name = v || 'bus' })} />
+        <span className="dd-uses">mixer bus · {wires.length} channel{wires.length === 1 ? '' : 's'}</span>
+        <span className="dd-spacer" />
+        <button type="button" className="node-btn" onClick={onClose} title="Close (Esc)">close</button>
+      </div>
+      <div className="bus-strips" onDragOver={(e) => e.preventDefault()}>
+        {wires.map((w, i) => {
+          const src = project.nodes.find((n) => n.id === w.source)
+          const origin = originLabel(project, w)
+          const last = nodeTitle(src, project, w.sourceHandle)
+          const via = last === origin ? null : last
+          const key = inputKey(w)
+          const level = channelGain(bus.data, key)
+          return (
+            <div
+              key={w.id}
+              className={`bus-strip ${dragging === w.id ? 'dragging' : ''} ${over === i && dragging && dragging !== w.id ? 'over' : ''}`}
+              draggable
+              onDragStart={(e) => { setDragging(w.id); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', w.id) } catch { /* fine */ } }}
+              onDragEnter={() => setOver(i)}
+              onDragOver={(e) => { e.preventDefault(); if (over !== i) setOver(i) }}
+              onDrop={(e) => { e.preventDefault(); const from = wires.findIndex((x) => x.id === dragging); if (from >= 0) move(from, i); setDragging(null); setOver(null) }}
+              onDragEnd={() => { setDragging(null); setOver(null) }}
+              title="Drag to reorder"
+            >
+              <span className="bus-strip-num">{i + 1}</span>
+              <span className="bus-strip-name" title={via ? `${origin} via ${via}` : origin}>
+                {origin}
+                {via && <em> via {via}</em>}
+              </span>
+              <span className="bus-strip-knob" draggable={false} onDragStart={(e) => e.preventDefault()}>
+                <Knob def={CHANNEL_FADER} value={level} onChange={(v) => editBus((d) => { d.chan = { ...(d.chan ?? {}), [key]: v } })} />
+              </span>
+              <span className="bus-strip-read">{formatValue(level, CHANNEL_FADER)}</span>
+              <span className="bus-strip-move">
+                <button type="button" disabled={i === 0} onClick={() => move(i, i - 1)} aria-label={`Move ${origin} left`} title="Move left">‹</button>
+                <button type="button" disabled={i === wires.length - 1} onClick={() => move(i, i + 1)} aria-label={`Move ${origin} right`} title="Move right">›</button>
+              </span>
+            </div>
+          )
+        })}
+        {!wires.length && <p className="bus-empty">Nothing wired into this bus yet.</p>}
+        {/* the bus itself: level and pan on everything together */}
+        <div className="bus-strip master">
+          <span className="bus-strip-num">bus</span>
+          <span className="bus-strip-name">{bus.data?.name || 'bus'}</span>
+          <span className="bus-strip-knob">
+            <Knob def={busParam('vol')} value={bus.data?.vol ?? 1} onChange={(v) => editBus((d) => { d.vol = v })} target={`n:${bus.id}:vol`} />
+          </span>
+          <span className="bus-strip-read">{formatValue(bus.data?.vol ?? 1, busParam('vol'))}</span>
+          <span className="bus-strip-knob small">
+            <Knob def={busParam('pan')} value={bus.data?.pan ?? 0.5} onChange={(v) => editBus((d) => { d.pan = v })} target={`n:${bus.id}:pan`} />
+          </span>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function PatternDock({ project, at, transport, started, height, onUpdateProject, onHeight, onPick, onTab, onClose }) {
   const dragRef = useRef(null)
   const pattern = project.patterns.find((p) => p.id === at.patternId)
   const synths = pattern?.channels.filter((c) => c.kind === 'synth') ?? []

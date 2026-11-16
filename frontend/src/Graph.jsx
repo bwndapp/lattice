@@ -184,7 +184,7 @@ function originsOf(project, nodeId, handle = 'out', seen = new Set()) {
 }
 
 /** Those origins as one label: the first, and how many others share the wire. */
-function originLabel(project, edge) {
+export function originLabel(project, edge) {
   const found = originsOf(project, edge.source, edge.sourceHandle ?? 'out')
   if (!found.length) return nodeTitle(project.nodes.find((n) => n.id === edge.source), project, edge.sourceHandle)
   const names = [...new Set(found.map((f) => nodeTitle(f.node, project, f.handle)))]
@@ -192,7 +192,7 @@ function originLabel(project, edge) {
 }
 
 /** What a node is called on wires and in lists; `from` names the port the wire left by. */
-function nodeTitle(node, project, from = 'out') {
+export function nodeTitle(node, project, from = 'out') {
   if (!node) return '?'
   if (node.type === 'pattern' && String(from ?? '').startsWith('out-')) {
     const pat = project.patterns.find((p) => p.id === node.data.patternId)
@@ -689,8 +689,10 @@ function StudioNode({ id, selected }) {
       style={{ ...(tint ? { '--tint': tint, '--tint-ink': inkFor(tint) } : {}), ...(heldBy ? { '--peer': heldBy.color } : {}) }}
       title={heldBy ? `${heldBy.name} has this selected` : undefined}
       onClick={(e) => {
-        if (node.type !== 'pattern' || !ctx.dockOpen) return
         if (e.target.closest('button, select, input, .nodrag')) return // a control, not the card
+        // a mixer bus shows its channels along the bottom, a pattern its instruments
+        if (node.type === 'bus') { ctx.showBusInDock(id); return }
+        if (node.type !== 'pattern' || !ctx.dockOpen) return
         ctx.showInDock(node.data.patternId)
       }}
     >
@@ -2080,6 +2082,7 @@ function Canvas({ project, onUpdateProject: updateProject, started, solo, onSolo
     // is the thing that takes two, changing which one you're looking at shouldn't
     dockOpen: !!dock?.at,
     showInDock: (patternId) => { if (dock?.at && patternId) dock.open(patternId, null, 'rack') },
+    showBusInDock: (busId) => dock?.openBus?.(busId),
     showTimeline: () => automation?.showTimeline(),
     // the song is on and this part has no clip: give it one at the start and show it there
     addToSong: ({ src, bars }) => {

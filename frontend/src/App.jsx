@@ -789,6 +789,7 @@ export default function App() {
     at: roll,
     height: roll ? rollHeight : 0,
     open: (patternId, channelId = null, tab = 'rack') => setRoll({ patternId, channelId, tab }),
+    openBus: (busId) => setRoll({ busId }),
     close: () => setRoll(null),
   }), [roll, rollHeight])
   // Which view we're on, because a cursor on a surface nobody else has open is a cursor
@@ -810,6 +811,7 @@ export default function App() {
     if (showExport) return 'export'
     if (showVersions) return 'versions'
     if (roll) {
+      if (roll.busId) return `bus:${String(project?.nodes.find((n) => n.id === roll.busId)?.data?.name ?? 'bus').slice(0, 16)}`
       const name = project?.patterns.find((p) => p.id === roll.patternId)?.name ?? ''
       return `${roll.tab === 'notes' ? 'notes' : 'rack'}:${name.slice(0, 16)}`
     }

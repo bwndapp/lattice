@@ -61,3 +61,20 @@
   .dd-tabs { max-width: 100%; }
   .dd-note { display: none; }
 }
+
+/* a mixer bus: a strip a channel, side by side, dragged to reorder */
+.bus-strips { flex: 1; min-height: 0; overflow: auto; display: flex; gap: 0.5rem; padding: 0.6rem 0.7rem; align-items: stretch; }
+.bus-strip { flex: 0 0 7.5rem; display: flex; flex-direction: column; align-items: center; gap: 0.35rem; padding: 0.5rem 0.4rem; border: 1px solid var(--line); border-radius: 6px; background: var(--ink-2, rgba(255,255,255,0.02)); cursor: grab; min-height: 0; }
+.bus-strip.dragging { opacity: 0.4; }
+.bus-strip.over { border-color: var(--acid); }
+.bus-strip.master { cursor: default; margin-left: auto; border-style: dashed; }
+.bus-strip-num { font-size: 0.7rem; opacity: 0.6; }
+.bus-strip-name { font-size: 0.78rem; text-align: center; line-height: 1.2; max-width: 100%; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; word-break: break-word; }
+.bus-strip-name em { opacity: 0.6; font-style: normal; }
+.bus-strip-knob { cursor: default; }
+.bus-strip-read { font-size: 0.72rem; opacity: 0.8; font-variant-numeric: tabular-nums; }
+.bus-strip-move { display: flex; gap: 0.25rem; margin-top: auto; }
+.bus-strip-move button { background: none; border: 1px solid var(--line); color: inherit; border-radius: 4px; width: 1.6rem; cursor: pointer; }
+.bus-strip-move button:disabled { opacity: 0.3; cursor: default; }
+.bus-strip-move button:not(:disabled):hover { border-color: var(--acid); color: var(--acid); }
+.bus-empty { opacity: 0.6; margin: auto; }
