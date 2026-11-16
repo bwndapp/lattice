@@ -20,14 +20,28 @@ In **Patch** view, each box is either a sound (a beat, a bassline, a chord) or a
 (filter, delay, reverb, compressor…). To send a sound through an effect, drag a wire
 from one box to the next. Turn the knobs and you'll hear the change straight away.
 
-### 2. Arrange your song
+### 2. Let it write with you
+
+![The groove engine: a drummer that knows house, breaks, d&b, trap and more](docs/groove.png)
+
+Stuck for a beat or a progression? The **generators** write parts for you. The **groove
+engine** is a drummer that knows styles (house, breaks, funk, afro, boom bap, d&b, trap,
+dembow, dubstep): turn density, swing, ghost notes and fills, and roll for a new groove.
+
+![The harmony engine: chords, bass, melody and arp in one key](docs/harmony.png)
+
+The **harmony engine** writes chords, a bass line, a melody and an arp, all in one key.
+Roll a progression, then wire each part into any instrument to hear it. Lock the parts
+you like and keep rolling the rest.
+
+### 3. Arrange your song
 
 ![The timeline view: parts laid out as clips across bars](docs/timeline.png)
 
 Switch to **Timeline** to lay out your parts over time. Drag clips around, stretch them,
 copy them, and draw automation curves, such as a filter opening up over eight bars.
 
-### 3. Share it
+### 4. Share it
 
 ![The browse page: tracks shared by other people](docs/browse.png)
 
