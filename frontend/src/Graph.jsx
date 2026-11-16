@@ -27,7 +27,7 @@ import { canQuickWire, firstInput, healOnRemove, knifeCuts, knifeHint, knifeInse
 import { onSoundsChange, previewSound, soundCatalog } from './audio'
 import { flowPaths, setFlowPaths, startFlow, stopFlow } from './flow.js'
 import { colorFor, inkFor, nodeSrc, rgbOf } from './clipColors.js'
-import { addSongClip, songSilence } from './song.js'
+import { addSongClip, songActive, songLength, songSilence } from './song.js'
 import { useAutomation } from './autoLive.js'
 import { useTypingKeys } from './typingKeys.js'
 import { pointerAt, pointerGone, selectionIs, useHolders } from './collab.js'
@@ -2128,6 +2128,14 @@ function Canvas({ project, onUpdateProject: updateProject, started, solo, onSolo
         // a trigger port takes as many layers as you give it; the same wire twice is one
         if (!p.edges.some((e) => e.source === c.source && e.sourceHandle === c.sourceHandle && e.target === c.target && e.targetHandle === c.targetHandle)) {
           p.edges.push({ source: c.source, sourceHandle: c.sourceHandle, target: c.target, targetHandle: c.targetHandle })
+        }
+        // with the timeline on, a fired pattern plays inside its own clips: one that has none
+        // gets a clip across the whole song, so wiring it up is heard straight away
+        const pnode = p.nodes.find((n) => n.id === c.target)
+        if (pnode?.type === 'pattern' && songActive(p)) {
+          const root = p.patterns.find((x) => x.id === pnode.data?.patternId)
+          const srcs = [root, ...p.patterns.filter((v) => v.parent === root?.id)].filter(Boolean).map((x) => `pattern:${x.id}`)
+          if (root && !p.song.clips.some((cl) => srcs.includes(cl.src))) addSongClip(p, `pattern:${root.id}`, Math.max(root.bars || 1, Math.ceil(songLength(p.song))))
         }
         return
       }
