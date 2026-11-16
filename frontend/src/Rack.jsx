@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { rollSteps } from './roll.js'
 import {
   INSTRUMENTS, INSTRUMENT_MIME, PARAMS,
-  duplicateChannel, instrumentChannel, midiToNote, moveChannel, paramValue, paramsFor, stepCount, stepDivision,
+  duplicateChannel, instrumentChannel, midiToNote, moveChannel as moveToPattern, paramValue, paramsFor, stepCount, stepDivision,
 } from './project'
 import { KnobMenu } from './KnobMenu.jsx'
 import { previewInPatch } from './audio'
@@ -207,7 +207,7 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
       {moveMenu && (() => {
         const root = pattern.parent ?? pattern.id
         const others = project.patterns.filter((x) => !x.parent && x.id !== root)
-        const go = (to) => onUpdateProject((p) => { moveChannel(p, pattern.id, moveMenu.channelId, to) })
+        const go = (to) => onUpdateProject((p) => { moveToPattern(p, pattern.id, moveMenu.channelId, to) })
         return (
           <KnobMenu
             x={moveMenu.x}
