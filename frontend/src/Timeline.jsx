@@ -979,6 +979,17 @@ export default function Timeline({ project, onUpdateProject, transport, started 
             aria-label={`Duplicate ${part.name} as a variation`}
           >dup</button>
         )}
+        {part.src.startsWith('node:') && (
+          // an instrument in the patch (a rhythm machine, a sound): off the timeline, not out of the patch
+          <button
+            type="button"
+            className="song-part-del"
+            onClick={() => updateSong((s) => { s.clips = s.clips.filter((c) => c.src !== part.src) })}
+            disabled={!song.clips.some((c) => c.src === part.src)}
+            title={`Take ${part.name} off the timeline: its clips go, the node stays in the patch (ctrl/cmd + Z brings them back)`}
+            aria-label={`Take ${part.name} off the timeline`}
+          >×</button>
+        )}
         {part.kind === 'auto' && (
           <button
             type="button"
