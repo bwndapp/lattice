@@ -1123,6 +1123,17 @@ export const nodeVar = (id) => `n_${id}`
 export const patternVar = (id) => `p_${id}`
 /** One instrument of a pattern, as its own variable (project.js writes these out). */
 export const patternChanVar = (patternId, channelId) => `p_${patternId}_${channelId}`
+/**
+ * The instruments (or machine layers) a node holds back from its main out. "main off" only
+ * holds while the instrument is wired out on its own port: unwire it and it's back on the
+ * main, so a sound never ends up going nowhere.
+ */
+export function offMainOf(node, edges) {
+  return new Set(Object.entries(node?.data?.offMain ?? {})
+    .filter(([k, v]) => v === true && edges.some((e) => e.source === node.id && outChannel(e.sourceHandle) === k))
+    .map(([k]) => k))
+}
+
 /** The instrument a wire leaves a pattern node by, or null for its main out. */
 export const outChannel = (handle) => /^out-(.+)$/.exec(String(handle ?? ''))?.[1] ?? null
 
@@ -1334,8 +1345,7 @@ export function graphCode(project, { solo = null, song = null, audition = false,
       const built = abstractBuild(node).map((p) => ({ ...p, expr: p.expr && !triggering.has(p.id) ? gate(p.expr) : null }))
       // a layer is held back from the main out only while it's wired out on its own port —
       // unwire it and it's back in the mix (its "main" button goes with the wire)
-      const wiredOut = (pid) => edges.some((e) => e.source === id && outChannel(e.sourceHandle) === pid)
-      const offMainIds = new Set(Object.entries(node.data?.offMain ?? {}).filter(([k, v]) => v === true && wiredOut(k)).map(([k]) => k))
+      const offMainIds = offMainOf(node, edges)
       const main = built.filter((p) => p.expr && !offMainIds.has(p.id)).map((p) => p.expr)
       const name = nodeVar(id)
       lines.push(`// ${node.data.name ?? spec.label}`, `const ${name} = ${fromMachine(main.length > 1 ? `stack(${main.join(', ')})` : main[0] ?? 'silence', id)}`)
@@ -1358,7 +1368,7 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     // Wiring an instrument's own port is a copy: it still goes out the main one as well,
     // because a wire shouldn't silently take a sound out of the mix. Taking it off the main
     // is a separate thing you ask for, instrument by instrument.
-    const off = new Set(Object.entries(node.data?.offMain ?? {}).filter(([, v]) => v === true).map(([k]) => k))
+    const off = offMainOf(node, edges)
     const mixChannels = (pid) => (off.size
       ? channelsOf(pid).filter((c) => !off.has(c.id)).map((c) => patternChanVar(pid, c.id))
       : null)

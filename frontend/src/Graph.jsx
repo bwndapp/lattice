@@ -4,7 +4,7 @@ import {
   applyNodeChanges, applyEdgeChanges, useNodesInitialized, useReactFlow, useUpdateNodeInternals, useViewport,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { APPLY, BUS_NODES, CHANNEL_FADER, FX_CATS, FX_UNITS, GROUPS, MENU_SUBS, NODE_TYPES, channelGain, defaultData, effectsByCat, inputKey, inputsOf, isTrigger, lineOf, makeFxUnit, makesCycle, menuGroup, triggerOf } from './graph'
+import { APPLY, BUS_NODES, CHANNEL_FADER, FX_CATS, FX_UNITS, GROUPS, MENU_SUBS, NODE_TYPES, channelGain, defaultData, effectsByCat, inputKey, inputsOf, isTrigger, lineOf, makeFxUnit, offMainOf, makesCycle, menuGroup, triggerOf } from './graph'
 import { ENGINES } from './instruments/index.js'
 import { openAbstract, openCode, openSynth } from './instruments/windows.js'
 import { abstractOf, abstractParts, abstractState } from './abstract/index.js'
@@ -667,8 +667,10 @@ function StudioNode({ id, selected }) {
   }
 
   const multi = spec.inputs === 'many'
-  const offMain = node?.data?.offMain ?? {}
-  const heldBack = Object.values(offMain).filter(Boolean).length
+  // held back only while wired out on its own port (graph.js offMainOf)
+  const heldIds = offMainOf(node, ctx.project.edges)
+  const offMain = Object.fromEntries([...heldIds].map((k) => [k, true]))
+  const heldBack = heldIds.size
   const nextSlot = `in-${wires.reduce((m, w) => Math.max(m, slotNum(w.targetHandle)), -1) + 1}`
   const soloing = ctx.solo === id
   const pattern = patternOf
@@ -1429,19 +1431,31 @@ function Palette({ onAdd, unused = [], onForget }) {
   )
 }
 
-function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onLaneSolo, lineSolo = null, onLineSolo = () => {}, transport }) {
+/**
+ * After any change to the patch: an instrument no longer wired out on its own port is back on
+ * the main, for good (so wiring it out again later starts from on the main, like a fresh wire).
+ */
+function mainBackWhenUnwired(p) {
+  for (const n of p.nodes) {
+    if (!n.data?.offMain) continue
+    const keep = offMainOf(n, p.edges)
+    for (const k of Object.keys(n.data.offMain)) if (!keep.has(k)) delete n.data.offMain[k]
+    if (!Object.keys(n.data.offMain).length) delete n.data.offMain
+  }
+}
+
+function Canvas({ project, onUpdateProject: updateProject, started, solo, onSolo, laneSolo, onLaneSolo, lineSolo = null, onLineSolo = () => {}, transport }) {
   const flow = useReactFlow()
   const wrapRef = useRef(null)
   const dock = useRollDock() // the pattern's rack and notes live along the bottom
   const automation = useAutomation() // its showTimeline swaps the canvas to the song
   // frame the whole patch once the nodes have been measured (fitting earlier zooms to max)
+  const onUpdateProject = useCallback((fn) => updateProject((p) => { const r = fn(p); mainBackWhenUnwired(r && Array.isArray(r.nodes) && Array.isArray(r.edges) ? r : p); return r }), [updateProject])
   const initialized = useNodesInitialized()
   // what feeds what, so a hit anywhere lights its way to the output (flow.js)
   const litPaths = useMemo(() => flowPaths(project, {
     sourceTypes: SOURCE_TYPES,
-    splitOf: (nodeId) => new Set(Object.entries(project.nodes.find((n) => n.id === nodeId)?.data?.offMain ?? {})
-      .filter(([, v]) => v === true)
-      .map(([k]) => k)),
+    splitOf: (nodeId) => offMainOf(project.nodes.find((n) => n.id === nodeId), project.edges),
   }), [project])
   // what colour each source glows: the one its clips wear on the timeline
   const litColors = useMemo(() => {

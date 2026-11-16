@@ -9,6 +9,7 @@ import { bundle } from './lib/bundle.mjs'
 const m = await bundle({
   'project.js': ['generateCode', 'normalizeProject'],
   'stereo.js': ['declaredRouting'],
+  'graph.js': ['offMainOf'],
 }, 'routing')
 
 let fails = 0
@@ -198,6 +199,16 @@ const lineOf = (code, v) => code.split('\n').find((l) => l.startsWith(`const ${v
   const more = base.map((n) => (n.id === 'rack' ? { ...n, data: { chain: [{ id: 'u0', type: 'distortion', on: true, data: {} }, ...n.data.chain] } } : n))
   const after = routing(project([...more, node('extra', 'chorus')], [...wires])).inserts
   ok('adding effects moves no other bus', ['sat', 'mix'].every((k) => busOf(before, k) === busOf(after, k)), ['sat', 'mix'].map((k) => `${k} ${busOf(before, k)}→${busOf(after, k)}`).join(' '))
+}
+
+// "main off" only holds while the instrument is wired out on its own port
+{
+  {
+    const { offMainOf } = m
+    const n = { id: 'p', data: { offMain: { c1: true, c2: true } } }
+    const held = offMainOf(n, [{ source: 'p', sourceHandle: 'out-c1', target: 'x' }])
+    ok('main off only while wired out', held.has('c1') && !held.has('c2'), [...held].join(','))
+  }
 }
 
 if (fails) { console.log(`\n${fails} failing`); process.exit(1) }
