@@ -93,7 +93,7 @@ export default function GroovePanel({ state, change, position, playing }) {
           </li>
         ))}
       </ol>
-      <p className="groove-hint meta">Brighter is louder: dim dots are ghost notes, split dots are rolls. Wire Syrup or a melody into a lane's input on the node to play it on that lane's rhythm.</p>
+      <p className="groove-hint meta">Brighter is louder: dim dots are ghost notes, split dots are rolls. Wire a lane's trigger into an instrument on a pattern node and that instrument plays on the lane's rhythm.</p>
     </div>
   )
 }
