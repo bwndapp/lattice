@@ -98,10 +98,18 @@ console.log('fib ok')
   // on the song, only the machine needs a clip
   const song = { on: true, clips: [{ id: 'k', src: 'node:f', lane: 0, start: 0, len: 2 }] }
   const all = proj({ song })
-  assert.ok(!m.songParts(all).some((p) => p.src === 'pattern:syn'), 'a pattern every instrument of which is triggered is not a part')
-  assert.match(line(m.generateCode(all), 'p_syn_c1'), /\.mask\("<1 1>"\)/, 'it plays where the fib\'s clip is')
-  const some = proj({ song, extraChan: true })
-  assert.ok(m.songParts(some).some((p) => p.src === 'pattern:syn'), 'one with an instrument left on its own steps stays a part')
+  assert.ok(m.songParts(all).some((p) => p.src === 'pattern:syn'), 'a pattern a machine fires is a part of its own')
+  // a song from before: it played where the fib's clip was, and still does (its clip copied, once)
+  assert.ok(all.song.clips.some((c) => c.src === 'pattern:syn' && c.start === 0 && c.len === 2), 'an old song gives it the fib\'s clips')
+  assert.match(line(m.generateCode(all), 'p_syn_c1'), /\.mask\("<1 1>"\)/, 'so it plays where the fib\'s clip is')
+  // a song since: it plays inside its own clips, whatever the machine's
+  const own = proj({ song: { ...song, fired: true, clips: [...song.clips, { id: 'q', src: 'pattern:syn', lane: 1, start: 1, len: 1 }] } })
+  assert.equal(own.song.clips.filter((c) => c.src === 'pattern:syn').length, 1, 'and only once: a song since keeps its own clips')
+  const ownLine = line(m.generateCode(own), 'p_syn_c1')
+  assert.match(ownLine, /\.mask\("<0 1>"\)/, 'a fired pattern plays inside its own clips')
+  assert.match(ownLine, /\.early\(1\)\)\.late\(1\)/, 'with the machine\'s rhythm kept to song time')
+  const none = proj({ song: { ...song, fired: true } })
+  assert.match(line(m.generateCode(none), 'p_syn_c1'), /silence/, 'with no clips of its own it is quiet')
   // an old track: sounds wired into the layers, the fib on to the output
   const old = proj({ edges: [
     { source: 'ps', target: 'f', targetHandle: 'in-0' },

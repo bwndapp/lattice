@@ -58,19 +58,45 @@ export function inMachine(project, nodeId) {
 }
 
 /**
- * A pattern (by any of its variations) that only plays as rhythm machines say: every one of
- * its instruments is triggered by a machine's layer (graph.js triggerOf), or every node of
- * it feeds a machine. The machines' clips are its clips, so it isn't a part of the song.
- * One with an instrument left playing its own steps stays a part, for that instrument.
+ * A pattern whose sound only goes into rhythm machines (wired in as audio, the way tracks
+ * were made before triggers): part of the machine, not of the song. A pattern a machine
+ * *fires* is a part of its own: it plays inside its own clips, on the machine's rhythm.
  */
 export function patternInMachine(project, patternId) {
   const rootId = project.patterns.find((p) => p.id === patternId)?.parent ?? patternId
   const nodes = project.nodes.filter((n) => n.type === 'pattern' && n.data?.patternId === rootId)
   if (!nodes.length) return false
-  const live = (project.patterns.find((p) => p.id === rootId)?.channels ?? []).filter((c) => !c.mute)
-  const fired = (n, c) => project.edges.some((e) => isTrigger(e) && e.target === n.id && triggerOf(e.targetHandle) === c.id)
-  if (live.length && nodes.every((n) => live.every((c) => fired(n, c)))) return true
   return nodes.every((n) => inMachine(project, n.id))
+}
+
+/**
+ * Songs from before fired patterns were parts of their own played them wherever their
+ * machine's clips were. Once, on the way in, such a pattern with no clips of its own gets
+ * the machine's, on rows of its own below the rest, so it sounds as it did.
+ */
+function fireAsBefore(project, clips) {
+  const byNode = new Map(project.nodes.map((n) => [n.id, n]))
+  const rootOf = (pid) => project.patterns.find((p) => p.id === pid)?.parent ?? pid
+  const machinesOf = new Map() // pattern src → machine ids
+  for (const e of project.edges ?? []) {
+    if (!isTrigger(e)) continue
+    const pnode = byNode.get(e.target)
+    if (pnode?.type !== 'pattern' || !byNode.has(e.source)) continue
+    const src = `pattern:${rootOf(pnode.data?.patternId)}`
+    if (!machinesOf.has(src)) machinesOf.set(src, new Set())
+    machinesOf.get(src).add(e.source)
+  }
+  let lane = Math.max(-1, ...clips.map((c) => c.lane)) + 1
+  for (const [src, machines] of machinesOf) {
+    if (clips.some((c) => c.src === src)) continue
+    const from = clips.filter((c) => machines.has(c.src.slice(5)) && c.src.startsWith('node:'))
+    if (!from.length) continue
+    for (const c of from) {
+      if (clips.length >= MAX_CLIPS) return
+      clips.push({ ...c, id: `${c.id}f${lane}`.replace(/\W/g, '').slice(0, 24), src, lane: Math.min(63, lane) })
+    }
+    lane++
+  }
 }
 
 /** Everything that can go on the timeline, in sidebar order. `autos` defaults to the song's. */
@@ -133,6 +159,7 @@ export function normalizeSong(raw, project) {
     clips.push(clip)
     if (clips.length >= MAX_CLIPS) break
   }
+  if (raw?.fired !== true) fireAsBefore(project, clips)
   // rows: a name and a mute each, kept only as far as the last one that has either
   const lanes = []
   for (const l of Array.isArray(raw?.lanes) ? raw.lanes.slice(0, 64) : []) {
@@ -143,7 +170,7 @@ export function normalizeSong(raw, project) {
   // colours people picked for parts (the rest get one from the part's id)
   const colors = {}
   for (const [src, color] of Object.entries(raw?.colors ?? {})) if (valid.has(src) && /^#[0-9a-f]{6}$/i.test(color)) colors[src] = color.toLowerCase()
-  return { on: raw?.on !== false, snap: raw?.snap === 'beat' ? 'beat' : 'bar', clips, ...(lanes.length ? { lanes } : {}), ...(autos.length ? { autos } : {}), ...(Object.keys(colors).length ? { colors } : {}) }
+  return { on: raw?.on !== false, snap: raw?.snap === 'beat' ? 'beat' : 'bar', clips, fired: true, ...(lanes.length ? { lanes } : {}), ...(autos.length ? { autos } : {}), ...(Object.keys(colors).length ? { colors } : {}) }
 }
 
 /** A row's name and whether it's muted. */

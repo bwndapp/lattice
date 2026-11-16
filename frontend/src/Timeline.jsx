@@ -14,7 +14,7 @@ import { AUTO_PREFIX, curveAt, resolveTarget } from './automation.js'
 import CodeBox from './CodeBox.jsx'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import { KitSelect } from './Graph.jsx'
-import { NODE_TYPES } from './graph'
+import { NODE_TYPES, isTrigger, triggerOf } from './graph'
 import './Timeline.css'
 import { PICKS, colorFor, inkFor } from './clipColors.js'
 
@@ -94,6 +94,33 @@ function readZoom() {
   try { return clamp(Number(localStorage.getItem('lattice:song:zoom')) || 48, MIN_PPB, MAX_PPB) } catch { return 48 }
 }
 
+/**
+ * A pattern a rhythm machine fires, as it sounds: each fired instrument on the rhythm of the
+ * layer that fires it (the machine's own sketch), the rest on their own steps. Null when
+ * nothing fires it, so it's drawn from its steps as usual.
+ */
+function firedSketch(project, patternId) {
+  const pattern = project.patterns.find((p) => p.id === patternId)
+  if (!pattern) return null
+  const nodeIds = new Set(project.nodes.filter((n) => n.type === 'pattern' && n.data?.patternId === (pattern.parent ?? pattern.id)).map((n) => n.id))
+  const layerOf = new Map() // channel id → { machine sketch, layer index }
+  for (const e of project.edges) {
+    if (!isTrigger(e) || !nodeIds.has(e.target)) continue
+    const machine = project.nodes.find((n) => n.id === e.source)
+    const sketch = machine && abstractOf(machine.type)?.asPattern?.(abstractState(machine))
+    const ch = sketch?.channels.find((c) => c.id === triggerOf(e.sourceHandle))
+    if (ch) layerOf.set(triggerOf(e.targetHandle), { sketch, ch })
+  }
+  if (!layerOf.size) return null
+  const first = [...layerOf.values()][0].sketch
+  return {
+    ...pattern,
+    bars: first.bars,
+    stepsPerBar: first.stepsPerBar,
+    channels: pattern.channels.map((c) => (layerOf.has(c.id) ? { ...c, kind: 'drum', steps: layerOf.get(c.id).ch.steps } : { ...c, steps: [] })),
+  }
+}
+
 export default function Timeline({ project, onUpdateProject, transport, started }) {
   const song = project.song ?? { on: true, snap: 'bar', clips: [] }
   const beats = Math.max(1, project.beats || 4)
@@ -108,7 +135,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     const absNode = src?.startsWith('node:') ? project.nodes.find((n) => `node:${n.id}` === src) : null
     const absPattern = absNode && abstractOf(absNode.type)?.asPattern?.(abstractState(absNode))
     if (!src?.startsWith('pattern:') && !isAuto && !absPattern) return null
-    const pattern = absPattern ?? (isAuto ? song.autos?.find((a) => a.id === src.slice(AUTO_PREFIX.length)) : project.patterns.find((p) => p.id === src.slice(8)))
+    const pattern = absPattern ?? (isAuto ? song.autos?.find((a) => a.id === src.slice(AUTO_PREFIX.length)) : firedSketch(project, src.slice(8)) ?? project.patterns.find((p) => p.id === src.slice(8)))
     const ink = inkFor(colorFor(src, song.colors))
     const hit = sketchCache.current.get(src)
     if (hit && hit.ink === ink) {
