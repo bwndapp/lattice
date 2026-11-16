@@ -24,6 +24,23 @@
  */
 export const NEWS = [
   {
+    id: '2026-11-16',
+    date: '2026-11-16',
+    version: '0.15.0',
+    title: 'Groove and harmony engines',
+    items: [
+      '**Groove engine**: a rhythm machine that knows styles — house, breaks, funk, afro, boom bap, d&b, trap, dembow, dubstep — with density, swing, ghosts and fills, a roll for a new groove and a lock per lane',
+      '**Harmony engine**: chords, bass, melody and arp in one key and scale — roll a progression, voice-led chords, a melody that follows them, each lane firing any instrument',
+      '**Generators**: the rhythm machines and the harmony engine together in the add menu',
+      '**Fx racks open in a sidebar**: the node shows its chain at a glance, a click opens the whole rack',
+      '**Double-click any knob** to reset it; Enter types a value',
+      '**Cleaner wires**: taut by default, and wires that run backwards go round underneath',
+      '**Stream the sound itself**: turn on audio on the stream node for a lossless link VLC, OBS or ffmpeg can open',
+      '**Stream says what’s playing**: track name, artist, tempo and length for whatever is listening',
+      '**A smoother feel** all round: things ease in, knobs lift under the pointer',
+    ],
+  },
+  {
     id: '2026-11-15-2',
     date: '2026-11-15',
     version: '0.14.0',
