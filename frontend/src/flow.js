@@ -124,14 +124,15 @@ export function stopFlow() {
 
 /*
  * A wire's meter can show in more than one place (its row on the node, its strip in the
- * bottom dock), so meters are found as a list. Looked up again when one goes away, and at
- * most a few times a second while there are none, so an unshown meter costs nothing.
+ * bottom dock), so meters are found as a list, looked up again a few times a second.
  */
 const meterCache = new Map() // wire id → { els, at }
 function meterEls(id) {
   const held = meterCache.get(id)
   const now = performance.now()
-  if (held && held.els.every((el) => el.isConnected) && (held.els.length || now - held.at < 400)) return held.els
+  // looked for again every few frames' worth of time, so a meter that appears later (the
+  // dock opening) is picked up, not only one that goes away
+  if (held && now - held.at < 250 && held.els.every((el) => el.isConnected)) return held.els
   const els = [...document.querySelectorAll(`[data-meter="${CSS.escape(id)}"]`)]
   meterCache.set(id, { els, at: now })
   return els
