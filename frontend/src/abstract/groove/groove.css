@@ -1,0 +1,34 @@
+/* the groove engine's window: styles, knobs, then a lane a drum */
+.groove-panel { display: flex; flex-direction: column; gap: 0.8rem; padding: 0.9rem; }
+.groove-styles { display: flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 3px; background: var(--well); align-self: flex-start; }
+.groove-styles button, .groove-toggle button { border: 0; border-radius: 3px; padding: 0.3rem 0.7rem; font: inherit; font-size: 12px; background: transparent; color: var(--muted); cursor: pointer; }
+.groove-styles button.on, .groove-toggle button.on { background: var(--raised); color: var(--paper); }
+.groove-controls { display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap; }
+.groove-knobs { display: flex; gap: 0.6rem; }
+.groove-toggle { display: inline-flex; padding: 3px; gap: 2px; border-radius: 3px; background: var(--well); }
+.groove-kit { margin-left: auto; max-width: 11rem; padding: 0.3rem 0.5rem; font-size: 12px; }
+
+.groove-lanes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+.groove-lane {
+  display: grid; grid-template-columns: 2.8rem 3rem 1.5rem 3.4rem 1.5rem minmax(0, 1fr); align-items: center; column-gap: 0.4rem;
+  padding: 0.45rem 0.6rem; border-radius: 3px; background: var(--panel); border-left: 3px solid var(--ink);
+}
+.groove-lane.muted { opacity: 0.5; }
+.groove-name { font-size: 12px; color: var(--ink); font-weight: 600; }
+.groove-sound { appearance: none; -webkit-appearance: none; text-decoration: underline dotted rgba(255,255,255,0.25); text-underline-offset: 3px; font: inherit; font-size: 13px; font-weight: 600; color: var(--paper); background: transparent; border: 0; padding: 0; cursor: pointer; min-width: 0; }
+.groove-dice { border: 0; background: transparent; color: var(--muted); font-size: 17px; line-height: 1; padding: 0; cursor: pointer; }
+.groove-dice:hover { color: var(--paper); }
+.groove-lock { border: 0; border-radius: 3px; padding: 0.2rem 0; font: inherit; font-size: 11px; background: var(--well); color: var(--muted); cursor: pointer; }
+.groove-lock.on { color: var(--ink); }
+.groove-lane .led { width: 1.5rem; }
+
+.groove-strip { position: relative; display: flex; gap: 5px; min-width: 0; }
+.groove-bar { flex: 1; display: grid; grid-template-columns: repeat(16, 1fr); gap: 2px; min-width: 0; }
+.groove-bar i { height: 14px; border-radius: 2px; background: #2c2c2c; }
+.groove-bar i.beat { background: #363636; }
+.groove-bar i.v1 { background: var(--ink); opacity: 0.35; }
+.groove-bar i.v2 { background: var(--ink); opacity: 0.75; }
+.groove-bar i.v3 { background: var(--ink); }
+.groove-bar i.v4 { background: repeating-linear-gradient(90deg, var(--ink) 0 2px, transparent 2px 3.5px); opacity: 0.8; }
+.groove-head { position: absolute; top: -3px; bottom: -3px; border: 1.5px solid var(--paper); border-radius: 3px; pointer-events: none; transition: opacity 0.2s; }
+.groove-hint { margin: 0; line-height: 1.4; }

@@ -1,6 +1,7 @@
 import { createElement } from 'react'
 import CubePanel from './cube/CubePanel.jsx'
 import FibPanel from './fib/FibPanel.jsx'
+import GroovePanel from './groove/GroovePanel.jsx'
 
 /**
  * Each abstract instrument's window. Kept out of index.js: the patch's code imports that,
@@ -17,4 +18,5 @@ const loadThree = () => (import.meta.env.DEV
 export const PANELS = {
   cube: () => loadThree().then((THREE) => ({ default: (props) => createElement(CubePanel, { ...props, THREE }) })),
   fib: async () => ({ default: FibPanel }),
+  groove: async () => ({ default: GroovePanel }),
 }
