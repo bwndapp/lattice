@@ -118,6 +118,21 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
   const dock = useRollDock() // the piano roll lives along the bottom of the app
 
   const toggle = (setter, id) => setter((s) => { const next = new Set(s); next.has(id) ? next.delete(id) : next.add(id); return next })
+  // reorder instruments by dragging their grip: the pattern and its variations move together,
+  // since a variation's instrument in the same place plays out of the same port
+  const [moving, setMoving] = useState(null) // the channel id being dragged
+  const [movingOver, setMovingOver] = useState(null) // the index it would land at
+  const moveChannel = (from, to) => {
+    if (from === to || from < 0 || to < 0) return
+    onUpdateProject((p) => {
+      const root = p.patterns.find((x) => x.id === pattern.id)?.parent ?? pattern.id
+      for (const pat of p.patterns.filter((x) => x.id === root || x.parent === root)) {
+        if (from >= pat.channels.length) continue
+        const [it] = pat.channels.splice(from, 1)
+        pat.channels.splice(Math.min(to, pat.channels.length), 0, it)
+      }
+    })
+  }
   const update = (fn) => onUpdateProject((p) => {
     const target = p.patterns.find((x) => x.id === pattern.id)
     if (target) fn(target, p)
@@ -206,18 +221,46 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
           </div>
         </div>
       )}
-      {pattern.channels.map((ch) => {
+      {pattern.channels.map((ch, chIndex) => {
         const fxOpen = openFx.has(ch.id)
         const rollOpen = ch.kind === 'synth' && dock?.at?.tab === 'notes' && dock?.at?.patternId === pattern.id && dock?.at?.channelId === ch.id
         const tweaked = paramsFor(ch.kind).filter((d) => d.key !== 'gain' && paramValue(ch, d.key) !== d.def).length + (ch.fx?.trim() ? 1 : 0)
         return (
-          <div key={ch.id} className={`ch ${ch.mute ? 'muted' : ''} ch-${ch.kind}`}>
-            <button
-              className={`led mute ${ch.mute ? 'on' : ''}`}
-              aria-pressed={ch.mute}
-              aria-label={`${ch.mute ? 'Unmute' : 'Mute'} ${ch.name}`}
-              onClick={() => updateChannel(ch.id, (c) => { c.mute = !c.mute })}
-            >m</button>
+          <div
+            key={ch.id}
+            className={`ch ${ch.mute ? 'muted' : ''} ch-${ch.kind} ${moving === ch.id ? 'ch-moving' : ''} ${moving && moving !== ch.id && movingOver === chIndex ? 'ch-drop' : ''}`}
+            onDragOver={(e) => { if (!moving) return; e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'; if (movingOver !== chIndex) setMovingOver(chIndex) }}
+            onDrop={(e) => {
+              if (!moving) return
+              e.preventDefault()
+              e.stopPropagation()
+              moveChannel(pattern.channels.findIndex((c) => c.id === moving), chIndex)
+              setMoving(null)
+              setMovingOver(null)
+            }}
+          >
+            <span className="ch-lead">
+              <span
+                className="ch-grip"
+                draggable
+                onDragStart={(e) => {
+                  setMoving(ch.id)
+                  e.dataTransfer.effectAllowed = 'move'
+                  try { e.dataTransfer.setData('text/plain', ch.name) } catch { /* fine */ }
+                  const row = e.currentTarget.closest('.ch')
+                  if (row) e.dataTransfer.setDragImage(row, 20, 16)
+                }}
+                onDragEnd={() => { setMoving(null); setMovingOver(null) }}
+                title="Drag to reorder"
+                aria-label={`Move ${ch.name}`}
+              >≡</span>
+              <button
+                className={`led mute ${ch.mute ? 'on' : ''}`}
+                aria-pressed={ch.mute}
+                aria-label={`${ch.mute ? 'Unmute' : 'Mute'} ${ch.name}`}
+                onClick={() => updateChannel(ch.id, (c) => { c.mute = !c.mute })}
+              >m</button>
+            </span>
             <input className="ch-name" value={ch.name} maxLength={40} aria-label="Instrument name" onChange={(e) => { const v = e.target.value; updateChannel(ch.id, (c) => { c.name = v }) }} />
 
             <div className="ch-sound">
