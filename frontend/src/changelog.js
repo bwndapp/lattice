@@ -24,6 +24,19 @@
  */
 export const NEWS = [
   {
+    id: '2026-11-16-3',
+    date: '2026-11-16',
+    version: '0.17.0',
+    title: 'A mixer in the dock, and parts of their own',
+    items: [
+      '**Click a mixer bus** and its channels open along the bottom: a fader and a live meter each, plus the bus’s own — drag strips to reorder',
+      '**Reorder instruments** in a pattern’s rack by dragging their ≡ grip',
+      '**On the timeline**, every pattern a rhythm machine fires is a part of its own: arrange each one, still on the machine’s rhythm',
+      '**Fixed**: adding or removing an effect let half a second of the unprocessed track through',
+      '**Fixed**: unwiring an instrument’s own out puts it back on the main',
+    ],
+  },
+  {
     id: '2026-11-16-2',
     date: '2026-11-16',
     version: '0.16.0',
