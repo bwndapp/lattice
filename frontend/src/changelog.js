@@ -24,6 +24,21 @@
  */
 export const NEWS = [
   {
+    id: '2026-11-16-2',
+    date: '2026-11-16',
+    version: '0.16.0',
+    title: 'A real sidechain, and sharing in one place',
+    items: [
+      '**Sidechain, rebuilt**: the sound is shaped by the trigger’s own audio, sample by sample, so it pumps exactly with the kick and is never late — **clean** for a tight pump, **ring** for gritty ring-mod',
+      '**Any trigger**: wire the kick from its saturator or fx rack and that’s what drives the sidechain',
+      '**Share**: one button for who can open a track, its link, and jamming on it together — changes apply at once',
+      '**Browse is a list**: play, see the shape, the artist, tags, bpm and plays at a glance',
+      '**Alt + S** solos everything on a node’s line; **Alt + B** bypasses the selected nodes',
+      '**A sound sent two ways** (dry and through an effect) now plays down both',
+      '**Fixed**: switching on the stream’s audio could silence everything',
+    ],
+  },
+  {
     id: '2026-11-16',
     date: '2026-11-16',
     version: '0.15.0',
