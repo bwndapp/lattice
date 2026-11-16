@@ -4,7 +4,7 @@ import {
   applyNodeChanges, applyEdgeChanges, useNodesInitialized, useReactFlow, useUpdateNodeInternals, useViewport,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { APPLY, BUS_NODES, CHANNEL_FADER, FX_CATS, FX_UNITS, GROUPS, NODE_TYPES, channelGain, defaultData, effectsByCat, inputKey, inputsOf, isTrigger, makeFxUnit, makesCycle, menuGroup, triggerOf } from './graph'
+import { APPLY, BUS_NODES, CHANNEL_FADER, FX_CATS, FX_UNITS, GROUPS, MENU_SUBS, NODE_TYPES, channelGain, defaultData, effectsByCat, inputKey, inputsOf, isTrigger, makeFxUnit, makesCycle, menuGroup, triggerOf } from './graph'
 import { ENGINES } from './instruments/index.js'
 import { openAbstract, openCode, openSynth } from './instruments/windows.js'
 import { abstractOf, abstractParts, abstractState } from './abstract/index.js'
@@ -1073,6 +1073,10 @@ const SEARCH_WORDS = {
 }
 
 const CAT_LABEL = Object.fromEntries(FX_CATS)
+// a node that isn't an effect → its subheading in the add menu, and where that sorts
+const SUB_OF = Object.fromEntries(MENU_SUBS.flatMap(([, label, types], i) => types.map((t) => [t, { label, i }])))
+const subRank = (t) => SUB_OF[t]?.i ?? -1
+const INSTRUMENT_SUB = { drum: 'drums', synth: 'synths', code: 'code' }
 const GROUP_LABEL = Object.fromEntries(GROUPS)
 
 /*
@@ -1081,17 +1085,18 @@ const GROUP_LABEL = Object.fromEntries(GROUPS)
  * them, marked as older, so a track that uses one can have another.
  */
 function paletteItems() {
-  const types = [...Object.keys(NODE_TYPES).filter((t) => !NODE_TYPES[t].cat), ...effectsByCat({ hidden: true })]
+  const plain = Object.keys(NODE_TYPES).filter((t) => !NODE_TYPES[t].cat).sort((a, b) => subRank(a) - subRank(b))
+  const types = [...plain, ...effectsByCat({ hidden: true })]
   const nodes = types.map((type) => {
     const s = NODE_TYPES[type]
     return {
-      id: `node:${type}`, kind: 'node', key: type, group: menuGroup(type), cat: s.cat, catLabel: CAT_LABEL[s.cat], hidden: !!s.hidden,
+      id: `node:${type}`, kind: 'node', key: type, group: menuGroup(type), cat: s.cat, catLabel: s.cat ? CAT_LABEL[s.cat] : SUB_OF[type]?.label, hidden: !!s.hidden,
       label: s.hidden ? `${s.label} (older)` : s.label, blurb: s.blurb,
-      words: `${type} ${s.group} ${GROUP_LABEL[menuGroup(type)] ?? ''} ${CAT_LABEL[s.cat] ?? ''} ${SEARCH_WORDS[type] ?? ''}`,
+      words: `${type} ${s.group} ${GROUP_LABEL[menuGroup(type)] ?? ''} ${CAT_LABEL[s.cat] ?? SUB_OF[type]?.label ?? ''} ${SEARCH_WORDS[type] ?? ''}`,
     }
   })
   const instruments = INSTRUMENTS.map((inst) => ({
-    id: `instrument:${inst.key}`, kind: 'instrument', key: inst.key, group: 'instruments', label: inst.label,
+    id: `instrument:${inst.key}`, kind: 'instrument', key: inst.key, group: 'instruments', catLabel: INSTRUMENT_SUB[inst.kind], label: inst.label,
     blurb: inst.kind === 'code' ? 'a pattern with a line of code' : `a pattern with a ${inst.kind === 'drum' ? 'drum' : 'synth'} (${inst.patch.sound})`,
     words: `instrument ${inst.kind} ${inst.patch.sound ?? ''} pattern`,
   }))

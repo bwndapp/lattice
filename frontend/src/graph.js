@@ -375,13 +375,13 @@ export const NODE_TYPES = {
     code: stereoCode('vowel', (d) => ({ vowel: ['a', 'e', 'i', 'o', 'u'].includes(d.vowel) ? d.vowel : 'a' })),
   },
   lofi: {
-    group: 'effect', cat: 'drive', label: 'lo-fi', blurb: 'Lower sample rate, grittier',
+    group: 'effect', cat: 'texture', label: 'lo-fi', blurb: 'Lower sample rate, grittier',
     inputs: 1,
     params: [{ key: 'coarse', type: 'int', label: 'grit', min: 1, max: 32, def: 6 }],
     code: stereoCode('lofi', (d) => ({ coarse: d.coarse })),
   },
   granulizer: {
-    group: 'effect', cat: 'mod', label: 'granulizer', blurb: 'Chop the sound into tiny grains and spray them back: smears, clouds, glitches',
+    group: 'effect', cat: 'texture', label: 'granulizer', blurb: 'Chop the sound into tiny grains and spray them back: smears, clouds, glitches',
     inputs: 1,
     params: [
       { key: 'size', type: 'knob', label: 'size', min: 0.001, max: 1, def: 0.08, log: true, unit: 's' },
@@ -403,7 +403,7 @@ export const NODE_TYPES = {
     code: stereoCode('grain', (d) => ({ size: d.size, density: d.density, position: d.position, spray: d.spray, pitch: d.pitch, pitchRand: d.pitchRand, steps: d.steps, glide: d.glide, chaos: d.chaos, shape: d.shape, reverse: d.reverse, spread: d.spread, freeze: d.freeze, feedback: d.feedback, mix: d.mix })),
   },
   bitcrush: {
-    group: 'effect', cat: 'drive', label: 'bitcrush', blurb: 'Fewer bits, lower rate: crunchy and digital',
+    group: 'effect', cat: 'texture', label: 'bitcrush', blurb: 'Fewer bits, lower rate: crunchy and digital',
     inputs: 1,
     params: [
       { key: 'bits', type: 'knob', label: 'bits', min: 1, max: 16, def: 6 },
@@ -413,7 +413,7 @@ export const NODE_TYPES = {
     code: stereoCode('crush', (d) => ({ bits: d.bits, rate: d.rate, mix: d.mix })),
   },
   sidechain: {
-    group: 'effect', label: 'sidechain', blurb: 'Duck the sound every time the trigger hits (kick pumps the bass)',
+    group: 'effect', cat: 'dynamics', label: 'sidechain', blurb: 'Duck the sound every time the trigger hits (kick pumps the bass)',
     // named inputs: slot 0 is ducked, slot 1 does the ducking
     inputs: ['sound', 'trigger'],
     /*
@@ -827,34 +827,47 @@ export function makeFxUnit(type, id) {
 
 /**
  * The add menu's groups. A node's `group` stays what the patch runs on (its colour, how it
- * wires); the menu files effects and mixing tools together under "effects", sorted by `cat`,
- * and the sidechain with the other things that move sound around.
+ * wires); the menu files things where someone would look for them: the rhythm machines
+ * apart from the plain sources, mixing tools in with the effects (sorted by `cat`), and a
+ * subheading (MENU_SUBS) inside the groups that would otherwise be one long list.
  */
 export const GROUPS = [
   ['source', 'sources'],
+  ['machine', 'rhythm machines'],
   ['transform', 'pattern tools'],
   ['effect', 'effects'],
-  ['combine', 'routing'],
+  ['combine', 'mix & arrange'],
   ['output', 'output'],
 ]
 
-/** What each effect does, in the order the menus list them. */
+/** What each effect does, in the order the menus list them (the add menu, racks, lanes). */
 export const FX_CATS = [
-  ['rack', 'rack'],
   ['filter', 'eq & filter'],
   ['dynamics', 'dynamics'],
-  ['drive', 'drive & colour'],
-  ['space', 'space'],
+  ['drive', 'drive & distortion'],
+  ['texture', 'lo-fi & texture'],
+  ['space', 'reverb & delay'],
   ['mod', 'modulation'],
-  ['pitch', 'pitch'],
+  ['pitch', 'pitch & frequency'],
   ['stereo', 'stereo & utility'],
+  ['rack', 'racks'],
+]
+
+/** Subheadings for the add menu's groups that aren't effects, in order. */
+export const MENU_SUBS = [
+  ['timing', 'timing', ['fast', 'every']],
+  ['rhythm', 'rhythm', ['euclid', 'shape', 'echo']],
+  ['chance', 'chance', ['sometimes', 'thin']],
+  ['notes', 'notes', ['transpose']],
+  ['mix', 'mixing', ['bus', 'stack']],
+  ['song', 'song structure', ['sequence', 'arrange']],
 ]
 
 /** Which add-menu group a node type is filed under. */
 export function menuGroup(type) {
   const spec = NODE_TYPES[type]
   if (!spec) return null
-  if (type === 'sidechain') return 'combine'
+  if (spec.abstract) return 'machine'
   return spec.group === 'mixing' ? 'effect' : spec.group
 }
 

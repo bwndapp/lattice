@@ -6,6 +6,7 @@ const KIND = {
   recent: { glyph: '◷', ink: 'var(--muted)' },
   source: { glyph: '●', ink: 'var(--acid)' },
   instruments: { glyph: '♪', ink: '#b9c96a' },
+  machine: { glyph: '⁂', ink: '#ffd23f' },
   transform: { glyph: '↻', ink: '#9fb4ff' },
   effect: { glyph: '∿', ink: '#86d8cc' },
   combine: { glyph: '⊕', ink: '#c8a2ff' },
