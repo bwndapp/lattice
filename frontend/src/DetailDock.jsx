@@ -55,6 +55,68 @@ function Grip({ height, onHeight }) {
   )
 }
 
+/*
+ * A mixer fader: drag up and down (shift for fine), double-click for 0 dB, wheel to nudge.
+ * Its travel is the square root of the gain, so 0 dB sits most of the way up, as on a desk.
+ */
+const FADER_MAX = 1.5
+const faderPos = (g) => Math.sqrt(clamp(g, 0, FADER_MAX) / FADER_MAX)
+const faderGain = (p) => clamp(p, 0, 1) ** 2 * FADER_MAX
+function Fader({ value, onChange, label }) {
+  const drag = useRef(null)
+  const pos = faderPos(value)
+  const set = (p) => onChange(Math.round(faderGain(p) * 1000) / 1000)
+  return (
+    <div
+      className="fader"
+      role="slider"
+      tabIndex={0}
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={FADER_MAX}
+      aria-valuenow={value}
+      aria-valuetext={formatValue(value, CHANNEL_FADER)}
+      draggable={false}
+      onDragStart={(e) => { e.preventDefault(); e.stopPropagation() }}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return
+        e.preventDefault()
+        e.stopPropagation()
+        e.currentTarget.setPointerCapture(e.pointerId)
+        const box = e.currentTarget.getBoundingClientRect()
+        // grabbing the cap keeps it where it is; clicking the track jumps there
+        const onCap = Math.abs((1 - pos) * box.height - (e.clientY - box.top)) < 12
+        const start = onCap ? pos : 1 - (e.clientY - box.top) / box.height
+        if (!onCap) set(start)
+        drag.current = { y: e.clientY, pos: start, h: box.height }
+      }}
+      onPointerMove={(e) => {
+        const d = drag.current
+        if (!d) return
+        set(clamp(d.pos - ((e.clientY - d.y) / d.h) * (e.shiftKey ? 0.2 : 1), 0, 1))
+      }}
+      onPointerUp={() => { drag.current = null }}
+      onPointerCancel={() => { drag.current = null }}
+      onDoubleClick={() => onChange(1)}
+      onWheel={(e) => { set(clamp(pos - Math.sign(e.deltaY) * (e.shiftKey ? 0.005 : 0.02), 0, 1)) }}
+      onKeyDown={(e) => {
+        const by = { ArrowUp: 0.02, ArrowDown: -0.02, PageUp: 0.1, PageDown: -0.1 }[e.key]
+        if (by) { e.preventDefault(); set(clamp(pos + by, 0, 1)) }
+      }}
+      title={`${label} · drag (shift: fine) · double-click for 0 dB`}
+    >
+      <span className="fader-track" />
+      <span className="fader-unity" style={{ bottom: `${faderPos(1) * 100}%` }} />
+      <span className="fader-cap" style={{ bottom: `${pos * 100}%` }} />
+    </div>
+  )
+}
+
+/** A stereo meter, driven by flow.js through `data-meter` (the wire it reads). */
+const Meter = ({ wire }) => (
+  <span className="strip-meter" data-meter={wire ?? undefined} aria-hidden><i /><i /></span>
+)
+
 /**
  * A mixer bus along the bottom: a strip a channel, each with its level, in the order they
  * come into the bus. Drag a strip (or use its arrows) to reorder: the wires swap slots, the
@@ -126,10 +188,11 @@ function BusDock({ project, at, height, onUpdateProject, onHeight, onClose }) {
                 {origin}
                 {via && <em> via {via}</em>}
               </span>
-              <span className="bus-strip-knob" draggable={false} onDragStart={(e) => e.preventDefault()}>
-                <Knob def={CHANNEL_FADER} value={level} onChange={(v) => editBus((d) => { d.chan = { ...(d.chan ?? {}), [key]: v } })} />
-              </span>
               <span className="bus-strip-read">{formatValue(level, CHANNEL_FADER)}</span>
+              <span className="bus-strip-desk">
+                <Fader label={`${origin} level`} value={level} onChange={(v) => editBus((d) => { d.chan = { ...(d.chan ?? {}), [key]: v } })} />
+                <Meter wire={w.id} />
+              </span>
               <span className="bus-strip-move">
                 <button type="button" disabled={i === 0} onClick={() => move(i, i - 1)} aria-label={`Move ${origin} left`} title="Move left">‹</button>
                 <button type="button" disabled={i === wires.length - 1} onClick={() => move(i, i + 1)} aria-label={`Move ${origin} right`} title="Move right">›</button>
@@ -142,11 +205,13 @@ function BusDock({ project, at, height, onUpdateProject, onHeight, onClose }) {
         <div className="bus-strip master">
           <span className="bus-strip-num">bus</span>
           <span className="bus-strip-name">{bus.data?.name || 'bus'}</span>
-          <span className="bus-strip-knob">
-            <Knob def={busParam('vol')} value={bus.data?.vol ?? 1} onChange={(v) => editBus((d) => { d.vol = v })} target={`n:${bus.id}:vol`} />
-          </span>
           <span className="bus-strip-read">{formatValue(bus.data?.vol ?? 1, busParam('vol'))}</span>
-          <span className="bus-strip-knob small">
+          <span className="bus-strip-desk">
+            <Fader label={`${bus.data?.name || 'bus'} volume`} value={bus.data?.vol ?? 1} onChange={(v) => editBus((d) => { d.vol = v })} />
+            {/* what leaves the bus: any wire out of it carries the same */}
+            <Meter wire={project.edges.find((e) => e.source === bus.id)?.id} />
+          </span>
+          <span className="bus-strip-knob">
             <Knob def={busParam('pan')} value={bus.data?.pan ?? 0.5} onChange={(v) => editBus((d) => { d.pan = v })} target={`n:${bus.id}:pan`} />
           </span>
         </div>

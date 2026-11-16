@@ -73,8 +73,24 @@
 .bus-strip-name em { opacity: 0.6; font-style: normal; }
 .bus-strip-knob { cursor: default; }
 .bus-strip-read { font-size: 0.72rem; opacity: 0.8; font-variant-numeric: tabular-nums; }
-.bus-strip-move { display: flex; gap: 0.25rem; margin-top: auto; }
+.bus-strip-move { display: flex; gap: 0.25rem; }
 .bus-strip-move button { background: none; border: 1px solid var(--line); color: inherit; border-radius: 4px; width: 1.6rem; cursor: pointer; }
 .bus-strip-move button:disabled { opacity: 0.3; cursor: default; }
 .bus-strip-move button:not(:disabled):hover { border-color: var(--acid); color: var(--acid); }
 .bus-empty { opacity: 0.6; margin: auto; }
+
+/* the desk: a fader and a stereo meter side by side, as tall as the dock lets them be */
+.bus-strip-desk { flex: 1; min-height: 60px; display: flex; gap: 8px; align-items: stretch; justify-content: center; width: 100%; cursor: default; }
+.fader { position: relative; width: 26px; touch-action: none; cursor: ns-resize; outline: none; }
+.fader:focus-visible { outline: 2px solid var(--acid); outline-offset: 2px; border-radius: 4px; }
+.fader-track { position: absolute; left: 50%; top: 6px; bottom: 6px; width: 4px; transform: translateX(-50%); background: var(--sunk, #111); border-radius: 2px; }
+.fader-unity { position: absolute; left: 2px; right: 2px; height: 1px; background: var(--line); }
+.fader-cap { position: absolute; left: 0; right: 0; height: 12px; margin-bottom: -6px; background: var(--paper, #ddd); border-radius: 3px; box-shadow: 0 1px 3px rgba(0,0,0,0.5), inset 0 -2px 0 rgba(0,0,0,0.25); }
+.fader:hover .fader-cap, .fader:active .fader-cap { background: var(--acid); }
+.strip-meter { display: flex; gap: 3px; padding: 6px 0; }
+.strip-meter i { position: relative; width: 6px; background: var(--sunk, #111); border-radius: 2px; overflow: hidden; }
+.strip-meter i::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: calc(min(var(--h, 0), 1) * 100%); background: linear-gradient(to top, #3ddc84 0%, #3ddc84 60%, #e4ff1a 82%, #ff5a43 100%); background-size: 100% var(--full, 100%); background-position: bottom; transition: height 60ms linear; }
+.strip-meter i:first-child { --h: var(--l, 0); }
+.strip-meter i:last-child { --h: var(--r, 0); }
+.strip-meter.over i::after { box-shadow: 0 0 0 1px rgb(255 90 67 / 0.9); }
+.bus-strip-read { font-size: 0.75rem; }

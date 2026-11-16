@@ -115,9 +115,26 @@ export function stopFlow() {
     if (id.startsWith('m:')) { el.style.removeProperty('--l'); el.style.removeProperty('--r'); el.classList.remove('over') }
     else write(el, id, 0)
   }
+  for (const { els: list } of meterCache.values()) for (const el of list) { el.style.removeProperty('--l'); el.style.removeProperty('--r'); el.classList.remove('over') }
+  meterCache.clear()
   els.clear()
   lit.clear()
   meters.clear()
+}
+
+/*
+ * A wire's meter can show in more than one place (its row on the node, its strip in the
+ * bottom dock), so meters are found as a list. Looked up again when one goes away, and at
+ * most a few times a second while there are none, so an unshown meter costs nothing.
+ */
+const meterCache = new Map() // wire id → { els, at }
+function meterEls(id) {
+  const held = meterCache.get(id)
+  const now = performance.now()
+  if (held && held.els.every((el) => el.isConnected) && (held.els.length || now - held.at < 400)) return held.els
+  const els = [...document.querySelectorAll(`[data-meter="${CSS.escape(id)}"]`)]
+  meterCache.set(id, { els, at: now })
+  return els
 }
 
 const elementFor = (id, kind) => {
@@ -245,8 +262,8 @@ function tick() {
    * louder than one hard left.
    */
   const stereo = (id, keys) => {
-    const el = elementFor(`m:${id}`, 'meter')
-    if (!el) return
+    const els = meterEls(id)
+    if (!els.length) return
     let l = 0
     let r = 0
     for (const k of keys) {
@@ -261,9 +278,11 @@ function tick() {
     const now = `${step(l)}|${step(r)}`
     if (meters.get(id) === now) return
     meters.set(id, now)
-    el.style.setProperty('--l', String(step(l)))
-    el.style.setProperty('--r', String(step(r)))
-    el.classList.toggle('over', l > 0.999 || r > 0.999)
+    for (const el of els) {
+      el.style.setProperty('--l', String(step(l)))
+      el.style.setProperty('--r', String(step(r)))
+      el.classList.toggle('over', l > 0.999 || r > 0.999)
+    }
   }
 
   for (const [id, keys] of paths.nodes) {
