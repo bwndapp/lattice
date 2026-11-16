@@ -1,7 +1,8 @@
 <!doctype html>
 <!--
   Three 1200×1200 images for a Reddit post: lattice, multiplayer, the four views.
-  Rendered by tools/brand/reddit.sh (headless chromium, one ?n=1|2|3 per image).
+  Rendered by tools/brand/reddit.sh (headless chromium, one ?n=1…6 per image). Slides 4–6 crop real
+  screenshots from tools/brand/shots/ (taken of the app itself).
   Same palette, mark and type as the app (index.css, tools/brand/make.mjs).
 -->
 <html>
@@ -66,6 +67,18 @@
   .view svg { display: block; width: 100%; height: 250px; background: var(--canvas); }
   .code { height: 250px; background: var(--well); padding: 22px 22px; font-size: 17px; line-height: 1.75; color: var(--muted); }
   .code .k { color: var(--acid); } .code .s { color: var(--paper); } .code .c { color: var(--dim); }
+
+  /* real screenshots, cropped (data-crop="x,y,w,h" of the 1440×900 shot) */
+  .shot { border: 1px solid var(--line); border-radius: 2px; background-repeat: no-repeat; background-color: var(--canvas); }
+  .shots { display: grid; gap: 30px; width: 100%; margin-top: 30px; }
+  .cap { display: flex; justify-content: space-between; font-size: 17px; color: var(--muted); margin-bottom: 10px; }
+  .cap b { color: var(--paper); font-weight: 600; }
+  .data { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; width: 100%; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 2px; padding: 22px; }
+  .card h3 { font-family: "Archivo Black"; font-weight: 400; font-size: 30px; letter-spacing: -0.5px; }
+  .card p { color: var(--muted); font-size: 18px; line-height: 1.55; margin-top: 10px; }
+  .card pre { margin-top: 14px; font-family: "Martian Mono"; font-size: 15px; line-height: 1.6; color: var(--paper); background: var(--well); padding: 14px; border-radius: 2px; overflow: hidden; }
+  .card pre .k { color: var(--acid); }
 </style>
 </head>
 <body>
@@ -85,7 +98,7 @@
 <!-- 2 · multiplayer -->
 <section class="slide" data-n="2">
   <div class="brand"><svg data-mark></svg><b>lattice</b></div>
-  <div class="kicker"><i></i>new · multiplayer</div>
+  <div class="kicker"><i></i>multiplayer</div>
   <h1>Send a link.<br><em>Jam on it live.</em></h1>
   <p class="sub">Everyone edits the same track at once, cursors and all,<br>and it plays in sync for the whole room.</p>
   <div class="stage"><svg id="patch2" width="1032" height="420" viewBox="0 0 1032 420"></svg></div>
@@ -120,7 +133,73 @@
   </div>
 </section>
 
+<!-- 4 · the generators -->
+<section class="slide" data-n="4">
+  <div class="brand"><svg data-mark></svg><b>lattice</b></div>
+  <div class="kicker"><i></i>new · generators</div>
+  <h1 style="font-size:76px">A drummer and<br><em>a composer,</em> built in.</h1>
+  <div class="stage">
+    <div class="shots">
+      <div><div class="cap"><span><b>groove engine</b> · house, breaks, d&amp;b, trap, dubstep…</span><span>roll for a new groove</span></div>
+        <div class="shot" data-src="shots/groove.png" data-crop="336,262,768,168"></div></div>
+      <div><div class="cap"><span><b>harmony engine</b> · chords, bass, melody, arp in one key</span><span>roll a progression</span></div>
+        <div class="shot" data-src="shots/harmony.png" data-crop="296,222,848,140"></div></div>
+    </div>
+  </div>
+  <div class="foot">
+    <div class="points"><span class="pt">lock what you like</span><span class="pt">wire into <b>any</b> synth</span></div>
+    <span class="url"><b>lattice.bwnd.app</b></span>
+  </div>
+</section>
+
+<!-- 5 · a real patch -->
+<section class="slide" data-n="5">
+  <div class="brand"><svg data-mark></svg><b>lattice</b></div>
+  <h1 style="margin-top:70px">Wire it like<br><em>a modular.</em></h1>
+  <p class="sub">Generators into synths, through racks of effects, into a mix. Every wire is real routing.</p>
+  <div class="stage">
+    <div class="shot" data-src="shots/patch.png" data-crop="250,200,1150,525" style="width:100%"></div>
+  </div>
+  <div class="foot">
+    <div class="points"><span class="pt">granulizer</span><span class="pt">sidechain</span><span class="pt">physical models</span><span class="pt">fx racks</span></div>
+    <span class="url"><b>lattice.bwnd.app</b></span>
+  </div>
+</section>
+
+<!-- 6 · stream it out -->
+<section class="slide" data-n="6">
+  <div class="brand"><svg data-mark></svg><b>lattice</b></div>
+  <div class="kicker"><i></i>new · stream</div>
+  <h1>Plug your track<br>into <em>anything.</em></h1>
+  <p class="sub">One stream node sends the sound and every hit, live, to TouchDesigner, OBS, Max or an AI agent.</p>
+  <div class="stage">
+    <div class="data">
+      <div class="card"><h3>the sound</h3><p>Lossless, as a link OBS, VLC or ffmpeg can open.</p><pre>…/stream/<span class="k">key</span>/audio.wav</pre></div>
+      <div class="card"><h3>the data</h3><p>Every hit, plus spectrum, levels and the beat, 60 times a second.</p><pre>{ "type": "<span class="k">hit</span>",
+  "instName": "kick",
+  "velocity": 1 }</pre></div>
+    </div>
+  </div>
+  <div class="foot">
+    <div class="points"><span class="pt">TouchDesigner</span><span class="pt">OBS</span><span class="pt">lights</span><span class="pt">visuals</span></div>
+    <span class="url"><b>lattice.bwnd.app</b></span>
+  </div>
+</section>
+
 <script>
+// crop the real screenshots into their boxes
+for (const el of document.querySelectorAll('.shot[data-crop]')) {
+  const [x, y, w, h] = el.dataset.crop.split(',').map(Number)
+  const place = () => {
+    const W = el.clientWidth || 1032
+    const k = W / w
+    el.style.height = el.style.height || `${Math.round(h * k)}px`
+    el.style.backgroundImage = `url(${el.dataset.src})`
+    el.style.backgroundSize = `${1440 * k}px ${900 * k}px`
+    el.style.backgroundPosition = `${-x * k}px ${-y * k}px`
+  }
+  requestAnimationFrame(place)
+}
 const C = {
   shell: '#1c1c1c', panel: '#242424', raised: '#2e2e2e', sunk: '#161616', canvas: '#121212',
   line: '#353535', paper: '#dcdcdc', muted: '#8c8c8c', dim: '#5a5a5a', acid: '#e0a33c',
