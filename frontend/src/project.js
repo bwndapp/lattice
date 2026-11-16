@@ -130,6 +130,106 @@ export function duplicateChannel(pattern, channelId) {
   return copy.id
 }
 
+/**
+ * Move an instrument from its pattern to another (`toPatternId`), or into a new pattern of
+ * its own (`toPatternId` null). Mutates the draft; returns the pattern it went to.
+ *
+ * What goes with it: its own out wire and any machine triggering it (re-pointed at the
+ * target's pattern node), its "off the main" setting, and a bus channel's level for those
+ * wires. Variations stay matched to their original instrument by instrument: it leaves every
+ * variation of where it was, and the target's variations each get a copy.
+ *
+ * A new pattern also gets a pattern node beside the old one, wired where the old one's main
+ * out went (unless the instrument only left by its own wire), and on the timeline the old
+ * pattern's clips, on a row of their own: so it plays where it played before.
+ */
+export function moveChannel(p, fromPatternId, channelId, toPatternId = null) {
+  const from = p.patterns.find((x) => x.id === fromPatternId)
+  if (!from) return null
+  const root = p.patterns.find((x) => x.id === (from.parent ?? from.id))
+  const family = [root, ...p.patterns.filter((v) => v.parent === root.id)]
+  const idx = from.channels.findIndex((c) => c.id === channelId)
+  if (idx < 0) return null
+  const rootCh = root.channels[idx]
+  if (!rootCh) return null
+  const id = rootCh.id // wires and triggers name the original's instrument
+  const moved = JSON.parse(JSON.stringify({ ...from.channels[idx], id }))
+  for (const pat of family) pat.channels.splice(idx, 1)
+
+  // where it goes
+  let target
+  const fresh = !toPatternId
+  if (fresh) {
+    target = makePattern(moved.name, { bars: from.bars, stepsPerBar: from.stepsPerBar, channels: [moved] })
+    const after = p.patterns.indexOf(family[family.length - 1])
+    p.patterns.splice(after + 1, 0, target)
+  } else {
+    const t = p.patterns.find((x) => x.id === toPatternId)
+    if (!t) return null
+    target = p.patterns.find((x) => x.id === (t.parent ?? t.id))
+    target.channels.push(moved)
+    for (const v of p.patterns.filter((x) => x.parent === target.id)) v.channels.push({ ...JSON.parse(JSON.stringify(moved)), id: newId() })
+  }
+
+  // its pattern node: the target's, or a new one beside the old
+  const srcNodes = p.nodes.filter((n) => n.type === 'pattern' && n.data?.patternId === root.id)
+  const srcIds = new Set(srcNodes.map((n) => n.id))
+  let node = p.nodes.find((n) => n.type === 'pattern' && n.data?.patternId === target.id)
+  const madeNode = !node
+  const wasOff = srcNodes.some((n) => n.data?.offMain?.[id] === true)
+  const ownWire = p.edges.some((e) => srcIds.has(e.source) && e.sourceHandle === `out-${id}`)
+  if (!node) {
+    const near = srcNodes[0]
+    node = { id: `pattern${newId().slice(-5)}`, type: 'pattern', x: Math.round((near?.x ?? 40)), y: Math.round((near?.y ?? 40) + 190), data: { patternId: target.id } }
+    p.nodes.push(node)
+  }
+  const keyOf = (e) => `${e.source}:${e.sourceHandle ?? 'out'}`
+  for (const e of p.edges) {
+    if (srcIds.has(e.source) && e.sourceHandle === `out-${id}`) {
+      const was = keyOf(e)
+      e.source = node.id
+      // a bus keeps the level it had for this wire
+      const bus = p.nodes.find((n) => n.id === e.target && n.data?.chan && was in n.data.chan)
+      if (bus) { bus.data.chan[keyOf(e)] = bus.data.chan[was]; delete bus.data.chan[was] }
+    }
+    if (srcIds.has(e.target) && e.targetHandle === `trig-${id}`) e.target = node.id
+  }
+  // the same wire twice (the pattern was in the patch more than once) is one
+  const seen = new Set()
+  p.edges = p.edges.filter((e) => { const k = `${e.source}|${e.sourceHandle}|${e.target}|${e.targetHandle}`; if (seen.has(k)) return false; seen.add(k); return true })
+  for (const n of srcNodes) if (n.data?.offMain) { delete n.data.offMain[id]; if (!Object.keys(n.data.offMain).length) delete n.data.offMain }
+  if (wasOff && ownWire) node.data.offMain = { ...(node.data.offMain ?? {}), [id]: true }
+
+  // a node made for it plays where the old one played, unless it only left by its own wire
+  if (madeNode && !(wasOff && ownWire)) {
+    const mains = p.edges.filter((e) => srcIds.has(e.source) && (e.sourceHandle ?? 'out') === 'out')
+    for (const e of mains) {
+      let handle = e.targetHandle
+      const m = /^in-(\d+)$/.exec(handle ?? '')
+      if (m) {
+        const used = p.edges.filter((x) => x.target === e.target).map((x) => Number(/^in-(\d+)$/.exec(x.targetHandle ?? '')?.[1] ?? -1))
+        handle = `in-${Math.max(-1, ...used) + 1}`
+      }
+      p.edges.push({ source: node.id, sourceHandle: 'out', target: e.target, targetHandle: handle })
+    }
+  }
+
+  // on the timeline, a new pattern plays where the old one did
+  if (fresh && p.song?.clips?.length) {
+    const srcs = new Set(family.map((x) => `pattern:${x.id}`))
+    const lane = Math.min(63, Math.max(-1, ...p.song.clips.map((c) => c.lane)) + 1)
+    const spans = new Set()
+    for (const c of [...p.song.clips]) {
+      if (!srcs.has(c.src)) continue
+      const k = `${c.start}|${c.len}`
+      if (spans.has(k)) continue
+      spans.add(k)
+      p.song.clips.push({ id: `c${newId().slice(-8)}`, src: `pattern:${target.id}`, lane, start: c.start, len: c.len, ...(c.offset ? { offset: c.offset } : {}) })
+    }
+  }
+  return target.id
+}
+
 export function makePattern(name = 'pattern', patch = {}) {
   return { id: newId(), name, bars: 1, stepsPerBar: 16, channels: [], ...patch }
 }

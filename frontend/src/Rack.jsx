@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { rollSteps } from './roll.js'
 import {
   INSTRUMENTS, INSTRUMENT_MIME, PARAMS,
-  duplicateChannel, instrumentChannel, midiToNote, paramValue, paramsFor, stepCount, stepDivision,
+  duplicateChannel, instrumentChannel, midiToNote, moveChannel, paramValue, paramsFor, stepCount, stepDivision,
 } from './project'
+import { KnobMenu } from './KnobMenu.jsx'
 import { previewInPatch } from './audio'
 import Knob from './Knob.jsx'
 import { channelTarget } from './automation.js'
@@ -120,6 +121,7 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
   const toggle = (setter, id) => setter((s) => { const next = new Set(s); next.has(id) ? next.delete(id) : next.add(id); return next })
   // reorder instruments by dragging their grip: the pattern and its variations move together,
   // since a variation's instrument in the same place plays out of the same port
+  const [moveMenu, setMoveMenu] = useState(null) // { channelId, name, x, y }: where to move an instrument
   const [moving, setMoving] = useState(null) // the channel id being dragged
   const [movingOver, setMovingOver] = useState(null) // the index it would land at
   const moveChannel = (from, to) => {
@@ -202,6 +204,25 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
         addInstrument(key)
       }}
     >
+      {moveMenu && (() => {
+        const root = pattern.parent ?? pattern.id
+        const others = project.patterns.filter((x) => !x.parent && x.id !== root)
+        const go = (to) => onUpdateProject((p) => { moveChannel(p, pattern.id, moveMenu.channelId, to) })
+        return (
+          <KnobMenu
+            x={moveMenu.x}
+            y={moveMenu.y}
+            title={`Move ${moveMenu.name} to`}
+            items={[
+              ['a new pattern of its own', () => go(null), { accent: true }],
+              ...(others.length ? [null] : []),
+              // two patterns with one name get told apart
+              ...others.map((x, i) => [others.filter((y, j) => j < i && y.name === x.name).length ? `${x.name} (${others.filter((y, j) => j <= i && y.name === x.name).length})` : x.name, () => go(x.id)]),
+            ]}
+            onClose={() => setMoveMenu(null)}
+          />
+        )
+      })()}
       {pattern.channels.length === 0 && (
         <p className="rack-hint">Empty pattern. Add instruments below (or drag them in), then click steps or write notes.</p>
       )}
@@ -348,6 +369,12 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
               {ch.kind === 'synth' && (
                 <button className={`btn ch-btn ${rollOpen ? 'on' : ''}`} aria-expanded={rollOpen} onClick={() => (rollOpen ? dock?.close() : dock?.open(pattern.id, ch.id, 'notes'))} title="Piano roll, along the bottom of the app">notes</button>
               )}
+              <button
+                className="btn ghost ch-btn"
+                title="Move this instrument to another pattern, or a new one of its own"
+                aria-label={`Move ${ch.name} to another pattern`}
+                onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setMoveMenu({ channelId: ch.id, name: ch.name, x: r.left, y: r.bottom + 4 }) }}
+              >move</button>
               <button className="btn ghost ch-btn" title={ch.engine ? 'Duplicate: a copy of this patch, right below, to take somewhere new' : 'Duplicate'} aria-label={`Duplicate ${ch.name}`} onClick={() => update((pat) => { duplicateChannel(pat, ch.id) })}>dup</button>
               <button className="btn ghost danger ch-btn" title="Remove instrument" aria-label={`Remove ${ch.name}`} onClick={() => update((pat) => { pat.channels = pat.channels.filter((c) => c.id !== ch.id) })}>del</button>
             </div>
