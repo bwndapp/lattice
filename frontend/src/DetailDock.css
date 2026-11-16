@@ -89,7 +89,14 @@
 .fader:hover .fader-cap, .fader:active .fader-cap { background: var(--acid); }
 .strip-meter { display: flex; gap: 3px; padding: 6px 0; }
 .strip-meter i { position: relative; width: 6px; background: var(--sunk, #111); border-radius: 2px; overflow: hidden; }
-.strip-meter i::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: calc(min(var(--h, 0), 1) * 100%); background: linear-gradient(to top, #3ddc84 0%, #3ddc84 60%, #e4ff1a 82%, #ff5a43 100%); background-size: 100% var(--full, 100%); background-position: bottom; transition: height 60ms linear; }
+.strip-meter i::after {
+  /* the colours sit at fixed heights on the whole bar (green, yellow near the top, red only
+     when it's peaking) and the level uncovers them from the bottom */
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(to top, #3ddc84 0%, #3ddc84 70%, #e4ff1a 78%, #e4ff1a 92%, #ff5a43 96%);
+  clip-path: inset(calc((1 - min(var(--h, 0), 1)) * 100%) 0 0 0);
+  transition: clip-path 60ms linear;
+}
 .strip-meter i:first-child { --h: var(--l, 0); }
 .strip-meter i:last-child { --h: var(--r, 0); }
 .strip-meter.over i::after { box-shadow: 0 0 0 1px rgb(255 90 67 / 0.9); }
