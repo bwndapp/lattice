@@ -155,5 +155,28 @@ const lineOf = (code, v) => code.split('\n').find((l) => l.startsWith(`const ${v
   ok('so a distortion inside the bus still plays on its own bus', new RegExp(`\\.orbit\\(${distBus}\\)`).test(lineOf(code, 'n_dist')))
 }
 
+// a trigger that's already on a bus (the kick through a saturator): that bus's own audio
+// drives the sidechain, no copy, and the kick plays once
+{
+  const { code, routes, speakers, quiet } = routing(project(
+    [node('b', 'pattern', { patternId: 'pb' }), node('d', 'pattern', { patternId: 'pd' }), node('sat', 'saturator'), node('sc', 'sidechain'), node('mix', 'bus', { name: 'mix' })],
+    [edge('d', 'sat'), edge('sat', 'sc', 'in-1'), edge('sat', 'mix', 'in-1'), edge('b', 'sc', 'in-0'), edge('sc', 'mix', 'in-0'), edge('mix', 'out', 'in-0')],
+  ))
+  const satBus = [...routes].find(([, to]) => to.has('side:sc_sc'))?.[0]
+  ok('a trigger after an effect feeds the sidechain from its own bus', satBus != null && /\.orbit\(/.test(lineOf(code, 'n_sat')) && lineOf(code, 'n_sat').includes(`.orbit(${satBus})`))
+  ok('with no copy of its notes', !/_r: 'sc\./.test(code))
+  ok('and it still plays into the mix, once', routes.get(satBus)?.size === 2 && (lineOf(code, 'n_mix').match(/n_sat/g) ?? []).length === 0 && !quiet.has(satBus))
+  void speakers
+}
+// the same trigger wired only into the sidechain, silent: its bus isn't heard
+{
+  const { routes, quiet } = routing(project(
+    [node('b', 'pattern', { patternId: 'pb' }), node('d', 'pattern', { patternId: 'pd' }), node('sat', 'saturator'), node('sc', 'sidechain')],
+    [edge('d', 'sat'), edge('sat', 'sc', 'in-1'), edge('b', 'sc', 'in-0'), edge('sc', 'out', 'in-0')],
+  ))
+  const satBus = [...routes].find(([, to]) => to.has('side:sc_sc'))?.[0]
+  ok('a silent trigger that only feeds the sidechain is kept off the speakers', satBus != null && quiet.has(satBus))
+}
+
 if (fails) { console.log(`\n${fails} failing`); process.exit(1) }
 console.log('\nrouting ok')

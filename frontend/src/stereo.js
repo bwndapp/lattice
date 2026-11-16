@@ -529,13 +529,14 @@ let declared = new Map() // orbit → [{ key, kind, params }] from the latest ge
 let routed = new Map() // orbit → Map(to → gain): the buses it plays into (mixer buses, branches) and at what level
 let virtuals = new Set() // branch buses: racks of the app's own, fed from another bus, with no Strudel orbit behind them
 let speakers = new Set() // buses that play to the speakers as well as wherever they're routed
+let quiet = new Set() // buses that never play to the speakers unless told to (a silent sidechain trigger)
 const racks = new Map() // bus → { orbit (Orbit object, null for a branch), input, output, sends: Map(to → GainNode), units: Map(key → unit) }
 let controller = null
 let armed = false
 
 /** Start collecting the inserts a code generation declares. */
 export function beginInserts() {
-  return { inserts: new Map(), routes: new Map(), virtual: new Set(), speakers: new Set() }
+  return { inserts: new Map(), routes: new Map(), virtual: new Set(), speakers: new Set(), quiet: new Set() }
 }
 
 /** A stereo insert on an orbit, in signal order. */
@@ -572,6 +573,7 @@ export function declaredRouting() {
     inserts: new Map([...declared].map(([o, list]) => [o, list.map((i) => ({ key: i.key, kind: i.kind }))])),
     routes: new Map([...routed].map(([o, to]) => [o, new Map(to)])),
     speakers: new Set(speakers),
+    quiet: new Set(quiet),
   }
 }
 
@@ -580,6 +582,11 @@ export function declareSide(list, from, key) {
   if (!list.inserts.has(from)) list.inserts.set(from, [])
   if (!list.routes.has(from)) list.routes.set(from, new Map())
   list.routes.get(from).set(`side:${key}`, 1)
+}
+
+/** A bus that isn't heard on its own: it only feeds a sidechain (a silent trigger). */
+export function declareQuiet(list, orbit) {
+  list.quiet.add(orbit)
 }
 
 /** A bus that also plays to the speakers, though it's routed somewhere else as well. */
@@ -597,6 +604,7 @@ export function commitInserts(list, { partial = false, keep = false } = {}) {
   routed = keep ? new Map([...list.routes, ...routed]) : partial ? new Map([...routed, ...list.routes]) : list.routes
   virtuals = keep || partial ? new Set([...virtuals, ...list.virtual]) : list.virtual
   speakers = keep || partial ? new Set([...speakers, ...list.speakers]) : list.speakers
+  quiet = keep || partial ? new Set([...quiet, ...list.quiet]) : list.quiet
   // the audio side must never break generating the code (and so the whole app)
   try { apply() } catch (err) { console.warn('[stereo] could not update the stereo inserts', err) }
 }
@@ -710,7 +718,10 @@ const intoBus = (to) => (typeof to === 'string' && to.startsWith('side:') ? side
 function aim(n, rack) {
   const routes = routed.get(n) ?? new Map()
   const want = new Map(routes)
-  if (!routes.size || speakers.has(n)) want.set('speakers', 1)
+  // feeding a sidechain isn't going anywhere: a bus that only does that still plays out,
+  // unless it's a trigger that's meant to be silent
+  const onward = [...routes.keys()].filter((to) => !(typeof to === 'string' && to.startsWith('side:')))
+  if ((!onward.length && !quiet.has(n)) || speakers.has(n)) want.set('speakers', 1)
   for (const [to, send] of [...rack.sends]) {
     if (want.has(to) && (to === 'speakers' || send.into === intoBus(to))) continue
     try { rack.output.disconnect(send); send.disconnect() } catch { /* already gone */ }

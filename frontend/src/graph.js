@@ -14,7 +14,7 @@
  */
 
 import { parse } from 'acorn'
-import { GRAIN_STEPS, STEREO_ORBIT_BASE, beginInserts, commitInserts, declareBranch, declareInsert, declareRoute, declareSide, declareSpeakers } from './stereo'
+import { GRAIN_STEPS, STEREO_ORBIT_BASE, beginInserts, commitInserts, declareBranch, declareInsert, declareQuiet, declareRoute, declareSide, declareSpeakers } from './stereo'
 import { abstractBuild, abstractNodeTypes, abstractOf, abstractParts, packState } from './abstract/index.js'
 import { DELAY_DEFAULTS, DELAY_DIVISIONS, GLOBAL_DELAY, GLOBAL_REVERB, REVERB_DEFAULTS, beginFx, commitFx, declareFx } from './fxbus.js'
 
@@ -465,18 +465,32 @@ export const NODE_TYPES = {
       // the sidechain itself, on the ducked bus after whatever that sound already goes through
       const key = `sc_${ctx.nodeId}`
       ctx.declare(orbit, key, 'ringside', { depth: d.depth, attack: d.attack, release: d.release, drive: d.drive, mode: d.mode })
-      // the trigger: a copy on its own bus, into the sidechain's input; on an instance of its
-      // own, so a one-voice instrument (the kick synth) isn't cut by its own copy
+      // The trigger. Already on a bus of its own (after an effect: a kick through a
+      // saturator): that bus's own audio goes into the sidechain's input, exactly what's
+      // patched, with no copy. Its notes come along unchanged, and a merge further on plays
+      // them once even when the trigger is wired somewhere else as well. A trigger that's
+      // only here and meant to be silent isn't heard on its own.
+      const ti = ctx.slots.indexOf('in-1')
+      const trigBus = ctx.inputOrbits?.[ti] ?? null
+      // the sounds as placed above: notes already on a bus stay where they are (a bus's own
+      // paths, a distortion inside it, keep their inserts), only those with none come here
+      const soundAtoms = placed.flatMap((x, n) => (x === xs[at[n]] && ctx.atomsOf ? ctx.atomsOf(x) : [x]))
+      if (trigBus != null && trigBus !== orbit) {
+        ctx.sideTo?.(trigBus, key)
+        if (d.hear === 'audible') ctx.toSpeakers?.(trigBus)
+        else if (!ctx.inputFans?.[ti]) ctx.unheard?.(trigBus)
+        ctx.setAtoms?.([...soundAtoms, ...(ctx.atomsOf ? ctx.atomsOf(trigger) : [trigger])])
+        return `stack(${[...placed, trigger].join(', ')})`
+      }
+      // Straight from an instrument (no bus yet): a copy on a bus of its own feeds the input;
+      // on an instance of its own, so a one-voice instrument (the kick synth) isn't cut by it
       const keyOrbit = ctx.stereoOrbit(`sckey:${ctx.nodeId}`)
       ctx.sideTo?.(keyOrbit, key)
       if (d.hear === 'audible') ctx.toSpeakers?.(keyOrbit)
+      else ctx.unheard?.(keyOrbit)
       const trig = `${trigger}.fmap((v) => ({ ...v, _r: 'sc.${ctx.nodeId}' })).orbit(${keyOrbit})`
-      // the sounds as placed above: notes already on a bus stay where they are (a bus's own
-      // paths, a distortion inside it, keep their inserts), only those with none come here
-      if (!own) return `stack(${[...placed, trig].join(', ')})`
-      // its notes are the sounds' (those that kept their own bus are the same notes) and the trigger
-      const trigVar = ctx.define ? ctx.define('trigger', trig) : trig
-      ctx.setAtoms?.([...placed.flatMap((x, n) => (x === xs[at[n]] && ctx.atomsOf ? ctx.atomsOf(x) : [x])), trigVar])
+      const trigVar = own && ctx.define ? ctx.define('trigger', trig) : trig
+      ctx.setAtoms?.([...soundAtoms, trigVar])
       return `stack(${[...placed, trigVar].join(', ')})`
     },
   },
@@ -1326,7 +1340,8 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     const setAtoms = (list) => { atoms = list }
     const sideTo = (from, key) => declareSide(inserts, from, key)
     const toSpeakers = (orbit) => declareSpeakers(inserts, orbit)
-    let expr = spec.code(node.data, inputs, { patternIds, mixChannels, slots, inputKeys, notesOf, atomsOf, takeNew, inputShared, ownPath, define, setAtoms, nodeId: id, orbit: 2 + sidechains.indexOf(id), cps, beats, route, inputOrbits, stereoOrbit, declare, routeBus, sideTo, toSpeakers, auto: nodeAuto, autoOf, declareFx: (key, kind, params) => declareFx(fx, key, kind, params) })
+    const unheard = (orbit) => declareQuiet(inserts, orbit)
+    let expr = spec.code(node.data, inputs, { patternIds, mixChannels, slots, inputKeys, notesOf, atomsOf, takeNew, inputShared, ownPath, define, setAtoms, inputFans, unheard, nodeId: id, orbit: 2 + sidechains.indexOf(id), cps, beats, route, inputOrbits, stereoOrbit, declare, routeBus, sideTo, toSpeakers, auto: nodeAuto, autoOf, declareFx: (key, kind, params) => declareFx(fx, key, kind, params) })
     if (!expr) { exprs.set(id, null); return null }
     if (songPart) { const marked = expr; expr = song(`node:${id}`, (shift, read) => marked.replace(/\u0001(\w+)\u0001/g, (_, a) => read(a))) }
     if (spec.group === 'source') expr = fromNode(expr, id)
