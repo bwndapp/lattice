@@ -339,10 +339,12 @@ function Param({ node, param, value: given, onChange, target: givenTarget }) {
   }
 }
 
-/** The inside of an fx rack: effect units that the sound passes through, top to bottom. */
+/**
+ * The inside of an fx rack: effect units that the sound passes through, top to bottom. It
+ * lives in the rack sidebar (RackSide), not on the canvas: the node shows a summary.
+ */
 function FxRack({ node }) {
   const ctx = useContext(Ctx)
-  const flow = useReactFlow()
   const chain = node.data.chain ?? []
   const edit = (fn) => ctx.updateNode(node.id, (d) => { d.chain = d.chain ?? []; fn(d.chain) })
   const at = (list, unitId) => list.findIndex((u) => u.id === unitId)
@@ -366,7 +368,6 @@ function FxRack({ node }) {
       // where the rows sit now: the one being dragged moves with the pointer, so
       // measuring live would have it forever finding itself
       rows: [...(listRef.current?.children ?? [])].map((el) => el.getBoundingClientRect()),
-      zoom: flow.getZoom() || 1,
     })
   }
   const moveTo = (e) => {
@@ -374,8 +375,7 @@ function FxRack({ node }) {
     if (!held) return
     const found = held.rows.findIndex((r) => e.clientY < r.bottom)
     const to = found === -1 ? Math.max(0, held.rows.length - 1) : found
-    // the canvas may be zoomed, so what the pointer moved isn't what the node moved
-    setDrag({ ...held, to, dy: (e.clientY - held.startY) / held.zoom })
+    setDrag({ ...held, to, dy: e.clientY - held.startY })
   }
   const drop = () => {
     const held = dragRef.current
@@ -467,6 +467,78 @@ function FxRack({ node }) {
       </label>
       <span className="fx-io">out</span>
     </div>
+  )
+}
+
+/** An fx rack on the canvas: its chain at a glance; a click opens it in the rack sidebar. */
+function FxRackFace({ node }) {
+  const ctx = useContext(Ctx)
+  const chain = node.data.chain ?? []
+  const open = ctx.rackSide === node.id
+  return (
+    <div className="fx-face">
+      {chain.length ? (
+        <ol className="fx-face-list">
+          {chain.map((u, i) => (
+            <li key={u.id} className={u.on ? '' : 'bypassed'}><span className="fx-face-n">{i + 1}</span>{NODE_TYPES[u.type]?.label ?? u.type}</li>
+          ))}
+        </ol>
+      ) : <span className="node-hint">empty: open it to add effects</span>}
+      <div className="node-actions nodrag">
+        <button className={`btn ${open ? '' : 'primary'}`} onClick={() => ctx.openRack(open ? null : node.id)} title="Open the rack in the sidebar (or click the node)">{open ? 'close rack' : 'open rack'}</button>
+      </div>
+    </div>
+  )
+}
+
+const SIDE_KEY = 'lattice:rack-side:width'
+const SIDE_MIN = 260
+const SIDE_MAX = 560
+
+/** The rack sidebar: one fx rack, top to bottom, down the right of the patch. */
+function RackSide({ node, onClose }) {
+  const ctx = useContext(Ctx)
+  const [width, setWidth] = useState(() => Math.min(SIDE_MAX, Math.max(SIDE_MIN, readPalPref(SIDE_KEY, 340))))
+  useEffect(() => { writePalPref(SIDE_KEY, width) }, [width])
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape' && !e.target.closest?.('input, textarea, select')) onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  const startResize = (e) => {
+    e.preventDefault()
+    const x0 = e.clientX
+    const w0 = width
+    const move = (ev) => setWidth(Math.min(SIDE_MAX, Math.max(SIDE_MIN, w0 - (ev.clientX - x0))))
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); document.body.classList.remove('resizing-x') }
+    document.body.classList.add('resizing-x')
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+  const n = node.data.chain?.length ?? 0
+  return (
+    <aside className="rack-side" aria-label="Fx rack" style={{ width }}>
+      <div className="rack-side-head">
+        <span className="palette-title">{nodeTitle(node, ctx.project)}</span>
+        <span className="rack-side-n">{n} effect{n === 1 ? '' : 's'}</span>
+        <button className="node-btn" onClick={onClose} title="Close the rack (Esc)" aria-label="Close the rack">»</button>
+      </div>
+      <div className="rack-side-body"><FxRack node={node} /></div>
+      <div
+        className="rack-side-resize"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize the rack"
+        aria-valuenow={Math.round(width)}
+        tabIndex={0}
+        onPointerDown={startResize}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowLeft') setWidth((w) => Math.min(SIDE_MAX, w + 20))
+          if (e.key === 'ArrowRight') setWidth((w) => Math.max(SIDE_MIN, w - 20))
+        }}
+        title="Drag to resize"
+      />
+    </aside>
   )
 }
 
@@ -769,7 +841,7 @@ function StudioNode({ id, selected }) {
           </>
         )}
 
-        {node.type === 'fxrack' && <FxRack node={node} />}
+        {node.type === 'fxrack' && <FxRackFace node={node} />}
 
         {spec.abstract && <AbstractFace node={node} />}
 
@@ -1928,8 +2000,15 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
     return () => window.removeEventListener('keydown', onKey)
   }, [pasteAt, pasteClip, removeNodes, onUpdateProject, solo, onSolo])
 
+  // the fx rack open in the sidebar, by node id (gone with its node)
+  const [rackSide, setRackSide] = useState(null)
+  const rackNode = rackSide ? project.nodes.find((n) => n.id === rackSide && n.type === 'fxrack') : null
+  const closeRack = useCallback(() => setRackSide(null), [])
+
   const ctx = useMemo(() => ({
     project,
+    rackSide,
+    openRack: setRackSide,
     heard,
     solo,
     setSolo: onSolo,
@@ -1970,7 +2049,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
       })
       dock?.open(patternId, null, 'rack')
     },
-  }), [project, heard, solo, onSolo, laneSolo, onLaneSolo, updateNode, addStream, removeNodes, frameSel, selectFrame, updateFrame, removeFrame, toggleFrame, onUpdateProject, automation, dock])
+  }), [project, rackSide, heard, solo, onSolo, laneSolo, onLaneSolo, updateNode, addStream, removeNodes, frameSel, selectFrame, updateFrame, removeFrame, toggleFrame, onUpdateProject, automation, dock])
 
   // what we have selected, so the others see it ringed on their canvas
   useEffect(() => { selectionIs('graph', nodes.filter((n) => n.selected && n.type !== 'frame').map((n) => n.id)) }, [nodes])
@@ -2177,6 +2256,11 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
               e.preventDefault()
               setMenu({ x: e.clientX, y: e.clientY, at: flow.screenToFlowPosition({ x: e.clientX - 20, y: e.clientY - 20 }), wire: takesInserts(project, edge) ? edge.id : null })
             }}
+            onNodeClick={(e, n) => {
+              // a click on an fx rack (not its controls) opens it in the sidebar
+              if (e.target.closest('input, select, textarea, button, .node-title, .node-name, .react-flow__handle')) return
+              if (project.nodes.find((x) => x.id === n.id)?.type === 'fxrack') setRackSide(n.id)
+            }}
             onNodeDoubleClick={(e, n) => {
               // double-click a pattern node (not its controls) to open its rack
               const node = project.nodes.find((x) => x.id === n.id)
@@ -2335,6 +2419,7 @@ function Canvas({ project, onUpdateProject, started, solo, onSolo, laneSolo, onL
                 : 'double-click a pattern to open its rack · wire: drag right dot → left dot · pull a wire off an input to remove it · drop a node on a wire to insert it'}
           </div>
         </div>
+        {rackNode && <RackSide key={rackNode.id} node={rackNode} onClose={closeRack} />}
       </div>
       {menu && (
         <AddMenu
