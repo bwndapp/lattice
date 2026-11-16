@@ -46,6 +46,7 @@ const APP_PARAMS = {
   delay: { prefix: 'dl_', where: 'fx', keys: { feedback: 'feedback', tone: 'tone' } },
   space: { prefix: 'dl_', where: 'fx', keys: { delaytime: 'seconds' } }, // bars → seconds below
   bus: { prefix: '', where: 'insert', keys: { vol: 'gain', pan: 'pan' } },
+  sidechain: { prefix: 'sc_', where: 'insert', keys: { depth: 'depth', attack: 'attack', release: 'release', drive: 'drive' } },
   eq3: { prefix: '', where: 'insert', keys: { low: 'low', mid: 'mid', high: 'high', lowf: 'lowf', highf: 'highf' } },
   haas: { prefix: '', where: 'insert', keys: { time: 'time', mix: 'mix' } },
   widener: { prefix: '', where: 'insert', keys: { width: 'width', spread: 'spread', mono: 'mono' } },

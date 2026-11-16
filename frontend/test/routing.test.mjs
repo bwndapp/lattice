@@ -68,8 +68,27 @@ const lineOf = (code, v) => code.split('\n').find((l) => l.startsWith(`const ${v
   ))
   const hs = orbitIn(inserts, 'hs'); const wd = orbitIn(inserts, 'wd')
   ok('two ducked sounds keep their own inserts', hs != null && wd != null && hs !== wd && !lineOf(code, 'n_sc').includes(`.orbit(${hs})`))
-  const duck = Number(/duckorbit\((\d+)\)/.exec(code)?.[1])
-  ok('they play into the sidechain\'s own bus, which is the one ducked', routes.get(hs)?.has(duck) && routes.get(wd)?.has(duck) && duck !== hs && duck !== wd)
+  const duck = orbitIn(inserts, 'sc_sc')
+  ok('they play into the sidechain\'s own bus, which is the one ducked', duck != null && routes.get(hs)?.has(duck) && routes.get(wd)?.has(duck) && duck !== hs && duck !== wd)
+  ok('the sidechain is a ringside insert there', inserts.get(duck)?.find((i) => i.key === 'sc_sc')?.kind === 'ringside')
+  // the trigger: its own bus, into the sidechain's input, not heard while it's silent
+  const key = [...routes].find(([, to]) => to.has('side:sc_sc'))?.[0]
+  ok('the trigger plays on a bus of its own into the sidechain\'s input', key != null && key !== duck && new RegExp(`\\.orbit\\(${key}\\)`).test(code))
+  ok('a silent trigger goes nowhere else', key != null && routes.get(key).size === 1)
+  ok('the trigger copy plays on an instrument instance of its own', /_r: 'sc\.sc'/.test(code))
+  ok('no Strudel ducking left in the code', !/duckorbit/.test(code))
+}
+
+// the same, heard: the trigger's bus goes to the speakers too
+{
+  const p = project(
+    [node('b', 'pattern', { patternId: 'pb' }), node('d', 'pattern', { patternId: 'pd' }), node('sc', 'sidechain', { hear: 'audible' })],
+    [edge('b', 'sc', 'in-0'), edge('d', 'sc', 'in-1'), edge('sc', 'out', 'in-0')],
+  )
+  m.generateCode(p)
+  const { routes, speakers } = m.declaredRouting()
+  const key = [...routes].find(([, to]) => to.has('side:sc_sc'))?.[0]
+  ok('an audible trigger is heard as well', key != null && speakers.has(key))
 }
 
 // a split bus: one branch dry, one sidechained, joined again
@@ -79,8 +98,8 @@ const lineOf = (code, v) => code.split('\n').find((l) => l.startsWith(`const ${v
     [edge('d', 'ba', 'in-0'), edge('ba', 'sat'), edge('ba', 'sc', 'in-0'), edge('b', 'sc', 'in-1'), edge('sat', 'bb', 'in-0'), edge('sc', 'bb', 'in-1'), edge('bb', 'out', 'in-0')],
   ))
   const a = orbitIn(inserts, 'ba')
-  const duck = Number(/duckorbit\((\d+)\)/.exec(code)?.[1])
-  ok('a sidechain on one branch ducks only that branch', duck !== a && routes.get(a)?.has(duck))
+  const duck = orbitIn(inserts, 'sc_sc')
+  ok('a sidechain on one branch ducks only that branch', duck != null && duck !== a && routes.get(a)?.has(duck))
   const joined = lineOf(code, 'n_bb')
   ok('the branches joined again play the notes once (plus the trigger)', /n_sat/.test(joined) && !/n_sc[,)]/.test(joined) && /n_sc_trigger/.test(joined))
 }

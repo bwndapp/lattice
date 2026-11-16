@@ -206,6 +206,67 @@ class GrainProcessor extends AudioWorkletProcessor {
 registerProcessor('lattice-grain', GrainProcessor)
 
 /*
+ * Sidechain, the ring-mod way (after Kilohearts' Ring Mod with a sidechain source): the bus is
+ * multiplied by the trigger's own audio, sample by sample, so the dip is exactly as long and
+ * as shaped as the kick that causes it, never late. Input 0 is the bus, input 1 the trigger.
+ *
+ *   clean   the trigger rectified and followed (attack up, release down), then
+ *           gain = 1 - depth x level: a pump that's as tight as the kick itself
+ *   ring    the trigger's raw waveform, signed: gain = 1 - depth x trigger, at audio rate,
+ *           the gritty, tonal side of a ring modulator
+ *
+ * 'drive' is how hard the trigger counts (a quiet kick can still duck all the way).
+ */
+class RingSideProcessor extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [
+      { name: 'depth', defaultValue: 0.85, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+      { name: 'attack', defaultValue: 0.002, minValue: 0, maxValue: 0.1, automationRate: 'k-rate' },
+      { name: 'release', defaultValue: 0.25, minValue: 0.005, maxValue: 1, automationRate: 'k-rate' },
+      { name: 'drive', defaultValue: 2, minValue: 0.1, maxValue: 16, automationRate: 'k-rate' },
+      { name: 'mode', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' }, // 0 clean, 1 ring
+    ]
+  }
+  constructor() { super(); this.env = 0; this.g = 1 }
+  process(inputs, outputs, params) {
+    const input = inputs[0]
+    const side = inputs[1]
+    const output = outputs[0]
+    if (!output || !output.length) return true
+    const n = output[0].length
+    const depth = params.depth[0]
+    const drive = params.drive[0]
+    const ring = params.mode[0] >= 0.5
+    const att = params.attack[0] > 0 ? 1 - Math.exp(-1 / (params.attack[0] * sampleRate)) : 1
+    const rel = 1 - Math.exp(-1 / (params.release[0] * sampleRate))
+    const sL = side && side[0]
+    const sR = side && (side[1] || side[0])
+    const iL = input && input[0]
+    const iR = input && (input[1] || input[0])
+    // the gain glides a touch between samples in clean mode, so a hard edge in the trigger
+    // doesn't click; ring mode follows the waveform as it is
+    const glide = 1 - Math.exp(-1 / (0.0005 * sampleRate))
+    for (let i = 0; i < n; i++) {
+      const sc = sL ? (sL[i] + sR[i]) * 0.5 * drive : 0
+      let gain
+      if (ring) {
+        gain = 1 - depth * Math.max(-1, Math.min(1, sc))
+      } else {
+        const x = sc < 0 ? -sc : sc
+        this.env += (x - this.env) * (x > this.env ? att : rel)
+        const target = 1 - depth * Math.min(1, this.env)
+        this.g += (target - this.g) * glide
+        gain = this.g
+      }
+      output[0][i] = (iL ? iL[i] : 0) * gain
+      if (output[1]) output[1][i] = (iR ? iR[i] : 0) * gain
+    }
+    return true
+  }
+}
+registerProcessor('lattice-ringside', RingSideProcessor)
+
+/*
  * Pitch: the bus moved up or down without moving the tempo.
  *
  * Everything written is kept in a ring, and two read heads run through it at the speed the
@@ -503,7 +564,15 @@ export function declaredRouting() {
   return {
     inserts: new Map([...declared].map(([o, list]) => [o, list.map((i) => ({ key: i.key, kind: i.kind }))])),
     routes: new Map([...routed].map(([o, to]) => [o, new Map(to)])),
+    speakers: new Set(speakers),
   }
+}
+
+/** Bus `from` plays into the sidechain input of the insert `key` (a sidechain's trigger). */
+export function declareSide(list, from, key) {
+  if (!list.inserts.has(from)) list.inserts.set(from, [])
+  if (!list.routes.has(from)) list.routes.set(from, new Map())
+  list.routes.get(from).set(`side:${key}`, 1)
 }
 
 /** A bus that also plays to the speakers, though it's routed somewhere else as well. */
@@ -536,6 +605,7 @@ function apply() {
   for (const n of virtuals) if (!racks.has(n)) mountBranch(n)
   // a bus that was already playing before it got an insert (a sidechain's, say)
   for (const n of declared.keys()) if (!racks.has(n) && !virtuals.has(n) && controller.nodes[n]) mount(n, controller.nodes[n])
+  reaimSides()
 }
 
 /** Hook into the audio controller once the page may make sound. */
@@ -592,6 +662,15 @@ function mount(n, orbit, channels) {
   racks.set(n, rack)
   wire(n, rack, declared.get(n) ?? [])
   aim(n, rack)
+  reaimSides()
+}
+
+/** Racks whose trigger plays into a sidechain: aim them again, now there may be one to reach. */
+function reaimSides() {
+  for (const [m, r] of racks) {
+    const routes = routed.get(m)
+    if (routes && [...routes.keys()].some((to) => typeof to === 'string' && to.startsWith('side:'))) aim(m, r)
+  }
 }
 
 /** A branch's rack: fed by the bus it branches off (see declareBranch), not by notes. */
@@ -602,11 +681,19 @@ function mountBranch(n) {
   racks.set(n, rack)
   wire(n, rack, declared.get(n) ?? [])
   aim(n, rack)
+  reaimSides()
   return rack
 }
 
-/** Where a send into bus `to` lands: a branch's rack, or a mixer bus's orbit. */
-const intoBus = (to) => (virtuals.has(to) ? (racks.get(to) ?? mountBranch(to)).input : controller.getOrbit(to).summingNode)
+/** The sidechain input of insert `key`, wherever it's mounted (null until it is). */
+function sideOf(key) {
+  for (const rack of racks.values()) { const unit = rack.units.get(key); if (unit?.side) return unit.side }
+  return null
+}
+
+/** Where a send into bus `to` lands: a branch's rack, a mixer bus's orbit, or a sidechain's input. */
+const intoBus = (to) => (typeof to === 'string' && to.startsWith('side:') ? sideOf(to.slice(5))
+  : virtuals.has(to) ? (racks.get(to) ?? mountBranch(to)).input : controller.getOrbit(to).summingNode)
 
 /**
  * Point a rack at what it plays into, a send each at its own level (a mixer's channel
@@ -625,10 +712,12 @@ function aim(n, rack) {
   for (const [to, gain] of want) {
     let send = rack.sends.get(to)
     if (!send) {
+      const into = to === 'speakers' ? null : intoBus(to)
+      if (to !== 'speakers' && !into) continue // a sidechain not mounted yet: aimed again when it is
       send = stereoGain(getAudioContext())
       rack.output.connect(send)
       if (to === 'speakers') controller.output.connectToDestination(send, rack.channels)
-      else { send.into = intoBus(to); send.connect(send.into) }
+      else { send.into = into; send.connect(into) }
       rack.sends.set(to, send)
     }
     smooth(send.gain, gain ?? 1)
@@ -994,6 +1083,60 @@ const UNITS = {
       dispose() {
         try { input.disconnect(); output.disconnect() } catch { /* gone */ }
         wet?.destroy()
+      },
+    }
+  },
+
+  /**
+   * The sidechain on the ducked bus (see the ringside worklet above): the bus in, and a
+   * `side` input the trigger's bus plays into (declareSide). Straight through until the
+   * worklet's on the audio thread.
+   */
+  ringside(ac) {
+    const input = stereoGain(ac)
+    const output = stereoGain(ac)
+    const side = stereoGain(ac)
+    input.connect(output)
+    let node = null
+    let want = null
+    let gone = false
+    const n = (v, lo, hi, def) => Math.min(hi, Math.max(lo, Number.isFinite(+v) ? +v : def))
+    const push = () => {
+      if (!node || !want) return
+      for (const [key, value] of Object.entries(want)) {
+        const param = node.parameters.get(key)
+        if (param && Number.isFinite(value)) param.setTargetAtTime(value, getAudioContext().currentTime, 0.01)
+      }
+    }
+    prepareInserts().then(() => {
+      if (gone) return
+      try {
+        node = new AudioWorkletNode(ac, 'lattice-ringside', { numberOfInputs: 2, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 2, channelCountMode: 'explicit' })
+        push()
+        input.disconnect()
+        input.connect(node, 0, 0)
+        side.connect(node, 0, 1)
+        node.connect(output)
+      } catch (err) { console.warn('[stereo] could not start the sidechain', err) }
+    })
+    return {
+      input,
+      output,
+      side,
+      set(p) {
+        want = {
+          depth: n(p.depth, 0, 1, 0.85),
+          attack: n(p.attack, 0, 0.1, 0.002),
+          release: n(p.release, 0.005, 1, 0.25),
+          drive: n(p.drive, 0.1, 16, 2),
+          mode: p.mode === 'ring' ? 1 : 0,
+        }
+        push()
+      },
+      dispose() {
+        gone = true
+        for (const a of [input, output, side, node]) { try { a?.disconnect() } catch { /* gone */ } }
+        node = null
       },
     }
   },

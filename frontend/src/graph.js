@@ -14,7 +14,7 @@
  */
 
 import { parse } from 'acorn'
-import { GRAIN_STEPS, STEREO_ORBIT_BASE, beginInserts, commitInserts, declareBranch, declareInsert, declareRoute, declareSpeakers } from './stereo'
+import { GRAIN_STEPS, STEREO_ORBIT_BASE, beginInserts, commitInserts, declareBranch, declareInsert, declareRoute, declareSide, declareSpeakers } from './stereo'
 import { abstractBuild, abstractNodeTypes, abstractOf, abstractParts, packState } from './abstract/index.js'
 import { DELAY_DEFAULTS, DELAY_DIVISIONS, GLOBAL_DELAY, GLOBAL_REVERB, REVERB_DEFAULTS, beginFx, commitFx, declareFx } from './fxbus.js'
 
@@ -430,10 +430,17 @@ export const NODE_TYPES = {
       { key: 'depth', type: 'knob', label: 'depth', min: 0, max: 1, def: 0.85 },
       { key: 'attack', type: 'knob', label: 'attack', min: 0, max: 0.1, def: 0.005, unit: 's' },
       { key: 'release', type: 'knob', label: 'release', min: 0.02, max: 1, def: 0.25, unit: 's' },
+      { key: 'drive', type: 'knob', label: 'drive', min: 0.25, max: 16, def: 2, log: true, unit: 'x' },
+      { key: 'mode', type: 'select', label: 'mode', options: ['clean', 'ring'], def: 'clean' },
       { key: 'hear', type: 'select', label: 'trigger', options: ['silent', 'audible'], def: 'silent' },
     ],
-    // Strudel ducks an audio bus ("orbit"): the sound plays on its own bus, the trigger
-    // ducks that bus. A silent trigger still ducks (postgain 0 only mutes its own sound).
+    /*
+     * The ring-mod way (Kilohearts' Ring Mod with a sidechain source): the ducked bus is
+     * multiplied by the trigger's own audio, on the audio thread, sample by sample — so the
+     * dip is the kick's own shape and length and is never late, however busy the page.
+     * The trigger plays a copy on a bus of its own that goes into the sidechain's input
+     * (stereo.js ringside), and to the speakers as well only when it's to be heard.
+     */
     code: (d, xs, ctx) => {
       const sounds = xs.filter((_, i) => ctx.slots[i] === 'in-0')
       const trigger = xs[ctx.slots.indexOf('in-1')]
@@ -455,20 +462,18 @@ export const NODE_TYPES = {
         if (from !== orbit) { ctx.routeBus(from, orbit, 1); return xs[i] } // a bus plays in, notes as they were
         return xs[i]
       })
-      // A silent trigger only has to exist for its onset. Left as the instrument it came
-      // from, it takes one of that instrument's voices at the very moment the sound it's
-      // ducking needs one — and an engine with a single voice (the kick synth) has none to
-      // spare, so the note you meant to hear gets cut. A throwaway sound can't take it.
-      const trig = d.hear === 'silent'
-        ? `${trigger}.fmap((v) => ({ ...v, s: 'sine', bank: undefined, _c: undefined, postgain: 0 }))`
-        : trigger
-      // on its own bus nothing else plays there, so a silent trigger does: the bus has to
-      // exist for the first duck to land on it
-      const onIt = own && d.hear === 'silent' ? `.orbit(${orbit})` : ''
-      const duck = `${trig}${onIt}.duckorbit(${orbit}).duckonset(${K(ctx, d, 'attack')}).duckattack(${K(ctx, d, 'release')}).duckdepth(${K(ctx, d, 'depth')})`
-      if (!own) return `stack(${placed.map((x) => (x.endsWith(`.orbit(${orbit})`) ? x : `${x}.orbit(${orbit})`)).join(', ')}, ${duck})`
+      // the sidechain itself, on the ducked bus after whatever that sound already goes through
+      const key = `sc_${ctx.nodeId}`
+      ctx.declare(orbit, key, 'ringside', { depth: d.depth, attack: d.attack, release: d.release, drive: d.drive, mode: d.mode })
+      // the trigger: a copy on its own bus, into the sidechain's input; on an instance of its
+      // own, so a one-voice instrument (the kick synth) isn't cut by its own copy
+      const keyOrbit = ctx.stereoOrbit(`sckey:${ctx.nodeId}`)
+      ctx.sideTo?.(keyOrbit, key)
+      if (d.hear === 'audible') ctx.toSpeakers?.(keyOrbit)
+      const trig = `${trigger}.fmap((v) => ({ ...v, _r: 'sc.${ctx.nodeId}' })).orbit(${keyOrbit})`
+      if (!own) return `stack(${placed.map((x) => (x.endsWith(`.orbit(${orbit})`) ? x : `${x}.orbit(${orbit})`)).join(', ')}, ${trig})`
       // its notes are the sounds' (those that kept their own bus are the same notes) and the trigger
-      const trigVar = ctx.define ? ctx.define('trigger', duck) : duck
+      const trigVar = ctx.define ? ctx.define('trigger', trig) : trig
       ctx.setAtoms?.([...placed.flatMap((x, n) => (x === xs[at[n]] && ctx.atomsOf ? ctx.atomsOf(x) : [x])), trigVar])
       return `stack(${[...placed, trigVar].join(', ')})`
     },
@@ -1136,6 +1141,8 @@ export function graphCode(project, { solo = null, song = null, audition = false,
   }
   // branch buses (see below) come after, so adding one never renumbers the others
   for (const n of nodes) stereoKeys.push(`branch:${n.id}`)
+  // and each sidechain's trigger bus after those, for the same reason
+  for (const n of nodes) if (n.type === 'sidechain') stereoKeys.push(`sckey:${n.id}`)
   const stereoOrbit = (key) => STEREO_ORBIT_BASE + Math.max(0, stereoKeys.indexOf(key))
   const inserts = beginInserts()
   // reverbs and delays: the patch's own, and the shared pair the instruments' knobs send to
@@ -1255,7 +1262,9 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     const define = (suffix, code) => { const v = `${nodeVar(id)}_${suffix}`; lines.push(`const ${v} = ${code}`); return v }
     let atoms = null // what notes it plays, when a node says (see atomsOf)
     const setAtoms = (list) => { atoms = list }
-    let expr = spec.code(node.data, inputs, { patternIds, mixChannels, slots, inputKeys, notesOf, atomsOf, takeNew, inputShared, define, setAtoms, nodeId: id, orbit: 2 + sidechains.indexOf(id), cps, beats, route, inputOrbits, stereoOrbit, declare, routeBus, auto: nodeAuto, autoOf, declareFx: (key, kind, params) => declareFx(fx, key, kind, params) })
+    const sideTo = (from, key) => declareSide(inserts, from, key)
+    const toSpeakers = (orbit) => declareSpeakers(inserts, orbit)
+    let expr = spec.code(node.data, inputs, { patternIds, mixChannels, slots, inputKeys, notesOf, atomsOf, takeNew, inputShared, define, setAtoms, nodeId: id, orbit: 2 + sidechains.indexOf(id), cps, beats, route, inputOrbits, stereoOrbit, declare, routeBus, sideTo, toSpeakers, auto: nodeAuto, autoOf, declareFx: (key, kind, params) => declareFx(fx, key, kind, params) })
     if (!expr) { exprs.set(id, null); return null }
     if (songPart) { const marked = expr; expr = song(`node:${id}`, (shift, read) => marked.replace(/\u0001(\w+)\u0001/g, (_, a) => read(a))) }
     if (spec.group === 'source') expr = fromNode(expr, id)
