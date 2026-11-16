@@ -458,7 +458,7 @@ export const NODE_TYPES = {
       if (ctx.route) ctx.route.orbit = orbit
       const placed = at.map((i) => {
         const from = ctx.inputOrbits?.[i] ?? null
-        if (from == null) return `${xs[i]}.orbit(${orbit})` // notes with no bus play onto this one
+        if (from == null) return `${ctx.ownPath ? ctx.ownPath(xs[i], i, orbit) : xs[i]}.orbit(${orbit})` // notes with no bus play onto this one
         if (from !== orbit) { ctx.routeBus(from, orbit, 1); return xs[i] } // a bus plays in, notes as they were
         return xs[i]
       })
@@ -641,7 +641,7 @@ export const NODE_TYPES = {
         const fader = channelGain(d, ctx.inputKeys?.[i])
         // a channel that carries its own bus is turned down where it plays into this one,
         // after its own effects, the way a mixer's fader sits after its inserts
-        if (from == null) return `${fader === 1 ? x : `${x}.mul(gain(${tidy(fader)}))`}.orbit(${orbit})`
+        if (from == null) { const own = ctx.ownPath ? ctx.ownPath(x, i, orbit) : x; return `${fader === 1 ? own : `${own}.mul(gain(${tidy(fader)}))`}.orbit(${orbit})` }
         if (from !== orbit) ctx.routeBus(from, orbit, fader)
         // two branches of one split bus bring the same notes: they play once, and each
         // branch is heard through its own route
@@ -761,12 +761,14 @@ function stereoCode(kind, params) {
   const code = (d, [x], ctx) => {
     if (!ctx?.route) return x
     let tail = ''
+    let notes = x
     if (ctx.route.orbit == null) {
       ctx.route.orbit = ctx.stereoOrbit(ctx.nodeId)
       tail = `.orbit(${ctx.route.orbit})`
+      notes = ctx.ownPath ? ctx.ownPath(x, 0, ctx.route.orbit) : x
     }
     ctx.declare(ctx.route.orbit, ctx.nodeId, kind, params(d))
-    return `${x}${tail}`
+    return `${notes}${tail}`
   }
   // what it is on the bus, for anything that makes these units itself (instrument lanes)
   code.insert = { kind, params }
@@ -1223,6 +1225,12 @@ export function graphCode(project, { solo = null, song = null, audition = false,
       shared = false
     }
     const inputShared = wires.filter((w) => exprs.get(w.source)).map((w) => onShared(w.source))
+    // A sound that goes down more than one path: each path that puts it on a bus of its own
+    // plays it on an instrument instance of its own (instruments/host.js `_r`). One instance
+    // mixes its own lanes (Syrup's effect lanes) to one bus only, and would flip between the
+    // paths note by note, so one path or the other went missing.
+    const inputFans = wires.filter((w) => exprs.get(w.source)).map((w) => fanout(w.source) > 1)
+    const ownPath = (x, i, orbit) => (inputFans[i] ? `${x}.fmap((v) => ({ ...v, _r: (v._r ? v._r + '|' : '') + 'o${orbit}' }))` : x)
     if (spec.abstract) {
       // a rhythm machine: its out plays the layers that make their own sound, when the song
       // says; a layer that triggers instruments plays through them instead (project.js)
@@ -1264,7 +1272,7 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     const setAtoms = (list) => { atoms = list }
     const sideTo = (from, key) => declareSide(inserts, from, key)
     const toSpeakers = (orbit) => declareSpeakers(inserts, orbit)
-    let expr = spec.code(node.data, inputs, { patternIds, mixChannels, slots, inputKeys, notesOf, atomsOf, takeNew, inputShared, define, setAtoms, nodeId: id, orbit: 2 + sidechains.indexOf(id), cps, beats, route, inputOrbits, stereoOrbit, declare, routeBus, sideTo, toSpeakers, auto: nodeAuto, autoOf, declareFx: (key, kind, params) => declareFx(fx, key, kind, params) })
+    let expr = spec.code(node.data, inputs, { patternIds, mixChannels, slots, inputKeys, notesOf, atomsOf, takeNew, inputShared, ownPath, define, setAtoms, nodeId: id, orbit: 2 + sidechains.indexOf(id), cps, beats, route, inputOrbits, stereoOrbit, declare, routeBus, sideTo, toSpeakers, auto: nodeAuto, autoOf, declareFx: (key, kind, params) => declareFx(fx, key, kind, params) })
     if (!expr) { exprs.set(id, null); return null }
     if (songPart) { const marked = expr; expr = song(`node:${id}`, (shift, read) => marked.replace(/\u0001(\w+)\u0001/g, (_, a) => read(a))) }
     if (spec.group === 'source') expr = fromNode(expr, id)

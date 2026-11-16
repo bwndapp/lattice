@@ -113,5 +113,18 @@ const lineOf = (code, v) => code.split('\n').find((l) => l.startsWith(`const ${v
   ok('an insert further down a branch never lands on the split bus', orbitIn(inserts, 'f') !== orbitIn(inserts, 'ba') && orbitIn(inserts, 'f') !== orbitIn(inserts, 'sat'))
 }
 
+// one sound down two paths (dry into a bus, and through a distortion into it): each path
+// plays it on an instrument instance of its own, or an engine's own lanes flip between them
+{
+  const { code } = routing(project(
+    [node('b', 'pattern', { patternId: 'pb' }), node('dist', 'distortion'), node('mix', 'bus', { name: 'mix' })],
+    [edge('b', 'dist'), edge('b', 'mix', 'in-0'), edge('dist', 'mix', 'in-1'), edge('mix', 'out', 'in-0')],
+  ))
+  const tags = [...code.matchAll(/'o(\d+)' \}\)\)\.orbit\((\d+)\)/g)]
+  ok('a sound split two ways gets an instance per path', tags.length === 2 && new Set(tags.map((t) => t[1])).size === 2 && tags.every((t) => t[1] === t[2]))
+  const single = routing(project([node('b', 'pattern', { patternId: 'pb' }), node('dist', 'distortion')], [edge('b', 'dist'), edge('dist', 'out', 'in-0')])).code
+  ok('a sound on one path is left as it is', !/_r:/.test(single))
+}
+
 if (fails) { console.log(`\n${fails} failing`); process.exit(1) }
 console.log('\nrouting ok')
