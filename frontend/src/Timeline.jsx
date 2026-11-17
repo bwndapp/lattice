@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { abstractOf, abstractState } from './abstract/index.js'
 import { openAbstract } from './instruments/windows.js'
 import { makePattern, makeVariation, newId } from './project'
@@ -355,26 +355,44 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   // ── zoom: ctrl/cmd + wheel around the pointer; buttons; fit ──
   // A wheel can fire several times a frame, and each zoom moves every clip, tick and
   // sketch, so they're gathered into one change a frame.
-  const zoomRaf = useRef(0)
-  const zoomWant = useRef(null)
-  useEffect(() => () => cancelAnimationFrame(zoomRaf.current), [])
+  // It eases to where you're zooming to, a little each frame, and the bar under the pointer
+  // stays under it the whole way: the scroll is set in the same frame as the new zoom is
+  // drawn (a layout effect), from where that bar was when the zoom began.
+  const zoomAnim = useRef({ target: null, bar: 0, at: 0, raf: 0 })
+  const pendingScroll = useRef(null)
+  useLayoutEffect(() => {
+    const left = pendingScroll.current
+    if (left == null || !scrollRef.current) return
+    pendingScroll.current = null
+    scrollRef.current.scrollLeft = Math.max(0, left)
+  }, [ppb])
+  useEffect(() => () => cancelAnimationFrame(zoomAnim.current.raf), [])
   const zoomTo = useCallback((next, anchorClientX) => {
     const box = scrollRef.current
-    if (!box) return setPpb(next)
+    if (!box) return setPpb(clamp(next, MIN_PPB, MAX_PPB))
     const rect = box.getBoundingClientRect()
-    const anchor = anchorClientX ?? rect.left + box.clientWidth / 2
-    const barUnder = (box.scrollLeft + anchor - rect.left - HEAD_W) / ppbRef.current
-    const clamped = clamp(next, MIN_PPB, MAX_PPB)
-    ppbRef.current = clamped // so another wheel tick this frame carries on from here
-    zoomWant.current = { clamped, barUnder, at: anchor - rect.left }
-    if (zoomRaf.current) return
-    zoomRaf.current = requestAnimationFrame(() => {
-      zoomRaf.current = 0
-      const want = zoomWant.current
-      setPpb(want.clamped)
-      requestAnimationFrame(() => { box.scrollLeft = Math.max(0, want.barUnder * want.clamped - want.at + HEAD_W) })
-    })
+    const at = (anchorClientX ?? rect.left + box.clientWidth / 2) - rect.left
+    const z = zoomAnim.current
+    // the bar to hold still: found again only when the pointer has moved (mid-zoom the
+    // scroll is on its way, so working it out again would drift)
+    if (!z.raf || Math.abs(z.at - at) > 2) z.bar = (box.scrollLeft + at - HEAD_W) / ppbRef.current
+    z.at = at
+    z.target = clamp(next, MIN_PPB, MAX_PPB)
+    if (z.raf) return
+    const step = () => {
+      const cur = ppbRef.current
+      const gap = Math.log(z.target / cur)
+      const now = Math.abs(gap) < 0.003 ? z.target : cur * Math.exp(gap * 0.32)
+      pendingScroll.current = z.bar * now - z.at + HEAD_W
+      ppbRef.current = now
+      setPpb(now)
+      if (now === z.target) { z.raf = 0; z.target = null; return }
+      z.raf = requestAnimationFrame(step)
+    }
+    z.raf = requestAnimationFrame(step)
   }, [])
+  /** Where a zoom is heading (mid-zoom), so the next wheel tick carries on from there. */
+  const zoomGoal = () => zoomAnim.current.target ?? ppbRef.current
   useEffect(() => {
     const box = scrollRef.current
     if (!box) return
@@ -392,7 +410,9 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       }
       if (!(e.ctrlKey || e.metaKey)) return
       e.preventDefault()
-      zoomTo(ppbRef.current * Math.exp(-e.deltaY * 0.0022), e.clientX)
+      // a mouse wheel's notch is ~100, a trackpad's flick a few: both scale the same way
+      const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY
+      zoomTo(zoomGoal() * Math.exp(-dy * 0.0024), e.clientX)
     }
     box.addEventListener('wheel', onWheel, { passive: false })
     return () => box.removeEventListener('wheel', onWheel)
@@ -1116,9 +1136,9 @@ export default function Timeline({ project, onUpdateProject, transport, started 
           <span className="spacer" />
           <span className="song-hint">{!song.on && song.clips.length ? 'song off · the patch is looping, so the playhead waits at the cue · turn the song on to play the timeline' : tool === 'slice' ? 'click a clip to cut it · drag up or down to cut several · hold alt to cut off the grid · V or Esc to go back' : 'hold alt to leave the grid · shift-drag copies · U makes selected clips unique · C slices · right-click deletes · drag the ruler to move the playhead'}</span>
           <span className="song-zoom" role="group" aria-label="Zoom">
-            <button className="btn" onClick={() => zoomTo(ppb / 1.5)} aria-label="Zoom out">−</button>
+            <button className="btn" onClick={() => zoomTo(zoomGoal() / 1.5)} aria-label="Zoom out">−</button>
             <button className="btn" onClick={fit} title="Fit the song">fit</button>
-            <button className="btn" onClick={() => zoomTo(ppb * 1.5)} aria-label="Zoom in">+</button>
+            <button className="btn" onClick={() => zoomTo(zoomGoal() * 1.5)} aria-label="Zoom in">+</button>
           </span>
         </div>
 
