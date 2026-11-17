@@ -60,7 +60,9 @@ function patternSketch(pattern, ink) {
     const base = lo - Math.floor((rows - (hi - lo + 1)) / 2)
     for (const n of notes) {
       const y = noteH - (n.n - base + 1) * row
-      rects.push(`<rect x="${n.s + 0.06}" y="${y.toFixed(2)}" width="${Math.max(0.3, n.l - 0.12)}" height="${Math.max(2.5, row * 0.8).toFixed(2)}"/>`)
+      // from exactly where it starts (zoomed in, any lead-in reads as the note being late);
+      // the gap that keeps neighbours apart goes at its end
+      rects.push(`<rect x="${n.s}" y="${y.toFixed(2)}" width="${Math.max(0.3, n.l - 0.1)}" height="${Math.max(2.5, row * 0.8).toFixed(2)}"/>`)
     }
   }
   if (drums.length) {
@@ -68,7 +70,7 @@ function patternSketch(pattern, ink) {
     const row = (H - top) / drums.length
     drums.forEach((c, r) => {
       c.steps.forEach((on, i) => {
-        if (on) rects.push(`<rect x="${i + 0.12}" y="${(top + r * row + row * 0.12).toFixed(2)}" width="0.62" height="${(row * 0.76).toFixed(2)}"/>`)
+        if (on) rects.push(`<rect x="${i}" y="${(top + r * row + row * 0.12).toFixed(2)}" width="0.66" height="${(row * 0.76).toFixed(2)}"/>`)
       })
     })
   }
