@@ -24,6 +24,21 @@
  */
 export const NEWS = [
   {
+    id: '2026-11-17-1',
+    date: '2026-11-17',
+    version: '0.18.0',
+    title: 'B4SS, and a tighter timeline',
+    items: [
+      '**B4SS**: a new bass synth — 808s that drop and slide, wobbles in time with the song, growls, yois, riddim chops, reese and space basses, with a clean sub under it all and 19 presets',
+      '**Move an instrument** to another pattern, or a pattern of its own, from its row in the rack: its wiring comes with it',
+      '**Timeline**: zoom in much further, smoothly and into the cursor, with 1/8, 1/16 and triplet snaps',
+      '**Clips play what they show**: a moved, trimmed or sliced clip of a pattern a machine fires starts its rhythm where the clip does, and the pattern’s own playhead follows its clip',
+      '**Automation**: shift-drag a point to lock it to its value or its time; curves hold from the very first note, in export too',
+      '**Fixed**: a bright blip at the start of playback from effects warming up',
+      '**Fixed**: stopping in a jam could start again a few seconds later',
+    ],
+  },
+  {
     id: '2026-11-16-3',
     date: '2026-11-16',
     version: '0.17.0',
