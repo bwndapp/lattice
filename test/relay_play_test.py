@@ -62,14 +62,19 @@ async def main():
         async with websockets.connect(URL) as b:
             await hello(b, 'owner', 'ana')
             await drain(b, 'doc')
+            n = [0]  # the room's count of words on the transport, as a tab keeps it
+
+            async def say(ws, **play):
+                await ws.send(json.dumps({'t': 'play', **play, 'base': n[0]}))
+                n[0] += 1
 
             # where the playhead is
-            await a.send(json.dumps({'t': 'play', 'on': True, 'pos': 12.5, 'cps': 0.5833}))
+            await say(a, on=True, pos=12.5, cps=0.5833)
             heard = await drain(b, 'play')
             ok('the playhead position travels', heard['on'] is True and heard['pos'] == 12.5 and heard['cps'] == 0.5833, heard)
             ok('the server stamps when it happened', abs(heard['at'] - time.time() * 1000) < 1000, heard)
 
-            await a.send(json.dumps({'t': 'play', 'on': False, 'pos': 16.0}))
+            await say(a, on=False, pos=16.0)
             stopped = await drain(b, 'play')
             ok('stopping travels too', stopped['on'] is False and stopped['pos'] == 16.0, stopped)
 
@@ -85,13 +90,13 @@ async def main():
                 ok('anyone may ask the time', tick.get('c') == 7, tick)
 
                 # ...but watching is not deaf: the playhead reaches them like everyone else
-                await a.send(json.dumps({'t': 'play', 'on': True, 'pos': 2.0, 'cps': 0.5}))
+                await say(a, on=True, pos=2.0, cps=0.5)
                 heard_c = await drain(c, 'play')
                 ok('a watcher hears the playhead', heard_c['on'] is True and heard_c['pos'] == 2.0, heard_c)
 
             # walking in while the room is playing: you are told, without anyone touching
             # the transport again, and told when — so you can work out where it is by now
-            await a.send(json.dumps({'t': 'play', 'on': True, 'pos': 4.0, 'cps': 0.5}))
+            await say(a, on=True, pos=4.0, cps=0.5)
             await drain(b, 'play')
             async with websockets.connect(URL) as d:
                 await hello(d, 'friend', 'bo')
@@ -101,7 +106,7 @@ async def main():
 
             # a room that is stopped has no music to join, and moving someone's playhead
             # when nobody is playing would be a worse surprise than silence
-            await a.send(json.dumps({'t': 'play', 'on': False, 'pos': 9.0}))
+            await say(a, on=False, pos=9.0)
             await drain(b, 'play')
             async with websockets.connect(URL) as e:
                 await hello(e, 'friend', 'bo')
@@ -135,6 +140,19 @@ async def main():
         first = await drain(desk, 'play')
         second = await drain(desk, 'play')
         ok('an up-to-date tab moves everyone, twice in a row', first['pos'] == 5 and second['pos'] == 6, (first, second))
+
+    # a tab from before the check (it doesn't say what it's heard) can't move the room either
+    async with websockets.connect(URL) as desk, websockets.connect(URL) as old:
+        await desk.send(json.dumps({'t': 'hello', 'token': 'owner', 'name': 'ana'}))
+        await drain(desk, 'playn')
+        await old.send(json.dumps({'t': 'hello', 'token': 'owner', 'name': 'ana'}))
+        await drain(old, 'playn')
+        await old.send(json.dumps({'t': 'play', 'on': True, 'pos': 1, 'cps': 0.5}))
+        told = await drain(old, 'play')
+        ok('a tab that says nothing of what it heard is told how things stand', told['on'] is False, told)
+        await old.send(json.dumps({'t': 'at', 'where': 'graph', 'x': 0, 'y': 0}))
+        seen = await until(desk, 'at')
+        ok('and moves nobody', not any(m['t'] == 'play' for m in seen), seen)
 
     print('\n' + (f'{len(fails)} failing: {fails}' if fails else 'all good'))
 

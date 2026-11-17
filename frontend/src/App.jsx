@@ -983,10 +983,11 @@ export default function App() {
   const following = useRef(null) // the last thing we heard: { on, pos, cps, at }
   const settingRef = useRef(false) // true while we're acting on what we heard, so we don't echo
   const cpsOf = useCallback((p) => (Number(p?.bpm) || 140) / (Number(p?.beats) || 4) / 60, [])
+  const quietUntil = useRef(0) // following the room: what we do as a result isn't news to it
   const tellRoom = useCallback((on) => {
     // nobody to tell is the common case, and working out where we are means parsing the
     // whole project: ask the cheap question first
-    if (settingRef.current || !roomTakesEdits()) return
+    if (settingRef.current || Date.now() < quietUntil.current || !roomTakesEdits()) return
     sendPlay(on, transport.position(), cpsOf(parseProject(editorRef.current?.code)))
   }, [transport, cpsOf])
   /** Where the song must be now, given what we were told and how long ago. */
@@ -995,6 +996,9 @@ export default function App() {
     if (!heard) return
     const cps = heard.cps || cpsOf(parseProject(editorRef.current?.code))
     settingRef.current = true
+    // starting up takes a moment (longer in a background tab), and telling the room "playing"
+    // once we got there would echo what it just told us — or worse, land after somebody's stop
+    quietUntil.current = Date.now() + 2000
     try {
       if (!heard.on) {
         if (transport.playing()) { editorRef.current?.stop(); silenceNow() }

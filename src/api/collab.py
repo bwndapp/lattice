@@ -518,7 +518,9 @@ async def collab(ws: WebSocket, track_id: str):
                 # other machine) would otherwise start everyone up again: it's told how things
                 # stand instead, and lines up with that.
                 base = msg.get("base")
-                if isinstance(base, int) and base != room.play_n:
+                # a tab from before this check says nothing about what it's heard: it may be
+                # one asleep on another machine, so it's treated as behind (a reload fixes it)
+                if not isinstance(base, int) or base != room.play_n:
                     now = room.play or {"t": "play", "id": None, "on": False, "pos": msg.get("pos"), "cps": msg.get("cps"), "at": time.time() * 1000, "n": room.play_n}
                     await ws.send_text(json.dumps(now))
                     continue
