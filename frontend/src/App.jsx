@@ -1074,12 +1074,14 @@ export default function App() {
     transport.toMark() // back to wherever the playhead was put
     tellRoom(false, true)
   }, [transport, tellRoom])
-  /** Pause: stop, and resume from here next time. */
+  /**
+   * Pause (the play button, space): as FL does, back to where you last put the playhead, so
+   * play goes again from there — the spot you're working on, not wherever it had got to.
+   */
   const pause = useCallback(() => {
-    const at = transport.position()
     editorRef.current?.stop()
     silenceNow() // a note already ringing would otherwise play itself out after the pause
-    transport.pausedAt(at)
+    transport.toMark()
     tellRoom(false, true)
   }, [transport, tellRoom])
   const toStart = useCallback(() => transport.seek(transport.looping() ? transport.loop.from : 0), [transport])

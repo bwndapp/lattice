@@ -818,7 +818,8 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     if (r) r.last = bar
     // seeking re-sets the playing pattern: at most once a frame
     cancelAnimationFrame(r?.frame)
-    const go = () => transport.seek(bar)
+    // where you put it is where play comes back to (pause returns here), playing or not
+    const go = () => { transport.seek(bar); transport.mark = bar }
     if (r) r.frame = requestAnimationFrame(go)
     else go()
   }
