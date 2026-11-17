@@ -984,10 +984,17 @@ export default function App() {
   const settingRef = useRef(false) // true while we're acting on what we heard, so we don't echo
   const cpsOf = useCallback((p) => (Number(p?.bpm) || 140) / (Number(p?.beats) || 4) / 60, [])
   const quietUntil = useRef(0) // following the room: what we do as a result isn't news to it
-  const tellRoom = useCallback((on) => {
+  const tellRoom = useCallback((on, mine = false) => {
+    if (settingRef.current) return // acting on what the room said: not news to it
+    if (mine) {
+      // your own hand on play or stop: you lead now. Forget what the room last said, or the
+      // re-sync below would put it back (stop, and four seconds later it plays again)
+      following.current = null
+      quietUntil.current = 0
+    } else if (Date.now() < quietUntil.current) return
     // nobody to tell is the common case, and working out where we are means parsing the
     // whole project: ask the cheap question first
-    if (settingRef.current || Date.now() < quietUntil.current || !roomTakesEdits()) return
+    if (!roomTakesEdits()) return
     sendPlay(on, transport.position(), cpsOf(parseProject(editorRef.current?.code)))
   }, [transport, cpsOf])
   /** Where the song must be now, given what we were told and how long ago. */
@@ -1050,9 +1057,9 @@ export default function App() {
     if (!editor || preparingRef.current) return // already starting: sounds are loading
     if (!editor.repl.scheduler.started) transport.cue() // start from the cue, not bar 1
     editor.evaluate()
-    tellRoom(true)
+    tellRoom(true, true)
     countedRef.current.add(loadedIdRef.current) // played it deliberately: its code may run quietly now
-  }, [transport])
+  }, [transport, tellRoom])
 
   playRef.current = play
 
@@ -1062,7 +1069,7 @@ export default function App() {
     editorRef.current?.stop()
     silenceNow()
     transport.toMark() // back to wherever the playhead was put
-    tellRoom(false)
+    tellRoom(false, true)
   }, [transport, tellRoom])
   /** Pause: stop, and resume from here next time. */
   const pause = useCallback(() => {
@@ -1070,7 +1077,7 @@ export default function App() {
     editorRef.current?.stop()
     silenceNow() // a note already ringing would otherwise play itself out after the pause
     transport.pausedAt(at)
-    tellRoom(false)
+    tellRoom(false, true)
   }, [transport, tellRoom])
   const toStart = useCallback(() => transport.seek(transport.looping() ? transport.loop.from : 0), [transport])
 
