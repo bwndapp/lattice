@@ -5,6 +5,7 @@ import {
   duplicateChannel, instrumentChannel, midiToNote, moveChannel as moveToPattern, paramValue, paramsFor, stepCount, stepDivision,
 } from './project'
 import { KnobMenu } from './KnobMenu.jsx'
+import { patternTimeAt } from './song.js'
 import { previewInPatch } from './audio'
 import Knob from './Knob.jsx'
 import { channelTarget } from './automation.js'
@@ -43,7 +44,8 @@ export function stepAt(project, pattern, pos) {
 
 /** Where playback is inside the pattern, in steps and fractions of one (for a smooth playhead). */
 export function exactStepAt(project, pattern, pos) {
-  return mod(pos, pattern.bars) * pattern.stepsPerBar
+  // with the song on, where its clip has it (song.js), so it lines up with the timeline
+  return mod(patternTimeAt(project, pattern.id, pos), pattern.bars) * pattern.stepsPerBar
 }
 
 /** Instrument chips: click to add, or drag onto a pattern. */

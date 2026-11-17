@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict'
 import { bundle } from './lib/bundle.mjs'
 
-const m = await bundle({ 'project.js': ['normalizeProject', 'generateCode'], 'song.js': ['songParts'] }, 'cliptime')
+const m = await bundle({ 'project.js': ['normalizeProject', 'generateCode'], 'song.js': ['songParts', 'patternTimeAt', 'songTimeFor'] }, 'cliptime')
 const sm = await bundle({ '../node_modules/@strudel/core': ['s', 'note', 'stack', 'silence'], '../node_modules/@strudel/mini': ['miniAllStrings', 'mini'] }, 'cliptimestr')
 sm.miniAllStrings()
 
@@ -52,4 +52,17 @@ assert.deepEqual(onsets(project({ clips: [clip(1.5, 1)] }), 4), [1.5], 'a clip o
 // its loop length on the timeline: as long as the machine's rhythm and its own notes take to come round
 const parts = m.songParts(project({ fired: true, clips: [clip(0, 1)] }))
 assert.equal(parts.find((x) => x.src === 'pattern:D').bars, 2, 'a fired pattern comes round with its own length when the machine\'s is a bar')
+// the pattern's own playhead (the rack, the piano roll) reads the clip as the sound does
+{
+  const p = project({ clips: [clip(2.25, 4)] })
+  assert.equal(m.patternTimeAt(p, 'D', 2.25), 0, 'at a clip\'s start the pattern is at its bar 1, wherever the clip sits')
+  assert.equal(m.patternTimeAt(p, 'D', 3.25) % 2, 1, 'a bar later, its bar 2: where the timeline plays it')
+  const q = project({ clips: [clip(3, 1, 1)] })
+  assert.equal(m.patternTimeAt(q, 'D', 3.5), 1.5, 'a trimmed clip reads from its cut')
+  // clicking its bar 2, beat 1 in the pattern's editor goes there in the clip that's playing
+  assert.equal(m.songTimeFor(p, 'D', 1, 2.5, 2), 3.25, 'clicking a spot in the pattern lands on it in the playing clip')
+  assert.equal(m.songTimeFor(p, 'D', 0, 5, 2), 4.25, 'on the repeat that\'s playing')
+  const none = project({ clips: [{ id: 'z', src: 'pattern:Z', lane: 0, start: 0, len: 1 }] })
+  assert.equal(m.patternTimeAt(none, 'D', 5.5), 5.5, 'a pattern with no clips reads the song position as before')
+}
 console.log('clip timing ok')

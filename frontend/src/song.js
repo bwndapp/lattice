@@ -321,6 +321,51 @@ export function songSilence(project, node) {
   return { src: srcs[0], bars: Math.max(1, Math.round(bars || 4)), muted: clips.length > 0 }
 }
 
+/**
+ * The clip a pattern is playing in at song position `pos`, with the song come round as it
+ * plays on (it repeats from its end): the one under the playhead, else the last one that
+ * started before it (so a playhead between clips carries on from where it was), else the
+ * first. Null when the song isn't on or the pattern has no clips.
+ */
+function clipAt(project, patternId, pos) {
+  if (!songActive(project)) return null
+  const song = project.song
+  const clips = song.clips.filter((c) => c.src === `pattern:${patternId}` && !laneMuted(song, c.lane)).sort((a, b) => a.start - b.start)
+  if (!clips.length) return null
+  const total = Math.max(1, Math.ceil(songLength(song) - 1e-9))
+  const at = ((pos % total) + total) % total
+  const under = clips.find((c) => at >= c.start - 1e-9 && at < c.start + c.len - 1e-9)
+  return { clip: under ?? [...clips].reverse().find((c) => c.start <= at) ?? clips[0], at, round: pos - at }
+}
+
+/**
+ * Where in its own loop a pattern is at song position `pos`, in bars: with the song on, from
+ * the clip it plays in (where the clip starts, and where it was trimmed to), as the timeline
+ * plays it; otherwise the song position itself. Callers wrap it to the pattern's length.
+ */
+export function patternTimeAt(project, patternId, pos) {
+  const found = clipAt(project, patternId, pos)
+  if (!found) return pos
+  return found.at - found.clip.start + (found.clip.offset ?? 0)
+}
+
+/**
+ * The song position nearest `now` at which a pattern is `local` bars into its loop: in the
+ * clip it's playing in, on the repeat of the loop that's playing (for clicking a spot in the
+ * pattern's own editor to go there).
+ */
+export function songTimeFor(project, patternId, local, now, bars) {
+  const found = clipAt(project, patternId, now)
+  if (!found) return Math.floor(now / bars) * bars + local
+  const { clip, at, round } = found
+  const zero = clip.start - (clip.offset ?? 0) // where the loop's bar 1 would be
+  const k = Math.floor((Math.max(at, clip.start) - zero) / bars)
+  let t = zero + k * bars + local
+  if (t < clip.start) t += bars
+  if (t >= clip.start + clip.len) t -= bars
+  return round + Math.min(Math.max(t, clip.start), clip.start + clip.len - 1e-6)
+}
+
 /** Put a part on the timeline at the song's start, on the first row with room for it. */
 export function addSongClip(project, src, bars = 4) {
   const song = project.song

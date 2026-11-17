@@ -10,6 +10,7 @@ import Knob from './Knob.jsx'
 import { formatValue } from './knobMath.js'
 import { CHANNEL_FADER, NODE_TYPES, channelGain, inputKey, inputsOf } from './graph'
 import { nodeTitle, originLabel } from './Graph.jsx'
+import { songTimeFor } from './song.js'
 import './DetailDock.css'
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
@@ -360,8 +361,8 @@ function PatternDock({ project, at, transport, started, height, onUpdateProject,
           onSeek={(bars, { fine } = {}) => {
             // the pattern repeats, so land in the repetition that's playing now
             const local = mod(fine ? bars : Math.round(bars * pattern.stepsPerBar) / pattern.stepsPerBar, pattern.bars)
-            const now = transport.position()
-            transport.seek(Math.max(0, Math.floor(now / pattern.bars) * pattern.bars + local))
+            // in the clip that's playing, on the timeline (song.js): where you clicked in it
+            transport.seek(Math.max(0, songTimeFor(project, pattern.id, local, transport.position(), pattern.bars)))
           }}
           onPreview={(midi) => previewInPatch(project, pattern.id, channel, { note: midi })}
           onChangeNotes={(notes) => onUpdateProject((p) => {
