@@ -1,3 +1,4 @@
+import { paramsReset } from '../paramEpoch.js'
 /**
  * The audio side of instrument engines (see index.js).
  *
@@ -46,6 +47,7 @@ const declared = new Map() // instrument (channel) id → { type, data, cps }
 
 /** Every instrument's engine settings, from a project (called as its code is generated). */
 export function declareEngines(project) {
+  paramsReset()
   const beats = Number(project?.beats) || 4
   const cps = (Number(project?.bpm) || 140) / beats / 60
   for (const pattern of project?.patterns ?? []) {
@@ -150,6 +152,7 @@ function instanceFor(ac, channelId, type, route = '') {
 }
 
 function createInstance(ac, channelId, type) {
+  paramsReset() // made with its knobs where they're set
   const spec = ENGINES[type]
   const settings = declared.get(channelId)?.type === type ? declared.get(channelId) : { data: engineData({ type }), cps: 0.5, beats: 4 }
   const params = engineAudioParams(spec)

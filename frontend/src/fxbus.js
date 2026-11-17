@@ -1,3 +1,4 @@
+import { paramsReset } from './paramEpoch.js'
 /**
  * Reverb and delay, done properly. Strudel gives every audio bus ("orbit") one reverb and
  * one delay whose settings are whatever the latest note said, so two parts with different
@@ -57,6 +58,7 @@ export function declareFx(list, key, kind, params) {
  * note heard on its own) only adds, so effects already playing keep where automation has them.
  */
 export function commitFx(list, { partial = false, keep = false } = {}) {
+  paramsReset()
   const had = declared
   declared = keep ? new Map([...list, ...declared]) : partial ? new Map([...declared, ...list]) : list
   try {
@@ -163,6 +165,7 @@ function effectFor(key, orbit) {
     Object.assign(fx, { key, kind: d.kind, bus })
     fx.output.connect(bus.summingNode)
     instances.set(k, fx)
+    paramsReset() // made with its knobs where they're set
   }
   fx.at = Date.now()
   return fx

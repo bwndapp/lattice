@@ -1,5 +1,6 @@
 import { activeAutos, appParam, autoValueFn, resolveTarget } from './automation.js'
 import { setFxParams } from './fxbus.js'
+import { paramsEpoch } from './paramEpoch.js'
 import { setInsertParams } from './stereo.js'
 import { setEngineParams } from './instruments/host.js'
 
@@ -47,7 +48,10 @@ export function applyAppParam(app, value) { setAppParam(app, appParamValue(app, 
  */
 export function autoDriver(autos, position) {
   const last = new Map()
+  let seen = -1 // the settings epoch last driven at (paramEpoch.js)
   const drive = (force) => {
+    // something set the knobs back where they're set since: put them all back on their curves
+    if (paramsEpoch() !== seen) { seen = paramsEpoch(); force = true }
     const values = new Map()
     const at = position()
     for (const a of autos) {

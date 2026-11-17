@@ -1,3 +1,4 @@
+import { paramsReset } from './paramEpoch.js'
 /**
  * Bus inserts: Haas, the stereo widener and a mixer bus's fader, plus routing one bus into
  * another. Strudel only processes sound per note, and
@@ -600,6 +601,7 @@ export function declareSpeakers(list, orbit) {
  * (a note heard on its own) only adds: inserts already there keep where automation has them.
  */
 export function commitInserts(list, { partial = false, keep = false } = {}) {
+  paramsReset()
   declared = keep ? new Map([...list.inserts, ...declared]) : partial ? new Map([...declared, ...list.inserts]) : list.inserts
   routed = keep ? new Map([...list.routes, ...routed]) : partial ? new Map([...routed, ...list.routes]) : list.routes
   virtuals = keep || partial ? new Set([...virtuals, ...list.virtual]) : list.virtual
@@ -663,6 +665,7 @@ const stereoGain = (ac) => new GainNode(ac, { gain: 1, channelCount: 2, channelC
 
 /** Put a rack between a stereo orbit and the speakers. */
 function mount(n, orbit, channels) {
+  paramsReset() // a rack built from the code's settings: automation puts its knobs back
   // the rack this bus had before a reset: its units (a distortion's bias source, the
   // worklets) would otherwise keep running unheard, one more set every stop
   teardown(n)
@@ -690,6 +693,7 @@ function reaimSides() {
 
 /** A branch's rack: fed by the bus it branches off (see declareBranch), not by notes. */
 function mountBranch(n) {
+  paramsReset()
   teardown(n)
   const ac = getAudioContext()
   const rack = { orbit: null, virtual: true, input: stereoGain(ac), output: stereoGain(ac), sends: new Map(), units: new Map(), order: null, channels: undefined }
