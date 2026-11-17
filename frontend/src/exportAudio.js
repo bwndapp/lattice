@@ -19,6 +19,7 @@ import { AudioBufferSource, BufferTarget, Mp3OutputFormat, Mp4OutputFormat, Outp
 import { registerMp3Encoder } from '@mediabunny/mp3-encoder'
 import { generateCode } from './project'
 import { activeAutos, appParam, autoValueFn } from './automation.js'
+import { getAutoSource, setAutoSource } from './paramEpoch.js'
 import { routeVoice, setFxParams, silenceFx } from './fxbus.js'
 import { prepareInserts, setInsertParams } from './stereo.js'
 import { enginesNeedTicks, prepareInstruments, setEngineParams } from './instruments/host.js'
@@ -105,6 +106,27 @@ export async function renderProject(project, { from = 0, to = 4, tail = 2, sampl
   await prepareInserts() // the offline render can't wait for the worklet by itself
   await prepareInstruments(offline) // nor for the instrument engines
 
+  // knobs the app moves itself: step them along the render
+  const moving = (project.song?.on ? activeAutos(project) : [])
+    .map((a) => ({ app: appParam(project, a.target), value: autoValueFn(project, a) }))
+    .filter((a) => a.app && a.value)
+  // ...from its very first sample: whatever the notes above built starts on its curve
+  const setAt = (bar) => {
+    for (const a of moving) {
+      const patch = { [a.app.param]: a.value(bar) * (a.app.scale ?? 1) }
+      if (a.app.where === 'fx') { setFxParams(a.app.key, patch); setInsertParams(a.app.key, patch) }
+      else if (a.app.where === 'engine') setEngineParams(a.app.key, patch)
+      else setInsertParams(a.app.key, patch)
+    }
+  }
+  // built where the render starts on its curve (paramEpoch.js), and set there before it runs
+  const wasSource = getAutoSource()
+  setAutoSource(moving.length ? (key) => {
+    let patch = null
+    for (const a of moving) if (a.app.key === key) (patch ??= {})[a.app.param] = a.value(from) * (a.app.scale ?? 1)
+    return patch
+  } : null)
+
   onStage?.(`${haps.length} notes`)
   let failed = 0
   let firstError = null
@@ -127,32 +149,25 @@ export async function renderProject(project, { from = 0, to = 4, tail = 2, sampl
   if (failed) console.warn(`[export] ${failed} of ${haps.length} notes didn't render`, firstError)
   if (failed === haps.length && haps.length) throw new Error(`nothing would play: ${firstError?.message ?? firstError}`)
 
-  // knobs the app moves itself: step them along the render
-  const moving = (project.song?.on ? activeAutos(project) : [])
-    .map((a) => ({ app: appParam(project, a.target), value: autoValueFn(project, a) }))
-    .filter((a) => a.app && a.value)
+
   // an instrument whose modulators turn knobs outside it reports as it renders: pause often,
   // and let those reports land before going on
   const ticks = enginesNeedTicks()
+  setAt(from)
   if (moving.length || ticks) {
     const step = ticks ? FINE_STEP : STEP
     for (let t = step; t < seconds; t += step) {
       offline.suspend(Math.round(t * sampleRate / 128) * 128 / sampleRate).then(async () => {
         if (ticks) await yieldTask()
-        const bar = from + t * cps
-        for (const a of moving) {
-          const patch = { [a.app.param]: a.value(bar) * (a.app.scale ?? 1) }
-          if (a.app.where === 'fx') { setFxParams(a.app.key, patch); setInsertParams(a.app.key, patch) } // a send, or an insert on a bus
-          else if (a.app.where === 'engine') setEngineParams(a.app.key, patch)
-          else setInsertParams(a.app.key, patch)
-        }
+        setAt(from + t * cps)
         offline.resume()
       })
     }
   }
 
   onStage?.('rendering')
-  const buffer = await offline.startRendering()
+  let buffer
+  try { buffer = await offline.startRendering() } finally { setAutoSource(wasSource) }
   console.log(`[export] ${haps.length} notes, ${failed} failed, ${buffer.duration.toFixed(2)}s rendered`)
 
   // back to playing: the next play builds a fresh live context

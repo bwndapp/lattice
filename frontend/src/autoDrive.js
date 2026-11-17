@@ -26,6 +26,20 @@ export function autoTargets(project) {
   }).filter(Boolean) : []
 }
 
+/**
+ * For things being built (paramEpoch.js setAutoSource): key → where automation has its
+ * knobs at song time `at()`, as their parameters, or null when nothing of it is automated.
+ */
+export function autoSource(autos, at) {
+  const app = autos.filter((a) => a.app)
+  if (!app.length) return null
+  return (key) => {
+    let patch = null
+    for (const a of app) if (a.app.key === key) (patch ??= {})[a.app.param] = appParamValue(a.app, a.fn(at()))
+    return patch
+  }
+}
+
 /** What an app-moved knob sets its parameter to. */
 export function appParamValue(app, value) {
   const v = value * (app.scale ?? 1)

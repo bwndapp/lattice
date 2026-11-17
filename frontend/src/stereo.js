@@ -1,4 +1,4 @@
-import { paramsReset } from './paramEpoch.js'
+import { autoOverlay, paramsReset } from './paramEpoch.js'
 /**
  * Bus inserts: Haas, the stereo widener and a mixer bus's fader, plus routing one bus into
  * another. Strudel only processes sound per note, and
@@ -768,9 +768,15 @@ function wire(n, rack, inserts) {
   for (const i of inserts) {
     let unit = rack.units.get(i.key)
     if (unit && unit.kind !== i.kind) { unit.dispose(); rack.units.delete(i.key); unit = null }
+    const fresh = !unit
     if (!unit) { unit = UNITS[i.kind](getAudioContext()); unit.kind = i.kind; rack.units.set(i.key, unit) }
-    unit.params = i.params
-    unit.set(i.params)
+    // where automation has it now, if it's automated (paramEpoch.js): a new unit starts there,
+    // and one already playing isn't sent back toward its set value by an edit
+    const over = autoOverlay(i.key)
+    const params = over ? { ...i.params, ...over } : i.params
+    unit.params = params
+    instant = fresh
+    try { unit.set(params) } finally { instant = false }
   }
   if (order === rack.order) return
   rack.order = order
@@ -849,9 +855,14 @@ function workletInsert(ac, name, shape) {
   }
 }
 
-const smooth = (param, value) => {
-  if (Number.isFinite(value)) param.setTargetAtTime(value, getAudioContext().currentTime, 0.02)
+// a unit just built takes its settings at once; after that, knobs glide (no zipper noise)
+let instant = false
+const glide = (param, value, tau = 0.02) => {
+  if (!Number.isFinite(value)) return
+  const t = getAudioContext().currentTime
+  if (instant) { param.cancelScheduledValues(t); param.setValueAtTime(value, t) } else param.setTargetAtTime(value, t, tau)
 }
+const smooth = (param, value) => glide(param, value)
 
 const dbGain = (db) => (Number.isFinite(db) ? db : 0)
 
@@ -1127,7 +1138,7 @@ const UNITS = {
       if (!node || !want) return
       for (const [key, value] of Object.entries(want)) {
         const param = node.parameters.get(key)
-        if (param && Number.isFinite(value)) param.setTargetAtTime(value, getAudioContext().currentTime, 0.01)
+        if (param) glide(param, value, 0.01)
       }
     }
     prepareInserts().then(() => {

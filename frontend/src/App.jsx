@@ -34,7 +34,8 @@ import { openSynths, subscribeSynths } from './instruments/windows.js'
 import { RollContext } from './rollDock.js'
 import { AutomationContext, autoLive } from './autoLive.js'
 import { AUTO_PREFIX, appParam, resolveTarget, toPos } from './automation.js'
-import { applyAppParam, autoDriver, autoTargets } from './autoDrive.js'
+import { applyAppParam, autoDriver, autoSource, autoTargets } from './autoDrive.js'
+import { setAutoSource } from './paramEpoch.js'
 import { knobBridge } from './knobBridge.js'
 import { RESET_HINT, useKnobControl } from './useKnobControl.jsx'
 import { capturePatterns, parseLanes, tempoChange } from './lanes'
@@ -885,6 +886,8 @@ export default function App() {
 
   // automated knobs turn with their curves while the song plays (autoDrive.js)
   const autoFns = useMemo(() => autoTargets(project), [project])
+  // anything built from the code (a rack, a send, an instrument) starts where its curve is
+  useEffect(() => { setAutoSource(autoSource(autoFns, () => transport.position())) }, [autoFns, transport])
   // a knob the app moves itself is heard the moment it turns, before the project catches up
   const projectNow = useRef(project)
   projectNow.current = project

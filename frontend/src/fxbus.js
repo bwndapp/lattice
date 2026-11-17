@@ -1,4 +1,4 @@
-import { paramsReset } from './paramEpoch.js'
+import { autoOverlay, paramsReset } from './paramEpoch.js'
 /**
  * Reverb and delay, done properly. Strudel gives every audio bus ("orbit") one reverb and
  * one delay whose settings are whatever the latest note said, so two parts with different
@@ -65,7 +65,8 @@ export function commitFx(list, { partial = false, keep = false } = {}) {
     for (const inst of instances.values()) {
       if (keep && had.has(inst.key)) continue
       const d = declared.get(inst.key)
-      if (d && d.kind === inst.kind) inst.set(d.params)
+      const over = autoOverlay(inst.key) // where automation has it, not where it's set
+      if (d && d.kind === inst.kind) inst.set(over ? { ...d.params, ...over } : d.params)
     }
   } catch (err) { console.warn('[fx] could not update effects', err) }
 }
@@ -161,7 +162,10 @@ function effectFor(key, orbit) {
   if (fx && (fx.bus !== bus || fx.kind !== d.kind)) { fx.destroy(); fx = null }
   if (!fx) {
     const ac = getAudioContext()
-    fx = d.kind === 'delay' ? makeDelay(ac, d.params) : makeReverb(ac, d.params)
+    // made where automation has it now, if it's automated (paramEpoch.js)
+    const over = autoOverlay(key)
+    const params = over ? { ...d.params, ...over } : d.params
+    fx = d.kind === 'delay' ? makeDelay(ac, params) : makeReverb(ac, params)
     Object.assign(fx, { key, kind: d.kind, bus })
     fx.output.connect(bus.summingNode)
     instances.set(k, fx)

@@ -1,4 +1,4 @@
-import { paramsReset } from '../paramEpoch.js'
+import { autoOverlay, paramsReset } from '../paramEpoch.js'
 /**
  * The audio side of instrument engines (see index.js).
  *
@@ -55,6 +55,9 @@ export function declareEngines(project) {
       const type = engineType(ch.engine?.type)
       if (!ENGINES[type]) continue
       const found = { type, data: engineData(ch.engine), cps, beats }
+      // where automation has its knobs now (paramEpoch.js), not where they're set
+      const over = autoOverlay(ch.id)
+      if (over) found.data = withKnobs(ENGINES[type], found.data, over)
       declared.set(ch.id, found)
       for (const inst of live(ch.id, type)) inst.apply(found)
     }
