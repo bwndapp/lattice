@@ -333,7 +333,10 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       if (!el) return
       let pos = transport.position()
       let live = true
-      if (driven && length > 0) pos = wrap(pos, Math.max(1, Math.ceil(length - 1e-9)))
+      // while you drag the playhead it's where your pointer is, not a frame behind it
+      const held = scrubbing.current ? rulerRef.current?.last : null
+      if (held != null) pos = held
+      else if (driven && length > 0) pos = wrap(pos, Math.max(1, Math.ceil(length - 1e-9)))
       else if (transport.looping()) pos = transport.loop.from + wrap(pos - transport.loop.from, transport.loopLength())
       else if (started) { pos = transport.start; live = false }
       el.classList.toggle('waiting', !live)
@@ -801,12 +804,15 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     }
   }
 
-  // ── ruler: click or drag to move the playhead (snapped, alt: free);
+  // ── ruler: click or drag to move the playhead, exactly where you put it (alt: onto a beat);
   //    shift-drag to set a loop ──
   const rulerRef = useRef(null)
   const scrubTo = (clientX, free) => {
     const raw = Math.max(0, barAt(clientX))
     const bar = free ? raw : Math.round(raw * beats) / beats
+    // the handle follows the pointer this frame; the song catches up as it can
+    if (headRef.current) headRef.current.style.transform = `translateX(${bar * ppbRef.current}px)`
+    if (playheadRef.current) playheadRef.current.style.transform = `translateX(${bar * ppbRef.current}px)`
     const r = rulerRef.current
     if (r && r.last === bar) return
     if (r) r.last = bar
@@ -848,7 +854,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     rulerRef.current = { mode: 'scrub', last: null, frame: 0 }
     scrubbing.current = true
     e.currentTarget.classList.add('scrubbing')
-    scrubTo(e.clientX, e.altKey)
+    scrubTo(e.clientX, !e.altKey)
   }
   const onRulerMove = (e) => {
     const r = rulerRef.current
@@ -869,7 +875,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       return
     }
     if (r.mode === 'scrub') {
-      scrubTo(e.clientX, e.altKey)
+      scrubTo(e.clientX, !e.altKey)
       // keep the handle in view while dragging past an edge
       const box = scrollRef.current
       const rect = box.getBoundingClientRect()
@@ -1136,7 +1142,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
             <button className={`song-tool ${tool === 'slice' ? 'on' : ''}`} aria-pressed={tool === 'slice'} onClick={() => setTool('slice')} title="Cut clips in two: click a clip, or drag up or down to cut every clip on those rows (C)">slice</button>
           </span>
           <span className="spacer" />
-          <span className="song-hint">{!song.on && song.clips.length ? 'song off · the patch is looping, so the playhead waits at the cue · turn the song on to play the timeline' : tool === 'slice' ? 'click a clip to cut it · drag up or down to cut several · hold alt to cut off the grid · V or Esc to go back' : 'hold alt to leave the grid · shift-drag copies · U makes selected clips unique · C slices · right-click deletes · drag the ruler to move the playhead'}</span>
+          <span className="song-hint">{!song.on && song.clips.length ? 'song off · the patch is looping, so the playhead waits at the cue · turn the song on to play the timeline' : tool === 'slice' ? 'click a clip to cut it · drag up or down to cut several · hold alt to cut off the grid · V or Esc to go back' : 'hold alt to leave the grid · shift-drag copies · U makes selected clips unique · C slices · right-click deletes · click or drag the ruler to move the playhead'}</span>
           <span className="song-zoom" role="group" aria-label="Zoom">
             <button className="btn" onClick={() => zoomTo(zoomGoal() / 1.5)} aria-label="Zoom out">−</button>
             <button className="btn" onClick={fit} title="Fit the song">fit</button>
@@ -1161,7 +1167,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
               onPointerMove={onRulerMove}
               onPointerUp={onRulerUp}
               onPointerCancel={onRulerUp}
-              title="Click or drag to move the playhead (alt: off the beat grid) · shift-drag to loop a section, shift-click to clear it · drag the loop's edges to resize it, its band to move it"
+              title="Click or drag to move the playhead, anywhere (alt: onto a beat) · shift-drag to loop a section, shift-click to clear it · drag the loop's edges to resize it, its band to move it"
             >
               {Array.from({ length: Math.ceil(bars / tickEvery) }, (_, k) => {
                 const i = k * tickEvery
