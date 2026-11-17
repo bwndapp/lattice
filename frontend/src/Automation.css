@@ -93,3 +93,6 @@
   .auto-hint { display: none; }
   .auto-target { max-width: 100%; }
 }
+
+/* a shift-drag's lock: the line the point is held to */
+.auto-lock { stroke: var(--acid); stroke-width: 1; stroke-dasharray: 4 3; opacity: 0.8; pointer-events: none; }

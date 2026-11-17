@@ -19,7 +19,10 @@ const NUDGE = 3 // px a press has to travel before it moves anything
  * The mouse works as in the piano roll: click adds a point and drag places it, drag a
  * point to move it (and every selected point with it), right-click or right-drag across
  * points deletes them, shift + click adds a point to the selection, ctrl/cmd or shift +
- * drag on bare grid draws a selection box, and shift or ctrl/cmd + drag moves copies.
+ * drag on bare grid draws a selection box, and ctrl/cmd + drag moves copies. Shift + drag
+ * on a point locks it to one way, as FL Studio does: whichever way it first moves —
+ * sideways keeps its value, up and down keeps its time. Shift held part-way through a drag
+ * locks it from there.
  * Delete removes the selection, arrows nudge it, ctrl/cmd + A selects all. The diamond
  * between two points bends the line (right-click it: straight again). Points snap to
  * 16ths of a bar; hold alt to place them freely. Each gesture is one undo step.
@@ -35,6 +38,7 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
   const [draft, setDraft] = useState(null) // the points while a gesture is under way; saved when it ends
   const [selection, setSelection] = useState(() => new Set()) // indices of selected points
   const [hot, setHot] = useState(null) // what's under the pointer: { point } or { bend }
+  const [lock, setLock] = useState(null) // a shift-drag's lock: 'time' (keeps its value) or 'value' (keeps its time)
   const [marquee, setMarquee] = useState(null) // { x0, y0, x1, y1 } in graph px while box-selecting
   const selRef = useRef(selection)
   selRef.current = selection
@@ -178,12 +182,12 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
     if (h.point !== undefined) {
       const i = h.point
       let sel = selection
-      // shift: drag out a copy; a shift-click without moving adds the point to the
-      // selection or takes it out (as in the piano roll)
+      // ctrl/cmd: drag out a copy. Shift: drag locked to one way (see above); a shift-click
+      // without moving adds the point to the selection or takes it out (as in the piano roll)
       if (e.shiftKey && !sel.has(i)) sel = new Set([i])
       if (!e.shiftKey && !sel.has(i)) { sel = new Set([i]); setSelection(sel) }
       const group = [...sel].filter((j) => j < points.length)
-      dragRef.current = { mode: 'move', base: points, group, grab: i, copy: mod || e.shiftKey, toggle: e.shiftKey ? i : null, px, py }
+      dragRef.current = { mode: 'move', base: points, group, grab: i, copy: mod, toggle: e.shiftKey ? i : null, px, py }
       return
     }
     // a new point where you clicked, which you're now dragging
@@ -223,10 +227,14 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
     } else if (d.mode === 'move') {
       if (!d.moved && Math.hypot(px - d.px, py - d.py) < NUDGE) return
       d.moved = true
+      // shift locks it one way, decided by which way it's gone furthest when shift is held
+      if (e.shiftKey && !d.lock) d.lock = Math.abs(px - d.px) >= Math.abs(py - d.py) ? 'time' : 'value'
+      if (!e.shiftKey) d.lock = null
+      setLock(d.lock ?? null)
       // the grabbed point lands on the grid (alt: anywhere); the rest keep their distance
       const from = d.base[d.grab]
-      const dx = snapX(clamp(from.x + ((px - d.px) / plotW) * bars, 0, bars), e.altKey) - from.x
-      const dy = -(py - d.py) / travel
+      const dx = d.lock === 'value' ? 0 : snapX(clamp(from.x + ((px - d.px) / plotW) * bars, 0, bars), e.altKey) - from.x
+      const dy = d.lock === 'time' ? 0 : -(py - d.py) / travel
       d.current = movePoints(d.base, d.group, dx, dy, bars, d.copy)
       setDraft(d.current.points)
       setSelection(new Set(d.current.indices))
@@ -235,6 +243,7 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
   const onGraphUp = () => {
     const d = dragRef.current
     dragRef.current = null
+    setLock(null)
     if (!d) return
     if (d.mode === 'marquee') { setMarquee(null); return }
     if (d.mode === 'erase') {
@@ -362,6 +371,10 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
           {bends.map((b) => (
             <rect key={`b${b.i}`} x={b.px - 5} y={b.py - 5} width="10" height="10" className={`auto-bend ${b.bent ? 'bent' : ''} ${hot?.bend === b.i || d?.mode === 'bend' && d.i === b.i ? 'hot' : ''}`} transform={`rotate(45 ${b.px} ${b.py})`} />
           ))}
+          {/* a locked drag shows the line it's held to */}
+          {lock && moving !== null && (lock === 'time'
+            ? <line x1={GUTTER} x2={GUTTER + plotW} y1={sy(points[moving].y)} y2={sy(points[moving].y)} className="auto-lock" />
+            : <line x1={sx(points[moving].x)} x2={sx(points[moving].x)} y1={PAD_Y} y2={GRAPH_H - PAD_Y} className="auto-lock" />)}
           {points.map((p, i) => (
             <circle key={`p${i}`} cx={sx(p.x)} cy={sy(p.y)} r={hot?.point === i || moving === i ? 7 : 5.5} className={`auto-point ${selection.has(i) ? 'selected' : ''}`} />
           ))}
@@ -378,7 +391,7 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
       </div>
 
       <div className="auto-foot">
-        <span className="auto-hint">click adds · drag moves · right-drag deletes · shift-click or ctrl-drag selects · drag a diamond to bend · alt: off grid</span>
+        <span className="auto-hint">click adds · drag moves · shift-drag: one way only · ctrl-drag copies · right-drag deletes · shift-click selects · drag a diamond to bend · alt: off grid</span>
         <span className="spacer" />
         <span className="auto-meta">{clips ? `${clips} clip${clips === 1 ? '' : 's'} on the timeline` : 'not on the timeline yet'}</span>
         {onShowTimeline && <button type="button" className="btn" onClick={onShowTimeline}>show timeline</button>}
