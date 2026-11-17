@@ -20,6 +20,13 @@ const num = (v, fallback, lo, hi) => (Number.isFinite(Number(v)) ? Math.min(hi, 
 const snapTo = (v, step) => Math.round(v / step) * step
 export const MAX_BARS = 512
 export const MAX_CLIPS = 400
+/** What clips snap to: a bar, a beat, or finer — eighths, sixteenths, and their triplets. */
+export const SNAPS = ['bar', 'beat', '1/8', '1/16', '1/8t', '1/16t']
+/** One snap step, in bars. */
+export function snapStep(snap, beats = 4) {
+  const per = { beat: 1, '1/8': 2, '1/16': 4, '1/8t': 3, '1/16t': 6 }[snap]
+  return per ? 1 / (beats * per) : 1
+}
 
 /**
  * Whether a rhythm machine plays any sound of its own: a layer with a sound picked that
@@ -211,7 +218,7 @@ export function normalizeSong(raw, project) {
   // colours people picked for parts (the rest get one from the part's id)
   const colors = {}
   for (const [src, color] of Object.entries(raw?.colors ?? {})) if (valid.has(src) && /^#[0-9a-f]{6}$/i.test(color)) colors[src] = color.toLowerCase()
-  return { on: raw?.on !== false, snap: raw?.snap === 'beat' ? 'beat' : 'bar', clips, fired: true, ...(lanes.length ? { lanes } : {}), ...(autos.length ? { autos } : {}), ...(Object.keys(colors).length ? { colors } : {}) }
+  return { on: raw?.on !== false, snap: SNAPS.includes(raw?.snap) ? raw.snap : 'bar', clips, fired: true, ...(lanes.length ? { lanes } : {}), ...(autos.length ? { autos } : {}), ...(Object.keys(colors).length ? { colors } : {}) }
 }
 
 /** A row's name and whether it's muted. */

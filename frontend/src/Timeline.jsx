@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { abstractOf, abstractState } from './abstract/index.js'
 import { openAbstract } from './instruments/windows.js'
 import { makePattern, makeVariation, newId } from './project'
-import { MAX_BARS, laneInfo, songLength, songParts } from './song'
+import { MAX_BARS, laneInfo, snapStep, songLength, songParts } from './song'
 import Popover from './Popover.jsx'
 import { Glass } from './Glass.jsx'
 import { useAutomation } from './autoLive.js'
@@ -35,7 +35,7 @@ const RULER_H = 26
 const HEAD_W = 136 // the row headers down the left of the timeline
 const EDGE = 7 // px at each end of a clip that stretch it
 const MIN_PPB = 10
-const MAX_PPB = 260
+const MAX_PPB = 3200 // far enough in to place a 1/16 triplet by eye
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 const wrap = (a, n) => (n > 0 ? ((a % n) + n) % n : a)
 
@@ -300,7 +300,11 @@ export default function Timeline({ project, onUpdateProject, transport, started 
 
   const bars = Math.max(16, Math.ceil(length) + 8, Math.ceil((scrollRef.current?.clientWidth ?? 0) / ppb) + 1)
   const lanes = Math.max(8, Math.ceil((viewH - RULER_H) / LANE_H) + 4, ...clips.map((c) => c.lane + 3)) // a few spare rows below the view, so zooming rows can keep its spot
-  const step = song.snap === 'beat' ? 1 / beats : 1
+  const step = snapStep(song.snap, beats)
+  // the finest grid lines: the snap's steps when it's finer than a beat, sixteenths once
+  // zoomed in far enough to want them
+  const subStep = step < 1 / beats ? step : 1 / (beats * 4)
+  const subW = subStep * ppb
   // zoomed out, only every few bars is numbered: no sense building spans nobody can read
   const tickEvery = ppb >= 22 ? 1 : Math.ceil(22 / ppb)
 
@@ -1097,6 +1101,10 @@ export default function Timeline({ project, onUpdateProject, transport, started 
             <select className="select" value={song.snap} onChange={(e) => updateSong((s) => { s.snap = e.target.value })} aria-label="Snap clips to">
               <option value="bar">bar</option>
               <option value="beat">beat</option>
+              <option value="1/8">1/8</option>
+              <option value="1/16">1/16</option>
+              <option value="1/8t">1/8 triplet</option>
+              <option value="1/16t">1/16 triplet</option>
             </select>
           </label>
           <span className="song-length" title="The song loops after its last clip">{length ? `${songBars} bar${songBars === 1 ? '' : 's'}` : 'empty'}</span>
@@ -1122,7 +1130,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
           onAuxClick={(e) => { if (e.button === 1) e.preventDefault() }}
           onMouseDown={(e) => { if (e.button === 1) e.preventDefault() }}
         >
-          <div className="song-canvas" style={{ width: bars * ppb + HEAD_W, '--ppb': `${ppb}px`, '--ppbeat': `${ppb / beats}px`, '--lane': `${LANE_H}px`, '--headw': `${HEAD_W}px` }}>
+          <div className="song-canvas" style={{ width: bars * ppb + HEAD_W, '--ppb': `${ppb}px`, '--ppbeat': `${ppb / beats}px`, '--ppsub': `${subW}px`, '--subshow': subW >= 7 ? 1 : 0, '--lane': `${LANE_H}px`, '--headw': `${HEAD_W}px` }}>
             <div className="song-corner" style={{ height: RULER_H }} aria-hidden />
             <div
               className="song-ruler"
@@ -1137,6 +1145,10 @@ export default function Timeline({ project, onUpdateProject, transport, started 
                 const i = k * tickEvery
                 return <span key={i} className={`song-tick ${i % 4 === 0 ? 'major' : ''}`} style={{ left: i * ppb }}>{i + 1}</span>
               })}
+              {/* zoomed in: each beat numbered too (5.2, 5.3…) */}
+              {ppb / beats >= 46 && Array.from({ length: bars * beats }, (_, k) => (k % beats === 0 ? null : (
+                <span key={`b${k}`} className="song-tick beat" style={{ left: (k / beats) * ppb }}>{Math.floor(k / beats) + 1}.{(k % beats) + 1}</span>
+              )))}
               {loop.to > loop.from && (
                 <span className={`song-loop ${loop.on ? '' : 'off'}`} style={{ left: loop.from * ppb, width: (loop.to - loop.from) * ppb }} aria-label={`Loop bars ${loop.from + 1} to ${loop.to}${loop.on ? '' : ' (off)'}`}>
                   <span className="song-loop-edge from" aria-hidden />
