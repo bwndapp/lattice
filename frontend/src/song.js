@@ -13,7 +13,7 @@
  * a sidechain's trigger keep running, so ducking doesn't vanish.
  */
 import { NODE_TYPES, isTrigger, triggerOf } from './graph'
-import { abstractParts } from './abstract/index.js'
+import { abstractOf, abstractParts, abstractState } from './abstract/index.js'
 import { AUTO_PREFIX, autoName, normalizeAutos } from './automation.js'
 
 const num = (v, fallback, lo, hi) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : fallback)
@@ -117,6 +117,24 @@ function fireAsBefore(project, clips) {
   }
 }
 
+const gcd = (a, b) => (b ? gcd(b, a % b) : a)
+/**
+ * How many bars a pattern takes to come round: its own length, or for one a machine fires,
+ * as long as it takes the machine's rhythm and its own notes to line up again (capped).
+ */
+export function partBars(project, pattern) {
+  const root = project.patterns.find((x) => x.id === (pattern.parent ?? pattern.id)) ?? pattern
+  const nodeIds = new Set(project.nodes.filter((n) => n.type === 'pattern' && n.data?.patternId === root.id).map((n) => n.id))
+  let bars = Math.max(1, Math.round(pattern.bars || 1))
+  for (const e of project.edges ?? []) {
+    if (!isTrigger(e) || !nodeIds.has(e.target)) continue
+    const machine = project.nodes.find((n) => n.id === e.source)
+    const mb = Math.round(abstractOf(machine?.type)?.asPattern?.(abstractState(machine))?.bars || 1)
+    if (mb > 1) bars = Math.min(64, (bars * mb) / gcd(bars, mb))
+  }
+  return bars
+}
+
 /** Everything that can go on the timeline, in sidebar order. `autos` defaults to the song's. */
 export function songParts(project, autos = project.song?.autos ?? []) {
   // originals, each followed by its variations (which play through the original's node)
@@ -127,7 +145,7 @@ export function songParts(project, autos = project.song?.autos ?? []) {
     kind: 'pattern',
     id: p.id,
     name: p.name,
-    bars: p.bars,
+    bars: partBars(project, p),
     parent: p.parent ?? null,
     parentName: p.parent ? byId.get(p.parent)?.name : null,
     inPatch: project.nodes.some((n) => n.type === 'pattern' && n.data.patternId === (p.parent ?? p.id)),

@@ -603,9 +603,9 @@ export function generateCode(project, { solo = null, laneSolo = null, lineSolo =
       if (!part?.drive) return null
       // each layer plays an engine on an instance of its own (instruments/host.js)
       const e = part.drive(`${heldChannelCode(ch, pattern, auto)}.fmap((v) => ({ ...v, _r: '${machine.id}.${layer}' }))`)
-      // inside the pattern's own clips; the machine's rhythm keeps to song time (a clip moves
-      // the part later by where it starts, so the rhythm is moved back by as much)
-      return song ? song(`pattern:${pattern.id}`, (shift) => (Number(shift) ? `(${e}).early(${shift})` : e)) : e
+      // inside the pattern's own clips, from the clip's start like any other part: where a
+      // clip starts (and where it was trimmed to) is where the machine's rhythm starts, as drawn
+      return song ? song(`pattern:${pattern.id}`, () => e) : e
     }).filter(Boolean)
     return exprs.length ? (exprs.length === 1 ? exprs[0] : `stack(\n${exprs.join(',\n')}\n)`) : 'silence'
   }
