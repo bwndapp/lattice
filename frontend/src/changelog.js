@@ -24,6 +24,19 @@
  */
 export const NEWS = [
   {
+    id: '2026-11-18-3',
+    date: '2026-11-18',
+    version: '0.20.0',
+    title: 'W00K, and automation you can shape',
+    items: [
+      '**W00K**: a new effect — send anything through it for wookification: flutter in time, a vowel filter that wobbles, a womp on every hit',
+      '**Automation shapes**: turn any part of a curve into a sine, triangle, saw, square, stairs or hold from the shape bar, set how many cycles, or fill the whole thing at a tempo rate',
+      '**Bezier handles**: shape a segment exactly; the shape holds as you move its points',
+      '**Edit automation on the timeline**: drag points, right-click to delete, double-click the curve to add one',
+      '**A cleaner top bar**: export and share are in the menu, and save is a floppy disk',
+    ],
+  },
+  {
     id: '2026-11-18-2',
     date: '2026-11-18',
     version: '0.19.1',
