@@ -496,9 +496,11 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       }
       if (!(e.ctrlKey || e.metaKey)) return
       e.preventDefault()
-      // a mouse wheel's notch is ~100, a trackpad's flick a few: both scale the same way
+      // a mouse wheel's notch is ~100 at a time; a laptop's pinch (which arrives as ctrl +
+      // wheel) is a stream of small steps of a few each, so it gets more zoom per step
       const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY
-      zoomTo(zoomGoal() * Math.exp(-dy * 0.0024), e.clientX)
+      const pinch = e.deltaMode === 0 && Math.abs(dy) < 40
+      zoomTo(zoomGoal() * Math.exp(-dy * (pinch ? 0.012 : 0.0024)), e.clientX)
     }
     box.addEventListener('wheel', onWheel, { passive: false })
     return () => box.removeEventListener('wheel', onWheel)
