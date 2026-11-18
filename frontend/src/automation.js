@@ -99,6 +99,45 @@ export const engineTarget = (patternId, channelId, key) => `e:${patternId}:${cha
  * What a target points at in this project: the knob's definition, its value now and a
  * name for it. Null when that knob is gone (its node, unit or instrument was deleted).
  */
+/**
+ * What feeds a node, by name, for telling automations apart: the pattern (or sound) its
+ * signal comes from, walking back up the wires. Several: the first, and "+n".
+ */
+function feedOf(project, nodeId) {
+  const names = []
+  const seen = new Set([nodeId])
+  let frontier = [nodeId]
+  for (let depth = 0; depth < 8 && frontier.length && !names.length; depth++) {
+    const next = []
+    for (const id of frontier) {
+      for (const e of project.edges) {
+        if (e.target !== id || seen.has(e.source) || isTriggerEdge(e)) continue
+        seen.add(e.source)
+        const n = project.nodes.find((x) => x.id === e.source)
+        if (!n) continue
+        if (n.type === 'pattern') {
+          const pat = project.patterns.find((x) => x.id === n.data?.patternId)
+          const ch = String(e.sourceHandle ?? '').startsWith('out-') && pat?.channels.find((c) => `out-${c.id}` === e.sourceHandle)
+          if (pat) names.push(ch ? tidyOwner(pat.name, ch.name) : pat.name)
+        } else if (NODE_TYPES[n.type]?.group === 'source') names.push(n.data?.name || NODE_TYPES[n.type].label)
+        else next.push(n.id)
+      }
+    }
+    frontier = next
+  }
+  const unique = [...new Set(names)]
+  return unique.length ? `${unique[0]}${unique.length > 1 ? ` +${unique.length - 1}` : ''}` : null
+}
+const isTriggerEdge = (e) => String(e.sourceHandle ?? '').startsWith('trig-')
+/** "kicksynth kick synth" → "kicksynth": a pattern and its instrument, without saying it twice. */
+function tidyOwner(pattern, channel) {
+  const a = String(pattern ?? '').trim(), b = String(channel ?? '').trim()
+  const squash = (x) => x.toLowerCase().replace(/[^a-z0-9]/g, '')
+  if (!b || squash(a) === squash(b) || squash(a).includes(squash(b))) return a
+  if (squash(b).includes(squash(a))) return b
+  return `${a} ${b}`
+}
+
 export function resolveTarget(project, target) {
   const parts = String(target ?? '').split(':')
   if (parts[0] === 'n' && parts.length === 3) {
@@ -106,7 +145,8 @@ export function resolveTarget(project, target) {
     const spec = node && NODE_TYPES[node.type]
     const def = spec?.params.find((p) => p.key === parts[2] && p.type === 'knob')
     if (!def || !canAutomate(node.type, def.key)) return null
-    return { def, value: node.data[def.key] ?? def.def, owner: node.data.name || spec.label, label: def.label }
+    const feed = feedOf(project, node.id)
+    return { def, value: node.data[def.key] ?? def.def, owner: `${feed ? `${feed} › ` : ''}${node.data.name || spec.label}`, label: def.label }
   }
   if (parts[0] === 'u' && parts.length === 4) {
     const node = project.nodes.find((n) => n.id === parts[1] && n.type === 'fxrack')
@@ -114,21 +154,24 @@ export function resolveTarget(project, target) {
     const spec = unit && NODE_TYPES[unit.type]
     const def = spec?.params.find((p) => p.key === parts[3] && p.type === 'knob')
     if (!def || !canAutomate(unit.type, def.key)) return null
-    return { def, value: unit.data[def.key] ?? def.def, owner: `${node.data.name || 'fx rack'} ${spec.label}`, label: def.label }
+    const feed = feedOf(project, node.id)
+    // the rack's own name when it has one; otherwise where its sound comes from
+    const rack = node.data.name ? `${node.data.name} ` : ''
+    return { def, value: unit.data[def.key] ?? def.def, owner: `${feed ? `${feed} › ` : ''}${rack}${spec.label}`, label: def.label }
   }
   if (parts[0] === 'c' && parts.length === 4) {
     const pattern = project.patterns.find((p) => p.id === parts[1])
     const ch = pattern?.channels.find((c) => c.id === parts[2])
     const def = PARAMS.find((p) => p.key === parts[3])
     if (!ch || !def || ch.kind === 'code' || (def.kinds && !def.kinds.includes(ch.kind))) return null
-    return { def, value: paramValue(ch, def.key), owner: `${pattern.name} ${ch.name}`, label: def.label }
+    return { def, value: paramValue(ch, def.key), owner: tidyOwner(pattern.name, ch.name), label: def.label }
   }
   if (parts[0] === 'e' && parts.length === 4) {
     const pattern = project.patterns.find((p) => p.id === parts[1])
     const ch = pattern?.channels.find((c) => c.id === parts[2])
     const found = ch?.engine && engineKnob(ENGINES[ch.engine.type], engineData(ch.engine), parts[3])
     if (!found) return null
-    return { def: found.def, value: found.value, owner: `${pattern.name} ${ch.name}`, label: found.label }
+    return { def: found.def, value: found.value, owner: tidyOwner(pattern.name, ch.name), label: found.label }
   }
   return null
 }

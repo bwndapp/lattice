@@ -10,6 +10,14 @@ export const PICKS = [...COLORS, '#ff6b3d', '#ffd23f', '#7dff9a', '#5ad1ff', '#4
 /** A part's colour: the one picked for it, or one from its id. */
 export function colorFor(src, colors) {
   if (colors?.[src]) return colors[src]
+  if (String(src).startsWith('auto:')) {
+    // automations: the whole palette, with a hash that mixes every character (the simple one
+    // below only really heard the last few, so ids alike in their tails came out alike)
+    let f = 2166136261
+    for (const ch of src) f = Math.imul(f ^ ch.charCodeAt(0), 16777619)
+    f ^= f >>> 15
+    return PICKS[(f >>> 0) % PICKS.length]
+  }
   let h = 0
   for (const ch of src) h = (h * 31 + ch.charCodeAt(0)) >>> 0
   return COLORS[h % COLORS.length]

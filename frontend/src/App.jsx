@@ -19,6 +19,7 @@ import About from './About.jsx'
 import WhatsNew from './WhatsNew.jsx'
 import { LATEST, SEEN_KEY } from './changelog.js'
 import Popover from './Popover.jsx'
+import { PICKS, colorFor } from './clipColors.js'
 import { syncInserts } from './stereo.js'
 import { Glass } from './Glass.jsx'
 import { AutomationEditor } from './Automation.jsx'
@@ -854,6 +855,10 @@ export default function App() {
         updateProject((p) => {
           p.song = p.song ?? { on: true, snap: 'bar', clips: [] }
           p.song.autos = [...(p.song.autos ?? []), { id, target, bars, points: [{ x: 0, y }, { x: bars, y }] }]
+          // a colour of its own: the first in the palette no other automation has yet
+          const used = new Set(p.song.autos.filter((a) => a.id !== id).map((a) => colorFor(`${AUTO_PREFIX}${a.id}`, p.song.colors)))
+          const pick = PICKS.find((c) => !used.has(c)) ?? PICKS[p.song.autos.length % PICKS.length]
+          p.song.colors = { ...(p.song.colors ?? {}), [`${AUTO_PREFIX}${id}`]: pick }
           const lane = Math.max(-1, ...p.song.clips.map((c) => c.lane)) + 1 // a row of its own, under the rest
           p.song.clips.push({ id: `c${newId()}`, src: `${AUTO_PREFIX}${id}`, lane: Math.min(63, lane), start, len: bars })
           if (!hadSound) p.song.on = true // automation alone doesn't switch the patch into song mode
