@@ -59,7 +59,6 @@ export default function MiniScopes() {
       const ink = getComputedStyle(wave).getPropertyValue('--scope-ink').trim() || '#e4ff1a'
       const dpr = window.devicePixelRatio || 1
       for (const c of [wave, scope]) {
-        // the stereo field's guides live in CSS behind it, so its canvas keeps only the dots
         const w = Math.round(c.clientWidth * dpr), h = Math.round(c.clientHeight * dpr)
         if (c.width !== w || c.height !== h) { c.width = w; c.height = h }
       }
@@ -95,30 +94,31 @@ export default function MiniScopes() {
       const half = Math.min(1, rms * 1.41) * mid * 0.95
       wg.fillRect(W - step, mid - half, step, Math.max(1, half * 2))
       wg.globalAlpha = 1
-      // ── the stereo field: each sample a dot, across by where it sits (hard left … mono …
-      //    hard right), up by how loud it is; a short trail so it reads as a cloud ──
+      // ── the stereo scope: the last frame's samples, left against right, turned 45° ──
       const sg = scope.getContext('2d')
-      const SW = scope.width, SH = scope.height
-      sg.globalCompositeOperation = 'destination-out' // fade what's there toward see-through
-      sg.fillStyle = 'rgba(0, 0, 0, 0.28)'
-      sg.fillRect(0, 0, SW, SH)
-      sg.globalCompositeOperation = 'source-over'
+      const S = Math.min(scope.width, scope.height)
+      const cx = scope.width / 2, cy = scope.height / 2
+      sg.fillStyle = 'rgba(11, 11, 11, 0.45)' // what was there fades, a short trail
+      sg.fillRect(0, 0, scope.width, scope.height)
+      sg.strokeStyle = 'rgba(255, 255, 255, 0.08)'
+      sg.beginPath(); sg.moveTo(cx, 0); sg.lineTo(cx, scope.height); sg.moveTo(0, cy); sg.lineTo(scope.width, cy); sg.stroke()
       let corr = 0, el = 0, er = 0
       if (t) {
-        sg.fillStyle = ink
+        // a line through the last frame's samples: easier to read at this size than dots
+        sg.strokeStyle = ink
+        sg.lineWidth = 1 * dpr
+        sg.globalAlpha = 0.85
+        sg.beginPath()
         const n = t.bl.length
-        const dot = Math.max(1, 1.4 * dpr)
+        const scale = (S / 2) * 0.95
         for (let i = n - 1024; i < n; i++) {
           const l = t.bl[i], r = t.br[i]
           corr += l * r; el += l * l; er += r * r
-          const mid = (l + r) * 0.7071, side = (r - l) * 0.7071
-          const amp = Math.sqrt(l * l + r * r) * 0.7071
-          if (amp < 0.02) continue // near-silence has no place to speak of: it would only smear the floor
-          // where it sits: the angle off the mono line, folded so out-of-phase reads as wide
-          const pos = Math.atan2(side, Math.abs(mid)) / (Math.PI / 2) // −1 left … 0 mono … 1 right
-          sg.globalAlpha = 0.55
-          sg.fillRect(SW / 2 + pos * (SW / 2) * 0.96 - dot / 2, SH - Math.min(1, amp) * SH * 0.95 - dot / 2, dot, dot)
+          // mono (l = r) straight up; one side only leans 45°
+          const x = cx + (r - l) * 0.7071 * scale, y = cy - (l + r) * 0.7071 * scale
+          if (i === n - 1024) sg.moveTo(x, y); else sg.lineTo(x, y)
         }
+        sg.stroke()
         sg.globalAlpha = 1
       }
       // ── correlation: +1 mono, 0 wide, −1 out of phase ──
@@ -136,15 +136,8 @@ export default function MiniScopes() {
   return (
     <div className="mini-scopes" aria-hidden>
       <canvas ref={waveRef} className="ms-wave" title="The master as it plays, scrolling" />
-      <span className="ms-stereo" title="Stereo field: across is where the sound sits (left · mono in the middle · right), up is how loud · the bar under it is the correlation: right end mono, middle wide, red at the left: out of phase, it'll vanish in mono">
-        <span className="ms-field">
-          <span className="ms-guide l" />
-          <span className="ms-guide c" />
-          <span className="ms-guide r" />
-          <span className="ms-tag l">L</span>
-          <span className="ms-tag r">R</span>
-          <canvas ref={scopeRef} className="ms-scope" />
-        </span>
+      <span className="ms-stereo" title="Stereo scope: mono stands up straight, a wide mix spreads sideways · the bar under it is the correlation: right is mono, left is out of phase (red: it'll vanish in mono)">
+        <canvas ref={scopeRef} className="ms-scope" />
         <span ref={corrRef} className="ms-corr"><i /></span>
       </span>
     </div>
