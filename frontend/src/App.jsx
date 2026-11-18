@@ -19,7 +19,6 @@ import About from './About.jsx'
 import WhatsNew from './WhatsNew.jsx'
 import { LATEST, SEEN_KEY } from './changelog.js'
 import Popover from './Popover.jsx'
-import MiniScopes from './MiniScopes.jsx'
 import { syncInserts } from './stereo.js'
 import { Glass } from './Glass.jsx'
 import { AutomationEditor } from './Automation.jsx'
@@ -1526,8 +1525,6 @@ export default function App() {
     // the shell is the surface of last resort: a dialog nobody thought to tag still puts a
     // cursor somewhere sensible, and so will the next floating thing anyone adds
     <div className="studio" data-surface="app">
-      {/* the master, at a glance: the waveform going by and a stereo scope */}
-      {view !== 'browse' && <MiniScopes />}
       <header className="bar" data-surface="header">
         <div className="bar-side left">
         {/*
