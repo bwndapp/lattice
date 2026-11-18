@@ -418,7 +418,8 @@ export const NODE_TYPES = {
       { key: 'spread', type: 'knob', label: 'spread', min: 0, max: 1, def: 0 },
       { key: 'swing', type: 'knob', label: 'swing', min: 0, max: 0.5, def: 0 },
       { key: 'follow', type: 'select', label: 'follow', options: WOOK_FOLLOW, def: 'song' },
-      { key: 'rise', type: 'knob', label: 'rise', min: 0, max: 1, def: 0, unit: 's' },
+      // after each hit the chop fades in over this long, so the hit's front comes through whole
+      { key: 'rise', type: 'knob', label: 'rise', min: 0, max: 2, def: 0, unit: 's' },
       { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 1 },
       { key: 'out', type: 'knob', label: 'out', min: 0, max: 2, def: 1, fmt: 'gain' },
     ],

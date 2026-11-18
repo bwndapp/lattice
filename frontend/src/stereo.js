@@ -229,7 +229,7 @@ class WookProcessor extends AudioWorkletProcessor {
     return [
       k('rate', 4, 0, 9), k('hz', 12, 0.5, 60), k('shape', 0, 0, 4), k('width', 0.5, 0.05, 0.95), k('smooth', 0.3, 0, 1),
       k('chop', 0.85, 0, 1), k('warble', 10, 0, 100), k('filter', 0, 0, 1), k('spread', 0, 0, 1), k('swing', 0, 0, 0.5),
-      k('follow', 0, 0, 1), k('rise', 0, 0, 1), k('mix', 1, 0, 1), k('out', 1, 0, 2), k('cps', 0.5625, 0.05, 4),
+      k('follow', 0, 0, 1), k('rise', 0, 0, 2), k('mix', 1, 0, 1), k('out', 1, 0, 2), k('cps', 0.5625, 0.05, 4),
     ]
   }
   constructor() {
@@ -270,7 +270,11 @@ class WookProcessor extends AudioWorkletProcessor {
     const dt = 1 / sampleRate
     // smooth: how fast the heard gain follows the shape (none: instant; full: a quarter of a cycle)
     const glide = smooth > 0.001 ? 1 - Math.exp(-1 / Math.max(1, smooth * 0.25 * sampleRate / Math.max(hz, 0.5))) : 1
-    const fastA = 1 - Math.exp(-1 / (0.002 * sampleRate)), slowA = 1 - Math.exp(-1 / (0.06 * sampleRate))
+    // hearing hits: a fast envelope (rises in half a millisecond, falls in 20) against a slow
+    // one (rises in 20, falls in 150) — a note starts where the fast leaps over the slow,
+    // even when the note before hasn't stopped
+    const fUp = 1 - Math.exp(-1 / (0.0005 * sampleRate)), fDown = 1 - Math.exp(-1 / (0.02 * sampleRate))
+    const sUp = 1 - Math.exp(-1 / (0.02 * sampleRate)), sDown = 1 - Math.exp(-1 / (0.15 * sampleRate))
     // warble: a moving delay whose swing is about warble cents at this rate
     const depth = hz > 0 ? Math.min(0.012, (Math.pow(2, warble / 1200) - 1) / (6.283185307 * hz)) * sampleRate : 0
     const s = this.song
@@ -279,10 +283,10 @@ class WookProcessor extends AudioWorkletProcessor {
       const now = this.t + i * dt
       // a hit coming in: the fast level jumping over the slow
       const lvl = Math.abs(xl[i]) + Math.abs(xr[i])
-      this.fast += (lvl - this.fast) * fastA
-      this.slow += (lvl - this.slow) * slowA
-      if (this.armed && this.fast > this.slow * 1.8 + 0.01) { this.hitAt = now; this.armed = false }
-      else if (this.fast < this.slow * 1.1) this.armed = true
+      this.fast += (lvl - this.fast) * (lvl > this.fast ? fUp : fDown)
+      this.slow += (lvl - this.slow) * (lvl > this.slow ? sUp : sDown)
+      if (this.armed && this.fast > this.slow * 1.2 + 0.004 && now - this.hitAt > 0.05) { this.hitAt = now; this.armed = false }
+      else if (this.fast < this.slow * 1.05) this.armed = true
       // where in the flutter we are: from the song's bar, or from the last hit
       let ph = follow ? (now - this.hitAt) * hz : per > 0 ? (cycle0 + i * dt * cps) * per : now * hz
       // swing: the second of each pair of pulses comes late
@@ -292,7 +296,10 @@ class WookProcessor extends AudioWorkletProcessor {
         ph = Math.floor(ph / 2) * 2 + (pair < split ? pair / split : 1 + (pair - split) / (1 - split))
       }
       // rise: after a hit the chop fades in, so the hit's front comes through whole
-      const amount = chop * (rise > 0.001 ? Math.min(1, (now - this.hitAt) / (rise * 0.5)) : 1)
+      // (the knob is in seconds; the fade follows a curve, since half the depth already
+      // sounds like most of a chop: it starts gently and arrives on time)
+      const ramp = rise > 0.001 ? Math.min(1, (now - this.hitAt) / rise) : 1
+      const amount = chop * ramp * ramp
       const pl = ph - Math.floor(ph)
       const pr0 = ph + spread
       const pr = pr0 - Math.floor(pr0)
@@ -1355,7 +1362,7 @@ const UNITS = {
       spread: n(p.spread, 0, 1, 0),
       swing: n(p.swing, 0, 0.5, 0),
       follow: pick(WOOK_FOLLOW, p.follow, 0),
-      rise: n(p.rise, 0, 1, 0),
+      rise: n(p.rise, 0, 2, 0),
       mix: n(p.mix, 0, 1, 1),
       out: n(p.out, 0, 2, 1),
       cps: n(p.cps, 0.05, 4, 0.5625),

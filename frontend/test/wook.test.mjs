@@ -93,6 +93,20 @@ ok('chop 0.5 halves it', Math.abs(depthOf(run({ ...sq, chop: 0.5, warble: 0 }, t
   const front = (o) => Math.sqrt(o.slice(sr * 0.5 + 400, sr * 0.5 + 1600).reduce((s, x) => s + x * x, 0) / 1200)
   ok('rise lets the front of each hit through', front(withRise) > front(noRise) * 1.5, `${front(noRise).toFixed(3)} → ${front(withRise).toFixed(3)}`)
 }
+// rise in real seconds, along a curve: half-way through it's still gentle, by its time it's all there
+{
+  const one = (i) => (i > sr * 0.5 ? tone(i) : 0)
+  const L = run({ ...sq, chop: 1, warble: 0, rise: 0.4, rate: RATES.indexOf('1/32'), cps: 0.5 }, one, 1.5).L
+  const depthAt = (t) => { const e = env1(L.slice(sr * t, sr * (t + 0.05)), 96); return 1 - Math.min(...e) / Math.max(...e) }
+  ok('rise: gentle half-way through', depthAt(0.5 + 0.15) < 0.75, depthAt(0.65).toFixed(2))
+  ok('rise: all there by its time (0.4 s)', depthAt(0.5 + 0.42) > 0.95, depthAt(0.92).toFixed(2))
+  ok('and it stays: a held note isn\'t heard as a new hit', depthAt(1.3) > 0.95, depthAt(1.3).toFixed(2))
+  // a bass that barely dips between notes still restarts the rise on each one
+  const tight = (i) => tone(i) * (1 - 0.2 * (((i / sr) % 0.25) / 0.25))
+  const T = run({ ...sq, chop: 1, warble: 0, rise: 0.2, rate: RATES.indexOf('1/32'), cps: 0.5 }, tight, 2).L
+  const dT = (t) => { const e = env1(T.slice(sr * t, sr * (t + 0.05)), 96); return 1 - Math.min(...e) / Math.max(...e) }
+  ok('rise restarts on each note, even legato', dT(1.0 + 0.02) < 0.7 && dT(1.0 + 0.2) > 0.9, `${dT(1.02).toFixed(2)} → ${dT(1.2).toFixed(2)}`)
+}
 // filter: the shut part is darker, not just quieter
 {
   const bright = (i) => 0.4 * (2 * ((i * 220 / sr) % 1) - 1) // a saw: plenty of top
