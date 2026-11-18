@@ -236,7 +236,7 @@ export default function Browser({ user, login, activeId, refreshKey, onPick, onN
           </div>
         ) : (
           /* one row a track: play it, see its shape, who made it, and how it's doing */
-          <ul className="b-list">
+          <ul className={`b-list ${user && view === 'mine' ? 'with-del' : ''}`}>
             <li className="b-row b-row-head" aria-hidden>
               <span />
               <span />
@@ -246,6 +246,7 @@ export default function Browser({ user, login, activeId, refreshKey, onPick, onN
               <span className="b-num">♥</span>
               <span className="b-num">opens</span>
               <span className="b-num">updated</span>
+              {user && view === 'mine' && <span />}
             </li>
             {tracks.map((t) => (
               <li key={t.id} className={`b-row ${t.id === activeId ? 'active' : ''} ${playing === t.id ? 'playing' : ''}`}>
