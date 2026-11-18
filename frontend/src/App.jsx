@@ -22,7 +22,7 @@ import Popover from './Popover.jsx'
 import { Glass } from './Glass.jsx'
 import { AutomationEditor } from './Automation.jsx'
 import { routeVoice } from './fxbus.js'
-import { A4, TUNING_MAX, TUNING_MIN, setTuning } from './tuning.js'
+import { A4, ROOTS, SYSTEMS, TUNING_MAX, TUNING_MIN, setTuning } from './tuning.js'
 import { setStreamMeta, setStreamProject, setStreamTrack, setStreamTransport, streamHit, streamTransport } from './stream.js'
 import Versions from './Versions.jsx'
 import ExportDialog from './ExportDialog.jsx'
@@ -205,7 +205,8 @@ export default function App() {
   // Project mode: the code's header line holds the patterns/tracks the UI edits.
   const project = useMemo(() => parseProject(code), [code])
   // the track's A4, for every note on its way out (tuning.js); code without a project is at 440
-  useEffect(() => setTuning(project?.tuning ?? A4), [project?.tuning])
+  // ...and its tuning system and root: one tuning for every note in the track, live and in export
+  useEffect(() => setTuning(project?.tuning ?? A4, project?.tuningSystem ?? 'equal', project?.tuningRoot ?? 0), [project?.tuning, project?.tuningSystem, project?.tuningRoot])
   // the stream (stream.js): which track, and the names behind its ids
   useEffect(() => setStreamTrack(trackId), [trackId])
   useEffect(() => setStreamProject(project), [project])
@@ -1587,6 +1588,35 @@ export default function App() {
             className="tuning"
             onChange={(hz) => updateProject((p) => { if (hz === A4) delete p.tuning; else p.tuning = hz })}
           />
+        )}
+        {project && (
+          // the tuning system, for the whole track: equal temperament, or pure ratios from a root
+          <span className="lcd tuning-sys" title="Tuning system for the whole track: equal temperament, Pythagorean (pure fifths) or just intonation (pure fifths and thirds), built on a root note">
+            <select
+              className="lcd-value"
+              aria-label="Tuning system"
+              value={project.tuningSystem ?? 'equal'}
+              onChange={(e) => {
+                const sys = e.target.value
+                updateProject((p) => {
+                  if (sys === 'equal') { delete p.tuningSystem; delete p.tuningRoot } else { p.tuningSystem = sys; p.tuningRoot = p.tuningRoot ?? 0 }
+                })
+              }}
+            >
+              {SYSTEMS.map((s) => <option key={s} value={s}>{s === 'equal' ? '12-tet' : s === 'pythagorean' ? 'pythag' : 'just'}</option>)}
+            </select>
+            {project.tuningSystem && (
+              <select
+                className="lcd-value"
+                aria-label="Tuning root"
+                title="The root the tuning is built on: put it on your track's key"
+                value={project.tuningRoot ?? 0}
+                onChange={(e) => { const r = Number(e.target.value); updateProject((p) => { p.tuningRoot = r }) }}
+              >
+                {ROOTS.map((n, i) => <option key={n} value={i}>{n}</option>)}
+              </select>
+            )}
+          </span>
         )}
         <Position transport={transport} started={started} bpm={project ? project.bpm : (evaluated.cps ?? 0.5) * 60 * transport.beats} songBars={project?.song ? songLength(project.song) : 0} />
         <label className="lcd meter" title="Beats per bar">

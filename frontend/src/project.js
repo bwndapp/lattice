@@ -251,6 +251,11 @@ export function normalizeProject(raw) {
   // A4, when it isn't 440 (tuning.js): left out at 440 so every other track's header stays as it was
   const tuning = Math.round(num(raw.tuning, 440, 400, 480) * 10) / 10
   if (tuning !== 440) project.tuning = tuning
+  // the tuning system and its root (tuning.js), when it isn't equal temperament
+  if (['pythagorean', 'just'].includes(raw.tuningSystem)) {
+    project.tuningSystem = raw.tuningSystem
+    project.tuningRoot = ((Math.round(Number(raw.tuningRoot) || 0) % 12) + 12) % 12
+  }
   for (const p of Array.isArray(raw.patterns) ? raw.patterns : []) {
     if (!p || typeof p.id !== 'string') continue
     const pattern = {

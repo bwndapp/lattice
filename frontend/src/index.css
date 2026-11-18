@@ -257,7 +257,7 @@ body.dragging, body.dragging * { user-select: none !important; -webkit-user-sele
  * share button (0.15) took about 80px, so each of these leaves that much sooner.
  */
 @media (max-width: 1680px) { .bar .loop-range { display: none; } }
-@media (max-width: 1540px) { .bar .lcd.meter, .bar .lcd.tuning { display: none; } } /* A4: set once a track, like the meter */
+@media (max-width: 1540px) { .bar .lcd.meter, .bar .lcd.tuning, .bar .lcd.tuning-sys { display: none; } } /* A4: set once a track, like the meter */
 @media (max-width: 1400px) { .share-word { display: none; } }
 @media (max-width: 1540px) { .bar .track-heading, .bar .bar-like { display: none; } } /* someone else's track: who made it is on its page */
 .btn.share-btn { display: inline-flex; align-items: center; gap: 0.4rem; flex: none; }
@@ -1508,3 +1508,7 @@ button:disabled { cursor: var(--dot); }
 .ch-grip:hover { color: var(--acid); }
 .ch.ch-moving { opacity: 0.4; }
 .ch.ch-drop { box-shadow: inset 0 2px 0 var(--acid); }
+
+/* the tuning system and its root, beside A4 */
+.bar .lcd.tuning-sys { display: inline-flex; align-items: center; gap: 0.15rem; }
+.bar .lcd.tuning-sys select { width: auto; }
