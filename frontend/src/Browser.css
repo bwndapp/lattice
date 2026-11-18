@@ -319,3 +319,11 @@
   .b-row { grid-template-columns: 2rem minmax(0, 1fr) 2.4rem 5rem; gap: 0 0.6rem; }
   .b-row > .b-art, .b-row > .b-num:nth-child(5) { display: none; }
 }
+
+/* your own tracks: delete, at the end of the row (asks first) */
+.b-del { position: absolute; right: 0.4rem; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 1.7rem; height: 1.7rem; padding: 0; border: 1px solid transparent; border-radius: 4px; background: var(--panel, #161616); color: var(--muted); opacity: 0.35; cursor: pointer; }
+.b-row:hover .b-del, .b-del:focus-visible { opacity: 1; }
+.b-del:hover:not(:disabled) { color: #ff5a43; border-color: rgba(255, 90, 67, 0.5); }
+.b-del:disabled { cursor: default; opacity: 0.15; }
+.b-row:hover .b-del:disabled { opacity: 0.3; }
+.b-error { margin: 0.6rem 0.6rem 0; padding: 0.5rem 0.7rem; border: 1px solid rgba(255, 90, 67, 0.5); border-radius: 4px; color: #ff8a73; font-size: 0.8rem; cursor: pointer; }

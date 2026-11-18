@@ -8,6 +8,7 @@ import TrackMap from './TrackMap.jsx'
 import BranchMark from './BranchMark.jsx'
 import { Glass } from './Glass.jsx'
 import LiveOnTrack from './LiveOnTrack.jsx'
+import ConfirmDialog from './ConfirmDialog.jsx'
 import { Photo, faceUrl } from './BotFace.jsx'
 import './Browser.css'
 
@@ -36,6 +37,19 @@ export default function Browser({ user, login, activeId, refreshKey, onPick, onN
   const [page, setPage] = useState(() => params.get('track') || null) // one track's own page
   const [q, setQ] = useState(() => params.get('q') || '')
   const [tracks, setTracks] = useState(null)
+  const [deleting, setDeleting] = useState(null) // a track of yours you've asked to delete: { id, title }
+  const [deleteErr, setDeleteErr] = useState('')
+  const reallyDelete = async () => {
+    const t = deleting
+    setDeleting(null)
+    try {
+      await api(`/tracks/${t.id}`, { method: 'DELETE' })
+      setTracks((was) => (was ?? []).filter((x) => x.id !== t.id))
+      onTrackChanged?.()
+    } catch (e) {
+      setDeleteErr(`Couldn’t delete “${t.title}”: ${e.message}`)
+    }
+  }
   const [error, setError] = useState('')
   const [more, setMore] = useState(false)
   const [filling, setFilling] = useState(false)
@@ -284,10 +298,35 @@ export default function Browser({ user, login, activeId, refreshKey, onPick, onN
                 <span className={`b-num ${t.liked ? 'liked' : ''}`}>{t.likes}</span>
                 <span className="b-num">{t.plays}</span>
                 <span className="b-num b-time">{timeAgo(t.updated_at)}</span>
+                {/* yours: deleted from here, after asking (not the one you have open: its own menu does that) */}
+                {user && view === 'mine' && (
+                  <button
+                    type="button"
+                    className="b-del"
+                    disabled={t.id === activeId}
+                    onClick={() => setDeleting({ id: t.id, title: t.title })}
+                    aria-label={`Delete ${t.title}`}
+                    title={t.id === activeId ? 'It’s open: delete it from its own menu' : `Delete “${t.title}”`}
+                  >
+                    <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3.2h8M4.6 3.2V2h2.8v1.2M3.1 3.2l.5 7h4.8l.5-7M5 5.2v3.2M7 5.2v3.2" /></svg>
+                  </button>
+                )}
               </li>
             ))}
           </ul>
         )}
+        {deleting && (
+          <ConfirmDialog
+            title={`Delete “${deleting.title}”?`}
+            confirmLabel="delete it"
+            danger
+            onCancel={() => setDeleting(null)}
+            onConfirm={reallyDelete}
+          >
+            <p>It goes for good: its link stops working and anyone who had it loses it. Copies other people saved of it stay theirs.</p>
+          </ConfirmDialog>
+        )}
+        {deleteErr && <p className="b-error" role="alert" onClick={() => setDeleteErr('')}>{deleteErr}</p>}
         {tracks?.length > 0 && (
           <div className="b-end" ref={endRef}>
             {more
