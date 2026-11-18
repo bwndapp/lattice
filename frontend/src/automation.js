@@ -66,7 +66,7 @@ const APP_PARAMS = {
   tremolo: { prefix: '', where: 'insert', keys: { rate: 'rate', depth: 'depth' } },
   lofi: { prefix: '', where: 'insert', keys: { coarse: 'coarse' } },
   granulizer: { prefix: '', where: 'insert', keys: { size: 'size', density: 'density', position: 'position', spray: 'spray', pitch: 'pitch', pitchRand: 'pitchRand', glide: 'glide', chaos: 'chaos', shape: 'shape', reverse: 'reverse', spread: 'spread', freeze: 'freeze', feedback: 'feedback', mix: 'mix' } },
-  wook: { prefix: '', where: 'insert', keys: { fhz: 'fhz', fvol: 'fvol', fpitch: 'fpitch', fspread: 'fspread', vowel: 'vowel', reso: 'reso', wdepth: 'wdepth', womp: 'womp', wompdecay: 'wompdecay', drive: 'drive', mix: 'mix', out: 'out' } },
+  wook: { prefix: '', where: 'insert', keys: { hz: 'hz', width: 'width', smooth: 'smooth', chop: 'chop', warble: 'warble', filter: 'filter', spread: 'spread', swing: 'swing', rise: 'rise', mix: 'mix', out: 'out' } },
   bitcrush: { prefix: '', where: 'insert', keys: { bits: 'bits', rate: 'rate', mix: 'mix' } },
   distortion: { prefix: '', where: 'insert', keys: { drive: 'drive', tighten: 'tighten', tone: 'tone', bias: 'bias', mix: 'mix', out: 'out' } },
   pitch: { prefix: '', where: 'insert', keys: { semitones: 'semitones', fine: 'fine', grain: 'grain', mix: 'mix' } },

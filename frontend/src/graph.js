@@ -14,7 +14,7 @@
  */
 
 import { parse } from 'acorn'
-import { GRAIN_STEPS, WOOK_FLUTTER, WOOK_SHAPES, WOOK_WOBBLE, STEREO_ORBIT_BASE, beginInserts, commitInserts, declareBranch, declareInsert, declareQuiet, declareRoute, declareSide, declareSpeakers } from './stereo'
+import { GRAIN_STEPS, WOOK_FOLLOW, WOOK_RATES, WOOK_SHAPES, STEREO_ORBIT_BASE, beginInserts, commitInserts, declareBranch, declareInsert, declareQuiet, declareRoute, declareSide, declareSpeakers } from './stereo'
 import { abstractBuild, abstractNodeTypes, abstractOf, abstractParts, packState } from './abstract/index.js'
 import { DELAY_DEFAULTS, DELAY_DIVISIONS, GLOBAL_DELAY, GLOBAL_REVERB, REVERB_DEFAULTS, beginFx, commitFx, declareFx } from './fxbus.js'
 
@@ -403,32 +403,27 @@ export const NODE_TYPES = {
     code: stereoCode('grain', (d) => ({ size: d.size, density: d.density, position: d.position, spray: d.spray, pitch: d.pitch, pitchRand: d.pitchRand, steps: d.steps, glide: d.glide, chaos: d.chaos, shape: d.shape, reverse: d.reverse, spread: d.spread, freeze: d.freeze, feedback: d.feedback, mix: d.mix })),
   },
   wook: {
-    group: 'effect', cat: 'texture', label: 'w00k', blurb: 'Wookification for anything: flutter it in time, put a vowel in its mouth, wobble it and womp every hit',
+    group: 'effect', cat: 'texture', label: 'w00k', blurb: 'Flutter: a fast chop in time on anything you send through it — the wook bass flutter, with warble, a darkening filter, spread, swing and hit-following',
     inputs: 1,
     params: [
-      // flutter
-      { key: 'flutter', type: 'select', label: 'flutter', options: WOOK_FLUTTER, def: '1/32' },
-      { key: 'fhz', type: 'knob', label: 'free hz', min: 0.5, max: 60, def: 12, log: true, unit: 'hz' },
-      { key: 'fshape', type: 'select', label: 'shape', options: WOOK_SHAPES, def: 'sine' },
-      { key: 'fvol', type: 'knob', label: 'chop', min: 0, max: 1, def: 0.7 },
-      { key: 'fpitch', type: 'knob', label: 'warble', min: 0, max: 100, def: 15, unit: 'ct' },
-      { key: 'fspread', type: 'knob', label: 'spread', min: 0, max: 1, def: 0 },
-      // the wook filter
-      { key: 'vowel', type: 'knob', label: 'vowel', min: 0, max: 1, def: 0.35 },
-      { key: 'reso', type: 'knob', label: 'reso', min: 0, max: 1, def: 0.6 },
-      { key: 'wobble', type: 'select', label: 'wobble', options: WOOK_WOBBLE, def: 'off' },
-      { key: 'wshape', type: 'select', label: 'shape', options: WOOK_SHAPES, def: 'sine' },
-      { key: 'wdepth', type: 'knob', label: 'depth', min: 0, max: 1, def: 0.6 },
-      { key: 'womp', type: 'knob', label: 'womp', min: 0, max: 1, def: 0.5 },
-      { key: 'wompdecay', type: 'knob', label: 'womp time', min: 0.02, max: 2, def: 0.25, log: true, unit: 's' },
-      // out
-      { key: 'drive', type: 'knob', label: 'drive', min: 0, max: 1, def: 0.3 },
+      { key: 'rate', type: 'select', label: 'rate', options: WOOK_RATES, def: '1/32' },
+      { key: 'hz', type: 'knob', label: 'free hz', min: 0.5, max: 60, def: 12, log: true, unit: 'hz' },
+      { key: 'shape', type: 'select', label: 'shape', options: WOOK_SHAPES, def: 'sine' },
+      { key: 'width', type: 'knob', label: 'width', min: 0.05, max: 0.95, def: 0.5 },
+      { key: 'smooth', type: 'knob', label: 'smooth', min: 0, max: 1, def: 0.3 },
+      { key: 'chop', type: 'knob', label: 'chop', min: 0, max: 1, def: 0.85 },
+      { key: 'warble', type: 'knob', label: 'warble', min: 0, max: 100, def: 10, unit: 'ct' },
+      { key: 'filter', type: 'knob', label: 'filter', min: 0, max: 1, def: 0 },
+      { key: 'spread', type: 'knob', label: 'spread', min: 0, max: 1, def: 0 },
+      { key: 'swing', type: 'knob', label: 'swing', min: 0, max: 0.5, def: 0 },
+      { key: 'follow', type: 'select', label: 'follow', options: WOOK_FOLLOW, def: 'song' },
+      { key: 'rise', type: 'knob', label: 'rise', min: 0, max: 1, def: 0, unit: 's' },
       { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 1 },
       { key: 'out', type: 'knob', label: 'out', min: 0, max: 2, def: 1, fmt: 'gain' },
     ],
-    // the song's tempo goes with it, so its flutter and wobble keep time even before the song's position reaches it
+    // the song's tempo goes with it, so the flutter keeps time even before the song's position reaches it
     code: (() => {
-      const pick = (d) => ({ flutter: d.flutter, fhz: d.fhz, fshape: d.fshape, fvol: d.fvol, fpitch: d.fpitch, fspread: d.fspread, vowel: d.vowel, reso: d.reso, wobble: d.wobble, wshape: d.wshape, wdepth: d.wdepth, womp: d.womp, wompdecay: d.wompdecay, drive: d.drive, mix: d.mix, out: d.out })
+      const pick = (d) => ({ rate: d.rate, hz: d.hz, shape: d.shape, width: d.width, smooth: d.smooth, chop: d.chop, warble: d.warble, filter: d.filter, spread: d.spread, swing: d.swing, follow: d.follow, rise: d.rise, mix: d.mix, out: d.out })
       const base = stereoCode('wook', pick)
       const code = (d, xs, ctx) => stereoCode('wook', (dd) => ({ ...pick(dd), cps: ctx?.cps }))(d, xs, ctx)
       code.insert = base.insert

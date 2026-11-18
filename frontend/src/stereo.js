@@ -207,24 +207,29 @@ class GrainProcessor extends AudioWorkletProcessor {
 registerProcessor('lattice-grain', GrainProcessor)
 
 /*
- * W00K: wookification for whatever goes through it. Flutter chops the volume and wobbles
- * the pitch (a few milliseconds of moving delay) fast and in time; the wook filter is two
- * formants that say u, o, a, e, i as it opens, with the low end kept clean underneath;
- * the wobble sweeps that vowel in time; the womp hears each hit coming in and opens the
- * vowel on it, falling back as it fades; drive pushes it all before the filter.
+ * W00K, flutter: a fast chop in time, on whatever goes through. One effect at a time, and
+ * this one is the flutter, done properly.
+ *
+ *   rate    in time (1/8 down to 1/64, triplets and dotted) or free in Hz
+ *   shape   sine, triangle, square, saw down or up; width is how long each pulse is open,
+ *           smooth rounds a hard edge so it doesn't click
+ *   chop    how far the volume falls; warble: how far the pitch wavers (a few milliseconds of
+ *           moving delay); filter: how dark it goes in each dip
+ *   spread  the right side behind the left by this much of a cycle (0.5: they take turns)
+ *   swing   every second pulse late
+ *   follow  in time with the song, or started again on every hit that comes in, with a rise:
+ *           the chop fading in after the hit, so its front comes through clean
+ *   mix, out
  * Song time comes as a message (sync); with none it runs free at the cps it's given.
  */
-const WK_VOWELS = [[325, 700], [450, 800], [800, 1150], [400, 1600], [300, 2300]] // u o a e i
-const WK_FLUTTER = [0, 16, 24, 32, 48, 64, -1]
-const WK_WOBBLE = [0, 1, 2, 4, 8, 16, 6, 12, 24]
+const WK_RATE = [8, 12, 16, 24, 32, 48, 64, 16 / 3, 8 / 3, -1] // per bar: 1/8 1/8t 1/16 1/16t 1/32 1/32t 1/64 1/8. 1/4.(dotted) free
 class WookProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     const k = (name, def, min, max) => ({ name, defaultValue: def, minValue: min, maxValue: max, automationRate: 'k-rate' })
     return [
-      k('frate', 3, 0, 6), k('fhz', 12, 0.5, 60), k('fshape', 0, 0, 3), k('fvol', 0.7, 0, 1), k('fpitch', 15, 0, 100), k('fspread', 0, 0, 1),
-      k('wrate', 0, 0, 8), k('wshape', 0, 0, 3), k('wdepth', 0.6, 0, 1),
-      k('vowel', 0.35, 0, 1), k('reso', 0.6, 0, 1), k('womp', 0.5, 0, 1), k('wompdecay', 0.25, 0.02, 2),
-      k('drive', 0.3, 0, 1), k('mix', 1, 0, 1), k('out', 1, 0, 2), k('cps', 0.5625, 0.05, 4),
+      k('rate', 4, 0, 9), k('hz', 12, 0.5, 60), k('shape', 0, 0, 4), k('width', 0.5, 0.05, 0.95), k('smooth', 0.3, 0, 1),
+      k('chop', 0.85, 0, 1), k('warble', 10, 0, 100), k('filter', 0, 0, 1), k('spread', 0, 0, 1), k('swing', 0, 0, 0.5),
+      k('follow', 0, 0, 1), k('rise', 0, 0, 1), k('mix', 1, 0, 1), k('out', 1, 0, 2), k('cps', 0.5625, 0.05, 4),
     ]
   }
   constructor() {
@@ -235,23 +240,18 @@ class WookProcessor extends AudioWorkletProcessor {
     this.line = [new Float32Array(this.len), new Float32Array(this.len)]
     this.w = 0
     this.t = 0
-    this.f = [[0, 0, 0, 0], [0, 0, 0, 0]] // per side: two formant filters' state (ic1, ic2 each)
     this.lp = [0, 0]
-    this.fast = 0; this.slow = 0; this.womp = 0; this.armed = true
-    this.co = null; this.coN = 0
+    this.g = [1, 1] // the gain as it's heard: smoothed toward the shape
+    this.fast = 0; this.slow = 0; this.armed = true
+    this.hitAt = -1e9 // when the last hit came in (seconds, our own clock)
   }
-  shape(s, ph) {
-    const p = ph - Math.floor(ph)
-    if (s === 0) return 0.5 + 0.5 * Math.cos(6.283185307 * p)
-    if (s === 1) return 1 - 2 * Math.abs(p - 0.5)
-    if (s === 2) return p < 0.5 ? 1 : 0
-    return 1 - p
-  }
-  coeffs(fc, res) {
-    const g = Math.tan(Math.PI * Math.min(fc, sampleRate * 0.45) / sampleRate)
-    const k = 2 - 1.9 * res
-    const a1 = 1 / (1 + g * (g + k))
-    return [a1, g * a1, g * g * a1]
+  // the shape at phase p (0 … 1): 1 open, 0 shut
+  wave(shape, p, width) {
+    if (shape === 0) return 0.5 + 0.5 * Math.cos(6.283185307 * p)
+    if (shape === 1) return 1 - 2 * Math.abs(p - 0.5)
+    if (shape === 2) return p < width ? 1 : 0
+    if (shape === 3) return 1 - p
+    return p
   }
   process(inputs, outputs, P) {
     const input = inputs[0], out = outputs[0]
@@ -262,82 +262,68 @@ class WookProcessor extends AudioWorkletProcessor {
     const xl = input[0], xr = input[1] || input[0]
     const v = (name) => P[name][0]
     const cps = this.song ? this.song.cps : v('cps')
-    const fPer = WK_FLUTTER[Math.round(v('frate'))] || 0
-    const fHz = fPer < 0 ? v('fhz') : fPer * cps
-    const fShape = Math.round(v('fshape'))
-    const wPer = WK_WOBBLE[Math.round(v('wrate'))] || 0
-    const wShape = Math.round(v('wshape'))
-    const fvol = v('fvol'), fpitch = v('fpitch'), fspread = v('fspread'), wdepth = v('wdepth')
-    const vowel = v('vowel'), reso = v('reso'), wompAmt = v('womp'), mix = v('mix'), outG = v('out')
-    const drive = v('drive'), dg = 1 + drive * drive * 16, dn = 1 / Math.tanh(Math.min(dg, 3))
-    const wompFall = Math.exp(-5 / (v('wompdecay') * sampleRate))
+    const per = WK_RATE[Math.round(v('rate'))] ?? 32
+    const hz = per < 0 ? v('hz') : per * cps
+    const shape = Math.round(v('shape')), width = v('width'), smooth = v('smooth')
+    const chop = v('chop'), warble = v('warble'), filt = v('filter'), spread = v('spread'), swing = v('swing')
+    const follow = v('follow') >= 0.5, rise = v('rise'), mix = v('mix'), outG = v('out')
+    const dt = 1 / sampleRate
+    // smooth: how fast the heard gain follows the shape (none: instant; full: a quarter of a cycle)
+    const glide = smooth > 0.001 ? 1 - Math.exp(-1 / Math.max(1, smooth * 0.25 * sampleRate / Math.max(hz, 0.5))) : 1
     const fastA = 1 - Math.exp(-1 / (0.002 * sampleRate)), slowA = 1 - Math.exp(-1 / (0.06 * sampleRate))
-    const lowA = 1 - Math.exp(-6.283185307 * 140 / sampleRate)
-    const comp = 0.7 / (0.5 + reso)
-    // the song's bar at this block's start (or free-running from our own count)
+    // warble: a moving delay whose swing is about warble cents at this rate
+    const depth = hz > 0 ? Math.min(0.012, (Math.pow(2, warble / 1200) - 1) / (6.283185307 * hz)) * sampleRate : 0
     const s = this.song
     const cycle0 = s ? s.cycle + (currentTime - s.at) * s.cps : this.t * cps
-    const dt = 1 / sampleRate
-    // pitch flutter: a moving delay, its depth set so the swing is about fpitch cents at this rate
-    const depth = fHz > 0 ? Math.min(0.012, (Math.pow(2, fpitch / 1200) - 1) / (6.283185307 * fHz)) * sampleRate : 0
     for (let i = 0; i < n; i++) {
-      const cyc = cycle0 + i * dt * cps
-      // flutter: volume and pitch, the right side a step behind when spread
-      let gl = 1, gr = 1, ml = 0, mr = 0
-      if (fHz > 0) {
-        const ph = fPer > 0 ? cyc * fPer : (this.t + i * dt) * fHz
-        const sl = this.shape(fShape, ph), sr = this.shape(fShape, ph + fspread * 0.5)
-        gl = 1 - fvol * (1 - sl); gr = 1 - fvol * (1 - sr)
-        ml = (sl * 2 - 1) * depth; mr = (sr * 2 - 1) * depth
-      }
-      // the womp: a hit coming in (the fast level jumping over the slow) opens the vowel
+      const now = this.t + i * dt
+      // a hit coming in: the fast level jumping over the slow
       const lvl = Math.abs(xl[i]) + Math.abs(xr[i])
       this.fast += (lvl - this.fast) * fastA
       this.slow += (lvl - this.slow) * slowA
-      if (this.armed && this.fast > this.slow * 1.8 + 0.01) { this.womp = 1; this.armed = false }
+      if (this.armed && this.fast > this.slow * 1.8 + 0.01) { this.hitAt = now; this.armed = false }
       else if (this.fast < this.slow * 1.1) this.armed = true
-      this.womp *= wompFall
-      // where the vowel is: set, swept by the wobble, opened by the womp
-      if (this.coN-- <= 0) {
-        this.coN = 16
-        let pos = vowel
-        if (wPer) pos += wdepth * (this.shape(wShape, cyc * wPer) - 0.5) * 0.9
-        pos += wompAmt * this.womp * 0.6
-        pos = Math.max(0, Math.min(0.9999, pos)) * 4
-        const a = Math.floor(pos), b = Math.min(4, a + 1), x = pos - a
-        const F1 = WK_VOWELS[a][0] + (WK_VOWELS[b][0] - WK_VOWELS[a][0]) * x
-        const F2 = WK_VOWELS[a][1] + (WK_VOWELS[b][1] - WK_VOWELS[a][1]) * x
-        const q = 0.45 + reso * 0.5
-        this.co = [this.coeffs(F1, q), this.coeffs(F2, q)]
+      // where in the flutter we are: from the song's bar, or from the last hit
+      let ph = follow ? (now - this.hitAt) * hz : per > 0 ? (cycle0 + i * dt * cps) * per : now * hz
+      // swing: the second of each pair of pulses comes late
+      if (swing > 0.001) {
+        const pair = ph / 2 - Math.floor(ph / 2)
+        const split = 0.5 * (1 + swing) // the first pulse of the pair takes this much of it
+        ph = Math.floor(ph / 2) * 2 + (pair < split ? pair / split : 1 + (pair - split) / (1 - split))
       }
-      // into the moving delay
+      // rise: after a hit the chop fades in, so the hit's front comes through whole
+      const amount = chop * (rise > 0.001 ? Math.min(1, (now - this.hitAt) / (rise * 0.5)) : 1)
+      const pl = ph - Math.floor(ph)
+      const pr0 = ph + spread
+      const pr = pr0 - Math.floor(pr0)
+      const wl = this.wave(shape, pl, width), wr = this.wave(shape, pr, width)
+      this.g[0] += (1 - amount * (1 - wl) - this.g[0]) * glide
+      this.g[1] += (1 - amount * (1 - wr) - this.g[1]) * glide
       this.line[0][this.w] = xl[i]; this.line[1][this.w] = xr[i]
       const outs = [0, 0]
       for (let c = 0; c < 2; c++) {
-        const m = c === 0 ? ml : mr
-        let p = this.w - (0.004 * sampleRate + depth + m)
+        const wv = c === 0 ? wl : wr
+        let p = this.w - (0.004 * sampleRate + depth + (wv * 2 - 1) * depth)
         while (p < 0) p += this.len
         const i0 = Math.floor(p), fr = p - i0
         const buf = this.line[c]
         let x = buf[i0 % this.len] * (1 - fr) + buf[(i0 + 1) % this.len] * fr
-        if (drive > 0.001) x = Math.tanh(x * dg) * dn
-        // the low end, kept clean under the vowel
-        this.lp[c] += (x - this.lp[c]) * lowA
-        const st = this.f[c]
-        let y = 0
-        for (let k = 0; k < 2; k++) {
-          const [a1, a2, a3] = this.co[k]
-          const v3 = x - st[k * 2 + 1]
-          const v1 = a1 * st[k * 2] + a2 * v3
-          const v2 = st[k * 2 + 1] + a2 * st[k * 2] + a3 * v3
-          st[k * 2] = 2 * v1 - st[k * 2]; st[k * 2 + 1] = 2 * v2 - st[k * 2 + 1]
-          y += v1 * (k === 0 ? 1.6 : 1.1)
+        // filter: darker as the pulse closes
+        if (filt > 0.001) {
+          const fc = 18000 * Math.pow(0.012, filt * (1 - this.g[c]))
+          const a = 1 - Math.exp(-6.283185307 * fc / sampleRate)
+          this.lp[c] += (x - this.lp[c]) * a
+          x = this.lp[c]
         }
-        // resonance rings louder: brought back as it rises, and a soft ceiling over the lot
-        outs[c] = Math.tanh((this.lp[c] + y * comp) * 0.9) * (c === 0 ? gl : gr)
+        outs[c] = x * this.g[c]
       }
       this.w = (this.w + 1) % this.len
-      const dl = xl[i], dr = xr[i]
+      // the dry side, delayed to match the warble's centre so mixing doesn't comb
+      let pd = this.w - 1 - (0.004 * sampleRate + depth)
+      while (pd < 0) pd += this.len
+      const j = Math.floor(pd), fj = pd - j
+      const dl = this.line[0][j % this.len] * (1 - fj) + this.line[0][(j + 1) % this.len] * fj
+      const dr = this.line[1][j % this.len] * (1 - fj) + this.line[1][(j + 1) % this.len] * fj
       L[i] = (dl * (1 - mix) + outs[0] * mix) * outG
       if (R !== L) R[i] = (dr * (1 - mix) + outs[1] * mix) * outG
     }
@@ -959,9 +945,9 @@ export function setInsertParams(key, patch) {
  * and whatever was set while it was still loading is applied the moment it arrives.
  */
 /** W00K's choices, as its node offers them (graph.js) and its worklet counts them. */
-export const WOOK_FLUTTER = ['off', '1/16', '1/16 t', '1/32', '1/32 t', '1/64', 'free']
-export const WOOK_WOBBLE = ['off', '1 bar', '1/2', '1/4', '1/8', '1/16', '1/4 t', '1/8 t', '1/16 t']
-export const WOOK_SHAPES = ['sine', 'triangle', 'square', 'saw']
+export const WOOK_RATES = ['1/8', '1/8 t', '1/16', '1/16 t', '1/32', '1/32 t', '1/64', '1/8 .', '1/4 .', 'free']
+export const WOOK_SHAPES = ['sine', 'triangle', 'square', 'saw down', 'saw up']
+export const WOOK_FOLLOW = ['song', 'hits']
 
 /** The granulizer's pitch steps, as its node offers them (graph.js) and its worklet counts them. */
 export const GRAIN_STEPS = ['free', 'semitones', 'fifths', 'octaves']
@@ -1353,25 +1339,23 @@ const UNITS = {
     }))
   },
 
-  /** W00K: flutter, a vowel filter, a wobble and a womp on whatever comes through (see the worklet above). */
+  /** W00K: the flutter (see the worklet above). */
   wook(ac) {
     const n = (v, lo, hi, def) => Math.min(hi, Math.max(lo, Number.isFinite(+v) ? +v : def))
     const pick = (list, v, def) => { const i = list.indexOf(v); return i < 0 ? def : i }
     return workletInsert(ac, 'lattice-wook', (p) => ({
-      frate: pick(WOOK_FLUTTER, p.flutter, 3),
-      fhz: n(p.fhz, 0.5, 60, 12),
-      fshape: pick(WOOK_SHAPES, p.fshape, 0),
-      fvol: n(p.fvol, 0, 1, 0.7),
-      fpitch: n(p.fpitch, 0, 100, 15),
-      fspread: n(p.fspread, 0, 1, 0),
-      wrate: pick(WOOK_WOBBLE, p.wobble, 0),
-      wshape: pick(WOOK_SHAPES, p.wshape, 0),
-      wdepth: n(p.wdepth, 0, 1, 0.6),
-      vowel: n(p.vowel, 0, 1, 0.35),
-      reso: n(p.reso, 0, 1, 0.6),
-      womp: n(p.womp, 0, 1, 0.5),
-      wompdecay: n(p.wompdecay, 0.02, 2, 0.25),
-      drive: n(p.drive, 0, 1, 0.3),
+      rate: pick(WOOK_RATES, p.rate, 4),
+      hz: n(p.hz, 0.5, 60, 12),
+      shape: pick(WOOK_SHAPES, p.shape, 0),
+      width: n(p.width, 0.05, 0.95, 0.5),
+      smooth: n(p.smooth, 0, 1, 0.3),
+      chop: n(p.chop, 0, 1, 0.85),
+      warble: n(p.warble, 0, 100, 10),
+      filter: n(p.filter, 0, 1, 0),
+      spread: n(p.spread, 0, 1, 0),
+      swing: n(p.swing, 0, 0.5, 0),
+      follow: pick(WOOK_FOLLOW, p.follow, 0),
+      rise: n(p.rise, 0, 1, 0),
       mix: n(p.mix, 0, 1, 1),
       out: n(p.out, 0, 2, 1),
       cps: n(p.cps, 0.05, 4, 0.5625),
