@@ -336,10 +336,11 @@ export function songSilence(project, node) {
  * started before it (so a playhead between clips carries on from where it was), else the
  * first. Null when the song isn't on or the pattern has no clips.
  */
-function clipAt(project, patternId, pos) {
-  if (!songActive(project)) return null
+function clipAt(project, patternId, pos, src = `pattern:${patternId}`) {
+  // an automation's clips count with the song on, sound or not; a pattern's need the song playing
+  if (src.startsWith(AUTO_PREFIX) ? !project.song?.on : !songActive(project)) return null
   const song = project.song
-  const clips = song.clips.filter((c) => c.src === `pattern:${patternId}` && !laneMuted(song, c.lane)).sort((a, b) => a.start - b.start)
+  const clips = song.clips.filter((c) => c.src === src && !laneMuted(song, c.lane)).sort((a, b) => a.start - b.start)
   if (!clips.length) return null
   const total = Math.max(1, Math.ceil(songLength(song) - 1e-9))
   const at = ((pos % total) + total) % total
@@ -352,6 +353,20 @@ function clipAt(project, patternId, pos) {
  * the clip it plays in (where the clip starts, and where it was trimmed to), as the timeline
  * plays it; otherwise the song position itself. Callers wrap it to the pattern's length.
  */
+/**
+ * Where an automation's own curve is at song position `pos`, in its bars (0 … its length):
+ * from the clip it's playing in, as the timeline plays it. Null with no clip of it on.
+ */
+export function autoTimeAt(project, autoId, pos) {
+  const auto = project.song?.autos?.find((a) => a.id === autoId)
+  if (!auto) return null
+  const found = clipAt(project, null, Math.max(0, pos), `${AUTO_PREFIX}${autoId}`)
+  if (!found) return null
+  const len = Math.max(1 / 64, auto.bars)
+  const local = found.at - found.clip.start + (found.clip.offset ?? 0)
+  return ((local % len) + len) % len
+}
+
 export function patternTimeAt(project, patternId, pos) {
   const found = clipAt(project, patternId, pos)
   if (!found) return pos

@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict'
 import { bundle } from './lib/bundle.mjs'
 
-const m = await bundle({ 'project.js': ['normalizeProject', 'generateCode'], 'song.js': ['songParts', 'patternTimeAt', 'songTimeFor'] }, 'cliptime')
+const m = await bundle({ 'project.js': ['normalizeProject', 'generateCode'], 'song.js': ['songParts', 'patternTimeAt', 'songTimeFor', 'autoTimeAt'] }, 'cliptime')
 const sm = await bundle({ '../node_modules/@strudel/core': ['s', 'note', 'stack', 'silence'], '../node_modules/@strudel/mini': ['miniAllStrings', 'mini'] }, 'cliptimestr')
 sm.miniAllStrings()
 
@@ -64,5 +64,16 @@ assert.equal(parts.find((x) => x.src === 'pattern:D').bars, 2, 'a fired pattern 
   assert.equal(m.songTimeFor(p, 'D', 0, 5, 2), 4.25, 'on the repeat that\'s playing')
   const none = project({ clips: [{ id: 'z', src: 'pattern:Z', lane: 0, start: 0, len: 1 }] })
   assert.equal(m.patternTimeAt(none, 'D', 5.5), 5.5, 'a pattern with no clips reads the song position as before')
+}
+// where the playhead falls on an automation's own curve, as the timeline plays it
+{
+  const p = m.normalizeProject({
+    bpm: 120, beats: 4, patterns: [], nodes: [{ id: 'f', type: 'filter', x: 0, y: 0, data: {} }, { id: 'o', type: 'output', x: 0, y: 0, data: {} }], edges: [],
+    song: { on: true, clips: [{ id: 'k', src: 'auto:a', lane: 0, start: 2, len: 4 }, { id: 'l', src: 'auto:a', lane: 0, start: 8, len: 1, offset: 1 }], autos: [{ id: 'a', target: 'n:f:lpf', bars: 2, points: [{ x: 0, y: 0 }, { x: 2, y: 1 }] }] },
+  })
+  assert.equal(m.autoTimeAt(p, 'a', 3), 1, 'a bar into its clip is a bar into its curve')
+  assert.equal(m.autoTimeAt(p, 'a', 4.5), 0.5, 'and round again as the clip repeats it')
+  assert.equal(m.autoTimeAt(p, 'a', 8.25), 1.25, 'a trimmed clip reads from its cut')
+  assert.equal(m.autoTimeAt(p, 'a', -0.001), m.autoTimeAt(p, 'a', 0), 'play\'s pre-roll reads bar 1')
 }
 console.log('clip timing ok')

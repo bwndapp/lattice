@@ -125,3 +125,7 @@
 .auto-target { min-width: 0; flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .auto-head .spacer { flex: 0 0 0; }
 .auto-head .auto-field, .auto-head .btn { flex: none; }
+
+/* the song's playhead on the curve */
+.auto-head-line { stroke: var(--acid); stroke-width: 1.5; opacity: 0.85; pointer-events: none; }
+.auto-head-dot { fill: var(--acid); stroke: var(--panel); stroke-width: 1.5; pointer-events: none; }

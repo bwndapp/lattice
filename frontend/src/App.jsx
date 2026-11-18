@@ -1981,6 +1981,7 @@ export default function App() {
           autoId={autoEditing.id}
           anchor={autoEditing}
           beats={transport.beats}
+          transport={transport}
           onUpdateProject={updateProject}
           onRemove={() => automation.remove(autoEditing.id)}
           onShowTimeline={view === 'song' ? null : () => automation.showTimeline()}

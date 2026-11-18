@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { AUTO_PREFIX, CYCLING, SEGMENT_MODES, addPoint, autoName, curveAt, fromPos, movePoints, removePoints, resolveTarget, toPos } from './automation.js'
 import { KnobMenu } from './KnobMenu.jsx'
+import { autoTimeAt } from './song.js'
 import { formatValue } from './Knob.jsx'
 import { NameInput } from './NameInput.jsx'
 import './Automation.css'
@@ -39,7 +40,7 @@ const NUDGE = 3 // px a press has to travel before it moves anything
  * between two points bends the line (right-click it: straight again). Points snap to
  * 16ths of a bar; hold alt to place them freely. Each gesture is one undo step.
  */
-export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateProject, onRemove, onShowTimeline, onClose }) {
+export function AutomationEditor({ project, autoId, anchor, beats = 4, transport, onUpdateProject, onRemove, onShowTimeline, onClose }) {
   const ref = useRef(null)
   const graphRef = useRef(null)
   const svgRef = useRef(null)
@@ -54,6 +55,34 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
   const [marquee, setMarquee] = useState(null) // { x0, y0, x1, y1 } in graph px while box-selecting
   const [view, setView] = useState(null) // { from, len } in bars when zoomed in; null: the whole curve
   const viewNow = useRef(null)
+  // the song's playhead, where it falls on this curve: drawn every frame, no re-render
+  const headRef = useRef(null)
+  const headDot = useRef(null)
+  const projectRef = useRef(project)
+  projectRef.current = project
+  useEffect(() => {
+    let raf = 0
+    const draw = () => {
+      raf = requestAnimationFrame(draw)
+      const line = headRef.current
+      const dot = headDot.current
+      const v = viewNow.current
+      const p = projectRef.current
+      const a = p?.song?.autos?.find((x) => x.id === autoId)
+      if (!line || !dot || !v || !a || !transport) return
+      const x = autoTimeAt(p, autoId, transport.position())
+      const shown = x !== null && x >= v.vFrom - 1e-9 && x <= v.vFrom + v.vLen + 1e-9
+      line.style.display = shown ? '' : 'none'
+      dot.style.display = shown ? '' : 'none'
+      if (!shown) return
+      const px = GUTTER + ((x - v.vFrom) / v.vLen) * v.plotW
+      const y = curveAt(a, x)
+      line.setAttribute('x1', px); line.setAttribute('x2', px)
+      dot.setAttribute('cx', px); dot.setAttribute('cy', PAD_Y + (1 - y) * (GRAPH_H - 2 * PAD_Y))
+    }
+    raf = requestAnimationFrame(draw)
+    return () => cancelAnimationFrame(raf)
+  }, [autoId, transport])
   // ctrl + scroll (or a pinch) zooms around the pointer; scroll moves along when zoomed in
   useEffect(() => {
     const el = graphRef.current
@@ -554,6 +583,9 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
           {points.map((p, i) => (
             <circle key={`p${i}`} cx={sx(p.x)} cy={sy(p.y)} r={hot?.point === i || moving === i ? 7 : 5.5} className={`auto-point ${selection.has(i) ? 'selected' : ''}`} />
           ))}
+          {/* the playhead, as the timeline has it, on this curve */}
+          <line ref={headRef} y1={PAD_Y - 4} y2={GRAPH_H - PAD_Y + 4} className="auto-head-line" style={{ display: 'none' }} />
+          <circle ref={headDot} r="3.5" className="auto-head-dot" style={{ display: 'none' }} />
           </g>
           {marquee && (
             <rect className="auto-marquee" x={Math.min(marquee.x0, marquee.x1)} y={Math.min(marquee.y0, marquee.y1)} width={Math.abs(marquee.x1 - marquee.x0)} height={Math.abs(marquee.y1 - marquee.y0)} />
