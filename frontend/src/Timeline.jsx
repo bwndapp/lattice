@@ -280,6 +280,25 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const playheadRef = useRef(null)
   const headRef = useRef(null) // the playhead's handle on the ruler
   const scrubbing = useRef(false)
+  // the view follows the playhead unless you've scrolled away from it (see the playhead)
+  const following = useRef(true)
+  const ownScroll = useRef(null) // where we last scrolled it ourselves, to tell that from you
+  useEffect(() => {
+    const box = scrollRef.current
+    if (!box) return
+    const onScroll = () => {
+      // our own follow: nothing to do; anything else is you (wheel, trackpad, scrollbar, a pan)
+      if (ownScroll.current != null && Math.abs(box.scrollLeft - ownScroll.current) <= 1) { ownScroll.current = null; return }
+      ownScroll.current = null
+      if (Math.abs(box.scrollLeft - (box.__lastLeft ?? box.scrollLeft)) > 0) following.current = false
+      box.__lastLeft = box.scrollLeft
+    }
+    box.__lastLeft = box.scrollLeft
+    box.addEventListener('scroll', onScroll, { passive: true })
+    return () => box.removeEventListener('scroll', onScroll)
+  }, [])
+  // pressing play: follow again
+  useEffect(() => { if (started) following.current = true }, [started])
   const dragRef = useRef(null)
   const panRef = useRef(null)
   const [viewH, setViewH] = useState(0) // rows fill the visible height
@@ -400,7 +419,14 @@ export default function Timeline({ project, onUpdateProject, transport, started 
         const box = scrollRef.current
         const x = pos * ppb
         // the row headers sit over the left of the view, so the bars start past them
-        if (box && !dragRef.current && !scrubbing.current && (x < box.scrollLeft || x + HEAD_W > box.scrollLeft + box.clientWidth - 40)) box.scrollLeft = Math.max(0, x - 80)
+        const inView = box && x >= box.scrollLeft && x + HEAD_W <= box.scrollLeft + box.clientWidth - 40
+        // you scrolled away: leave the view be until the playhead comes back into it
+        if (!following.current && inView) following.current = true
+        if (box && following.current && !dragRef.current && !scrubbing.current && !inView) {
+          const left = Math.max(0, x - 80)
+          ownScroll.current = left
+          box.scrollLeft = left
+        }
       }
     }
     show()
