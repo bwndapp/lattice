@@ -10,7 +10,9 @@ import { previewInPatch } from './audio'
 import Knob from './Knob.jsx'
 import { channelTarget } from './automation.js'
 import SoundPicker from './SoundPicker.jsx'
-import { openCode, openSynth } from './instruments/windows.js'
+import { openAbstract, openCode, openSynth } from './instruments/windows.js'
+import { NODE_TYPES, isTrigger, triggerOf } from './graph'
+import { abstractOf, abstractParts, abstractState } from './abstract/index.js'
 import { ENGINES, engineSound } from './instruments/index.js'
 import { useRollDock } from './rollDock.js'
 import CodeBox from './CodeBox.jsx'
@@ -112,6 +114,61 @@ function MiniRoll({ channel, total, open, onToggle }) {
  * (synths). Used by the pattern editor pop-up. Instruments can
  * be dropped onto it.
  */
+/**
+ * The rhythm machines firing an instrument of a pattern (the groove box, the Fibonacci, the
+ * cube…): [{ machine, name, layer, steps }] — what plays it, instead of its own steps.
+ * A variation's instrument is fired as its original's in the same place is.
+ */
+export function firingOf(project, pattern, ch) {
+  const root = project.patterns.find((x) => x.id === (pattern.parent ?? pattern.id)) ?? pattern
+  const at = pattern.channels.findIndex((c) => c.id === ch.id)
+  const rootCh = root.channels[at]
+  if (!rootCh) return []
+  const nodeIds = new Set(project.nodes.filter((n) => n.type === 'pattern' && n.data?.patternId === root.id).map((n) => n.id))
+  const out = []
+  for (const e of project.edges) {
+    if (!isTrigger(e) || !nodeIds.has(e.target) || triggerOf(e.targetHandle) !== rootCh.id) continue
+    const machine = project.nodes.find((n) => n.id === e.source)
+    if (!machine) continue
+    const sketch = abstractOf(machine.type)?.asPattern?.(abstractState(machine))
+    const layerId = triggerOf(e.sourceHandle)
+    const layer = sketch?.channels.find((c) => c.id === layerId)
+    // the layer as the machine names it (the groove box's kick, a Fibonacci's layer…)
+    const part = abstractParts(machine).find((p) => p.id === layerId)
+    out.push({
+      machine,
+      name: machine.data?.name || NODE_TYPES[machine.type]?.label || machine.type,
+      layer: (part?.name && part.name !== layerId ? part.name : null) || layer?.name || `layer ${Number(String(layerId).replace(/\D/g, '')) + 1}`,
+      steps: layer?.steps ?? [],
+      stepsPerBar: sketch?.stepsPerBar ?? 16,
+      muted: machine.data?.mute === true,
+    })
+  }
+  return out
+}
+
+/**
+ * An instrument a rhythm machine plays: the machine's rhythm where its own steps would be
+ * (they don't play while it's fired), and the way to that machine to change it.
+ */
+function FiredRhythm({ fired, compact }) {
+  const f = fired[0]
+  const steps = f.steps
+  const per = f.stepsPerBar || 16
+  return (
+    <div className="fired" title={`${f.name} plays this instrument: its rhythm, not the steps here. Open it to change the rhythm`}>
+      <button type="button" className="fired-by nodrag" onClick={() => openAbstract(f.machine.id)} title={`Open ${f.name}`}>
+        <span className="fired-word">played by</span> {f.name} · {f.layer}{fired.length > 1 ? ` +${fired.length - 1}` : ''}{f.muted ? ' (muted)' : ''} <span className="fired-open" aria-hidden>↗</span>
+      </button>
+      {!compact || steps.length ? (
+        <span className="fired-steps" aria-hidden style={{ gridTemplateColumns: `repeat(${Math.max(1, steps.length)}, 1fr)` }}>
+          {steps.map((v, i) => <i key={i} className={`${v ? 'on' : ''} ${i % per === 0 ? 'bar-start' : ''}`} />)}
+        </span>
+      ) : null}
+    </div>
+  )
+}
+
 export function PatternChannels({ project, pattern, onUpdateProject, transport, started, playMode, compact = false }) {
   const gridsRef = useRef(null)
   const paintRef = useRef(null) // value being painted while the pointer is down
@@ -248,6 +305,7 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
         const fxOpen = openFx.has(ch.id)
         const rollOpen = ch.kind === 'synth' && dock?.at?.tab === 'notes' && dock?.at?.patternId === pattern.id && dock?.at?.channelId === ch.id
         const tweaked = paramsFor(ch.kind).filter((d) => d.key !== 'gain' && paramValue(ch, d.key) !== d.def).length + (ch.fx?.trim() ? 1 : 0)
+        const fired = firingOf(project, pattern, ch) // a rhythm machine plays it: its steps don't
         return (
           <div
             key={ch.id}
@@ -326,8 +384,19 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
                 onCommit={(v) => updateChannel(ch.id, (c) => { c.code = v })}
                 onExpand={() => openCode({ patternId: pattern.id, channelId: ch.id })}
               />
+            ) : fired.length && ch.kind !== 'synth' ? (
+              // a drum a machine fires: its rhythm, and the way to it
+              <FiredRhythm fired={fired} compact={compact} />
             ) : ch.kind === 'synth' ? (
-              <MiniRoll channel={ch} total={n} open={rollOpen} onToggle={() => (rollOpen ? dock?.close() : dock?.open(pattern.id, ch.id, 'notes'))} />
+              fired.length ? (
+                // a synth a machine fires: when comes from the machine, which note from its notes
+                <div className="fired-synth">
+                  <FiredRhythm fired={fired} compact={compact} />
+                  <MiniRoll channel={ch} total={n} open={rollOpen} onToggle={() => (rollOpen ? dock?.close() : dock?.open(pattern.id, ch.id, 'notes'))} />
+                </div>
+              ) : (
+                <MiniRoll channel={ch} total={n} open={rollOpen} onToggle={() => (rollOpen ? dock?.close() : dock?.open(pattern.id, ch.id, 'notes'))} />
+              )
             ) : (
               <div className="steps" role="group" aria-label={`${ch.name} steps`}>
                 {Array.from({ length: n }, (_, i) => {
@@ -360,7 +429,7 @@ export function PatternChannels({ project, pattern, onUpdateProject, transport, 
               <button className={`btn ch-btn ${fxOpen ? 'on' : ''}`} aria-expanded={fxOpen} onClick={() => toggle(setOpenFx, ch.id)} title="Sound settings">
                 fx{tweaked ? ` ${tweaked}` : ''}
               </button>
-              {ch.kind === 'drum' && (
+              {ch.kind === 'drum' && !fired.length && (
                 <button
                   className="btn ghost ch-btn"
                   title={`Random hits across all ${pattern.bars} bar${pattern.bars === 1 ? '' : 's'} · click again for another · undo brings it back`}

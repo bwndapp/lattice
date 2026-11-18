@@ -1531,3 +1531,15 @@ button:disabled { cursor: var(--dot); }
 .bar .btn.icon-save.saving .floppy { animation: floppy-pulse 0.7s ease-in-out infinite alternate; }
 @keyframes floppy-pulse { from { opacity: 1; } to { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { .bar .btn.icon-save.saving .floppy { animation: none; } }
+
+/* a rack row a rhythm machine plays: the machine's rhythm, and the way to it */
+.ch .fired { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+.ch .fired-by { align-self: flex-start; display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.15rem 0.5rem; border: 1px solid var(--acid); border-radius: 4px; background: rgba(228, 255, 26, 0.08); color: var(--acid); font: inherit; font-size: 0.75rem; cursor: pointer; }
+.ch .fired-by:hover { background: rgba(228, 255, 26, 0.18); }
+.ch .fired-open { opacity: 0.7; }
+.ch .fired-steps { display: grid; gap: 2px; height: 14px; opacity: 0.85; }
+.ch .fired-steps i { background: var(--sunk); border-radius: 2px; }
+.ch .fired-steps i.on { background: var(--acid); }
+.ch .fired-steps i.bar-start { box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.25); }
+.ch .fired-synth { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
+.ch .fired-word { opacity: 0.7; }
