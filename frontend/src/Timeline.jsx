@@ -297,8 +297,9 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     box.addEventListener('scroll', onScroll, { passive: true })
     return () => box.removeEventListener('scroll', onScroll)
   }, [])
-  // pressing play: follow again
-  useEffect(() => { if (started) following.current = true }, [started])
+  // pressing play doesn't move the view: it follows once the playhead is in the part you're
+  // looking at (straight away when it starts there), and keeps it in view from then on
+  useEffect(() => { if (started) following.current = false }, [started])
   const dragRef = useRef(null)
   const panRef = useRef(null)
   const [viewH, setViewH] = useState(0) // rows fill the visible height
