@@ -6,6 +6,17 @@ import { NameInput } from './NameInput.jsx'
 import './Automation.css'
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
+// a little picture of each segment shape, for its button
+const MODE_ICON = {
+  curve: 'M1 9 Q 12 9 19 1',
+  bezier: 'M1 9 C 8 9 12 1 19 1',
+  hold: 'M1 7 H 13 V 3 H 19',
+  stairs: 'M1 9 H 6 V 6 H 11 V 3 H 16 V 1 H 19',
+  sine: 'M1 5 C 3 0 5 0 5.5 5 S 8 10 10 5 S 12.5 0 14.5 5 S 17 10 19 5',
+  triangle: 'M1 9 L 5.5 1 L 10 9 L 14.5 1 L 19 9',
+  saw: 'M1 9 L 10 1 V 9 L 19 1 V 9',
+  square: 'M1 9 V 1 H 5.5 V 9 H 10 V 1 H 14.5 V 9 H 19',
+}
 
 // ── the automation editor ─────────────────────────────────────────────────────
 const GRAPH_H = 220
@@ -318,6 +329,41 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
     if (CYCLING.has(mode)) return { ...rest, m: mode, n: n ?? (mode === 'stairs' ? 4 : 1) }
     return { ...rest, m: mode }
   }))
+  // the segments the shape bar works on: those after the selected points, or every one
+  const barTargets = () => {
+    const sel = [...selection].filter((i) => i < points.length - 1)
+    return sel.length ? sel : points.slice(0, -1).map((_, i) => i)
+  }
+  const barMode = () => {
+    const modes = new Set(barTargets().map((i) => points[i]?.m ?? 'curve'))
+    return modes.size === 1 ? [...modes][0] : null
+  }
+  const barCycles = () => {
+    const ns = barTargets().filter((i) => CYCLING.has(points[i]?.m)).map((i) => points[i].n ?? 1)
+    return ns.length ? ns[0] : null
+  }
+  /** Give the segments the bar works on a shape (and keep their cycles where they have them). */
+  const shapeSegments = (mode) => {
+    const targets = new Set(barTargets())
+    if (points.length < 2) {
+      // one point is a flat line: give it a partner at the end, so there's a segment to shape
+      const only = points[0] ?? { x: 0, y: 0.5 }
+      return commit([{ ...only, x: 0 }, { x: bars, y: only.y }].map((p, i) => (i === 0 ? withMode(p, mode) : p)))
+    }
+    commit(points.map((p, i) => (targets.has(i) ? withMode(p, mode) : p)))
+  }
+  const withMode = (p, mode) => {
+    const { m, n, h, c, ...rest } = p // eslint-disable-line no-unused-vars
+    if (mode === 'curve') return c ? { ...rest, c } : rest
+    if (mode === 'bezier') return { ...rest, m: 'bezier', h: h ?? [0.4, 0, 0.6, 0] }
+    if (CYCLING.has(mode)) return { ...rest, m: mode, n: n ?? (mode === 'stairs' ? 4 : 4) }
+    return { ...rest, m: mode }
+  }
+  const setCycles = (n) => {
+    const targets = new Set(barTargets())
+    commit(points.map((p, i) => (targets.has(i) && CYCLING.has(p.m) ? { ...p, n: Math.max(1, Math.min(64, n)) } : p)))
+  }
+
   /** Fill the selection (two or more points), or the whole curve, with a shape at a rate. */
   const fillShape = () => {
     const f = shapeForm
@@ -476,6 +522,22 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
         )}
       </div>
 
+      <div className="auto-modes" role="group" aria-label="Segment shape">
+        <span className="auto-modes-label">{[...selection].some((i) => i < points.length - 1) ? 'selected segments' : 'every segment'}</span>
+        {SEGMENT_MODES.map((mode) => (
+          <button key={mode} type="button" className={`auto-mode ${barMode() === mode ? 'on' : ''}`} onClick={() => shapeSegments(mode)} title={{ curve: 'A line you bend with its diamond', bezier: 'Two handles to shape it exactly', hold: 'Stays put until the next point', stairs: 'Steps up to the next point', sine: 'Smooth waves between the two points', triangle: 'Straight up and down', saw: 'Ramps up, drops', square: 'On, off' }[mode]}>
+            <svg viewBox="0 0 20 10" width="20" height="10" aria-hidden><path d={MODE_ICON[mode]} fill="none" stroke="currentColor" strokeWidth="1.3" /></svg>
+            <span>{mode}</span>
+          </button>
+        ))}
+        {barCycles() !== null && (
+          <span className="auto-cycles">
+            <button type="button" className="btn" onClick={() => setCycles(barCycles() - 1)} aria-label="Fewer cycles">−</button>
+            <span>{barCycles()}×</span>
+            <button type="button" className="btn" onClick={() => setCycles(barCycles() + 1)} aria-label="More cycles">+</button>
+          </span>
+        )}
+      </div>
       {shapeOpen && (
         <div className="auto-shape">
           <label>

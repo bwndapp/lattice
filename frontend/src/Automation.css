@@ -109,3 +109,12 @@
 .auto-shape label > span { color: var(--muted); }
 .auto-shape em { font-style: normal; min-width: 3.5em; color: var(--paper); }
 .auto-shape input[type=range] { width: 90px; }
+
+/* the shape bar: every segment shape, a click away */
+.auto-modes { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; padding: 0.45rem 0.75rem; border-top: 1px solid var(--line); font-size: 0.72rem; }
+.auto-modes-label { color: var(--muted); margin-right: 0.3rem; }
+.auto-mode { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.22rem 0.45rem; background: none; border: 1px solid var(--line); border-radius: 4px; color: var(--paper); cursor: pointer; font: inherit; }
+.auto-mode:hover { border-color: var(--acid); color: var(--acid); }
+.auto-mode.on { background: var(--acid); border-color: var(--acid); color: var(--ink); }
+.auto-cycles { display: inline-flex; align-items: center; gap: 0.3rem; margin-left: 0.5rem; }
+.auto-cycles > span { min-width: 2.4em; text-align: center; color: var(--acid); }
