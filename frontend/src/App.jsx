@@ -1695,7 +1695,6 @@ export default function App() {
               <button className={`btn save ${dirty || !user ? 'primary' : ''} ${user ? '' : 'signed-out'} ${justSaved && !dirty ? 'just-saved' : ''}`} onClick={() => save()} disabled={busy || (!!user && !dirty)} title={!user ? 'Sign in to save this track' : dirty ? (isNew ? 'Save as a track (ctrl/cmd + S)' : `Save “${track?.title}” (ctrl/cmd + S)`) : 'Everything is saved'}>
                 {busy ? 'saving…' : !user || dirty ? 'save' : justSaved ? 'saved ✓' : 'saved'}
               </button>
-              <button className={`btn share-btn ${showShare ? 'on' : ''}`} aria-expanded={showShare} onClick={() => setShowShare((o) => !o)} title="Share: who can open it, its link, jamming together"><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><circle cx="9" cy="2.6" r="1.6" /><circle cx="3" cy="6" r="1.6" /><circle cx="9" cy="9.4" r="1.6" /><path d="M4.4 5.2 7.6 3.4M4.4 6.8l3.2 1.8" /></svg><span className="share-word">share</span></button>
             </>
           ) : track ? (
             <>
@@ -1706,7 +1705,6 @@ export default function App() {
                 disabled={busy}
                 title={user ? 'Keep your own copy of this · the original is untouched' : 'Sign in to keep your own copy'}
               >{busy ? 'saving…' : 'save a copy'}</button>
-              <button className={`btn share-btn ${showShare ? 'on' : ''}`} aria-expanded={showShare} onClick={() => setShowShare((o) => !o)} title="Share: this track's link" aria-label="Share"><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><circle cx="9" cy="2.6" r="1.6" /><circle cx="3" cy="6" r="1.6" /><circle cx="9" cy="9.4" r="1.6" /><path d="M4.4 5.2 7.6 3.4M4.4 6.8l3.2 1.8" /></svg></button>
               <button className={`btn bar-like ${track.liked ? 'on' : ''}`} onClick={like} title="Like">♥{track.likes}</button>
             </>
           ) : null}
