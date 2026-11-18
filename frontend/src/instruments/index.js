@@ -2,6 +2,7 @@ import kick from './kick.js'
 import physical from './physical.js'
 import syrup from './syrup/index.js'
 import b4ss from './b4ss.js'
+import wook from './wook.js'
 
 /**
  * Instrument engines: sounds the app makes itself, from settings saved with the track, as
@@ -40,7 +41,7 @@ import b4ss from './b4ss.js'
  *   rig(ac, node, voices) (optional) audio outside the processor for those outputs:
  *                         { update({ data, cps, beats }), target(noteValue), dispose() }
  */
-export const ENGINES = Object.fromEntries([kick, syrup, physical, b4ss].map((e) => [e.type, e]))
+export const ENGINES = Object.fromEntries([kick, syrup, physical, b4ss, wook].map((e) => [e.type, e]))
 
 /** Engines that were called something else once: what a saved track may still say. */
 export const WAS_CALLED = { phyllo: 'syrup' }
