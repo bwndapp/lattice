@@ -24,6 +24,15 @@
  */
 export const NEWS = [
   {
+    id: '2026-11-18-2',
+    date: '2026-11-18',
+    version: '0.19.1',
+    title: 'A tidier top bar',
+    items: [
+      '**One box for the settings you set once**: beats per bar, A4, the tuning system and your keyboard’s octave now live behind **4/4 · 440 ▾** in the top bar — and the tuning is there at any window size',
+    ],
+  },
+  {
     id: '2026-11-18-1',
     date: '2026-11-18',
     version: '0.19.0',
