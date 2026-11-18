@@ -19,6 +19,7 @@ import About from './About.jsx'
 import WhatsNew from './WhatsNew.jsx'
 import { LATEST, SEEN_KEY } from './changelog.js'
 import Popover from './Popover.jsx'
+import { syncInserts } from './stereo.js'
 import { Glass } from './Glass.jsx'
 import { AutomationEditor } from './Automation.jsx'
 import { routeVoice } from './fxbus.js'
@@ -1046,9 +1047,11 @@ export default function App() {
   cpsRef.current = cpsOf(project)
   useEffect(() => {
     const tell = () => {
-      if (!transport.playing()) return syncEngines(null)
+      if (!transport.playing()) { syncInserts(null); return syncEngines(null) }
       try {
-        syncEngines({ at: getAudioContext().currentTime, cycle: transport.position(), cps: cpsRef.current })
+        const where = { at: getAudioContext().currentTime, cycle: transport.position(), cps: cpsRef.current }
+        syncEngines(where)
+        syncInserts(where) // W00K's flutter and wobble keep time too
       } catch { /* the audio engine isn't up yet */ }
     }
     tell()

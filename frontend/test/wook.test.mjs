@@ -1,87 +1,87 @@
 /**
- * W00K: every preset sounds, finite and under clipping; a note is in tune; the womp's bend
- * starts off the note and lands on it; the flutter chops the volume at its rate; a slid note
- * glides; and a note let go stops. Run in node, as the audio thread would run it.
+ * W00K, the effect: its worklet run in node on a test signal. It passes sound, stays finite
+ * and sane in level; its flutter chops in time; its wobble moves the tone in time; a hit
+ * coming in opens the vowel (the womp); and mix at 0 is the dry sound untouched.
  */
-import { DSP_BASE } from '../src/instruments/dsp.js'
-import kick from '../src/instruments/kick.js'
-import physical from '../src/instruments/physical.js'
-import b4ss from '../src/instruments/b4ss.js'
-import spec from '../src/instruments/wook.js'
+import { readFileSync } from 'node:fs'
 
 let fails = 0
 const ok = (name, cond, extra) => { console.log((cond ? 'ok   ' : 'FAIL ') + name + (cond ? '' : ` — ${extra ?? ''}`)); if (!cond) fails++ }
-const procs = {}
+const src = readFileSync(new URL('../src/stereo.js', import.meta.url), 'utf8')
+const from = src.indexOf('const WK_VOWELS')
+const to = src.indexOf("registerProcessor('lattice-wook', WookProcessor)") + "registerProcessor('lattice-wook', WookProcessor)".length
 const sr = 48000
+const procs = {}
 const env = { sampleRate: sr, currentTime: 0, AudioWorkletProcessor: class { constructor() { this.port = {} } }, registerProcessor: (n, c) => { procs[n] = c } }
-// beside every other engine, as the audio thread loads them: names mustn't clash
-new Function(...Object.keys(env), DSP_BASE + kick.dsp + physical.dsp + b4ss.dsp + spec.dsp)(...Object.values(env))
-const Proc = procs['lattice-wook']
-ok('registers', !!Proc)
+new Function(...Object.keys(env), src.slice(from, to))(...Object.values(env))
+const Wook = procs['lattice-wook']
+ok('registers', !!Wook)
 
-function run(knobs, { notes = [{ at: 0, note: 36, len: 0.6 }], secs = 1 } = {}) {
-  const p = new Proc({})
-  const B = 128
-  const params = {}
-  for (const k of Proc.knobs) params['p_' + k.key] = [knobs[k.key] ?? k.def]
-  for (let v = 0; v < 6; v++) Object.assign(params, { [`v${v}_trig`]: [0], [`v${v}_note`]: [-1], [`v${v}_vel`]: [1], [`v${v}_gain`]: [1], [`v${v}_pan`]: [0.5], [`v${v}_gate`]: [0] })
-  const L = []; const R = []
-  for (let b = 0; b < (secs * sr) / B; b++) {
-    const t = (b * B) / sr
-    let trig = 0, note = -1, gate = 0
-    notes.forEach((n, i) => { if (t >= n.at) { trig = i + 1; note = n.note } if (t >= n.at && t < n.at + n.len) gate = 1 })
-    params.v0_trig = [trig]; params.v0_note = [note]; params.v0_gate = [gate]
-    const outs = Array.from({ length: 6 }, () => [new Float32Array(B), new Float32Array(B)])
-    p.process([], outs, params)
-    L.push(...outs[0][0]); R.push(...outs[0][1])
+function run(knobs, signal, secs = 1) {
+  const w = new Wook()
+  const P = {}
+  for (const d of Wook.parameterDescriptors) P[d.name] = [knobs[d.name] ?? d.defaultValue]
+  const L = []
+  const R = []
+  for (let b = 0; b < (secs * sr) / 128; b++) {
+    const xl = new Float32Array(128)
+    for (let i = 0; i < 128; i++) xl[i] = signal(b * 128 + i)
+    const out = [new Float32Array(128), new Float32Array(128)]
+    w.process([[xl, xl]], [out], P)
+    L.push(...out[0]); R.push(...out[1])
   }
   return { L, R }
 }
-const peak = (o) => o.reduce((m, x) => Math.max(m, Math.abs(x)), 0)
+const saw = (f, a = 0.5) => (i) => a * (2 * ((i * f / sr) % 1) - 1)
 const rms = (o) => Math.sqrt(o.reduce((s, x) => s + x * x, 0) / Math.max(1, o.length))
-const hzOf = (o) => { let z = 0; for (let i = 1; i < o.length; i++) if (o[i - 1] < 0 && o[i] >= 0) z++; return z / (o.length / sr) }
+const peak = (o) => o.reduce((m, x) => Math.max(m, Math.abs(x)), 0)
+const levels = (o, win, a, b) => { const out = []; for (let i = a; i + win <= b; i += win) out.push(rms(o.slice(i, i + win))); return out }
 
-for (const pr of spec.presets) {
-  const bad = Object.entries(pr.data).filter(([k, v]) => { const d = spec.params.find((p) => p.key === k); return !d || v < d.min || v > d.max })
-  ok(`preset ${pr.name}: knobs are real and in range`, !bad.length, JSON.stringify(bad))
-  const { L, R } = run(pr.data)
-  const p = Math.max(peak(L), peak(R))
-  ok(`preset ${pr.name}: sounds, finite, under clipping`, L.every(Number.isFinite) && R.every(Number.isFinite) && p > 0.05 && p < 0.99, p.toFixed(3))
+{
+  const { L, R } = run({}, saw(55))
+  ok('passes sound, finite, sane level', L.every(Number.isFinite) && R.every(Number.isFinite) && rms(L) > 0.02 && peak(L) < 2, `${rms(L).toFixed(3)} / ${peak(L).toFixed(3)}`)
 }
 {
-  const { L } = run({ tone: 0, open: 0, sub: 0, octave: 0, sustain: 1 }, { notes: [{ at: 0, note: 45, len: 1 }] })
-  const hz = hzOf(L.slice(sr * 0.2, sr * 0.9))
-  ok('A2 is 110 Hz', Math.abs(hz - 110) < 2, hz.toFixed(2)) // counting crossings: ±1 in the window
-  const { L: d } = run({ tone: 0, open: 0, sub: 0, sustain: 1 }, { notes: [{ at: 0, note: 36, len: 1 }] })
-  ok('by default it sits in the sub: C2 plays C1', Math.abs(hzOf(d.slice(sr * 0.2, sr * 0.9)) - 32.7) < 1)
-}
-{
-  const { L } = run({ tone: 0, open: 0, sub: 0, octave: 0, sustain: 1, bend: 12, bendtime: 0.3 }, { notes: [{ at: 0, note: 45, len: 1 }] })
-  ok('the womp bends in from above', hzOf(L.slice(0, sr * 0.04)) > 160, hzOf(L.slice(0, sr * 0.04)).toFixed(1))
-  ok('and lands on the note', Math.abs(hzOf(L.slice(sr * 0.6, sr * 0.95)) - 110) < 1.5)
-}
-{
-  // free flutter at 8 Hz: the level dips eight times a second
-  const { L } = run({ tone: 0, open: 0, sustain: 1, frate: 6, fhz: 8, fvol: 1, fshape: 2 }, { notes: [{ at: 0, note: 48, len: 1 }] })
-  const win = 1200 // 25 ms: a few cycles of a low note
-  const levels = []
-  for (let i = sr * 0.25; i + win < sr * 0.75; i += win) levels.push(rms(L.slice(i, i + win)))
+  // free flutter at 8 Hz, square, full chop, at cps 0.5: the level dips eight times a second
+  const { L } = run({ frate: 6, fhz: 8, fshape: 2, fvol: 1, fpitch: 0, womp: 0 }, saw(110))
+  const lv = levels(L, 1200, sr * 0.25, sr * 0.75)
   let dips = 0
-  for (let i = 1; i < levels.length; i++) if (levels[i - 1] > 0.2 && levels[i] < 0.06) dips++
-  ok('the flutter chops the volume at its rate', dips >= 3 && dips <= 5, `${dips} · ${levels.map((x) => x.toFixed(2)).join(' ')}`)
-  const { L: l2, R: r2 } = run({ tone: 0, open: 0, sustain: 1, frate: 6, fhz: 8, fvol: 1, fshape: 2, fspread: 1 }, { notes: [{ at: 0, note: 48, len: 1 }] })
-  const diff = rms(l2.slice(sr * 0.3, sr * 0.7).map((x, i) => x - r2[sr * 0.3 + i]))
-  ok('spread: the sides flutter apart', diff > 0.05, diff.toFixed(3))
+  for (let i = 1; i < lv.length; i++) if (lv[i - 1] > 0.05 && lv[i] < lv[i - 1] * 0.25) dips++
+  ok('the flutter chops at its rate', dips >= 3 && dips <= 5, `${dips} · ${lv.map((x) => x.toFixed(2)).join(' ')}`)
+  // synced: 1/16 at cps 0.5 is 8 a second too
+  const { L: s16 } = run({ frate: 1, fshape: 2, fvol: 1, fpitch: 0, womp: 0, cps: 0.5 }, saw(110))
+  const lv2 = levels(s16, 1200, sr * 0.25, sr * 0.75)
+  let d2 = 0
+  for (let i = 1; i < lv2.length; i++) if (lv2[i - 1] > 0.05 && lv2[i] < lv2[i - 1] * 0.25) d2++
+  ok('and in time: 1/16 at 120 bpm is 8 a second', d2 >= 3 && d2 <= 5, d2)
 }
 {
-  const notes = [{ at: 0, note: 45, len: 0.55 }, { at: 0.5, note: 57, len: 0.5 }]
-  const { L } = run({ tone: 0, open: 0, sub: 0, octave: 0, sustain: 1, glide: 0.2 }, { notes, secs: 1.1 })
-  const mid = hzOf(L.slice(sr * 0.52, sr * 0.6))
-  ok('a slid note glides between', mid > 112 && mid < 215, mid.toFixed(1))
+  // the wobble sweeps the vowel: the tone brightens and darkens each beat
+  const { L } = run({ frate: 0, wrate: 3, wdepth: 1, womp: 0, vowel: 0.4, cps: 0.5 }, saw(110), 2)
+  // brightness: how much the sound moves sample to sample, window by window
+  const diff = L.map((x, i) => (i ? x - L[i - 1] : 0))
+  const lv = levels(diff, 2400, sr * 0.2, sr * 1.8)
+  ok('the wobble moves the tone', Math.max(...lv) > Math.min(...lv) * 1.3, `${Math.min(...lv).toFixed(4)}…${Math.max(...lv).toFixed(4)}`)
 }
 {
-  const { L } = run({ sustain: 1, release: 0.1 }, { notes: [{ at: 0, note: 36, len: 0.3 }] })
-  ok('a note let go stops', peak(L.slice(sr * 0.7)) < 1e-3)
+  // hits every half second: just after a hit is brighter (the vowel opened) than later on
+  const hits = (i) => { const t = (i % (sr / 2)) / sr; return t < 0.2 ? saw(110, 0.6)(i) : 0 }
+  const on = run({ frate: 0, womp: 1, wompdecay: 0.1, vowel: 0 }, hits)
+  const off = run({ frate: 0, womp: 0, vowel: 0 }, hits)
+  // the difference the womp makes is greatest right after each hit
+  const d = (a, b) => rms(on.L.slice(a, b).map((x, i) => x - off.L[a + i]))
+  ok('a hit opens the vowel: the womp', d(sr * 0.5 + 200, sr * 0.5 + 2600) > d(sr * 0.5 + 7000, sr * 0.5 + 9400) * 1.5, `${d(sr * 0.5 + 200, sr * 0.5 + 2600).toFixed(3)} vs ${d(sr * 0.5 + 7000, sr * 0.5 + 9400).toFixed(3)}`)
+}
+{
+  const sig = saw(110)
+  const { L } = run({ mix: 0 }, sig, 0.2)
+  let worst = 0
+  for (let i = 0; i < L.length; i++) worst = Math.max(worst, Math.abs(L[i] - sig(i)))
+  ok('mix 0 is the dry sound, untouched', worst < 1e-6, worst)
+}
+{
+  const { L } = run({ out: 0 }, saw(110), 0.2)
+  ok('out 0 is silence', peak(L) === 0)
 }
 if (fails) { console.log(`\n${fails} failing`); process.exit(1) }
 console.log('wook ok')

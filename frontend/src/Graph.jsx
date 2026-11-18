@@ -1128,6 +1128,7 @@ const SEARCH_WORDS = {
   vowel: 'formant voice talk mouth',
   lofi: 'coarse bitcrush downsample grit crush retro',
   granulizer: 'granular grain grains granulator cloud smear glitch stutter freeze texture scatter spray',
+  wook: 'wook w00k flutter womp wobble vowel talk yoi dubstep bass riddim tremolo chop warble formant',
   bitcrush: 'crush bits 8bit lofi digital decimate downsample',
   eq3: 'eq equalizer equaliser three band 3 bass low mid high boost cut tone mixing',
   saturator: 'saturation distortion warm tape tube harmonics drive grit bass mixing',

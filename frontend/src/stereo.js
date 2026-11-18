@@ -207,6 +207,147 @@ class GrainProcessor extends AudioWorkletProcessor {
 registerProcessor('lattice-grain', GrainProcessor)
 
 /*
+ * W00K: wookification for whatever goes through it. Flutter chops the volume and wobbles
+ * the pitch (a few milliseconds of moving delay) fast and in time; the wook filter is two
+ * formants that say u, o, a, e, i as it opens, with the low end kept clean underneath;
+ * the wobble sweeps that vowel in time; the womp hears each hit coming in and opens the
+ * vowel on it, falling back as it fades; drive pushes it all before the filter.
+ * Song time comes as a message (sync); with none it runs free at the cps it's given.
+ */
+const WK_VOWELS = [[325, 700], [450, 800], [800, 1150], [400, 1600], [300, 2300]] // u o a e i
+const WK_FLUTTER = [0, 16, 24, 32, 48, 64, -1]
+const WK_WOBBLE = [0, 1, 2, 4, 8, 16, 6, 12, 24]
+class WookProcessor extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    const k = (name, def, min, max) => ({ name, defaultValue: def, minValue: min, maxValue: max, automationRate: 'k-rate' })
+    return [
+      k('frate', 3, 0, 6), k('fhz', 12, 0.5, 60), k('fshape', 0, 0, 3), k('fvol', 0.7, 0, 1), k('fpitch', 15, 0, 100), k('fspread', 0, 0, 1),
+      k('wrate', 0, 0, 8), k('wshape', 0, 0, 3), k('wdepth', 0.6, 0, 1),
+      k('vowel', 0.35, 0, 1), k('reso', 0.6, 0, 1), k('womp', 0.5, 0, 1), k('wompdecay', 0.25, 0.02, 2),
+      k('drive', 0.3, 0, 1), k('mix', 1, 0, 1), k('out', 1, 0, 2), k('cps', 0.5625, 0.05, 4),
+    ]
+  }
+  constructor() {
+    super()
+    this.song = null
+    this.port.onmessage = (e) => { if (e.data && e.data.sync !== undefined) this.song = e.data.sync }
+    this.len = 4096
+    this.line = [new Float32Array(this.len), new Float32Array(this.len)]
+    this.w = 0
+    this.t = 0
+    this.f = [[0, 0, 0, 0], [0, 0, 0, 0]] // per side: two formant filters' state (ic1, ic2 each)
+    this.lp = [0, 0]
+    this.fast = 0; this.slow = 0; this.womp = 0; this.armed = true
+    this.co = null; this.coN = 0
+  }
+  shape(s, ph) {
+    const p = ph - Math.floor(ph)
+    if (s === 0) return 0.5 + 0.5 * Math.cos(6.283185307 * p)
+    if (s === 1) return 1 - 2 * Math.abs(p - 0.5)
+    if (s === 2) return p < 0.5 ? 1 : 0
+    return 1 - p
+  }
+  coeffs(fc, res) {
+    const g = Math.tan(Math.PI * Math.min(fc, sampleRate * 0.45) / sampleRate)
+    const k = 2 - 1.9 * res
+    const a1 = 1 / (1 + g * (g + k))
+    return [a1, g * a1, g * g * a1]
+  }
+  process(inputs, outputs, P) {
+    const input = inputs[0], out = outputs[0]
+    if (!out || !out.length) return true
+    const L = out[0], R = out[1] || out[0]
+    const n = L.length
+    if (!input || !input.length) { L.fill(0); if (R !== L) R.fill(0); return true }
+    const xl = input[0], xr = input[1] || input[0]
+    const v = (name) => P[name][0]
+    const cps = this.song ? this.song.cps : v('cps')
+    const fPer = WK_FLUTTER[Math.round(v('frate'))] || 0
+    const fHz = fPer < 0 ? v('fhz') : fPer * cps
+    const fShape = Math.round(v('fshape'))
+    const wPer = WK_WOBBLE[Math.round(v('wrate'))] || 0
+    const wShape = Math.round(v('wshape'))
+    const fvol = v('fvol'), fpitch = v('fpitch'), fspread = v('fspread'), wdepth = v('wdepth')
+    const vowel = v('vowel'), reso = v('reso'), wompAmt = v('womp'), mix = v('mix'), outG = v('out')
+    const drive = v('drive'), dg = 1 + drive * drive * 16, dn = 1 / Math.tanh(Math.min(dg, 3))
+    const wompFall = Math.exp(-5 / (v('wompdecay') * sampleRate))
+    const fastA = 1 - Math.exp(-1 / (0.002 * sampleRate)), slowA = 1 - Math.exp(-1 / (0.06 * sampleRate))
+    const lowA = 1 - Math.exp(-6.283185307 * 140 / sampleRate)
+    const comp = 0.7 / (0.5 + reso)
+    // the song's bar at this block's start (or free-running from our own count)
+    const s = this.song
+    const cycle0 = s ? s.cycle + (currentTime - s.at) * s.cps : this.t * cps
+    const dt = 1 / sampleRate
+    // pitch flutter: a moving delay, its depth set so the swing is about fpitch cents at this rate
+    const depth = fHz > 0 ? Math.min(0.012, (Math.pow(2, fpitch / 1200) - 1) / (6.283185307 * fHz)) * sampleRate : 0
+    for (let i = 0; i < n; i++) {
+      const cyc = cycle0 + i * dt * cps
+      // flutter: volume and pitch, the right side a step behind when spread
+      let gl = 1, gr = 1, ml = 0, mr = 0
+      if (fHz > 0) {
+        const ph = fPer > 0 ? cyc * fPer : (this.t + i * dt) * fHz
+        const sl = this.shape(fShape, ph), sr = this.shape(fShape, ph + fspread * 0.5)
+        gl = 1 - fvol * (1 - sl); gr = 1 - fvol * (1 - sr)
+        ml = (sl * 2 - 1) * depth; mr = (sr * 2 - 1) * depth
+      }
+      // the womp: a hit coming in (the fast level jumping over the slow) opens the vowel
+      const lvl = Math.abs(xl[i]) + Math.abs(xr[i])
+      this.fast += (lvl - this.fast) * fastA
+      this.slow += (lvl - this.slow) * slowA
+      if (this.armed && this.fast > this.slow * 1.8 + 0.01) { this.womp = 1; this.armed = false }
+      else if (this.fast < this.slow * 1.1) this.armed = true
+      this.womp *= wompFall
+      // where the vowel is: set, swept by the wobble, opened by the womp
+      if (this.coN-- <= 0) {
+        this.coN = 16
+        let pos = vowel
+        if (wPer) pos += wdepth * (this.shape(wShape, cyc * wPer) - 0.5) * 0.9
+        pos += wompAmt * this.womp * 0.6
+        pos = Math.max(0, Math.min(0.9999, pos)) * 4
+        const a = Math.floor(pos), b = Math.min(4, a + 1), x = pos - a
+        const F1 = WK_VOWELS[a][0] + (WK_VOWELS[b][0] - WK_VOWELS[a][0]) * x
+        const F2 = WK_VOWELS[a][1] + (WK_VOWELS[b][1] - WK_VOWELS[a][1]) * x
+        const q = 0.45 + reso * 0.5
+        this.co = [this.coeffs(F1, q), this.coeffs(F2, q)]
+      }
+      // into the moving delay
+      this.line[0][this.w] = xl[i]; this.line[1][this.w] = xr[i]
+      const outs = [0, 0]
+      for (let c = 0; c < 2; c++) {
+        const m = c === 0 ? ml : mr
+        let p = this.w - (0.004 * sampleRate + depth + m)
+        while (p < 0) p += this.len
+        const i0 = Math.floor(p), fr = p - i0
+        const buf = this.line[c]
+        let x = buf[i0 % this.len] * (1 - fr) + buf[(i0 + 1) % this.len] * fr
+        if (drive > 0.001) x = Math.tanh(x * dg) * dn
+        // the low end, kept clean under the vowel
+        this.lp[c] += (x - this.lp[c]) * lowA
+        const st = this.f[c]
+        let y = 0
+        for (let k = 0; k < 2; k++) {
+          const [a1, a2, a3] = this.co[k]
+          const v3 = x - st[k * 2 + 1]
+          const v1 = a1 * st[k * 2] + a2 * v3
+          const v2 = st[k * 2 + 1] + a2 * st[k * 2] + a3 * v3
+          st[k * 2] = 2 * v1 - st[k * 2]; st[k * 2 + 1] = 2 * v2 - st[k * 2 + 1]
+          y += v1 * (k === 0 ? 1.6 : 1.1)
+        }
+        // resonance rings louder: brought back as it rises, and a soft ceiling over the lot
+        outs[c] = Math.tanh((this.lp[c] + y * comp) * 0.9) * (c === 0 ? gl : gr)
+      }
+      this.w = (this.w + 1) % this.len
+      const dl = xl[i], dr = xr[i]
+      L[i] = (dl * (1 - mix) + outs[0] * mix) * outG
+      if (R !== L) R[i] = (dr * (1 - mix) + outs[1] * mix) * outG
+    }
+    this.t += n * dt
+    return true
+  }
+}
+registerProcessor('lattice-wook', WookProcessor)
+
+/*
  * Sidechain, the ring-mod way (after Kilohearts' Ring Mod with a sidechain source): the bus is
  * multiplied by the trigger's own audio, sample by sample, so the dip is exactly as long and
  * as shaped as the kick that causes it, never late. Input 0 is the bus, input 1 the trigger.
@@ -817,10 +958,24 @@ export function setInsertParams(key, patch) {
  * the module, then in line. `shape` turns the node's knobs into the processor's parameters,
  * and whatever was set while it was still loading is applied the moment it arrives.
  */
+/** W00K's choices, as its node offers them (graph.js) and its worklet counts them. */
+export const WOOK_FLUTTER = ['off', '1/16', '1/16 t', '1/32', '1/32 t', '1/64', 'free']
+export const WOOK_WOBBLE = ['off', '1 bar', '1/2', '1/4', '1/8', '1/16', '1/4 t', '1/8 t', '1/16 t']
+export const WOOK_SHAPES = ['sine', 'triangle', 'square', 'saw']
+
 /** The granulizer's pitch steps, as its node offers them (graph.js) and its worklet counts them. */
 export const GRAIN_STEPS = ['free', 'semitones', 'fifths', 'octaves']
 
-function workletInsert(ac, name, shape) {
+// inserts that move in time with the song hear where it is (syncInserts)
+const synced = new Set()
+let songAt = null
+/** Where the song is: { at, cycle, cps } on the audio clock, or null when nothing plays. */
+export function syncInserts(where) {
+  songAt = where && Number.isFinite(where.cycle) && Number.isFinite(where.at) ? { at: where.at, cycle: where.cycle, cps: Number(where.cps) || 0.5 } : null
+  for (const node of synced) { try { node.port.postMessage({ sync: songAt }) } catch { synced.delete(node) } }
+}
+
+function workletInsert(ac, name, shape, { sync = false } = {}) {
   const input = new GainNode(ac, { channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' })
   const output = new GainNode(ac, { gain: 1 })
   input.connect(output)
@@ -838,6 +993,7 @@ function workletInsert(ac, name, shape) {
     if (gone) return // taken out of the rack while we waited
     try {
       node = new AudioWorkletNode(ac, name, { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2], channelCount: 2, channelCountMode: 'explicit' })
+      if (sync && ac === getAudioContext()) { synced.add(node); node.port.postMessage({ sync: songAt }) }
       push()
       input.disconnect()
       input.connect(node).connect(output)
@@ -849,6 +1005,7 @@ function workletInsert(ac, name, shape) {
     set(params) { want = shape(params); push() },
     dispose() {
       gone = true
+      if (node) synced.delete(node)
       for (const audio of [input, output, node]) audio?.disconnect()
       node = null
     },
@@ -1194,6 +1351,31 @@ const UNITS = {
       feedback: n(p.feedback, 0, 0.95, 0),
       mix: n(p.mix, 0, 1, 0.6),
     }))
+  },
+
+  /** W00K: flutter, a vowel filter, a wobble and a womp on whatever comes through (see the worklet above). */
+  wook(ac) {
+    const n = (v, lo, hi, def) => Math.min(hi, Math.max(lo, Number.isFinite(+v) ? +v : def))
+    const pick = (list, v, def) => { const i = list.indexOf(v); return i < 0 ? def : i }
+    return workletInsert(ac, 'lattice-wook', (p) => ({
+      frate: pick(WOOK_FLUTTER, p.flutter, 3),
+      fhz: n(p.fhz, 0.5, 60, 12),
+      fshape: pick(WOOK_SHAPES, p.fshape, 0),
+      fvol: n(p.fvol, 0, 1, 0.7),
+      fpitch: n(p.fpitch, 0, 100, 15),
+      fspread: n(p.fspread, 0, 1, 0),
+      wrate: pick(WOOK_WOBBLE, p.wobble, 0),
+      wshape: pick(WOOK_SHAPES, p.wshape, 0),
+      wdepth: n(p.wdepth, 0, 1, 0.6),
+      vowel: n(p.vowel, 0, 1, 0.35),
+      reso: n(p.reso, 0, 1, 0.6),
+      womp: n(p.womp, 0, 1, 0.5),
+      wompdecay: n(p.wompdecay, 0.02, 2, 0.25),
+      drive: n(p.drive, 0, 1, 0.3),
+      mix: n(p.mix, 0, 1, 1),
+      out: n(p.out, 0, 2, 1),
+      cps: n(p.cps, 0.05, 4, 0.5625),
+    }), { sync: true })
   },
 
   /** Bitcrush: bits, rate and mix (see the crush worklet above). */

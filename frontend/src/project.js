@@ -833,7 +833,6 @@ export const INSTRUMENTS = [
   { key: 'piano', label: 'piano', kind: 'synth', patch: { sound: 'piano', note: 'c4' } },
   { key: 'syrup', label: 'syrup', kind: 'synth', patch: { sound: engineSound('syrup'), note: 'c3', engine: { type: 'syrup', data: {} } } },
   { key: 'b4ss', label: 'B4SS', kind: 'synth', patch: { sound: engineSound('b4ss'), note: 'c2', engine: { type: 'b4ss', data: {} } } },
-  { key: 'wook', label: 'W00K', kind: 'synth', patch: { sound: engineSound('wook'), note: 'c2', engine: { type: 'wook', data: {} } } },
   { key: 'physical', label: 'physical', kind: 'synth', patch: { sound: engineSound('physical'), note: 'c3', engine: { type: 'physical', data: {} } } },
   { key: 'code', label: 'code', kind: 'code', patch: {} },
 ]

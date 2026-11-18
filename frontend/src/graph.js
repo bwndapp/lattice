@@ -14,7 +14,7 @@
  */
 
 import { parse } from 'acorn'
-import { GRAIN_STEPS, STEREO_ORBIT_BASE, beginInserts, commitInserts, declareBranch, declareInsert, declareQuiet, declareRoute, declareSide, declareSpeakers } from './stereo'
+import { GRAIN_STEPS, WOOK_FLUTTER, WOOK_SHAPES, WOOK_WOBBLE, STEREO_ORBIT_BASE, beginInserts, commitInserts, declareBranch, declareInsert, declareQuiet, declareRoute, declareSide, declareSpeakers } from './stereo'
 import { abstractBuild, abstractNodeTypes, abstractOf, abstractParts, packState } from './abstract/index.js'
 import { DELAY_DEFAULTS, DELAY_DIVISIONS, GLOBAL_DELAY, GLOBAL_REVERB, REVERB_DEFAULTS, beginFx, commitFx, declareFx } from './fxbus.js'
 
@@ -401,6 +401,39 @@ export const NODE_TYPES = {
       { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 0.6 },
     ],
     code: stereoCode('grain', (d) => ({ size: d.size, density: d.density, position: d.position, spray: d.spray, pitch: d.pitch, pitchRand: d.pitchRand, steps: d.steps, glide: d.glide, chaos: d.chaos, shape: d.shape, reverse: d.reverse, spread: d.spread, freeze: d.freeze, feedback: d.feedback, mix: d.mix })),
+  },
+  wook: {
+    group: 'effect', cat: 'texture', label: 'w00k', blurb: 'Wookification for anything: flutter it in time, put a vowel in its mouth, wobble it and womp every hit',
+    inputs: 1,
+    params: [
+      // flutter
+      { key: 'flutter', type: 'select', label: 'flutter', options: WOOK_FLUTTER, def: '1/32' },
+      { key: 'fhz', type: 'knob', label: 'free hz', min: 0.5, max: 60, def: 12, log: true, unit: 'hz' },
+      { key: 'fshape', type: 'select', label: 'shape', options: WOOK_SHAPES, def: 'sine' },
+      { key: 'fvol', type: 'knob', label: 'chop', min: 0, max: 1, def: 0.7 },
+      { key: 'fpitch', type: 'knob', label: 'warble', min: 0, max: 100, def: 15, unit: 'ct' },
+      { key: 'fspread', type: 'knob', label: 'spread', min: 0, max: 1, def: 0 },
+      // the wook filter
+      { key: 'vowel', type: 'knob', label: 'vowel', min: 0, max: 1, def: 0.35 },
+      { key: 'reso', type: 'knob', label: 'reso', min: 0, max: 1, def: 0.6 },
+      { key: 'wobble', type: 'select', label: 'wobble', options: WOOK_WOBBLE, def: 'off' },
+      { key: 'wshape', type: 'select', label: 'shape', options: WOOK_SHAPES, def: 'sine' },
+      { key: 'wdepth', type: 'knob', label: 'depth', min: 0, max: 1, def: 0.6 },
+      { key: 'womp', type: 'knob', label: 'womp', min: 0, max: 1, def: 0.5 },
+      { key: 'wompdecay', type: 'knob', label: 'womp time', min: 0.02, max: 2, def: 0.25, log: true, unit: 's' },
+      // out
+      { key: 'drive', type: 'knob', label: 'drive', min: 0, max: 1, def: 0.3 },
+      { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 1 },
+      { key: 'out', type: 'knob', label: 'out', min: 0, max: 2, def: 1, fmt: 'gain' },
+    ],
+    // the song's tempo goes with it, so its flutter and wobble keep time even before the song's position reaches it
+    code: (() => {
+      const pick = (d) => ({ flutter: d.flutter, fhz: d.fhz, fshape: d.fshape, fvol: d.fvol, fpitch: d.fpitch, fspread: d.fspread, vowel: d.vowel, reso: d.reso, wobble: d.wobble, wshape: d.wshape, wdepth: d.wdepth, womp: d.womp, wompdecay: d.wompdecay, drive: d.drive, mix: d.mix, out: d.out })
+      const base = stereoCode('wook', pick)
+      const code = (d, xs, ctx) => stereoCode('wook', (dd) => ({ ...pick(dd), cps: ctx?.cps }))(d, xs, ctx)
+      code.insert = base.insert
+      return code
+    })(),
   },
   bitcrush: {
     group: 'effect', cat: 'texture', label: 'bitcrush', blurb: 'Fewer bits, lower rate: crunchy and digital',
@@ -793,7 +826,7 @@ function stereoCode(kind, params) {
 /** Reverb and delay: sends on each note, or inserts on a bus when the sound is on one (spaceOnBus). */
 const SPACE_TYPES = new Set(['reverb', 'delay', 'space'])
 const STEREO_TYPES = new Set(['haas', 'widener', 'utility', 'bus', 'eq3', 'saturator', 'distortion', 'clipper', 'softclip', 'compressor', 'limiter',
-  'filter', 'djfilter', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi', 'bitcrush', 'granulizer', 'pitch', 'freqshift'])
+  'filter', 'djfilter', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi', 'bitcrush', 'granulizer', 'wook', 'pitch', 'freqshift'])
 
 /**
  * Nodes that are real audio on a bus rather than settings on each note: they work on
@@ -803,7 +836,7 @@ const STEREO_TYPES = new Set(['haas', 'widener', 'utility', 'bus', 'eq3', 'satur
 export const BUS_NODES = new Set([...STEREO_TYPES, 'reverb', 'delay'])
 
 /** Effects that can sit inside an fx rack: every plain effect node. */
-export const FX_UNITS = ['eq3', 'compressor', 'limiter', 'saturator', 'distortion', 'clipper', 'softclip', 'punch', 'haas', 'widener', 'utility', 'filter', 'djfilter', 'reverb', 'delay', 'space', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi', 'bitcrush', 'granulizer', 'pitch', 'freqshift']
+export const FX_UNITS = ['eq3', 'compressor', 'limiter', 'saturator', 'distortion', 'clipper', 'softclip', 'punch', 'haas', 'widener', 'utility', 'filter', 'djfilter', 'reverb', 'delay', 'space', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi', 'bitcrush', 'granulizer', 'wook', 'pitch', 'freqshift']
 
 /**
  * Effects an instrument's lane can stack: the ones that are real audio on a bus. Reverb and
