@@ -96,3 +96,16 @@
 
 /* a shift-drag's lock: the line the point is held to */
 .auto-lock { stroke: var(--acid); stroke-width: 1; stroke-dasharray: 4 3; opacity: 0.8; pointer-events: none; }
+
+/* bezier handles: a line from the point it hangs off, and a square to drag */
+.auto-handle-line { stroke: var(--acid); stroke-width: 1; opacity: 0.55; }
+.auto-handle-box { fill: var(--panel); stroke: var(--acid); stroke-width: 1.5; }
+.auto-handle-box.hot { fill: var(--acid); }
+.auto-seg-label { fill: var(--acid); font-size: 9px; }
+.auto-shape-btn.on { border-color: var(--acid); color: var(--acid); }
+/* the wave filler */
+.auto-shape { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1rem; padding: 0.5rem 0.75rem; border-top: 1px solid var(--line); font-size: 0.78rem; }
+.auto-shape label { display: inline-flex; align-items: center; gap: 0.35rem; }
+.auto-shape label > span { color: var(--muted); }
+.auto-shape em { font-style: normal; min-width: 3.5em; color: var(--paper); }
+.auto-shape input[type=range] { width: 90px; }

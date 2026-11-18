@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { AUTO_PREFIX, addPoint, autoName, curveAt, fromPos, movePoints, removePoints, resolveTarget, toPos } from './automation.js'
+import { AUTO_PREFIX, CYCLING, SEGMENT_MODES, addPoint, autoName, curveAt, fromPos, movePoints, removePoints, resolveTarget, toPos } from './automation.js'
+import { KnobMenu } from './KnobMenu.jsx'
 import { formatValue } from './Knob.jsx'
 import { NameInput } from './NameInput.jsx'
 import './Automation.css'
@@ -40,6 +41,9 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
   const [hot, setHot] = useState(null) // what's under the pointer: { point } or { bend }
   const [lock, setLock] = useState(null) // a shift-drag's lock: 'time' (keeps its value) or 'value' (keeps its time)
   const [marquee, setMarquee] = useState(null) // { x0, y0, x1, y1 } in graph px while box-selecting
+  const [segMenu, setSegMenu] = useState(null) // { i, x, y }: a segment's shape menu
+  const [shapeOpen, setShapeOpen] = useState(false) // the wave filler
+  const [shapeForm, setShapeForm] = useState({ wave: 'sine', rate: 1, lo: 0, hi: 1 })
   const selRef = useRef(selection)
   selRef.current = selection
   const auto = project.song?.autos?.find((a) => a.id === autoId)
@@ -96,6 +100,9 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
   const sy = (y) => PAD_Y + (1 - y) * (GRAPH_H - 2 * PAD_Y)
   const toX = (px) => clamp(((px - GUTTER) / plotW) * bars, 0, bars)
   const toY = (py) => clamp(1 - (py - PAD_Y) / (GRAPH_H - 2 * PAD_Y), 0, 1)
+  // unclamped, for handles that may reach past the top or bottom
+  const toXFree = (px) => ((px - GUTTER) / plotW) * bars
+  const toYFree = (py) => 1 - (py - PAD_Y) / (GRAPH_H - 2 * PAD_Y)
 
   // the curve as a path, sampled every few pixels (straight lines are exact at the points anyway)
   const shown = auto && draft ? { ...auto, points: draft } : auto
@@ -128,11 +135,25 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
   const travel = GRAPH_H - 2 * PAD_Y
   const commit = (next) => { setDraft(null); update((a) => { a.points = next }) }
   // the bend handles: halfway along each segment that has somewhere to bend
+  // (a bezier segment has its two handles instead; any other segment has its diamond, which
+  // bends a curve, sets how many times a wave or stairs repeat, and opens the shape menu)
   const bends = points.slice(0, -1).flatMap((p, i) => {
     const q = points[i + 1]
-    if (q.x - p.x < 1e-6 || Math.abs(q.y - p.y) < 1e-4) return []
+    if (q.x - p.x < 1e-6 || p.m === 'bezier') return []
+    if (!p.m && Math.abs(q.y - p.y) < 1e-4) return []
     const mx = (p.x + q.x) / 2
-    return [{ i, px: sx(mx), py: sy(curveAt(shown, mx)), bent: !!p.c }]
+    return [{ i, px: sx(mx), py: p.m ? sy((p.y + q.y) / 2) : sy(curveAt(shown, mx)), bent: !!p.c || !!p.m, label: CYCLING.has(p.m) ? `${p.n ?? 1}×` : p.m === 'hold' ? 'hold' : null }]
+  })
+  // a bezier segment's handles, in graph px: one hangs off each end
+  const handles = points.slice(0, -1).flatMap((p, i) => {
+    const q = points[i + 1]
+    if (p.m !== 'bezier' || q.x - p.x < 1e-6) return []
+    const h = p.h ?? [0.4, 0, 0.6, 0]
+    const w = q.x - p.x
+    return [
+      { i, which: 0, px: sx(p.x + h[0] * w), py: sy(clamp(p.y + h[1], -0.2, 1.2)), ax: sx(p.x), ay: sy(p.y) },
+      { i, which: 1, px: sx(p.x + h[2] * w), py: sy(clamp(q.y + h[3], -0.2, 1.2)), ax: sx(q.x), ay: sy(q.y) },
+    ]
   })
   /** The point (nearest, within HIT px) or bend handle at a spot in the graph. */
   const hitAt = (px, py, list = points, skip) => {
@@ -144,6 +165,8 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
       if (d <= dist) { best = i; dist = d }
     })
     if (best !== null) return { point: best }
+    const hd = list === points && handles.find((h) => Math.hypot(h.px - px, h.py - py) <= HIT - 2)
+    if (hd) return { handle: hd.i, which: hd.which }
     const b = list === points && bends.find((h) => Math.hypot(h.px - px, h.py - py) <= HIT - 2)
     return b ? { bend: b.i } : {}
   }
@@ -157,9 +180,10 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
     const h = hitAt(px, py)
     const mod = e.ctrlKey || e.metaKey
     if (e.button === 2) {
-      // right-click a bend: straight again; right-click or right-drag across points: gone
-      if (h.bend !== undefined) {
-        if (points[h.bend].c) commit(points.map((p, i) => { if (i !== h.bend) return p; const { c, ...rest } = p; return rest })) // eslint-disable-line no-unused-vars
+      // right-click a segment's diamond (or a bezier's handle): its shape menu;
+      // right-click or right-drag across points: gone
+      if (h.bend !== undefined || h.handle !== undefined) {
+        setSegMenu({ i: h.bend ?? h.handle, x: e.clientX, y: e.clientY })
         return
       }
       const gone = new Set(h.point !== undefined ? [h.point] : [])
@@ -167,8 +191,15 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
       setDraft(removePoints(points, [...gone]))
       return
     }
+    if (h.handle !== undefined) {
+      dragRef.current = { mode: 'handle', i: h.handle, which: h.which }
+      return
+    }
     if (h.bend !== undefined) {
       const [p0, p1] = [points[h.bend], points[h.bend + 1]]
+      // a wave or stairs: up and down set how many times it goes round; a curve: how it bends
+      if (CYCLING.has(p0.m)) { dragRef.current = { mode: 'cycles', i: h.bend, y: e.clientY, n: p0.n ?? 1 }; return }
+      if (p0.m === 'hold') return
       dragRef.current = { mode: 'bend', i: h.bend, y: e.clientY, c: p0.c ?? 0, down: p1.y < p0.y }
       return
     }
@@ -224,6 +255,21 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
         const { c: _, ...rest } = p // eslint-disable-line no-unused-vars
         return Math.abs(c) < 0.03 ? rest : { ...rest, c }
       }))
+    } else if (d.mode === 'cycles') {
+      const n = Math.round(clamp(d.n + (d.y - e.clientY) / 10, 1, 64))
+      setDraft(auto.points.map((p, i) => (i === d.i ? { ...p, n } : p)))
+    } else if (d.mode === 'handle') {
+      // a handle's place: across as a share of its segment, up and down from the point it hangs off
+      const p = auto.points[d.i]
+      const q = auto.points[d.i + 1]
+      const w = Math.max(1e-6, q.x - p.x)
+      const ux = clamp((toXFree(px) - p.x) / w, 0, 1)
+      const y = toYFree(py)
+      const h = [...(p.h ?? [0.4, 0, 0.6, 0])]
+      if (d.which === 0) { h[0] = ux; h[1] = clamp(y - p.y, -1, 1) } else { h[2] = ux; h[3] = clamp(y - q.y, -1, 1) }
+      // shift: level with its point (a smooth start or landing)
+      if (e.shiftKey) { if (d.which === 0) h[1] = 0; else h[3] = 0 }
+      setDraft(auto.points.map((pt, i) => (i === d.i ? { ...pt, h: h.map((v) => Math.round(v * 1000) / 1000) } : pt)))
     } else if (d.mode === 'move') {
       if (!d.moved && Math.hypot(px - d.px, py - d.py) < NUDGE) return
       d.moved = true
@@ -252,7 +298,7 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
       if (!d.gone.size) { setDraft(null); return }
       return commit(removePoints(auto.points, [...d.gone]))
     }
-    if (d.mode === 'bend') return draft ? commit(draft) : undefined
+    if (d.mode === 'bend' || d.mode === 'cycles' || d.mode === 'handle') return draft ? commit(draft) : undefined
     if (d.current) return commit(d.current.points)
     if (d.created) return commit(d.base)
     // a shift-click that didn't move adds the point to the selection, or takes it out
@@ -260,6 +306,37 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
       setSelection((sel) => { const next = new Set(sel); next.has(d.toggle) ? next.delete(d.toggle) : next.add(d.toggle); return next })
     }
     setDraft(null)
+  }
+
+  /** A segment's shape: what the menu on its diamond sets (see automation.js SEGMENT_MODES). */
+  const setMode = (i, mode) => commit(points.map((p, j) => {
+    if (j !== i) return p
+    const { m, n, h, c, ...rest } = p // eslint-disable-line no-unused-vars
+    if (mode === 'straight') return rest
+    if (mode === 'curve') return c ? { ...rest, c } : rest
+    if (mode === 'bezier') return { ...rest, m: 'bezier', h: h ?? [0.4, 0, 0.6, 0] }
+    if (CYCLING.has(mode)) return { ...rest, m: mode, n: n ?? (mode === 'stairs' ? 4 : 1) }
+    return { ...rest, m: mode }
+  }))
+  /** Fill the selection (two or more points), or the whole curve, with a shape at a rate. */
+  const fillShape = () => {
+    const f = shapeForm
+    const sel = [...selection].filter((i) => i < points.length).sort((a, b) => points[a].x - points[b].x)
+    const x0 = sel.length >= 2 ? points[sel[0]].x : 0
+    const x1 = sel.length >= 2 ? points[sel[sel.length - 1]].x : bars
+    if (x1 - x0 < 1e-6) return
+    const lo = clamp(f.lo, 0, 1)
+    const hi = clamp(f.hi, 0, 1)
+    const cycles = Math.max(1, Math.round((x1 - x0) * f.rate))
+    const down = f.wave === 'ramp down'
+    const first = { x: x0, y: down ? hi : lo }
+    if (CYCLING.has(f.wave)) Object.assign(first, { m: f.wave, n: f.wave === 'stairs' ? Math.max(2, cycles) : cycles })
+    const last = { x: x1, y: down ? lo : hi }
+    const kept = points.filter((p) => p.x < x0 - 1e-9 || p.x > x1 + 1e-9)
+    const next = [...kept, first, last].sort((a, b) => a.x - b.x)
+    setSelection(new Set())
+    commit(next)
+    setShapeOpen(false)
   }
 
   const onGraphKey = (e) => {
@@ -343,7 +420,7 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
         className="auto-graph"
         ref={graphRef}
         tabIndex={0}
-        style={{ cursor: d?.mode === 'move' ? 'grabbing' : d?.mode === 'bend' || hot?.bend !== undefined ? 'ns-resize' : hot?.point !== undefined ? 'grab' : undefined }}
+        style={{ cursor: d?.mode === 'move' || d?.mode === 'handle' ? 'grabbing' : d?.mode === 'bend' || d?.mode === 'cycles' || hot?.bend !== undefined ? 'ns-resize' : hot?.point !== undefined || hot?.handle !== undefined ? 'grab' : undefined }}
         onKeyDown={onGraphKey}
         onPointerDown={onGraphDown}
         onPointerMove={onGraphMove}
@@ -368,6 +445,15 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
           {now !== null && <line x1={GUTTER} x2={GUTTER + plotW} y1={sy(now)} y2={sy(now)} className="auto-now" />}
           <path d={path.area} className="auto-area" />
           <path d={path.line} className="auto-line" />
+          {handles.map((h) => (
+            <g key={`h${h.i}:${h.which}`} className="auto-handle-g">
+              <line x1={h.ax} y1={h.ay} x2={h.px} y2={h.py} className="auto-handle-line" />
+              <rect x={h.px - 4} y={h.py - 4} width="8" height="8" className={`auto-handle-box ${hot?.handle === h.i && hot?.which === h.which ? 'hot' : ''}`} />
+            </g>
+          ))}
+          {bends.filter((b) => b.label).map((b) => (
+            <text key={`l${b.i}`} x={b.px + 9} y={b.py - 7} className="auto-axis auto-seg-label">{b.label}</text>
+          ))}
           {bends.map((b) => (
             <rect key={`b${b.i}`} x={b.px - 5} y={b.py - 5} width="10" height="10" className={`auto-bend ${b.bent ? 'bent' : ''} ${hot?.bend === b.i || d?.mode === 'bend' && d.i === b.i ? 'hot' : ''}`} transform={`rotate(45 ${b.px} ${b.py})`} />
           ))}
@@ -390,8 +476,49 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
         )}
       </div>
 
+      {shapeOpen && (
+        <div className="auto-shape">
+          <label>
+            <span>shape</span>
+            <select className="select" value={shapeForm.wave} onChange={(e) => setShapeForm((f) => ({ ...f, wave: e.target.value }))}>
+              {['sine', 'triangle', 'saw', 'square', 'stairs', 'ramp up', 'ramp down'].map((w) => <option key={w} value={w}>{w}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>{shapeForm.wave === 'stairs' ? 'steps' : 'rate'}</span>
+            <select className="select" value={shapeForm.rate} onChange={(e) => setShapeForm((f) => ({ ...f, rate: Number(e.target.value) }))} disabled={shapeForm.wave.startsWith('ramp')}>
+              {[[0.25, '4 bars'], [0.5, '2 bars'], [1, '1 bar'], [2, '1/2'], [4, '1/4'], [8, '1/8'], [16, '1/16'], [3, '1/2 t'], [6, '1/4 t'], [12, '1/8 t']].map(([v, l]) => <option key={l} value={v}>{shapeForm.wave === 'stairs' ? `${v} a bar` : l}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>from</span>
+            <input type="range" min="0" max="1" step="0.01" value={shapeForm.lo} onChange={(e) => setShapeForm((f) => ({ ...f, lo: Number(e.target.value) }))} />
+            <em>{show(shapeForm.lo)}</em>
+          </label>
+          <label>
+            <span>to</span>
+            <input type="range" min="0" max="1" step="0.01" value={shapeForm.hi} onChange={(e) => setShapeForm((f) => ({ ...f, hi: Number(e.target.value) }))} />
+            <em>{show(shapeForm.hi)}</em>
+          </label>
+          <button type="button" className="btn primary" onClick={fillShape}>{selected.length >= 2 ? 'fill selection' : 'fill curve'}</button>
+        </div>
+      )}
+      {segMenu && points[segMenu.i] && (
+        <KnobMenu
+          x={segMenu.x}
+          y={segMenu.y}
+          title="This segment"
+          items={[
+            ...SEGMENT_MODES.map((mode) => [`${(points[segMenu.i].m ?? 'curve') === mode ? '• ' : ''}${mode}`, () => setMode(segMenu.i, mode)]),
+            null,
+            ['straight line', () => setMode(segMenu.i, 'straight')],
+          ]}
+          onClose={() => setSegMenu(null)}
+        />
+      )}
       <div className="auto-foot">
-        <span className="auto-hint">click adds · drag moves · shift-drag: one way only · ctrl-drag copies · right-drag deletes · shift-click selects · drag a diamond to bend · alt: off grid</span>
+        <button type="button" className={`btn auto-shape-btn ${shapeOpen ? 'on' : ''}`} onClick={() => setShapeOpen((o) => !o)} title="Fill the curve (or the points you've selected) with a wave, a ramp or stairs, in time">shape…</button>
+        <span className="auto-hint">click adds · drag moves · shift-drag: one way only · ctrl-drag copies · right-drag deletes · right-click a diamond: its shape (bezier, waves, stairs…) · drag a diamond: bend, or how many cycles · alt: off grid</span>
         <span className="spacer" />
         <span className="auto-meta">{clips ? `${clips} clip${clips === 1 ? '' : 's'} on the timeline` : 'not on the timeline yet'}</span>
         {onShowTimeline && <button type="button" className="btn" onClick={onShowTimeline}>show timeline</button>}

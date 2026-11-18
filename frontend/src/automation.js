@@ -157,6 +157,15 @@ export function normalizeAutos(raw, project) {
         const point = { x: snapTo(num(p.x, 0, 0, bars), 1 / 256), y: Math.round(num(p.y, 0.5, 0, 1) * 10000) / 10000 }
         const c = Math.round(num(p.c, 0, -1, 1) * 100) / 100
         if (c) point.c = c
+        // the segment's shape (see CURVE_JS): its mode, how many times it repeats, its handles
+        if (SEGMENT_MODES.includes(p.m) && p.m !== 'curve') {
+          point.m = p.m
+          if (CYCLING.has(p.m)) point.n = Math.round(num(p.n, 1, 1, 64))
+          if (p.m === 'bezier') {
+            const h = Array.isArray(p.h) ? p.h : []
+            point.h = [num(h[0], 0.4, 0, 1), num(h[1], 0, -1, 1), num(h[2], 0.6, 0, 1), num(h[3], 0, -1, 1)].map((v) => Math.round(v * 1000) / 1000)
+          }
+        }
         return point
       })
       .sort((p, q) => p.x - q.x)
@@ -180,17 +189,38 @@ export function autoName(project, auto) {
 /**
  * The curve maths, as source, so the app and the generated code share one copy.
  * `(total, len, clips, pts) => (time) => y`: `clips` are [start, end, origin] in song bars
- * (origin: where the automation's own bar 1 falls), `pts` are [x, y, c].
+ * (origin: where the automation's own bar 1 falls), `pts` are rows (see `pointRow`):
+ * [x, y, c, mode, n, a, b, cc, d] — the shape of the segment from each point to the next.
  */
 export const CURVE_JS = `(total, len, clips, pts) => {
   const mod = (a, n) => ((a % n) + n) % n
   const at = (x) => {
     if (x <= pts[0][0]) return pts[0][1]
     for (let i = 0; i < pts.length - 1; i++) {
-      const [x0, y0, c] = pts[i], [x1, y1] = pts[i + 1]
+      const [x0, y0, c, m, n, ha, hb, hc, hd] = pts[i], [x1, y1] = pts[i + 1]
       if (x < x1) {
         const u = x1 > x0 ? (x - x0) / (x1 - x0) : 1
-        return y0 + (y1 - y0) * (c ? u ** (2 ** (c * 3)) : u)
+        const k = Math.max(1, n || 1)
+        let f
+        if (!m) f = c ? u ** (2 ** (c * 3)) : u
+        else if (m === 1) {
+          // a cubic bezier: handle one hangs off this point, handle two off the next, in value
+          let lo = 0, hi = 1, t = u
+          for (let j = 0; j < 22; j++) {
+            t = (lo + hi) / 2
+            const bx = 3 * (1 - t) * (1 - t) * t * ha + 3 * (1 - t) * t * t * hc + t * t * t
+            if (bx < u) lo = t; else hi = t
+          }
+          const v = (1 - t) ** 3 * y0 + 3 * (1 - t) ** 2 * t * (y0 + hb) + 3 * (1 - t) * t * t * (y1 + hd) + t ** 3 * y1
+          return Math.min(1, Math.max(0, v))
+        }
+        else if (m === 2) f = 0 // hold
+        else if (m === 3) f = k < 2 ? 0 : Math.min(k - 1, Math.floor(u * k)) / (k - 1) // stairs
+        else if (m === 4) f = 0.5 - 0.5 * Math.cos(2 * Math.PI * k * u) // sine
+        else if (m === 5) f = 1 - Math.abs(1 - 2 * mod(k * u, 1)) // triangle
+        else if (m === 6) f = mod(k * u, 1) // saw
+        else f = mod(k * u, 1) < 0.5 ? 0 : 1 // square
+        return y0 + (y1 - y0) * f
       }
     }
     return pts[pts.length - 1][1]
@@ -212,6 +242,17 @@ export const CURVE_JS = `(total, len, clips, pts) => {
   curve.at = at
   return curve
 }`
+/** The ways a segment can go from its point to the next. */
+export const SEGMENT_MODES = ['curve', 'bezier', 'hold', 'stairs', 'sine', 'triangle', 'saw', 'square']
+/** Modes that repeat across a segment, `n` times. */
+export const CYCLING = new Set(['stairs', 'sine', 'triangle', 'saw', 'square'])
+/** A point as the curve maths reads it. */
+export function pointRow(p) {
+  const m = Math.max(0, SEGMENT_MODES.indexOf(p.m ?? 'curve'))
+  const h = p.h ?? [0.4, 0, 0.6, 0]
+  return [p.x, p.y, p.c ?? 0, m, p.n ?? 1, h[0], h[1], h[2], h[3]]
+}
+
 // eslint-disable-next-line no-new-func
 const makeCurve = new Function(`return ${CURVE_JS}`)()
 
@@ -224,7 +265,7 @@ function curveArgs(song, auto) {
     .filter((c) => c.src === `${AUTO_PREFIX}${auto.id}`)
     .sort(SONG_ORDER)
     .map((c) => [c.start, c.start + c.len, c.start - (c.offset ?? 0)])
-  const pts = auto.points.map((p) => [p.x, p.y, p.c ?? 0])
+  const pts = auto.points.map(pointRow)
   return { total, len: auto.bars, clips, pts }
 }
 
@@ -246,7 +287,7 @@ export function autoValueFn(project, auto) {
 
 /** The curve's height at x bars into the automation (for drawing it). */
 export function curveAt(auto, x) {
-  return makeCurve(0, auto.bars, [], auto.points.map((p) => [p.x, p.y, p.c ?? 0])).at(x)
+  return makeCurve(0, auto.bars, [], auto.points.map(pointRow)).at(x)
 }
 
 /**
