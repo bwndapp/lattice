@@ -1543,3 +1543,11 @@ button:disabled { cursor: var(--dot); }
 .ch .fired-steps i.bar-start { box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.25); }
 .ch .fired-synth { display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
 .ch .fired-word { opacity: 0.7; }
+
+/* an open frame's ports: inputs on its left edge, outputs on its right, as a module has them */
+.react-flow__handle.frame-pin { width: 10px; height: 10px; border-radius: 50%; background: var(--panel); border: 2px solid var(--frame, var(--muted)); z-index: 3; }
+.react-flow__handle.frame-pin.in, .react-flow__handle.frame-pin.out { cursor: crosshair; }
+.react-flow__handle.frame-pin.in:hover, .react-flow__handle.frame-pin.out:hover { background: var(--acid); border-color: var(--acid); }
+.react-flow__handle.frame-pin.inner { opacity: 0; pointer-events: none; }
+.react-flow__edge.pin-wire { pointer-events: none; }
+.react-flow__edge.pin-wire path { opacity: 0.7; }

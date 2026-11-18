@@ -9,7 +9,7 @@ import { ENGINES } from './instruments/index.js'
 import { openAbstract, openCode, openSynth } from './instruments/windows.js'
 import { abstractOf, abstractParts, abstractState } from './abstract/index.js'
 import { INSTRUMENTS, INSTRUMENT_MIME, instrumentChannel, makePattern, newId } from './project'
-import { FRAME_BAR_H, collapseFrame, collapsedHosts, expandFrame, heldBy, removeFrame as dropFrame, rfSize, routeEdge } from './frames'
+import { FRAME_BAR_H, collapseFrame, collapsedHosts, expandFrame, framePins, heldBy, removeFrame as dropFrame, rfSize, routeEdge, throughPin } from './frames'
 import Knob, { formatValue } from './Knob.jsx'
 import { canAutomate, nodeTarget, unitTarget } from './automation.js'
 import SoundPicker from './SoundPicker.jsx'
@@ -1008,6 +1008,11 @@ function FrameNode({ id }) {
   const frame = ctx.project.frames?.find((f) => f.id === id)
   const [editing, setEditing] = useState(false)
   const [picking, setPicking] = useState(false)
+  // its ports: an input on the left for each wire coming in, an output on the right going out
+  const pins = ctx.framePins?.get(id)
+  const pinSig = pins ? `${pins.ins.map((p) => `${p.key}@${Math.round(p.y)}`).join(',')}/${pins.outs.map((p) => `${p.key}@${Math.round(p.y)}`).join(',')}` : ''
+  const updateInternals = useUpdateNodeInternals()
+  useEffect(() => { updateInternals(id) }, [pinSig, id, updateInternals])
   if (!frame) return null
   const on = ctx.frameSel === id
   const shut = !!frame.collapsed
@@ -1088,6 +1093,27 @@ function FrameNode({ id }) {
       {/* where the wires of its hidden nodes leave and arrive while it's collapsed */}
       <Handle type="target" position={Position.Left} id="frame-in" className="frame-port" isConnectable={false} />
       <Handle type="source" position={Position.Right} id="frame-out" className="frame-port" isConnectable={false} />
+      {/* open, its ports: wire into one (or out of one) and it's wired to the node inside */}
+      {!shut && pins?.ins.map((p) => {
+        const [node, port] = p.key.split('|')
+        const label = `${nodeTitle(ctx.project.nodes.find((n) => n.id === node), ctx.project)}${port && port !== 'in' ? ` · ${port}` : ''}`
+        return (
+          <Fragment key={`i${p.key}`}>
+            <Handle type="target" position={Position.Left} id={`pi-t:${p.key}`} className="frame-pin in" style={{ top: p.y }} title={`Into ${label}`} />
+            <Handle type="source" position={Position.Left} id={`pi-s:${p.key}`} className="frame-pin inner" style={{ top: p.y }} isConnectable={false} />
+          </Fragment>
+        )
+      })}
+      {!shut && pins?.outs.map((p) => {
+        const [node] = p.key.split('|')
+        const label = nodeTitle(ctx.project.nodes.find((n) => n.id === node), ctx.project)
+        return (
+          <Fragment key={`o${p.key}`}>
+            <Handle type="target" position={Position.Right} id={`po-t:${p.key}`} className="frame-pin inner" style={{ top: p.y }} isConnectable={false} />
+            <Handle type="source" position={Position.Right} id={`po-s:${p.key}`} className="frame-pin out" style={{ top: p.y }} title={`Out of ${label}`} />
+          </Fragment>
+        )
+      })}
       {!shut && (
         <NodeResizeControl
           position="bottom-right"
@@ -1102,6 +1128,12 @@ function FrameNode({ id }) {
 }
 
 const nodeTypes = { studio: StudioNode, frame: FrameNode }
+
+/** A dragged node's place, kept inside the frame it lives in (below its title bar). */
+const keepIn = (at, home) => ({
+  x: Math.min(Math.max(at.x, home.x + 6), home.x + home.w - home.nw - 6),
+  y: Math.min(Math.max(at.y, home.y + FRAME_BAR_H + 6), home.y + home.h - home.nh - 6),
+})
 
 /** Everyday words people search for, per node type. */
 const SEARCH_WORDS = {
@@ -1633,12 +1665,25 @@ function Canvas({ project, onUpdateProject: updateProject, started, solo, onSolo
   const knifeLine = useRef(null) // its line, drawn straight onto the svg (no render per move)
   const detachRef = useRef(null) // the same, for the drop handler, which must not read stale state
   const spliceRef = useRef(null)
+  const dragHomes = useRef(null) // node id → the frame it stays in while dragged (alt: free)
+  const dragAlt = useRef(false)
   const fromRef = useRef(null) // the port a wire is being pulled out of
   const joinedRef = useRef(false) // that pull found somewhere to land
   // a wire to or from a node hidden in a collapsed frame is drawn to the frame's edge instead
   const frameHosts = useMemo(() => collapsedHosts(project.frames), [project.frames])
   // rhythm machines, as a string so moving nodes doesn't redraw every wire: wires into one take no inserts
   const machines = project.nodes.filter((n) => NODE_TYPES[n.type]?.abstract || n.type === 'stream').map((n) => n.id).join(' ')
+  // open frames' ports (frames.js framePins): worked out from where things sit now, but the
+  // wires only redraw when which wires cross which frame changes, not on every drag step
+  const pinState = useMemo(() => {
+    const live = (project.frames ?? []).map((f) => {
+      const rf = nodes.find((n) => n.id === f.id)
+      return rf ? { ...f, x: rf.position.x, y: rf.position.y, w: rf.width ?? f.w, h: f.collapsed ? FRAME_BAR_H : (rf.height ?? f.h) } : f
+    })
+    return framePins(live, nodes, project.edges, frameHosts)
+  }, [nodes, project.frames, project.edges, frameHosts])
+  const routeSig = [...pinState.route].map(([id, r]) => `${id}:${r.inFrame ?? ''}/${r.inKey ?? ''}/${r.outFrame ?? ''}/${r.outKey ?? ''}`).join(' ')
+  const pinRoute = useMemo(() => pinState.route, [routeSig]) // eslint-disable-line react-hooks/exhaustive-deps
   const rfEdges = useMemo(() => project.edges.map((e) => ({
     ...e,
     type: 'wire', // with a + in the middle to add a node into it
@@ -1649,7 +1694,32 @@ function Canvas({ project, onUpdateProject: updateProject, started, solo, onSolo
     className: `${isTrigger(e) ? 'trigger ' : ''}${focusIds ? (focusIds.split(' ').some((id) => id === e.source || id === e.target) ? 'focus ' : 'faded ') : ''}${e.id === spliceTarget || knifeHits.has(e.id) ? 'splice-target' : e.id === detaching ? 'detaching' : ''}`,
     domAttributes: { 'data-touches': `${e.source} ${e.target}`, ...(isTrigger(e) || machines.split(' ').includes(e.target) ? { 'data-closed': '' } : {}) },
     ...routeEdge(e, frameHosts),
-  })), [project.edges, machines, started, spliceTarget, detaching, tension, wireTint, frameHosts, knifeHits, focusIds])
+    // through an open frame's ports: the wire meets the frame's edge, the port carries it on
+    ...(pinRoute.get(e.id) ? {
+      ...(pinRoute.get(e.id).outFrame ? { source: pinRoute.get(e.id).outFrame, sourceHandle: `po-s:${pinRoute.get(e.id).outKey}` } : {}),
+      ...(pinRoute.get(e.id).inFrame ? { target: pinRoute.get(e.id).inFrame, targetHandle: `pi-t:${pinRoute.get(e.id).inKey}` } : {}),
+    } : {}),
+  })).concat((() => {
+    // ...and inside, from each port to the node it serves: drawn only, not a wire of its own
+    const ghosts = new Map()
+    for (const e of project.edges) {
+      const r = pinRoute.get(e.id)
+      if (!r) continue
+      if (r.inFrame) {
+        const [node, port] = r.inKey.split('|')
+        ghosts.set(`pin~${r.inFrame}~${r.inKey}`, { source: r.inFrame, sourceHandle: `pi-s:${r.inKey}`, target: node, targetHandle: port, trig: isTrigger(e) })
+      }
+      if (r.outFrame) {
+        const [node, port] = r.outKey.split('|')
+        ghosts.set(`pout~${r.outFrame}~${r.outKey}`, { source: node, sourceHandle: port, target: r.outFrame, targetHandle: `po-t:${r.outKey}`, trig: isTrigger(e) })
+      }
+    }
+    return [...ghosts].map(([id, g]) => ({
+      id, source: g.source, sourceHandle: g.sourceHandle, target: g.target, targetHandle: g.targetHandle,
+      type: 'wire', data: { tension, closed: true }, animated: started, selectable: false, deletable: false, focusable: false,
+      className: `pin-wire ${g.trig ? 'trigger' : ''}`,
+    }))
+  })()), [project.edges, machines, started, spliceTarget, detaching, tension, wireTint, frameHosts, knifeHits, focusIds, pinRoute])
   const [edges, setEdges] = useState(rfEdges)
   useEffect(() => setEdges((prev) => {
     const sel = new Set(prev.filter((e) => e.selected).map((e) => e.id))
@@ -2085,6 +2155,7 @@ function Canvas({ project, onUpdateProject: updateProject, started, solo, onSolo
     dockOpen: !!dock?.at,
     showInDock: (patternId) => { if (dock?.at && patternId) dock.open(patternId, null, 'rack') },
     showBusInDock: (busId) => dock?.openBus?.(busId),
+    framePins: pinState.pins,
     showTimeline: () => automation?.showTimeline(),
     // the song is on and this part has no clip: give it one at the start and show it there
     addToSong: ({ src, bars }) => {
@@ -2102,7 +2173,7 @@ function Canvas({ project, onUpdateProject: updateProject, started, solo, onSolo
       })
       dock?.open(patternId, null, 'rack')
     },
-  }), [project, line, rackSide, heard, solo, onSolo, laneSolo, onLaneSolo, updateNode, addStream, removeNodes, frameSel, selectFrame, updateFrame, removeFrame, toggleFrame, onUpdateProject, automation, dock])
+  }), [project, line, rackSide, heard, solo, onSolo, laneSolo, onLaneSolo, updateNode, addStream, removeNodes, frameSel, selectFrame, updateFrame, removeFrame, toggleFrame, onUpdateProject, automation, dock, pinState.pins])
 
   // what we have selected, so the others see it ringed on their canvas
   useEffect(() => { selectionIs('graph', nodes.filter((n) => n.selected && n.type !== 'frame').map((n) => n.id)) }, [nodes])
@@ -2121,7 +2192,8 @@ function Canvas({ project, onUpdateProject: updateProject, started, solo, onSolo
     return !makesCycle(project.edges, c.source, c.target)
   }, [project])
 
-  const onConnect = useCallback((c) => {
+  const onConnect = useCallback((c0) => {
+    const c = throughPin(c0) // a wire onto a frame's port is a wire to the node inside it
     joinedRef.current = true // it found a port, so nothing needs to be offered
     detachRef.current = null // a pulled wire that lands on an output is rewired, not deleted
     setDetaching(null)
@@ -2332,6 +2404,15 @@ function Canvas({ project, onUpdateProject: updateProject, started, solo, onSolo
               else ctx.newPatternFor(node.id)
             }}
             onNodesChange={(changes) => setNodes((ns) => {
+              // a node in a frame stays in it while dragged (alt: pull it out)
+              const homes = dragHomes.current
+              if (homes && !dragAlt.current) {
+                changes = changes.map((c) => {
+                  const home = c.type === 'position' && c.position && homes.get(c.id)
+                  if (!home) return c
+                  return { ...c, position: keepIn(c.position, home) }
+                })
+              }
               const hidden = new Set(ns.filter((n) => n.hidden).map((n) => n.id))
               return applyNodeChanges(changes.filter((c) => c.type !== 'remove' && !(c.type === 'select' && c.selected && hidden.has(c.id))), ns)
             })}
@@ -2345,8 +2426,22 @@ function Canvas({ project, onUpdateProject: updateProject, started, solo, onSolo
               if (gone.size) removeNodes([...gone])
             }}
             onPaneClick={() => setFrameSel(null)}
-            onNodeDragStart={(_, node, dragged) => {
-              if (node.type !== 'frame') return
+            onNodeDragStart={(e, node, dragged) => {
+              if (node.type !== 'frame') {
+                // where each dragged node lives: the innermost open frame it sits in
+                dragAlt.current = !!e?.altKey
+                const open = (project.frames ?? []).filter((f) => !f.collapsed)
+                const homes = new Map()
+                for (const d of dragged) {
+                  const { w, h } = rfSize(d)
+                  const cx = d.position.x + w / 2, cy = d.position.y + h / 2
+                  const f = open.filter((x) => cx >= x.x && cx <= x.x + x.w && cy >= x.y && cy <= x.y + x.h).sort((a, b) => a.w * a.h - b.w * b.h)[0]
+                  // only where it fits: a node bigger than its frame isn't held
+                  if (f && w + 12 <= f.w && h + FRAME_BAR_H + 12 <= f.h) homes.set(d.id, { x: f.x, y: f.y, w: f.w, h: f.h, nw: w, nh: h })
+                }
+                dragHomes.current = homes.size ? homes : null
+                return
+              }
               // what the frame carries: whatever sits in it now, or all it held when it was
               // collapsed (React Flow moves anything selected itself, so that's left to it)
               const f = project.frames?.find((x) => x.id === node.id)
@@ -2355,7 +2450,8 @@ function Canvas({ project, onUpdateProject: updateProject, started, solo, onSolo
               const carried = nodesRef.current.filter((n) => held.has(n.id) && !own.has(n.id))
               frameDrag.current = { id: node.id, from: { ...node.position }, carried: new Map(carried.map((n) => [n.id, { ...n.position }])) }
             }}
-            onNodeDrag={(_, node, dragged) => {
+            onNodeDrag={(e, node, dragged) => {
+              dragAlt.current = !!e?.altKey
               if (node.type === 'frame') {
                 const d = frameDrag.current
                 if (!d || d.id !== node.id || !d.carried.size) return
@@ -2382,6 +2478,10 @@ function Canvas({ project, onUpdateProject: updateProject, started, solo, onSolo
               if (wire !== spliceRef.current) { spliceRef.current = wire; setSpliceTarget(wire) }
             }}
             onNodeDragStop={(_, node, dragged) => {
+              // what's saved is where it was held, not where the pointer let go
+              const homes = dragHomes.current
+              if (homes && !dragAlt.current) dragged = dragged.map((d) => (homes.has(d.id) ? { ...d, position: keepIn(d.position, homes.get(d.id)) } : d))
+              dragHomes.current = null
               if (node.type === 'frame') {
                 const d = frameDrag.current
                 frameDrag.current = null
@@ -2417,6 +2517,7 @@ function Canvas({ project, onUpdateProject: updateProject, started, solo, onSolo
               fromRef.current = handleType === 'source' ? { nodeId, handleId } : null
               // grabbing a connected input pulls its wire off; a free one asks for something to feed it
               if (handleType !== 'target') return
+              if (String(handleId ?? '').startsWith('pi-')) { detachRef.current = null; toRef.current = null; return } // a frame's port: wire into it, nothing to pull off
               // on an input that takes many, pulling takes the newest wire off the pile
               const onHandle = project.edges.filter((e) => e.target === nodeId && e.targetHandle === (handleId ?? 'in'))
               const wire = onHandle[onHandle.length - 1]

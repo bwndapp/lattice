@@ -106,6 +106,88 @@ export function routeEdge(e, hosts) {
   }
 }
 
+/**
+ * An open frame's ports: a wire coming into the frame meets an input on its left edge, and
+ * one going out leaves by an output on its right edge, as a module would have them. Wires
+ * into the same port inside (one node's one input) share one input on the edge; likewise
+ * out. Only the innermost frame a wire crosses into (or out of) gets the port.
+ *
+ *   pins:  Map frame id → { ins: [{ key, y }], outs: [{ key, y }] } (y from the frame's top)
+ *   route: Map edge id → { inFrame, inKey, outFrame, outKey } for each wire that crosses one
+ *
+ * A key is "node|port". `hosts` (collapsedHosts) are left to routeEdge: a wire to a hidden
+ * node is drawn to its collapsed frame, not through ports.
+ */
+export function framePins(frames = [], rfNodes = [], edges = [], hosts = new Map()) {
+  const open = frames.filter((f) => !f.collapsed && !hosts.has(f.id))
+  const pins = new Map()
+  const route = new Map()
+  if (!open.length) return { pins, route }
+  const byId = new Map(rfNodes.map((n) => [n.id, n]))
+  const area = (f) => f.w * f.h
+  const holding = new Map() // node id → the open frames it's in, innermost first
+  const framesOf = (id) => {
+    if (holding.has(id)) return holding.get(id)
+    const n = byId.get(id)
+    if (!n || n.hidden) { holding.set(id, []); return [] }
+    const { w, h } = rfSize(n)
+    const cx = n.position.x + w / 2, cy = n.position.y + h / 2
+    const list = open.filter((f) => cx >= f.x && cx <= f.x + f.w && cy >= f.y && cy <= f.y + f.h).sort((a, b) => area(a) - area(b))
+    holding.set(id, list)
+    return list
+  }
+  const portY = (id, f) => {
+    const n = byId.get(id)
+    return n ? n.position.y + 30 - f.y : f.h / 2
+  }
+  const add = (f, side, key, y) => {
+    if (!pins.has(f.id)) pins.set(f.id, { ins: new Map(), outs: new Map() })
+    const at = pins.get(f.id)[side]
+    if (!at.has(key)) at.set(key, y)
+  }
+  for (const e of edges) {
+    if (hosts.has(e.source) || hosts.has(e.target)) continue
+    const fs = framesOf(e.source)
+    const ft = framesOf(e.target)
+    const outFrame = fs.find((f) => !ft.includes(f)) ?? null
+    const inFrame = ft.find((f) => !fs.includes(f)) ?? null
+    if (!outFrame && !inFrame) continue
+    const r = {}
+    if (inFrame) { r.inFrame = inFrame.id; r.inKey = `${e.target}|${e.targetHandle ?? 'in'}`; add(inFrame, 'ins', r.inKey, portY(e.target, inFrame)) }
+    if (outFrame) { r.outFrame = outFrame.id; r.outKey = `${e.source}|${e.sourceHandle ?? 'out'}`; add(outFrame, 'outs', r.outKey, portY(e.source, outFrame)) }
+    route.set(e.id, r)
+  }
+  // in order down the edge, kept clear of the title bar, the bottom and each other
+  const spaced = (map, f) => {
+    const list = [...map].map(([key, y]) => ({ key, y })).sort((a, b) => a.y - b.y)
+    let last = FRAME_BAR_H + 4
+    for (const p of list) { p.y = Math.max(last + 14, Math.min(f.h - 10, p.y)); last = p.y }
+    return list
+  }
+  const out = new Map()
+  for (const f of open) {
+    const at = pins.get(f.id)
+    if (at) out.set(f.id, { ins: spaced(at.ins, f), outs: spaced(at.outs, f) })
+  }
+  return { pins: out, route }
+}
+
+/** A wire dropped on a frame's port, as the wire it means: into (or out of) the node inside. */
+export function throughPin(c) {
+  const out = { ...c }
+  if (String(c.targetHandle ?? '').startsWith('pi-t:')) {
+    const [node, port] = c.targetHandle.slice(5).split('|')
+    out.target = node
+    out.targetHandle = port
+  }
+  if (String(c.sourceHandle ?? '').startsWith('po-s:')) {
+    const [node, port] = c.sourceHandle.slice(5).split('|')
+    out.source = node
+    out.sourceHandle = port
+  }
+  return out
+}
+
 /** React Flow-like nodes for a project at default sizes (for tests, and anything off the canvas). */
 export function frameItems(project) {
   const hosts = collapsedHosts(project.frames)
