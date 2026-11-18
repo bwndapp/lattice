@@ -51,9 +51,9 @@
   box-shadow: none;
   overflow: hidden;
 }
-.auto-head { display: flex; align-items: center; flex-wrap: wrap; gap: 0.55rem 0.75rem; padding: 0.55rem 0.75rem; border-bottom: 1px solid var(--line); cursor: move; }
+.auto-head { display: flex; align-items: center; flex-wrap: nowrap; gap: 0.55rem 0.75rem; padding: 0.55rem 0.75rem; border-bottom: 1px solid var(--line); cursor: move; }
 .auto-kind { padding: 0.1rem 0.5rem; border-radius: 3px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); background: var(--acid); }
-.auto-name { width: 14rem; font-size: 1.1rem; }
+.auto-name { width: 14rem; min-width: 7rem; flex: 0 1 14rem; font-size: 1.1rem; }
 .auto-target { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 22rem; }
 .auto-target b { color: var(--paper); font-weight: 600; }
 .auto-gone { color: var(--danger); }
@@ -118,3 +118,10 @@
 .auto-mode.on { background: var(--acid); border-color: var(--acid); color: var(--ink); }
 .auto-cycles { display: inline-flex; align-items: center; gap: 0.3rem; margin-left: 0.5rem; }
 .auto-cycles > span { min-width: 2.4em; text-align: center; color: var(--acid); }
+.auto-grid.sub { opacity: 0.35; }
+.auto-axis.sub { opacity: 0.55; font-size: 8px; }
+
+/* one line: the target trails off before the length and close get pushed down */
+.auto-target { min-width: 0; flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.auto-head .spacer { flex: 0 0 0; }
+.auto-head .auto-field, .auto-head .btn { flex: none; }

@@ -52,6 +52,35 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
   const [hot, setHot] = useState(null) // what's under the pointer: { point } or { bend }
   const [lock, setLock] = useState(null) // a shift-drag's lock: 'time' (keeps its value) or 'value' (keeps its time)
   const [marquee, setMarquee] = useState(null) // { x0, y0, x1, y1 } in graph px while box-selecting
+  const [view, setView] = useState(null) // { from, len } in bars when zoomed in; null: the whole curve
+  const viewNow = useRef(null)
+  // ctrl + scroll (or a pinch) zooms around the pointer; scroll moves along when zoomed in
+  useEffect(() => {
+    const el = graphRef.current
+    if (!el) return
+    const onWheel = (e) => {
+      const v = viewNow.current
+      if (!v) return
+      const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault()
+        const pinch = e.deltaMode === 0 && Math.abs(dy) < 40
+        const len = clamp(v.vLen * Math.exp(dy * (pinch ? 0.012 : 0.0024)), 1 / 16, v.bars)
+        const r = el.getBoundingClientRect()
+        const at = v.vFrom + clamp((e.clientX - r.left - GUTTER) / v.plotW, 0, 1) * v.vLen // the bar under the pointer stays put
+        const share = (at - v.vFrom) / v.vLen
+        const from = clamp(at - share * len, 0, Math.max(0, v.bars - len))
+        setView(len >= v.bars - 1e-9 ? null : { from, len })
+        return
+      }
+      if (v.vLen >= v.bars - 1e-9) return // the whole curve's in view: let the page scroll
+      e.preventDefault()
+      const d = Math.abs(e.deltaX) > Math.abs(dy) ? e.deltaX : dy
+      setView({ len: v.vLen, from: clamp(v.vFrom + (d / v.plotW) * v.vLen, 0, v.bars - v.vLen) })
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [autoId])
   const [segMenu, setSegMenu] = useState(null) // { i, x, y }: a segment's shape menu
   const [shapeOpen, setShapeOpen] = useState(false) // the wave filler
   const [shapeForm, setShapeForm] = useState({ wave: 'sine', rate: 1, lo: 0, hi: 1 })
@@ -107,12 +136,17 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
   const clips = project.song?.clips.filter((c) => c.src === `${AUTO_PREFIX}${autoId}`).length ?? 0
   const bars = auto?.bars ?? 4
   const plotW = width - GUTTER - 10
-  const sx = (x) => GUTTER + (x / bars) * plotW
+  // the stretch of the curve in view: all of it, until you zoom in (ctrl + scroll, a pinch)
+  const vLen = clamp(view?.len ?? bars, 1 / 16, bars)
+  const vFrom = clamp(view?.from ?? 0, 0, Math.max(0, bars - vLen))
+  const zoomed = vLen < bars - 1e-9
+  const sx = (x) => GUTTER + ((x - vFrom) / vLen) * plotW
   const sy = (y) => PAD_Y + (1 - y) * (GRAPH_H - 2 * PAD_Y)
-  const toX = (px) => clamp(((px - GUTTER) / plotW) * bars, 0, bars)
+  viewNow.current = { vFrom, vLen, bars, plotW }
+  const toX = (px) => clamp(vFrom + ((px - GUTTER) / plotW) * vLen, 0, bars)
   const toY = (py) => clamp(1 - (py - PAD_Y) / (GRAPH_H - 2 * PAD_Y), 0, 1)
   // unclamped, for handles that may reach past the top or bottom
-  const toXFree = (px) => ((px - GUTTER) / plotW) * bars
+  const toXFree = (px) => vFrom + ((px - GUTTER) / plotW) * vLen
   const toYFree = (py) => 1 - (py - PAD_Y) / (GRAPH_H - 2 * PAD_Y)
 
   // the curve as a path, sampled every few pixels (straight lines are exact at the points anyway)
@@ -121,13 +155,14 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
     const auto = shown
     if (!auto) return { line: '', area: '' }
     const xs = new Set()
-    for (let px = 0; px <= plotW; px += 3) xs.add((px / plotW) * bars)
+    const end = vFrom + vLen
+    for (let px = 0; px <= plotW; px += 2) xs.add(vFrom + (px / plotW) * vLen)
     for (const p of auto.points) { xs.add(p.x); xs.add(Math.max(0, p.x - 1e-6)) }
-    xs.add(bars)
-    const ordered = [...xs].filter((x) => x >= 0 && x <= bars).sort((a, b) => a - b)
+    xs.add(end)
+    const ordered = [...xs].filter((x) => x >= vFrom - 1e-9 && x <= end + 1e-9).sort((a, b) => a - b)
     const pts = ordered.map((x) => `${sx(x).toFixed(1)},${sy(curveAt(auto, x)).toFixed(1)}`)
-    return { line: `M${pts.join('L')}`, area: `M${sx(0)},${sy(0)}L${pts.join('L')}L${sx(bars)},${sy(0)}Z` }
-  }, [shown, plotW, bars]) // eslint-disable-line react-hooks/exhaustive-deps
+    return { line: `M${pts.join('L')}`, area: `M${sx(vFrom)},${sy(0)}L${pts.join('L')}L${sx(end)},${sy(0)}Z` }
+  }, [shown, plotW, bars, vFrom, vLen]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!auto) return null
 
@@ -290,7 +325,7 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
       setLock(d.lock ?? null)
       // the grabbed point lands on the grid (alt: anywhere); the rest keep their distance
       const from = d.base[d.grab]
-      const dx = d.lock === 'value' ? 0 : snapX(clamp(from.x + ((px - d.px) / plotW) * bars, 0, bars), e.altKey) - from.x
+      const dx = d.lock === 'value' ? 0 : snapX(clamp(from.x + ((px - d.px) / plotW) * vLen, 0, bars), e.altKey) - from.x
       const dy = d.lock === 'time' ? 0 : -(py - d.py) / travel
       d.current = movePoints(d.base, d.group, dx, dy, bars, d.copy)
       setDraft(d.current.points)
@@ -435,8 +470,11 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
     const beat = Math.floor((x - bar) * beats + 1e-9)
     return `${bar + 1}.${beat + 1}`
   }
+  // grid lines in view: beats, and sixteenths too once there's room for them
+  const pxPerBeat = (plotW / vLen) / beats
+  const per = pxPerBeat > 48 ? 4 : 1 // lines per beat
   const beatLines = []
-  for (let b = 0; b <= bars * beats; b++) beatLines.push(b)
+  for (let b = Math.floor(vFrom * beats * per); b <= Math.ceil((vFrom + vLen) * beats * per); b++) beatLines.push(b)
   const now = def ? toPos(found.value, def) : null
 
   return (
@@ -476,17 +514,23 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
         onContextMenu={(e) => e.preventDefault()}
       >
         <svg ref={svgRef} width={width} height={GRAPH_H} aria-hidden>
+          <defs><clipPath id={`auto-plot-${autoId}`}><rect x={GUTTER - 8} y={0} width={plotW + 16} height={GRAPH_H} /></clipPath></defs>
           {[0, 0.25, 0.5, 0.75, 1].map((y) => (
             <g key={y}>
               <line x1={GUTTER} x2={GUTTER + plotW} y1={sy(y)} y2={sy(y)} className={`auto-grid ${y === 0 || y === 1 ? 'edge' : ''}`} />
               {(y === 0 || y === 0.5 || y === 1) && <text x={GUTTER - 8} y={sy(y) + 3} className="auto-axis" textAnchor="end">{show(y)}</text>}
             </g>
           ))}
+          <g clipPath={`url(#auto-plot-${autoId})`}>
           {beatLines.map((b) => (
-            <line key={b} x1={sx(b / beats)} x2={sx(b / beats)} y1={PAD_Y} y2={GRAPH_H - PAD_Y} className={`auto-grid ${b % beats === 0 ? 'bar' : ''}`} />
+            <line key={b} x1={sx(b / (beats * per))} x2={sx(b / (beats * per))} y1={PAD_Y} y2={GRAPH_H - PAD_Y} className={`auto-grid ${b % (beats * per) === 0 ? 'bar' : b % per === 0 ? '' : 'sub'}`} />
           ))}
-          {Array.from({ length: bars }, (_, b) => (plotW / bars > 26 || b % Math.ceil(26 / (plotW / bars)) === 0) && (
+          {Array.from({ length: bars }, (_, b) => b).filter((b) => b >= Math.floor(vFrom) && b <= vFrom + vLen && (plotW / vLen > 26 || b % Math.ceil(26 / (plotW / vLen)) === 0)).map((b) => (
             <text key={b} x={sx(b) + 4} y={GRAPH_H - 2} className="auto-axis">{b + 1}</text>
+          ))}
+          {/* zoomed in: beat numbers too */}
+          {pxPerBeat > 34 && Array.from({ length: Math.ceil(vLen * beats) + 2 }, (_, k) => Math.floor(vFrom * beats) + k).filter((k) => k % beats && k / beats <= bars).map((k) => (
+            <text key={`b${k}`} x={sx(k / beats) + 3} y={GRAPH_H - 2} className="auto-axis sub">{Math.floor(k / beats) + 1}.{(k % beats) + 1}</text>
           ))}
           {now !== null && <line x1={GUTTER} x2={GUTTER + plotW} y1={sy(now)} y2={sy(now)} className="auto-now" />}
           <path d={path.area} className="auto-area" />
@@ -510,6 +554,7 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
           {points.map((p, i) => (
             <circle key={`p${i}`} cx={sx(p.x)} cy={sy(p.y)} r={hot?.point === i || moving === i ? 7 : 5.5} className={`auto-point ${selection.has(i) ? 'selected' : ''}`} />
           ))}
+          </g>
           {marquee && (
             <rect className="auto-marquee" x={Math.min(marquee.x0, marquee.x1)} y={Math.min(marquee.y0, marquee.y1)} width={Math.abs(marquee.x1 - marquee.x0)} height={Math.abs(marquee.y1 - marquee.y0)} />
           )}
@@ -579,6 +624,7 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
         />
       )}
       <div className="auto-foot">
+        {zoomed && <button type="button" className="btn" onClick={() => setView(null)} title="Show the whole curve again (ctrl + scroll or a pinch zooms in)">fit</button>}
         <button type="button" className={`btn auto-shape-btn ${shapeOpen ? 'on' : ''}`} onClick={() => setShapeOpen((o) => !o)} title="Fill the curve (or the points you've selected) with a wave, a ramp or stairs, in time">shape…</button>
         <span className="auto-hint">click adds · drag moves · shift-drag: one way only · ctrl-drag copies · right-drag deletes · right-click a diamond: its shape (bezier, waves, stairs…) · drag a diamond: bend, or how many cycles · alt: off grid</span>
         <span className="spacer" />

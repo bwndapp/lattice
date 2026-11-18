@@ -370,6 +370,16 @@ export function movePoints(points, indices, dx, dy, bars, copy = false) {
   const xs = group.map((i) => points[i].x)
   const ys = group.map((i) => points[i].y)
   dx = Math.min(bars - Math.max(...xs), Math.max(-Math.min(...xs), dx))
+  if (!copy) {
+    // moved points don't pass the points either side of them: each segment's shape belongs to
+    // the point it starts from, and points swapping places scrambled them
+    const inGroup = new Set(group)
+    const lo = Math.min(...xs), hi = Math.max(...xs)
+    const left = points.filter((p, i) => !inGroup.has(i) && p.x <= lo).reduce((m, p) => Math.max(m, p.x), -Infinity)
+    const right = points.filter((p, i) => !inGroup.has(i) && p.x >= hi).reduce((m, p) => Math.min(m, p.x), Infinity)
+    if (Number.isFinite(left)) dx = Math.max(dx, left - lo)
+    if (Number.isFinite(right)) dx = Math.min(dx, right - hi)
+  }
   dy = Math.min(1 - Math.max(...ys), Math.max(-Math.min(...ys), dy))
   const moving = new Set(group)
   const list = copy ? points.map((p) => ({ ...p, moved: false })) : points.map((p, i) => ({ ...p, moved: moving.has(i) }))
