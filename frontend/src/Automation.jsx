@@ -140,7 +140,7 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, onUpdateP
   const bends = points.slice(0, -1).flatMap((p, i) => {
     const q = points[i + 1]
     if (q.x - p.x < 1e-6 || p.m === 'bezier') return []
-    if (!p.m && Math.abs(q.y - p.y) < 1e-4) return []
+    // a flat stretch has one too: it's where a wave most often goes
     const mx = (p.x + q.x) / 2
     return [{ i, px: sx(mx), py: p.m ? sy((p.y + q.y) / 2) : sy(curveAt(shown, mx)), bent: !!p.c || !!p.m, label: CYCLING.has(p.m) ? `${p.n ?? 1}×` : p.m === 'hold' ? 'hold' : null }]
   })
