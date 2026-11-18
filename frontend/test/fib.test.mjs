@@ -59,7 +59,7 @@ console.log('fib ok')
 // ── triggers: a layer fires instruments on pattern nodes, whose sound goes on from there ──
 {
   const { bundle } = await import('./lib/bundle.mjs')
-  const m = await bundle({ 'project.js': ['normalizeProject', 'generateCode'], 'song.js': ['songParts'] }, 'fibtrig')
+  const m = await bundle({ 'project.js': ['normalizeProject', 'generateCode'], 'song.js': ['songParts', 'songSilence'] }, 'fibtrig')
   const proj = ({ notes = [], steps = [], song, edges, extraChan = false }) => m.normalizeProject({
     bpm: 120, beats: 4, song,
     patterns: [
@@ -111,6 +111,7 @@ console.log('fib ok')
   // (something else on the timeline, so the song is on)
   const none = proj({ song: { ...song, fired: true, clips: [{ id: 'z', src: 'pattern:drm', lane: 0, start: 0, len: 2 }] } })
   assert.ok(!m.songParts(none).some((p) => p.src === 'node:f'), 'a machine with no sounds of its own isn\'t a part')
+  assert.equal(m.songSilence(none, none.nodes.find((n) => n.id === 'f')), null, 'and it isn\'t flagged as missing from the timeline')
   // a layer with a sound picked that fires an instrument plays through it, not on its own
   const firingSound = proj({ song: { ...song, fired: true } })
   firingSound.nodes.find((n) => n.id === 'f').data.state.layers.forEach((l) => { l.sound = 'bd' })

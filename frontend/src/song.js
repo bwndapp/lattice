@@ -320,6 +320,8 @@ export function songSilence(project, node) {
     if (NODE_TYPES[node.type]?.group !== 'source') return null
     if (project.edges.some((e) => e.target === node.id)) return null // fed by something else: not a part
     if (triggerOnly(project, node.id) || inMachine(project, node.id)) return null
+    // a rhythm machine that only fires instruments has no clip: it keeps time, they have clips
+    if (NODE_TYPES[node.type]?.abstract && !machineSounds(node, project)) return null
     srcs = [`node:${node.id}`]
     bars = node.type === 'sound' ? 1 : 4
   }
