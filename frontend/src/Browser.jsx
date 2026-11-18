@@ -45,7 +45,6 @@ export default function Browser({ user, login, activeId, refreshKey, onPick, onN
     try {
       await api(`/tracks/${t.id}`, { method: 'DELETE' })
       setTracks((was) => (was ?? []).filter((x) => x.id !== t.id))
-      onTrackChanged?.()
     } catch (e) {
       setDeleteErr(`Couldn’t delete “${t.title}”: ${e.message}`)
     }
