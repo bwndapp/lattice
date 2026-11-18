@@ -14,7 +14,7 @@
  */
 
 import { parse } from 'acorn'
-import { GRAIN_STEPS, WOOK_FOLLOW, WOOK_RATES, WOOK_SHAPES, STEREO_ORBIT_BASE, beginInserts, commitInserts, declareBranch, declareInsert, declareQuiet, declareRoute, declareSide, declareSpeakers } from './stereo'
+import { GRAIN_STEPS, RING_MODES, RING_RATES, RING_SHAPES, RING_SOURCES, WOOK_FOLLOW, WOOK_RATES, WOOK_SHAPES, STEREO_ORBIT_BASE, beginInserts, commitInserts, declareBranch, declareInsert, declareQuiet, declareRoute, declareSide, declareSpeakers } from './stereo'
 import { abstractBuild, abstractNodeTypes, abstractOf, abstractParts, packState } from './abstract/index.js'
 import { DELAY_DEFAULTS, DELAY_DIVISIONS, GLOBAL_DELAY, GLOBAL_REVERB, REVERB_DEFAULTS, beginFx, commitFx, declareFx } from './fxbus.js'
 
@@ -401,6 +401,29 @@ export const NODE_TYPES = {
       { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 0.6 },
     ],
     code: stereoCode('grain', (d) => ({ size: d.size, density: d.density, position: d.position, spray: d.spray, pitch: d.pitch, pitchRand: d.pitchRand, steps: d.steps, glide: d.glide, chaos: d.chaos, shape: d.shape, reverse: d.reverse, spread: d.spread, freeze: d.freeze, feedback: d.feedback, mix: d.mix })),
+  },
+  ringmod: {
+    group: 'effect', cat: 'pitch', label: 'ring mod', blurb: 'The sound times a carrier: metallic, bell-like and robotic in ring mode, beating in am, or chopped in time',
+    inputs: 1,
+    params: [
+      { key: 'source', type: 'select', label: 'source', options: RING_SOURCES, def: 'hz' },
+      { key: 'freq', type: 'knob', label: 'freq', min: 1, max: 5000, def: 220, log: true, unit: 'hz', when: (d) => (d.source ?? 'hz') === 'hz' },
+      { key: 'rate', type: 'select', label: 'rate', options: RING_RATES, def: '1/32', when: (d) => d.source === 'tempo' },
+      { key: 'shape', type: 'select', label: 'shape', options: RING_SHAPES, def: 'sine' },
+      { key: 'mode', type: 'select', label: 'mode', options: RING_MODES, def: 'ring' },
+      { key: 'amount', type: 'knob', label: 'depth', min: 0, max: 1, def: 1 },
+      { key: 'spread', type: 'knob', label: 'spread', min: 0, max: 1, def: 0 },
+      { key: 'drift', type: 'knob', label: 'drift', min: 0, max: 1, def: 0, when: (d) => (d.source ?? 'hz') === 'hz' },
+      { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 1 },
+      { key: 'out', type: 'knob', label: 'out', min: 0, max: 2, def: 1, fmt: 'gain' },
+    ],
+    code: (() => {
+      const pick = (d) => ({ source: d.source, freq: d.freq, rate: d.rate, shape: d.shape, mode: d.mode, amount: d.amount, spread: d.spread, drift: d.drift, mix: d.mix, out: d.out })
+      const base = stereoCode('ringmod', pick)
+      const code = (d, xs, ctx) => stereoCode('ringmod', (dd) => ({ ...pick(dd), cps: ctx?.cps }))(d, xs, ctx)
+      code.insert = base.insert
+      return code
+    })(),
   },
   wook: {
     group: 'effect', cat: 'texture', label: 'w00k', blurb: 'Flutter: a fast chop in time on anything you send through it — the wook bass flutter, with warble, a darkening filter, spread, swing and hit-following',
@@ -823,7 +846,7 @@ function stereoCode(kind, params) {
 /** Reverb and delay: sends on each note, or inserts on a bus when the sound is on one (spaceOnBus). */
 const SPACE_TYPES = new Set(['reverb', 'delay', 'space'])
 const STEREO_TYPES = new Set(['haas', 'widener', 'utility', 'bus', 'eq3', 'saturator', 'distortion', 'clipper', 'softclip', 'compressor', 'limiter',
-  'filter', 'djfilter', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi', 'bitcrush', 'granulizer', 'wook', 'pitch', 'freqshift'])
+  'filter', 'djfilter', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi', 'bitcrush', 'granulizer', 'wook', 'ringmod', 'pitch', 'freqshift'])
 
 /**
  * Nodes that are real audio on a bus rather than settings on each note: they work on
@@ -833,7 +856,7 @@ const STEREO_TYPES = new Set(['haas', 'widener', 'utility', 'bus', 'eq3', 'satur
 export const BUS_NODES = new Set([...STEREO_TYPES, 'reverb', 'delay'])
 
 /** Effects that can sit inside an fx rack: every plain effect node. */
-export const FX_UNITS = ['eq3', 'compressor', 'limiter', 'saturator', 'distortion', 'clipper', 'softclip', 'punch', 'haas', 'widener', 'utility', 'filter', 'djfilter', 'reverb', 'delay', 'space', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi', 'bitcrush', 'granulizer', 'wook', 'pitch', 'freqshift']
+export const FX_UNITS = ['eq3', 'compressor', 'limiter', 'saturator', 'distortion', 'clipper', 'softclip', 'punch', 'haas', 'widener', 'utility', 'filter', 'djfilter', 'reverb', 'delay', 'space', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi', 'bitcrush', 'granulizer', 'wook', 'ringmod', 'pitch', 'freqshift']
 
 /**
  * Effects an instrument's lane can stack: the ones that are real audio on a bus. Reverb and

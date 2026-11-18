@@ -1161,6 +1161,7 @@ const SEARCH_WORDS = {
   vowel: 'formant voice talk mouth',
   lofi: 'coarse bitcrush downsample grit crush retro',
   granulizer: 'granular grain grains granulator cloud smear glitch stutter freeze texture scatter spray',
+  ringmod: 'ring ringmod ring mod am amplitude modulation metallic bell robot dalek carrier',
   wook: 'wook w00k flutter stutter chop gate tremolo trance gate dubstep bass riddim warble',
   bitcrush: 'crush bits 8bit lofi digital decimate downsample',
   eq3: 'eq equalizer equaliser three band 3 bass low mid high boost cut tone mixing',

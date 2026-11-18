@@ -341,6 +341,77 @@ class WookProcessor extends AudioWorkletProcessor {
 registerProcessor('lattice-wook', WookProcessor)
 
 /*
+ * Ring mod: the sound times a carrier. In ring mode the carrier swings both ways, so the
+ * sound's own pitch goes and sum and difference tones take its place (metallic, bell-like);
+ * in am mode it only dips, so the pitch stays and it beats against the carrier. The carrier
+ * is a frequency (with drift: a slow wander so it never sits still) or in time with the song.
+ */
+const RM_RATE = [4, 8, 16, 32, 64, 6, 12, 24, 48]
+class RingModProcessor extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    const k = (name, def, min, max) => ({ name, defaultValue: def, minValue: min, maxValue: max, automationRate: 'k-rate' })
+    return [
+      k('freq', 220, 1, 5000), k('source', 0, 0, 1), k('rate', 3, 0, 8), k('shape', 0, 0, 3), k('mode', 0, 0, 1),
+      k('amount', 1, 0, 1), k('spread', 0, 0, 1), k('drift', 0, 0, 1), k('mix', 1, 0, 1), k('out', 1, 0, 2), k('cps', 0.5625, 0.05, 4),
+    ]
+  }
+  constructor() {
+    super()
+    this.song = null
+    this.port.onmessage = (e) => { if (e.data && e.data.sync !== undefined) this.song = e.data.sync }
+    this.ph = 0
+    this.t = 0
+    this.wander = 0; this.wanderTo = 0; this.wanderAt = 0
+  }
+  wave(shape, p) {
+    if (shape === 0) return Math.sin(6.283185307 * p)
+    if (shape === 1) return 1 - 4 * Math.abs(p - 0.5)
+    if (shape === 2) return p < 0.5 ? 1 : -1
+    return 2 * p - 1
+  }
+  process(inputs, outputs, P) {
+    const input = inputs[0], out = outputs[0]
+    if (!out || !out.length) return true
+    const L = out[0], R = out[1] || out[0]
+    const n = L.length
+    if (!input || !input.length) { L.fill(0); if (R !== L) R.fill(0); return true }
+    const xl = input[0], xr = input[1] || input[0]
+    const v = (name) => P[name][0]
+    const tempo = v('source') >= 0.5
+    const cps = this.song ? this.song.cps : v('cps')
+    const per = RM_RATE[Math.round(v('rate'))] || 16
+    const shape = Math.round(v('shape')), am = v('mode') >= 0.5
+    const amount = v('amount'), spread = v('spread'), drift = v('drift'), mix = v('mix'), outG = v('out')
+    const dt = 1 / sampleRate
+    const s = this.song
+    const cycle0 = s ? s.cycle + (currentTime - s.at) * s.cps : this.t * cps
+    for (let i = 0; i < n; i++) {
+      let pl
+      if (tempo) {
+        pl = (cycle0 + i * dt * cps) * per
+      } else {
+        // drift: toward a new spot every second or so, up to an octave either way at full
+        if (drift > 0.001 && this.t + i * dt >= this.wanderAt) { this.wanderTo = (Math.random() * 2 - 1) * drift; this.wanderAt = this.t + i * dt + 0.6 + Math.random() * 0.8 }
+        this.wander += (this.wanderTo - this.wander) * 0.00005
+        this.ph += v('freq') * Math.pow(2, this.wander) * dt
+        if (this.ph >= 1) this.ph -= Math.floor(this.ph)
+        pl = this.ph
+      }
+      const pr = pl + spread * 0.5
+      let cl = this.wave(shape, pl - Math.floor(pl)), cr = this.wave(shape, pr - Math.floor(pr))
+      if (am) { cl = 0.5 + 0.5 * cl; cr = 0.5 + 0.5 * cr } // only dips: the pitch stays
+      const gl = 1 - amount + amount * cl, gr = 1 - amount + amount * cr
+      const wl = xl[i] * gl, wr = xr[i] * gr
+      L[i] = (xl[i] * (1 - mix) + wl * mix) * outG
+      if (R !== L) R[i] = (xr[i] * (1 - mix) + wr * mix) * outG
+    }
+    this.t += n * dt
+    return true
+  }
+}
+registerProcessor('lattice-ringmod', RingModProcessor)
+
+/*
  * Sidechain, the ring-mod way (after Kilohearts' Ring Mod with a sidechain source): the bus is
  * multiplied by the trigger's own audio, sample by sample, so the dip is exactly as long and
  * as shaped as the kick that causes it, never late. Input 0 is the bus, input 1 the trigger.
@@ -952,6 +1023,10 @@ export function setInsertParams(key, patch) {
  * and whatever was set while it was still loading is applied the moment it arrives.
  */
 /** W00K's choices, as its node offers them (graph.js) and its worklet counts them. */
+export const RING_SOURCES = ['hz', 'tempo']
+export const RING_RATES = ['1/4', '1/8', '1/16', '1/32', '1/64', '1/4 t', '1/8 t', '1/16 t', '1/32 t']
+export const RING_SHAPES = ['sine', 'triangle', 'square', 'saw']
+export const RING_MODES = ['ring', 'am']
 export const WOOK_RATES = ['1/8', '1/8 t', '1/16', '1/16 t', '1/32', '1/32 t', '1/64', '1/8 .', '1/4 .', 'free']
 export const WOOK_SHAPES = ['sine', 'triangle', 'square', 'saw down', 'saw up']
 export const WOOK_FOLLOW = ['song', 'hits']
@@ -1363,6 +1438,25 @@ const UNITS = {
       swing: n(p.swing, 0, 0.5, 0),
       follow: pick(WOOK_FOLLOW, p.follow, 0),
       rise: n(p.rise, 0, 2, 0),
+      mix: n(p.mix, 0, 1, 1),
+      out: n(p.out, 0, 2, 1),
+      cps: n(p.cps, 0.05, 4, 0.5625),
+    }), { sync: true })
+  },
+
+  /** Ring mod: the sound times a carrier (see the worklet above). */
+  ringmod(ac) {
+    const n = (v, lo, hi, def) => Math.min(hi, Math.max(lo, Number.isFinite(+v) ? +v : def))
+    const pick = (list, v, def) => { const i = list.indexOf(v); return i < 0 ? def : i }
+    return workletInsert(ac, 'lattice-ringmod', (p) => ({
+      freq: n(p.freq, 1, 5000, 220),
+      source: pick(RING_SOURCES, p.source, 0),
+      rate: pick(RING_RATES, p.rate, 3),
+      shape: pick(RING_SHAPES, p.shape, 0),
+      mode: pick(RING_MODES, p.mode, 0),
+      amount: n(p.amount, 0, 1, 1),
+      spread: n(p.spread, 0, 1, 0),
+      drift: n(p.drift, 0, 1, 0),
       mix: n(p.mix, 0, 1, 1),
       out: n(p.out, 0, 2, 1),
       cps: n(p.cps, 0.05, 4, 0.5625),
