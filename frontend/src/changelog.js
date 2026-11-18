@@ -24,6 +24,21 @@
  */
 export const NEWS = [
   {
+    id: '2026-11-18-4',
+    date: '2026-11-18',
+    version: '0.21.0',
+    title: 'Ring mod, frames as modules, and a smoother timeline',
+    items: [
+      '**Ring mod**: a new effect — metallic and bell-like in ring mode, beating in am, or chopped in time with the song',
+      '**W00K is the flutter**: a fast chop in time with warble, a darkening filter, spread, swing, and a rise that lets each hit through',
+      '**Frames as modules**: wires meet inputs on a frame’s left edge and leave by outputs on its right; nodes stay inside (alt-drag one out)',
+      '**Automation**: zoom into the editor, see the playhead on the curve, points don’t cross each other, clearer names and colours',
+      '**The rack shows what plays it**: an instrument a groove box or Fibonacci fires says so, with its rhythm and a way to the machine',
+      '**Delete a track from browse**, and the timeline leaves the view alone while you scroll around',
+      '**Fixed**: a flash and a bright first beat when pressing play',
+    ],
+  },
+  {
     id: '2026-11-18-3',
     date: '2026-11-18',
     version: '0.20.0',
