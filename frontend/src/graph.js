@@ -407,7 +407,8 @@ export const NODE_TYPES = {
     inputs: 1,
     params: [
       { key: 'rate', type: 'select', label: 'rate', options: WOOK_RATES, def: '1/32' },
-      { key: 'hz', type: 'knob', label: 'free hz', min: 0.5, max: 60, def: 12, log: true, unit: 'hz' },
+      // only when the rate is free: in time, the song's tempo sets it
+      { key: 'hz', type: 'knob', label: 'hz', min: 0.5, max: 60, def: 12, log: true, unit: 'hz', when: (d) => d.rate === 'free' },
       { key: 'shape', type: 'select', label: 'shape', options: WOOK_SHAPES, def: 'sine' },
       { key: 'width', type: 'knob', label: 'width', min: 0.05, max: 0.95, def: 0.5 },
       { key: 'smooth', type: 'knob', label: 'smooth', min: 0, max: 1, def: 0.3 },

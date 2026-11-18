@@ -429,7 +429,7 @@ function FxRack({ node }) {
                   onClick={() => edit((c) => { const j = at(c, unit.id); if (j >= 0) c.splice(j, 1) })}>×</button>
               </div>
               <div className="node-params">
-                {spec.params.map((p) => (
+                {spec.params.filter((p) => !p.when || p.when(unit.data ?? {})).map((p) => (
                   <Param
                     key={p.key}
                     node={node}
@@ -885,7 +885,8 @@ function StudioNode({ id, selected }) {
           </div>
         ) : spec.params.length > 0 && (
           <div className="node-params">
-            {spec.params.map((p) => <Param key={p.key} node={node} param={p} />)}
+            {/* a knob that only means something in one setting shows only then (W00K's free hz) */}
+            {spec.params.filter((p) => !p.when || p.when(node.data ?? {})).map((p) => <Param key={p.key} node={node} param={p} />)}
           </div>
         )}
 
