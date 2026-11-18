@@ -593,7 +593,10 @@ export default function Timeline({ project, onUpdateProject, transport, started 
         lastPress.current = null
         // on an automation's curve: a new point there; on its name: the editor, as for any part
         const auto = clip.src.startsWith(AUTO_PREFIX) && song.autos?.find((a) => `${AUTO_PREFIX}${a.id}` === clip.src)
-        const at = auto && !e.target.closest('.clip-name') ? curvePoint(e, clip, auto) : null
+        // the clip's top strip (where its name sits) is its header: that opens the editor
+        const box = e.target.closest('.clip')?.getBoundingClientRect()
+        const onHeader = !!e.target.closest('.clip-name') || (box && e.clientY - box.top < Math.min(16, box.height * 0.4))
+        const at = auto && !onHeader ? curvePoint(e, clip, auto) : null
         if (at) { setAutoPoints(auto.id, addPoint(auto.points, at.x, at.y).points); return }
         openPart(clip.src, e)
         return
