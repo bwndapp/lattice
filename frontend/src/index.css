@@ -1523,3 +1523,11 @@ button:disabled { cursor: var(--dot); }
 .bs-row > span:first-child { color: var(--muted); }
 .bs-pair { display: inline-flex; align-items: center; gap: 0.3rem; }
 .bs-oct { min-width: 2.2em; text-align: center; font-variant-numeric: tabular-nums; }
+
+/* save, as a floppy disk: lit when there's something to save, a beat of pulse while saving */
+.bar .btn.icon-save { display: inline-flex; align-items: center; gap: 0.2rem; padding-inline: 0.55rem; }
+.bar .btn.icon-save .floppy { display: block; }
+.bar .btn.icon-save .save-note { font-size: 0.75em; line-height: 1; }
+.bar .btn.icon-save.saving .floppy { animation: floppy-pulse 0.7s ease-in-out infinite alternate; }
+@keyframes floppy-pulse { from { opacity: 1; } to { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .bar .btn.icon-save.saving .floppy { animation: none; } }

@@ -1692,19 +1692,22 @@ export default function App() {
             <span className="meta track-status">Loading…</span>
           ) : canEdit ? (
             <>
-              <button className={`btn save ${dirty || !user ? 'primary' : ''} ${user ? '' : 'signed-out'} ${justSaved && !dirty ? 'just-saved' : ''}`} onClick={() => save()} disabled={busy || (!!user && !dirty)} title={!user ? 'Sign in to save this track' : dirty ? (isNew ? 'Save as a track (ctrl/cmd + S)' : `Save “${track?.title}” (ctrl/cmd + S)`) : 'Everything is saved'}>
-                {busy ? 'saving…' : !user || dirty ? 'save' : justSaved ? 'saved ✓' : 'saved'}
+              <button className={`btn save icon-save ${busy ? 'saving' : ''} ${dirty || !user ? 'primary' : ''} ${user ? '' : 'signed-out'} ${justSaved && !dirty ? 'just-saved' : ''}`} onClick={() => save()} disabled={busy || (!!user && !dirty)} aria-label={busy ? 'Saving' : !user || dirty ? 'Save' : 'Saved'} title={!user ? 'Sign in to save this track' : dirty ? (isNew ? 'Save as a track (ctrl/cmd + S)' : `Save “${track?.title}” (ctrl/cmd + S)`) : 'Everything is saved'}>
+                {/* a floppy disk, for the vibe: how it's lit says whether there's anything to save */}
+                <svg className="floppy" viewBox="0 0 14 14" width="15" height="15" aria-hidden fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"><path d="M2 1.5h8.2L12.5 3.8v8.7H1.5V2a.5.5 0 0 1 .5-.5Z" /><path d="M4 1.5v3.4h5.4V1.5" /><path d="M7.6 2.4v1.6" /><rect x="3.6" y="7.6" width="6.8" height="4.9" rx=".4" /></svg>
+                {busy ? <span className="save-note">…</span> : justSaved && !dirty ? <span className="save-note">✓</span> : null}
               </button>
             </>
           ) : track ? (
             <>
               <span className="track-heading meta" title={`by ${track.author}`}>by {track.author}</span>
               <button
-                className={`btn save ${dirty ? 'primary' : ''}`}
+                className={`btn save icon-save ${busy ? 'saving' : ''} ${dirty ? 'primary' : ''}`}
                 onClick={() => save()}
                 disabled={busy}
                 title={user ? 'Keep your own copy of this · the original is untouched' : 'Sign in to keep your own copy'}
-              >{busy ? 'saving…' : 'save a copy'}</button>
+                aria-label="Save a copy"
+              ><svg className="floppy" viewBox="0 0 14 14" width="15" height="15" aria-hidden fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"><path d="M2 1.5h8.2L12.5 3.8v8.7H1.5V2a.5.5 0 0 1 .5-.5Z" /><path d="M4 1.5v3.4h5.4V1.5" /><path d="M7.6 2.4v1.6" /><rect x="3.6" y="7.6" width="6.8" height="4.9" rx=".4" /></svg><span className="save-note">{busy ? '…' : '+'}</span></button>
               <button className={`btn bar-like ${track.liked ? 'on' : ''}`} onClick={like} title="Like">♥{track.likes}</button>
             </>
           ) : null}
