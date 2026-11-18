@@ -24,6 +24,17 @@
  */
 export const NEWS = [
   {
+    id: '2026-11-18-1',
+    date: '2026-11-18',
+    version: '0.19.0',
+    title: 'Pure tunings, and a freer playhead',
+    items: [
+      '**Tuning systems**: beside A4, tune the whole track in Pythagorean (pure fifths) or just intonation (pure fifths and thirds), built on your key — every note follows, in export too',
+      '**The playhead moves freely**: click or drag the ruler and it goes exactly there (alt snaps to a beat)',
+      '**Pause goes back** to where you last put the playhead, as FL does, so play starts there again',
+    ],
+  },
+  {
     id: '2026-11-17-1',
     date: '2026-11-17',
     version: '0.18.0',
