@@ -54,7 +54,9 @@ export function createTransport() {
     position() {
       if (!t.playing()) return t.start
       const s = t.scheduler.now() + t.k
-      return t.looping() ? t.loop.from + mod(s, t.loopLength()) : s
+      // the scheduler's clock starts a hair below zero as it spins up: never before bar 1, or
+      // everything that wraps a position round the song (the playhead, automation) reads the end
+      return t.looping() ? t.loop.from + mod(s, t.loopLength()) : Math.max(0, s)
     },
 
     /** Point k at song position p for scheduler time s. */
