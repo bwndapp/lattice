@@ -1527,7 +1527,7 @@ export default function App() {
     // cursor somewhere sensible, and so will the next floating thing anyone adds
     <div className="studio" data-surface="app">
       {/* the master, at a glance: the waveform going by and a stereo scope */}
-      {view !== 'browse' && <MiniScopes />}
+      {view !== 'browse' && <MiniScopes playing={started} />}
       <header className="bar" data-surface="header">
         <div className="bar-side left">
         {/*

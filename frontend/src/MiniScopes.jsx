@@ -40,7 +40,9 @@ function useMasterTap() {
   return get
 }
 
-export default function MiniScopes() {
+export default function MiniScopes({ playing = true }) {
+  const playingRef = useRef(playing)
+  playingRef.current = playing
   const waveRef = useRef(null)
   const scopeRef = useRef(null)
   const corrRef = useRef(null)
@@ -63,16 +65,30 @@ export default function MiniScopes() {
         const w = Math.round(c.clientWidth * dpr), h = Math.round(c.clientHeight * dpr)
         if (c.width !== w || c.height !== h) { c.width = w; c.height = h }
       }
+      if (t) {
+        t.l.getFloatTimeDomainData(t.bl)
+        t.r.getFloatTimeDomainData(t.br)
+      }
+      // Nothing new coming in (stopped, paused, or the audio that fed it is gone): the
+      // analyser keeps handing back the last slice it heard, which would scroll by for ever.
+      // So the waveform holds still and the stereo field fades away.
+      let fresh = false
+      if (t) {
+        const sig = t.bl[0] + t.bl[511] * 3 + t.bl[1023] * 7 + t.bl[2047] * 11 + t.br[777] * 13
+        fresh = sig !== t.sig
+        t.sig = sig
+      }
+      const live = playingRef.current && fresh
       // ── the waveform: shift what's there left, draw the newest sliver at the right ──
       const wg = wave.getContext('2d')
       const W = wave.width, H = wave.height
       const step = Math.max(1, Math.round(SCROLL_PX * dpr))
-      wg.drawImage(wave, -step, 0)
-      wg.clearRect(W - step, 0, step, H)
+      if (live) {
+        wg.drawImage(wave, -step, 0)
+        wg.clearRect(W - step, 0, step, H)
+      }
       let peak = 0, low = 0, high = 0, sum = 0, count = 0
-      if (t) {
-        t.l.getFloatTimeDomainData(t.bl)
-        t.r.getFloatTimeDomainData(t.br)
+      if (t && live) {
         // the samples since the last frame (about one frame's worth at the end of the buffer)
         const since = Math.min(t.bl.length, Math.max(64, Math.round(((now - lastRead) / 1000 || 1 / 60) * t.ac.sampleRate)))
         lastRead = now
@@ -88,6 +104,7 @@ export default function MiniScopes() {
       const mid = H / 2
       // the peaks faint, the average level solid on them: the beat's shape shows even in a loud mix
       const rms = count ? Math.sqrt(sum / count) : 0
+      if (live) {
       wg.fillStyle = peak > 0.99 ? '#ff5a43' : ink
       wg.globalAlpha = 0.35
       wg.fillRect(W - step, mid - Math.max(0.5, high * mid * 0.95), step, Math.max(1, (high - low) * mid * 0.95))
@@ -95,6 +112,7 @@ export default function MiniScopes() {
       const half = Math.min(1, rms * 1.41) * mid * 0.95
       wg.fillRect(W - step, mid - half, step, Math.max(1, half * 2))
       wg.globalAlpha = 1
+      }
       // ── the stereo field: each sample a dot, across by where it sits (hard left … mono …
       //    hard right), up by how loud it is; a short trail so it reads as a cloud ──
       const sg = scope.getContext('2d')
@@ -104,7 +122,7 @@ export default function MiniScopes() {
       sg.fillRect(0, 0, SW, SH)
       sg.globalCompositeOperation = 'source-over'
       let corr = 0, el = 0, er = 0
-      if (t) {
+      if (t && live) {
         sg.fillStyle = ink
         const n = t.bl.length
         const dot = Math.max(1, 1.4 * dpr)
