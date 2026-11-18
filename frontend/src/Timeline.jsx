@@ -10,7 +10,7 @@ import { pointerAt, pointerGone, selectionIs, useHolders } from './collab.js'
 import PeerCursors from './PeerCursors.jsx'
 import { useRollDock } from './rollDock.js'
 import { KnobMenu } from './KnobMenu.jsx'
-import { AUTO_PREFIX, curveAt, resolveTarget } from './automation.js'
+import { AUTO_PREFIX, addPoint, curveAt, movePoints, removePoints, resolveTarget } from './automation.js'
 import CodeBox from './CodeBox.jsx'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import { KitSelect } from './Graph.jsx'
@@ -137,7 +137,10 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     const absNode = src?.startsWith('node:') ? project.nodes.find((n) => `node:${n.id}` === src) : null
     const absPattern = absNode && abstractOf(absNode.type)?.asPattern?.(abstractState(absNode))
     if (!src?.startsWith('pattern:') && !isAuto && !absPattern) return null
-    const pattern = absPattern ?? (isAuto ? song.autos?.find((a) => a.id === src.slice(AUTO_PREFIX.length)) : firedSketch(project, src.slice(8)) ?? project.patterns.find((p) => p.id === src.slice(8)))
+    const autoNow = isAuto && song.autos?.find((a) => a.id === src.slice(AUTO_PREFIX.length))
+    // a curve being dragged on the timeline is drawn as it's going to be
+    const autoShown = autoNow && autoDraftRef.current?.id === autoNow.id ? { ...autoNow, points: autoDraftRef.current.points } : autoNow
+    const pattern = absPattern ?? (isAuto ? autoShown : firedSketch(project, src.slice(8)) ?? project.patterns.find((p) => p.id === src.slice(8)))
     const ink = inkFor(colorFor(src, song.colors))
     const hit = sketchCache.current.get(src)
     if (hit && hit.ink === ink) {
@@ -167,6 +170,10 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const [laneH, setLaneH] = useState(readRows) // row height
   const LANE_H = laneH
   const [selected, setSelected] = useState(() => new Set())
+  // an automation curve being edited on the timeline itself: { id, points } while dragging
+  const [autoDraft, setAutoDraft] = useState(null)
+  const autoDraftRef = useRef(null)
+  autoDraftRef.current = autoDraft
   const [activePart, setActivePart] = useState(null) // src: empty-row drags draw this part
   const [drag, setDrag] = useState(null) // live preview while moving / stretching / drawing
   const [marquee, setMarquee] = useState(null)
@@ -290,6 +297,53 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     p.song = p.song ?? { on: true, snap: 'bar', clips: [] }
     fn(p.song, p)
   }), [onUpdateProject])
+
+  // ── automation, edited on its clips: drag a point, right-click it away, double-click to add ──
+  const setAutoPoints = (id, points) => updateSong((s) => { const a = s.autos?.find((x) => x.id === id); if (a) a.points = points })
+  /** Where a pointer is inside an automation clip's curve: { x (bars into the curve), y (0 … 1) }. */
+  const curvePoint = (e, clip, auto) => {
+    const box = e.target.closest('.clip')?.querySelector('.clip-sketch')?.getBoundingClientRect()
+    if (!box) return null
+    const local = (box.left === 0 && box.width === 0) ? 0 : (e.clientX - box.left) / ppb
+    const len = Math.max(1 / 64, auto.bars)
+    const raw = (((local + (clip.offset ?? 0)) % len) + len) % len
+    const x = e.altKey ? raw : Math.round(raw * beats * 4) / (beats * 4) // to sixteenths, alt: anywhere
+    const frac = (e.clientY - box.top) / box.height
+    return { x: Math.min(len, x), y: Math.min(1, Math.max(0, (96 - frac * 100) / 92)) }
+  }
+  const autoDrag = useRef(null)
+  const onPointDown = (e, auto, index) => {
+    e.stopPropagation()
+    e.preventDefault()
+    if (e.button === 2) { setAutoPoints(auto.id, removePoints(auto.points, [index])); return }
+    if (e.button !== 0) return
+    e.currentTarget.setPointerCapture(e.pointerId)
+    const h = e.target.closest('.clip')?.querySelector('.clip-sketch')?.getBoundingClientRect().height || 30
+    autoDrag.current = { id: auto.id, base: auto.points, index, x0: e.clientX, y0: e.clientY, h, bars: auto.bars, lock: null }
+    setAutoDraft({ id: auto.id, points: auto.points })
+  }
+  const onPointMove = (e) => {
+    const d = autoDrag.current
+    if (!d) return
+    const px = e.clientX - d.x0
+    const py = e.clientY - d.y0
+    // shift locks it one way, as in the automation editor: sideways keeps its value
+    if (e.shiftKey && !d.lock && Math.hypot(px, py) > 3) d.lock = Math.abs(px) >= Math.abs(py) ? 'time' : 'value'
+    if (!e.shiftKey) d.lock = null
+    const from = d.base[d.index]
+    let dx = d.lock === 'value' ? 0 : px / ppb
+    if (!e.altKey && dx) dx = Math.round((from.x + dx) * beats * 4) / (beats * 4) - from.x
+    const dy = d.lock === 'time' ? 0 : -(py / d.h) * (100 / 92)
+    const moved = movePoints(d.base, [d.index], dx, dy, d.bars)
+    d.current = moved.points
+    setAutoDraft({ id: d.id, points: moved.points })
+  }
+  const onPointUp = () => {
+    const d = autoDrag.current
+    autoDrag.current = null
+    setAutoDraft(null)
+    if (d?.current) setAutoPoints(d.id, d.current)
+  }
 
   // clips as shown: the project's, with a drag's changes laid over them
   const clips = useMemo(() => {
@@ -537,6 +591,10 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       lastPress.current = { id, t: now }
       if (last?.id === id && now - last.t < 350 && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
         lastPress.current = null
+        // on an automation's curve: a new point there; on its name: the editor, as for any part
+        const auto = clip.src.startsWith(AUTO_PREFIX) && song.autos?.find((a) => `${AUTO_PREFIX}${a.id}` === clip.src)
+        const at = auto && !e.target.closest('.clip-name') ? curvePoint(e, clip, auto) : null
+        if (at) { setAutoPoints(auto.id, addPoint(auto.points, at.x, at.y).points); return }
         openPart(clip.src, e)
         return
       }
@@ -1275,6 +1333,39 @@ export default function Timeline({ project, onUpdateProject, transport, started 
                     title={`${part.name} · bar ${Math.floor(c.start) + 1}${c.start % 1 ? `.${Math.round((c.start % 1) * beats) + 1}` : ''} · ${Math.round(c.len * beats) / beats} bar${c.len === 1 ? '' : 's'}${loose ? (part.kind === 'auto' ? ' · its knob is gone, so this plays nothing' : ' · unused: nothing on the patch plays it, so this makes no sound · add it back from “unused” in the patcher’s add pane') : ''}`}
                   >
                     <ClipSketch url={sketchFor(c.src)} bars={tile} ppb={ppb} into={sketchInto} laneH={LANE_H} full={part.kind === 'auto'} />
+                    {part.kind === 'auto' && LANE_H >= 22 && (() => {
+                      const a = song.autos?.find((x) => x.id === part.id)
+                      if (!a) return null
+                      const pts = autoDraft?.id === a.id ? autoDraft.points : a.points
+                      const len = Math.max(1 / 64, a.bars)
+                      const off = c.offset ?? 0
+                      // every repeat of the curve inside the clip shows its points; any of them edits it
+                      const handles = []
+                      const first = Math.floor(off / len)
+                      for (let k = first; (k * len) - off < c.len + 1e-9; k++) {
+                        pts.forEach((p, i) => {
+                          const at = k * len + p.x - off // bars into the clip
+                          if (at < -1e-9 || at > c.len + 1e-9) return
+                          // where one repeat ends the next begins: one handle there, not two
+                          if (p.x < 1e-9 && k > first && pts.some((q) => q.x > len - 1e-9)) return
+                          handles.push(
+                            <span
+                              key={`${k}:${i}`}
+                              className={`auto-handle ${autoDraft?.id === a.id && autoDrag.current?.index === i ? 'held' : ''}`}
+                              style={{ left: at * ppb, top: `${100 - p.y * 92 - 4}%` }}
+                              title="Drag to move (shift: one way, alt: off the grid) · right-click to delete · double-click the curve to add a point"
+                              onPointerDown={(e) => onPointDown(e, a, i)}
+                              onPointerMove={onPointMove}
+                              onPointerUp={onPointUp}
+                              onPointerCancel={onPointUp}
+                              onContextMenu={(e) => { e.preventDefault(); e.stopPropagation() }}
+                              onDoubleClick={(e) => e.stopPropagation()}
+                            />,
+                          )
+                        })
+                      }
+                      return <span className="auto-handles">{handles}</span>
+                    })()}
                     <span className="clip-name">{part.name}</span>
                     {loose && <span className="clip-loose" aria-label="not in the patch">?</span>}
                     {Array.from({ length: repeats }, (_, i) => (

@@ -400,3 +400,14 @@
 /* beat numbers on the ruler, once zoomed in: quieter than the bars' */
 .song-tick.beat { color: var(--dim); font-size: 0.85em; }
 .song-tick.beat::before { height: 4px; }
+
+/* an automation clip's points, editable right on the timeline */
+.auto-handles { position: absolute; left: -1px; right: -1px; top: 3px; bottom: 3px; pointer-events: none; }
+.auto-handle {
+  position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%;
+  background: var(--clip-ink, #111); border: 1.5px solid var(--clip, #e4ff1a); pointer-events: auto; cursor: grab;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+.auto-handle:hover { transform: scale(1.35); }
+.auto-handle.held { cursor: grabbing; transform: scale(1.35); background: var(--clip, #e4ff1a); }
+.clip.automation { overflow: visible; } /* its points can sit on its edges and still be grabbed */
