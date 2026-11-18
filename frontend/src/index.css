@@ -257,7 +257,7 @@ body.dragging, body.dragging * { user-select: none !important; -webkit-user-sele
  * share button (0.15) took about 80px, so each of these leaves that much sooner.
  */
 @media (max-width: 1680px) { .bar .loop-range { display: none; } }
-@media (max-width: 1540px) { .bar .lcd.meter, .bar .lcd.tuning, .bar .lcd.tuning-sys { display: none; } } /* A4: set once a track, like the meter */
+ /* A4: set once a track, like the meter */
 @media (max-width: 1400px) { .share-word { display: none; } }
 @media (max-width: 1540px) { .bar .track-heading, .bar .bar-like { display: none; } } /* someone else's track: who made it is on its page */
 .btn.share-btn { display: inline-flex; align-items: center; gap: 0.4rem; flex: none; }
@@ -1512,3 +1512,14 @@ button:disabled { cursor: var(--dot); }
 /* the tuning system and its root, beside A4 */
 .bar .lcd.tuning-sys { display: inline-flex; align-items: center; gap: 0.15rem; }
 .bar .lcd.tuning-sys select { width: auto; }
+
+/* the bar's settings: metre and tuning in one box, the rest in its panel */
+.bar .bar-settings { display: inline-flex; align-items: baseline; gap: 0.35rem; cursor: pointer; }
+.bar .bar-settings .bs-sub { font-size: 0.72em; color: var(--muted); }
+.bar .bar-settings .bs-caret { font-size: 0.6em; color: var(--muted); }
+.bar-settings-panel { padding: 0.6rem 0.7rem; min-width: 16rem; }
+.bs-rows { display: grid; gap: 0.55rem; }
+.bs-row { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; font-size: 0.8rem; }
+.bs-row > span:first-child { color: var(--muted); }
+.bs-pair { display: inline-flex; align-items: center; gap: 0.3rem; }
+.bs-oct { min-width: 2.2em; text-align: center; font-variant-numeric: tabular-nums; }

@@ -1576,73 +1576,90 @@ export default function App() {
             else flash('Fix the code error first, then set the tempo')
           }}
         />
-        {project && (
-          <Tempo
-            bpm={project.tuning ?? A4}
-            min={TUNING_MIN}
-            max={TUNING_MAX}
-            resetTo={A4}
-            unit="A4"
-            name="Tuning: where A4 sits, in Hz (every pitched note follows)"
-            ariaLabel="Tuning, A4 in Hz"
-            className="tuning"
-            onChange={(hz) => updateProject((p) => { if (hz === A4) delete p.tuning; else p.tuning = hz })}
-          />
-        )}
-        {project && (
-          // the tuning system, for the whole track: equal temperament, or pure ratios from a root
-          <span className="lcd tuning-sys" title="Tuning system for the whole track: equal temperament, Pythagorean (pure fifths) or just intonation (pure fifths and thirds), built on a root note">
-            <select
-              className="lcd-value"
-              aria-label="Tuning system"
-              value={project.tuningSystem ?? 'equal'}
-              onChange={(e) => {
-                const sys = e.target.value
-                updateProject((p) => {
-                  if (sys === 'equal') { delete p.tuningSystem; delete p.tuningRoot } else { p.tuningSystem = sys; p.tuningRoot = p.tuningRoot ?? 0 }
-                })
-              }}
-            >
-              {SYSTEMS.map((s) => <option key={s} value={s}>{s === 'equal' ? '12-tet' : s === 'pythagorean' ? 'pythag' : 'just'}</option>)}
-            </select>
-            {project.tuningSystem && (
-              <select
-                className="lcd-value"
-                aria-label="Tuning root"
-                title="The root the tuning is built on: put it on your track's key"
-                value={project.tuningRoot ?? 0}
-                onChange={(e) => { const r = Number(e.target.value); updateProject((p) => { p.tuningRoot = r }) }}
-              >
-                {ROOTS.map((n, i) => <option key={n} value={i}>{n}</option>)}
-              </select>
-            )}
-          </span>
-        )}
         <Position transport={transport} started={started} bpm={project ? project.bpm : (evaluated.cps ?? 0.5) * 60 * transport.beats} songBars={project?.song ? songLength(project.song) : 0} />
-        <label className="lcd meter" title="Beats per bar">
-          <select
-            className="lcd-value"
-            aria-label="Beats per bar"
-            value={transport.beats}
-            onChange={(e) => {
-              const beats = Number(e.target.value)
-              transport.setBeats(beats)
-              if (project) updateProject((p) => { p.beats = beats })
-            }}
-          >
-            {[2, 3, 4, 5, 6, 7, 8].map((n) => <option key={n} value={n}>{n}/4</option>)}
-          </select>
-        </label>
-        <div
-          className="lcd oct"
-          title={`Typing plays from C${octave}: z s x d c v g b h n j m , is that octave, q 2 w 3 e r 5 t 6 y 7 u the next. − and = move it, wherever you are.`}
-          onWheel={(e) => { e.preventDefault(); setOctave(octave + (e.deltaY < 0 ? 1 : -1)) }}
+        {/* the track's settings that are set once (metre, A4, tuning) and the keys' octave, in one place */}
+        <Popover
+          className="lcd bar-settings"
+          panelClassName="bar-settings-panel"
+          align="left"
+          title="Track settings: beats per bar, tuning, and the octave your keyboard plays"
+          label={<><span className="lcd-value">{transport.beats}/4</span>{project && <span className="bs-sub">{project.tuning ?? A4}{project.tuningSystem ? ` ${project.tuningSystem === 'pythagorean' ? 'pyth' : 'just'} ${ROOTS[project.tuningRoot ?? 0]}` : ''}</span>}<span className="bs-caret" aria-hidden>▾</span></>}
         >
-          <button type="button" className="lcd-step" disabled={octave <= 0} onClick={() => setOctave(octave - 1)} aria-label="An octave down">−</button>
-          <span className="lcd-value" aria-live="polite">C{octave}</span>
-          <button type="button" className="lcd-step" disabled={octave >= 8} onClick={() => setOctave(octave + 1)} aria-label="An octave up">+</button>
-          <span className="lcd-unit" aria-hidden>oct</span>
-        </div>
+          {() => (
+            <div className="bs-rows">
+              <label className="bs-row">
+                <span>beats per bar</span>
+                <select
+                  className="select"
+                  aria-label="Beats per bar"
+                  value={transport.beats}
+                  onChange={(e) => {
+                    const beats = Number(e.target.value)
+                    transport.setBeats(beats)
+                    if (project) updateProject((p) => { p.beats = beats })
+                  }}
+                >
+                  {[2, 3, 4, 5, 6, 7, 8].map((n) => <option key={n} value={n}>{n}/4</option>)}
+                </select>
+              </label>
+              {project && (
+                <div className="bs-row">
+                  <span>A4</span>
+                  <Tempo
+                    bpm={project.tuning ?? A4}
+                    min={TUNING_MIN}
+                    max={TUNING_MAX}
+                    resetTo={A4}
+                    unit="Hz"
+                    name="Tuning: where A4 sits, in Hz (every pitched note follows)"
+                    ariaLabel="Tuning, A4 in Hz"
+                    className="tuning"
+                    onChange={(hz) => updateProject((p) => { if (hz === A4) delete p.tuning; else p.tuning = hz })}
+                  />
+                </div>
+              )}
+              {project && (
+                <label className="bs-row" title="Equal temperament, Pythagorean (pure fifths) or just intonation (pure fifths and thirds), built on a root note: every note in the track follows">
+                  <span>tuning</span>
+                  <span className="bs-pair">
+                    <select
+                      className="select"
+                      aria-label="Tuning system"
+                      value={project.tuningSystem ?? 'equal'}
+                      onChange={(e) => {
+                        const sys = e.target.value
+                        updateProject((p) => {
+                          if (sys === 'equal') { delete p.tuningSystem; delete p.tuningRoot } else { p.tuningSystem = sys; p.tuningRoot = p.tuningRoot ?? 0 }
+                        })
+                      }}
+                    >
+                      {SYSTEMS.map((x) => <option key={x} value={x}>{x === 'equal' ? 'equal (12-tet)' : x === 'pythagorean' ? 'pythagorean' : 'just intonation'}</option>)}
+                    </select>
+                    {project.tuningSystem && (
+                      <select
+                        className="select"
+                        aria-label="Tuning root"
+                        title="The root the tuning is built on: put it on your track's key"
+                        value={project.tuningRoot ?? 0}
+                        onChange={(e) => { const r = Number(e.target.value); updateProject((p) => { p.tuningRoot = r }) }}
+                      >
+                        {ROOTS.map((n, i) => <option key={n} value={i}>on {n}</option>)}
+                      </select>
+                    )}
+                  </span>
+                </label>
+              )}
+              <div className="bs-row" title={`Typing plays from C${octave}: z s x d c v g b h n j m , is that octave, q 2 w 3 e r 5 t 6 y 7 u the next. − and = move it, wherever you are.`}>
+                <span>keyboard octave</span>
+                <span className="bs-pair">
+                  <button type="button" className="btn" disabled={octave <= 0} onClick={() => setOctave(octave - 1)} aria-label="An octave down">−</button>
+                  <span className="bs-oct" aria-live="polite">C{octave}</span>
+                  <button type="button" className="btn" disabled={octave >= 8} onClick={() => setOctave(octave + 1)} aria-label="An octave up">+</button>
+                </span>
+              </div>
+            </div>
+          )}
+        </Popover>
         <button
           className={`btn loop ${transport.loop.on ? 'on' : ''}`}
           aria-pressed={transport.loop.on}
