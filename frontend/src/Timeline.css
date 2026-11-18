@@ -73,7 +73,7 @@
 .song-bar .spacer { flex: 1; }
 .song-field { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 11px; color: var(--muted); }
 .song-length { font-size: 11px; color: var(--paper); font-variant-numeric: tabular-nums; padding: 0 0.3rem; }
-.song-hint { font-size: 10px; color: var(--muted); }
+.song-hint { font-size: 10px; color: var(--muted); flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } /* one line: never a second row for the bar */
 .song-zoom { display: inline-flex; gap: 0; padding: 2px; border: 1px solid var(--line); border-radius: 3px; background: var(--canvas); }
 .song-bar .song-zoom .btn { border: 0; background: none; padding: 0.2rem 0.6rem; }
 .song-bar .song-zoom .btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.07); }

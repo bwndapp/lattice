@@ -1201,7 +1201,11 @@ export default function Timeline({ project, onUpdateProject, transport, started 
             <button className={`song-tool ${tool === 'slice' ? 'on' : ''}`} aria-pressed={tool === 'slice'} onClick={() => setTool('slice')} title="Cut clips in two: click a clip, or drag up or down to cut every clip on those rows (C)">slice</button>
           </span>
           <span className="spacer" />
-          <span className="song-hint">{!song.on && song.clips.length ? 'song off · the patch is looping, so the playhead waits at the cue · turn the song on to play the timeline' : tool === 'slice' ? 'click a clip to cut it · drag up or down to cut several · hold alt to cut off the grid · V or Esc to go back' : 'hold alt to leave the grid · shift-drag copies · U makes selected clips unique · C slices · right-click deletes · click or drag the ruler to move the playhead'}</span>
+          {(() => {
+            // one line, whatever room the bar has left; the whole of it on hover
+            const hint = !song.on && song.clips.length ? 'song off · the patch is looping, so the playhead waits at the cue · turn the song on to play the timeline' : tool === 'slice' ? 'click a clip to cut it · drag up or down to cut several · hold alt to cut off the grid · V or Esc to go back' : 'hold alt to leave the grid · shift-drag copies · U makes selected clips unique · C slices · right-click deletes · click or drag the ruler to move the playhead'
+            return <span className="song-hint" title={hint}>{hint}</span>
+          })()}
           <span className="song-zoom" role="group" aria-label="Zoom">
             <button className="btn" onClick={() => zoomTo(zoomGoal() / 1.5)} aria-label="Zoom out">−</button>
             <button className="btn" onClick={fit} title="Fit the song">fit</button>
