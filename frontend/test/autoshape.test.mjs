@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict'
 import { bundle } from './lib/bundle.mjs'
 
-const m = await bundle({ 'automation.js': ['curveAt', 'normalizeAutos', 'pointRow'] }, 'autoshape')
+const m = await bundle({ 'automation.js': ['curveAt', 'normalizeAutos', 'pointRow', 'autoValueFn'] }, 'autoshape')
 const at = (points, x) => m.curveAt({ bars: 1, points }, x)
 const near = (a, b, msg, tol = 1e-3) => assert.ok(Math.abs(a - b) < tol, `${msg}: ${a} vs ${b}`)
 
@@ -44,4 +44,16 @@ const [a] = m.normalizeAutos([{ id: 'a', target: 'x:y', bars: 2, points: [{ x: 0
 assert.deepEqual(a.points[0], { x: 0, y: 0, m: 'sine', n: 3 }, 'a sine keeps its cycles')
 assert.deepEqual(a.points[1].h, [0.5, 0.2, 0.5, -0.2], 'a bezier keeps its handles')
 assert.equal(a.points[2].m, undefined, 'a mode it doesn\'t know is a plain curve')
+// play's pre-roll: a moment before bar 1 reads bar 1, not the end of the song come round
+{
+  const project = {
+    bpm: 120, beats: 4, patterns: [], edges: [],
+    nodes: [{ id: 'f', type: 'filter', x: 0, y: 0, data: {} }],
+    song: { on: true, clips: [{ id: 'c', src: 'auto:a', lane: 0, start: 0, len: 4 }, { id: 'd', src: 'auto:a', lane: 0, start: 4, len: 4 }], autos: [{ id: 'a', target: 'n:f:lpf', bars: 4, points: [{ x: 0, y: 0.1 }, { x: 4, y: 1 }] }] },
+  }
+  const fn = m.autoValueFn(project, project.song.autos[0])
+  assert.ok(fn, 'the automation resolves')
+  near(fn(-0.001), fn(0), 'just before bar 1 is bar 1', 1e-6)
+  assert.ok(fn(-0.001) < fn(7.9), 'not the open end of the song')
+}
 console.log('automation shapes ok')

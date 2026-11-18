@@ -271,7 +271,10 @@ export const CURVE_JS = `(total, len, clips, pts) => {
   }
   const local = (t, origin) => mod(t - origin, len)
   const curve = (time) => {
-    const t = total > 0 ? mod(Number(time), total) : Number(time)
+    // a moment before bar 1 (play's pre-roll) is bar 1, not the end of the song come round:
+    // wrapped, it read the curve's last value — a filter wide open for the first beat
+    const t0 = Math.max(0, Number(time))
+    const t = total > 0 ? mod(t0, total) : t0
     let last = null
     for (const [start, end, origin] of clips) {
       if (t >= start && t < end) return at(local(t, origin))
