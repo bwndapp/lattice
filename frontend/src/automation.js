@@ -368,9 +368,10 @@ export function removePoints(points, indices) {
 export function ripplePoints(points, indices, dx, dy, bars) {
   const group = [...new Set(indices)].filter((i) => points[i])
   if (!group.length) return { points, indices: [] }
-  const hi = Math.max(...group.map((i) => points[i].x))
+  // the points after it by order (a point stacked on it at the same time comes along too)
+  const lastIdx = Math.max(...group)
   const inGroup = new Set(group)
-  const after = points.flatMap((p, i) => (!inGroup.has(i) && p.x > hi + 1e-9 && p.x < bars - 1e-9 ? [i] : []))
+  const after = points.flatMap((p, i) => (!inGroup.has(i) && i > lastIdx && p.x < bars - 1e-9 ? [i] : []))
   // sideways, all of them (points don't cross, so they keep their order and their places)
   const across = movePoints(points, [...group, ...after], dx, 0, bars)
   // up and down, only the ones being dragged
@@ -390,13 +391,18 @@ export function movePoints(points, indices, dx, dy, bars, copy = false) {
   dx = Math.min(bars - Math.max(...xs), Math.max(-Math.min(...xs), dx))
   if (!copy) {
     // moved points don't pass the points either side of them: each segment's shape belongs to
-    // the point it starts from, and points swapping places scrambled them
+    // the point it starts from, and points swapping places scrambled them. Either side by
+    // order, not by time: of two points at one time (a step), the first may go left and the
+    // second right, and they never trade places
     const inGroup = new Set(group)
     const lo = Math.min(...xs), hi = Math.max(...xs)
-    const left = points.filter((p, i) => !inGroup.has(i) && p.x <= lo).reduce((m, p) => Math.max(m, p.x), -Infinity)
-    const right = points.filter((p, i) => !inGroup.has(i) && p.x >= hi).reduce((m, p) => Math.min(m, p.x), Infinity)
-    if (Number.isFinite(left)) dx = Math.max(dx, left - lo)
-    if (Number.isFinite(right)) dx = Math.min(dx, right - hi)
+    const first = Math.min(...group), last = Math.max(...group)
+    let before = first - 1
+    while (before >= 0 && inGroup.has(before)) before--
+    let after = last + 1
+    while (after < points.length && inGroup.has(after)) after++
+    if (before >= 0) dx = Math.max(dx, points[before].x - lo)
+    if (after < points.length) dx = Math.min(dx, points[after].x - hi)
   }
   dy = Math.min(1 - Math.max(...ys), Math.max(-Math.min(...ys), dy))
   const moving = new Set(group)

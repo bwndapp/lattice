@@ -54,6 +54,18 @@ const past = m.movePoints(four, [1], 1.5, 0, 4)
   const left = m.ripplePoints(pts, [2], -1.5, 0, 4)
   ok('ripple: left, the points after follow; it stops at the one before', same(left.points.map((p) => p.x), [0, 1, 1, 2, 4]), JSON.stringify(left.points.map((p) => p.x)))
 }
+// two points at one time (a step): the first may go left, the second right, never past each other
+{
+  const step = [{ x: 0, y: 0.5 }, { x: 2, y: 0.2 }, { x: 2, y: 0.9 }, { x: 4, y: 0.5 }]
+  ok('step: the first point goes left', m.movePoints(step, [1], -1, 0, 4).points[1].x === 1)
+  ok('step: but not right past its partner', m.movePoints(step, [1], 1, 0, 4).points.map((p) => p.x).join() === '0,2,2,4')
+  ok('step: the second goes right', m.movePoints(step, [2], 1, 0, 4).points[2].x === 3)
+  ok('step: but not left past its partner', m.movePoints(step, [2], -1, 0, 4).points.map((p) => p.x).join() === '0,2,2,4')
+  const keep = m.movePoints(step, [1], 0, 0.5, 4).points
+  ok('step: moving one up and down never swaps the pair', keep[1].y === 0.7 && keep[2].y === 0.9)
+  const rp = m.ripplePoints(step, [0], 0.5, 0, 4).points.map((p) => p.x).join()
+  ok('step: ripple takes both of a stacked pair along', rp === '0.5,2.5,2.5,4', rp)
+}
 // points don't pass each other (each segment's shape belongs to the point it starts from)
 ok('move: stops at its neighbour', same(past.points.map((p) => p.x), [0, 2, 2, 3]) && same(past.indices, [1]), JSON.stringify(past.points.map((p) => p.x)))
 ok('move: and keeps its bend', past.points[1].c === -0.4)

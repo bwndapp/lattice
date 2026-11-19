@@ -10,7 +10,7 @@ import { pointerAt, pointerGone, selectionIs, useHolders } from './collab.js'
 import PeerCursors from './PeerCursors.jsx'
 import { useRollDock } from './rollDock.js'
 import { KnobMenu } from './KnobMenu.jsx'
-import { AUTO_PREFIX, addPoint, curveAt, movePoints, removePoints, resolveTarget } from './automation.js'
+import { AUTO_PREFIX, addPoint, curveAt, movePoints, removePoints, resolveTarget, ripplePoints } from './automation.js'
 import CodeBox from './CodeBox.jsx'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import { KitSelect } from './Graph.jsx'
@@ -359,7 +359,10 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     let dx = d.lock === 'value' ? 0 : px / ppb
     if (!e.altKey && dx) dx = Math.round((from.x + dx) * beats * 4) / (beats * 4) - from.x
     const dy = d.lock === 'time' ? 0 : -(py / d.h) * (100 / 92)
-    const moved = movePoints(d.base, [d.index], dx, dy, d.bars)
+    // ripple, as the automation editor has it set: the points after this one come along
+    let ripple = true
+    try { ripple = localStorage.getItem('lattice:auto-ripple') !== 'off' } catch { /* storage unavailable */ }
+    const moved = ripple ? ripplePoints(d.base, [d.index], dx, dy, d.bars) : movePoints(d.base, [d.index], dx, dy, d.bars)
     d.current = moved.points
     setAutoDraft({ id: d.id, points: moved.points })
   }
