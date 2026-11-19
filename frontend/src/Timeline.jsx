@@ -82,8 +82,13 @@ function patternSketch(pattern, ink) {
 function autoSketch(auto, ink) {
   if (!auto) return null
   const W = Math.max(64, Math.round(auto.bars * 64))
-  const pts = []
-  for (let i = 0; i <= W; i++) pts.push(`${i},${(100 - curveAt(auto, (i / W) * auto.bars) * 92 - 4).toFixed(1)}`)
+  // evenly along the curve, and exactly at each point (and a hair before it, for a step):
+  // a point between two samples had its corner cut, and the line missed its dot
+  const xs = new Set()
+  for (let i = 0; i <= W; i++) xs.add((i / W) * auto.bars)
+  for (const p of auto.points) { xs.add(p.x); if (p.x > 0) xs.add(p.x - 1e-4) }
+  const pts = [...xs].filter((x) => x >= 0 && x <= auto.bars).sort((a, b) => a - b)
+    .map((x) => `${((x / auto.bars) * W).toFixed(3)},${(100 - curveAt(auto, x) * 92 - 4).toFixed(2)}`)
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} 100" preserveAspectRatio="none"><path d="M0,100L${pts.join('L')}L${W},100Z" fill="${ink}" fill-opacity="0.16"/><path d="M${pts.join('L')}" fill="none" stroke="${ink}" stroke-opacity="0.85" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>`
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`
 }
