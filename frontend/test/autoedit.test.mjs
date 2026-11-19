@@ -4,7 +4,7 @@
  */
 import { bundle } from './lib/bundle.mjs'
 
-const m = await bundle({ 'automation.js': ['curveAt', 'addPoint', 'removePoints', 'movePoints', 'normalizeAutos'] }, 'autoedit')
+const m = await bundle({ 'automation.js': ['curveAt', 'addPoint', 'removePoints', 'movePoints', 'normalizeAutos', 'ripplePoints'] }, 'autoedit')
 
 let fails = 0
 const ok = (name, cond, extra) => {
@@ -42,6 +42,18 @@ const four = [{ x: 0, y: 0.5 }, { x: 1, y: 0.2, c: -0.4 }, { x: 2, y: 0.9 }, { x
 const mv = m.movePoints(four, [1], 0.5, 0.1, 4)
 ok('move: one point', same(mv.points[1], { x: 1.5, y: 0.3, c: -0.4 }) && same(mv.indices, [1]))
 const past = m.movePoints(four, [1], 1.5, 0, 4)
+// ripple: what follows slides along, spacing kept; the end point stays put; only the dragged one moves up and down
+{
+  const pts = [{ x: 0, y: 0.5 }, { x: 1, y: 0.2 }, { x: 2, y: 0.9 }, { x: 3, y: 0.1 }, { x: 4, y: 0.5 }]
+  const r = m.ripplePoints(pts, [1], 0.5, 0.1, 4)
+  ok('ripple: the dragged point moves both ways', same(r.points[1], { x: 1.5, y: 0.3 }), JSON.stringify(r.points[1]))
+  ok('ripple: the ones after slide along, values kept', same(r.points.slice(2, 4), [{ x: 2.5, y: 0.9 }, { x: 3.5, y: 0.1 }]), JSON.stringify(r.points.slice(2, 4)))
+  ok('ripple: the end point stays where it is', same(r.points[4], { x: 4, y: 0.5 }))
+  const far = m.ripplePoints(pts, [1], 3, 0, 4)
+  ok('ripple: right, it squeezes up to the end', Math.abs(far.points[3].x - 4) < 1e-9 && far.points[1].x === 2, JSON.stringify(far.points.map((p) => p.x)))
+  const left = m.ripplePoints(pts, [2], -1.5, 0, 4)
+  ok('ripple: left, the points after follow; it stops at the one before', same(left.points.map((p) => p.x), [0, 1, 1, 2, 4]), JSON.stringify(left.points.map((p) => p.x)))
+}
 // points don't pass each other (each segment's shape belongs to the point it starts from)
 ok('move: stops at its neighbour', same(past.points.map((p) => p.x), [0, 2, 2, 3]) && same(past.indices, [1]), JSON.stringify(past.points.map((p) => p.x)))
 ok('move: and keeps its bend', past.points[1].c === -0.4)

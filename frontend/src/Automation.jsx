@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { AUTO_PREFIX, CYCLING, SEGMENT_MODES, addPoint, autoName, curveAt, fromPos, movePoints, removePoints, resolveTarget, toPos } from './automation.js'
+import { AUTO_PREFIX, CYCLING, SEGMENT_MODES, addPoint, ripplePoints, autoName, curveAt, fromPos, movePoints, removePoints, resolveTarget, toPos } from './automation.js'
 import { KnobMenu } from './KnobMenu.jsx'
 import { autoTimeAt } from './song.js'
 import { formatValue } from './Knob.jsx'
@@ -112,6 +112,9 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, transport
   }, [autoId])
   const [segMenu, setSegMenu] = useState(null) // { i, x, y }: a segment's shape menu
   const [shapeOpen, setShapeOpen] = useState(false) // the wave filler
+  // ripple: dragging a point sideways takes the points after it along (kept for next time)
+  const [ripple, setRipple] = useState(() => { try { return localStorage.getItem('lattice:auto-ripple') !== 'off' } catch { return true } })
+  useEffect(() => { try { localStorage.setItem('lattice:auto-ripple', ripple ? 'on' : 'off') } catch { /* storage unavailable */ } }, [ripple])
   const [shapeForm, setShapeForm] = useState({ wave: 'sine', rate: 1, lo: 0, hi: 1 })
   const selRef = useRef(selection)
   selRef.current = selection
@@ -356,7 +359,8 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, transport
       const from = d.base[d.grab]
       const dx = d.lock === 'value' ? 0 : snapX(clamp(from.x + ((px - d.px) / plotW) * vLen, 0, bars), e.altKey) - from.x
       const dy = d.lock === 'time' ? 0 : -(py - d.py) / travel
-      d.current = movePoints(d.base, d.group, dx, dy, bars, d.copy)
+      // ripple (on unless you've turned it off): what follows slides along with it, as in FL
+      d.current = ripple && !d.copy ? ripplePoints(d.base, d.group, dx, dy, bars) : movePoints(d.base, d.group, dx, dy, bars, d.copy)
       setDraft(d.current.points)
       setSelection(new Set(d.current.indices))
     }
@@ -657,6 +661,7 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, transport
       )}
       <div className="auto-foot">
         {zoomed && <button type="button" className="btn" onClick={() => setView(null)} title="Show the whole curve again (ctrl + scroll or a pinch zooms in)">fit</button>}
+        <button type="button" className={`btn auto-ripple ${ripple ? 'on' : ''}`} aria-pressed={ripple} onClick={() => setRipple((r) => !r)} title={ripple ? 'Ripple: dragging a point sideways takes the points after it along (click to drag points on their own)' : 'Points move on their own (click to ripple: the points after one move with it)'}>ripple</button>
         <button type="button" className={`btn auto-shape-btn ${shapeOpen ? 'on' : ''}`} onClick={() => setShapeOpen((o) => !o)} title="Fill the curve (or the points you've selected) with a wave, a ramp or stairs, in time">shape…</button>
         <span className="auto-hint">click adds · drag moves · shift-drag: one way only · ctrl-drag copies · right-drag deletes · right-click a diamond: its shape (bezier, waves, stairs…) · drag a diamond: bend, or how many cycles · alt: off grid</span>
         <span className="spacer" />

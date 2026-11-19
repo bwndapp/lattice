@@ -129,3 +129,4 @@
 /* the song's playhead on the curve */
 .auto-head-line { stroke: var(--acid); stroke-width: 1.5; opacity: 0.85; pointer-events: none; }
 .auto-head-dot { fill: var(--acid); stroke: var(--panel); stroke-width: 1.5; pointer-events: none; }
+.auto-ripple.on { border-color: var(--acid); color: var(--acid); }

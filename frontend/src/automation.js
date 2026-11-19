@@ -360,6 +360,24 @@ export function removePoints(points, indices) {
 }
 
 /**
+ * A ripple drag: the points at `indices` move by dx and dy, and every point after them moves
+ * sideways by the same dx (keeping its value), so what follows keeps its spacing. A point at
+ * the curve's very end stays put: dragging right squeezes up to it rather than off the end.
+ * Returns { points, indices } as movePoints, indices being the dragged ones.
+ */
+export function ripplePoints(points, indices, dx, dy, bars) {
+  const group = [...new Set(indices)].filter((i) => points[i])
+  if (!group.length) return { points, indices: [] }
+  const hi = Math.max(...group.map((i) => points[i].x))
+  const inGroup = new Set(group)
+  const after = points.flatMap((p, i) => (!inGroup.has(i) && p.x > hi + 1e-9 && p.x < bars - 1e-9 ? [i] : []))
+  // sideways, all of them (points don't cross, so they keep their order and their places)
+  const across = movePoints(points, [...group, ...after], dx, 0, bars)
+  // up and down, only the ones being dragged
+  return movePoints(across.points, group, 0, dy, bars)
+}
+
+/**
  * The points at `indices` moved together by dx bars and dy of travel, held inside
  * 0 … bars and 0 … 1 as a group (copy: the originals stay). Returns { points, indices }:
  * where the moved points are now.
