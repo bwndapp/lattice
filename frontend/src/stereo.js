@@ -1072,8 +1072,12 @@ function wire(n, rack, inserts) {
  * declared is patched too, so the value sticks if the insert is rebuilt.
  */
 export function setInsertParams(key, patch) {
-  // an insert declared while the sound was already playing isn't mounted yet: mount it now
-  try { apply() } catch (err) { console.warn('[stereo] could not update the stereo inserts', err) }
+  // an insert declared while the sound was already playing isn't mounted yet: mount it now.
+  // Only then — this runs for every automated knob many times a second, and a full pass
+  // re-sets every unit on every bus, which swamped the audio thread with changes
+  if (![...racks.values()].some((rack) => rack.units.has(key))) {
+    try { apply() } catch (err) { console.warn('[stereo] could not update the stereo inserts', err) }
+  }
   for (const list of declared.values()) {
     const found = list.find((i) => i.key === key)
     if (found) found.params = { ...found.params, ...patch }
@@ -1201,10 +1205,15 @@ export function vowelFormants(table, x, y) {
 
 // a unit just built takes its settings at once; after that, knobs glide (no zipper noise)
 let instant = false
+const aimed = new WeakMap() // AudioParam → the value it was last sent toward
 const glide = (param, value, tau = 0.02) => {
   if (!Number.isFinite(value)) return
   const t = getAudioContext().currentTime
-  if (instant) { param.cancelScheduledValues(t); param.setValueAtTime(value, t) } else param.setTargetAtTime(value, t, tau)
+  if (instant) { param.cancelScheduledValues(t); param.setValueAtTime(value, t); aimed.set(param, value); return }
+  // already heading there: another event would only pile up on the param's timeline
+  if (aimed.get(param) === value) return
+  aimed.set(param, value)
+  param.setTargetAtTime(value, t, tau)
 }
 const smooth = (param, value) => glide(param, value)
 
