@@ -2,8 +2,10 @@
  * Signal flow: which parts of the patch are making sound right now, lit on the canvas.
  *
  * The generated code tags every source with the node it came from (`_n`) and the
- * instrument inside it (`_c`, see project.js). We ask the playing pattern for a cycle of
- * hits at a time, then each frame work out how recently each source fired and light its
+ * instrument inside it (`_c`, see project.js). The scheduler hands us each note as it
+ * plays it (`flowHit`, from the app's output), so lighting the patch costs no querying of
+ * its own — asking the song for a whole bar at once, on the thread that keeps time, made
+ * the audio stumble at every bar line. Each frame we work out how recently each source fired and light its
  * node, its instrument and every wire that carries it onward. It's drawn straight onto
  * the DOM as a `--lit` number, so sixty frames a second never go through React.
  */
@@ -17,7 +19,6 @@ const STEP = 0.04 // only write a style when the light has moved this much
 let paths = { nodes: new Map(), edges: new Map(), chans: new Map() } // element id → the sources feeding it
 let source = null // { pattern, now, cps } getters
 let hits = [] // { at, end (cycles), key } — what's sounding, kept while it rings
-let cycle = null
 let frame = 0
 const els = new Map() // element id → the element, while it's on screen
 const lit = new Map() // element id → the light we last wrote there
@@ -97,10 +98,30 @@ export function setFlowPaths(next, byKey) {
   }
 }
 
+/**
+ * A note the scheduler is playing (called from the app's output for every one): lit when
+ * it's heard. Nothing is kept while the patch isn't showing.
+ */
+export function flowHit(hap) {
+  if (!source) return
+  const v = hap?.value
+  const n = v?._n
+  if (typeof n !== 'string' || !hap.whole || hits.length > 2000) return
+  // how loud it lands in the mix: its own volume, times anything turning it down on the way
+  const loud = Number(v.gain ?? 1) * Number(v.velocity ?? 1)
+  const pan = Number(v.pan ?? 0.5)
+  hits.push({
+    at: Number(hap.whole.begin),
+    end: Number(hap.whole.end),
+    key: key(n, v._c),
+    loud: Number.isFinite(loud) ? Math.min(1, Math.max(0, loud)) : 1,
+    pan: Number.isFinite(pan) ? Math.min(1, Math.max(0, pan)) : 0.5,
+  })
+}
+
 /** `pattern()` is what's playing, `now()` where it is in cycles, `cps()` how fast. */
 export function startFlow(getters) {
   source = getters
-  cycle = null
   if (!frame) frame = requestAnimationFrame(tick)
 }
 
@@ -109,7 +130,6 @@ export function stopFlow() {
   frame = 0
   source = null
   hits = []
-  cycle = null
   // nothing playing reads as nothing, not as a number that vanished
   for (const [id, el] of els) {
     if (id.startsWith('m:')) { el.style.removeProperty('--l'); el.style.removeProperty('--r'); el.classList.remove('over') }
@@ -176,35 +196,10 @@ function tick() {
   const cps = source.cps() || 0.5
   if (!Number.isFinite(now)) return
 
-  // a cycle of hits at a time: querying the pattern every frame would be wasteful
   const fade = GLOW * cps // the glow and the bloom, in cycles
   const bloom = BLOOM * cps
-  const at = Math.floor(now)
-  if (at !== cycle) {
-    cycle = at
-    // notes longer than a cycle are still sounding, so they carry over
-    const ringing = hits.filter((h) => h.end > now - fade)
-    const pattern = source.pattern()
-    try {
-      const fresh = []
-      for (const hap of pattern?.queryArc(at, at + 1) ?? []) {
-        if (!hap.hasOnset?.()) continue
-        const n = hap.value?._n
-        if (typeof n !== 'string') continue
-        // how loud it lands in the mix: its own volume, times anything turning it down on the way
-        const loud = Number(hap.value.gain ?? 1) * Number(hap.value.velocity ?? 1)
-        const pan = Number(hap.value.pan ?? 0.5)
-        fresh.push({
-          at: Number(hap.whole.begin),
-          end: Number(hap.whole.end),
-          key: key(n, hap.value._c),
-          loud: Number.isFinite(loud) ? Math.min(1, Math.max(0, loud)) : 1,
-          pan: Number.isFinite(pan) ? Math.min(1, Math.max(0, pan)) : 0.5,
-        })
-      }
-      hits = [...ringing, ...fresh]
-    } catch { hits = ringing } // a pattern mid-change: the next cycle picks it up
-  }
+  // done ringing: let it go (notes come in a little ahead of when they're heard, so keep those)
+  if (hits.length) hits = hits.filter((h) => h.at > now || h.end > now - fade)
 
   const level = new Map()
   for (const hit of hits) {

@@ -21,6 +21,7 @@ import { LATEST, SEEN_KEY } from './changelog.js'
 import Popover from './Popover.jsx'
 import { PICKS, colorFor } from './clipColors.js'
 import { syncInserts } from './stereo.js'
+import { flowHit } from './flow.js'
 import { Glass } from './Glass.jsx'
 import { AutomationEditor } from './Automation.jsx'
 import { routeVoice } from './fxbus.js'
@@ -415,6 +416,7 @@ export default function App() {
     if (editorRef.current) return // StrictMode mounts twice in dev
     editorRef.current = new StrudelMirror({
       defaultOutput: (hap, deadline, duration, cps, t) => {
+        flowHit(hap) // the patch lights what's playing from here, rather than asking the song again (flow.js)
         const out = hap.withValue(routeVoice) // reverb & delay sends, and the tuning (fxbus.js)
         // the stream (stream.js): each sound, sent as it's heard
         const ac = getAudioContext()
