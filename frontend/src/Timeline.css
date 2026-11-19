@@ -411,3 +411,10 @@
 .auto-handle:hover { transform: scale(1.35); }
 .auto-handle.held { cursor: grabbing; transform: scale(1.35); background: var(--clip, #e4ff1a); }
 .clip.automation { overflow: visible; } /* its points can sit on its edges and still be grabbed */
+
+/* a tall automation clip keeps its name in a strip of its own and draws the curve below it,
+   top of that area the knob's top, bottom its bottom (as FL's automation clips do) */
+.clip.automation.auto-roomy .clip-sketch.full, .clip.automation.auto-roomy .auto-handles { top: 17px; bottom: 3px; }
+.clip.automation.auto-roomy .clip-name { line-height: 15px; }
+/* a point catches the pointer a little way round it, so it's grabbed rather than the clip */
+.auto-handle::before { content: ''; position: absolute; inset: -6px; border-radius: 50%; }
