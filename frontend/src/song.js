@@ -240,16 +240,23 @@ export function songActive(project) {
 
 /**
  * Mini-notation for "on during these spans, off elsewhere", one step per bar over the
- * whole song (so it repeats with the song); a bar that's partly on splits into beats.
+ * whole song (so it repeats with the song); a bar that's partly on splits into beats, or
+ * finer where a clip starts or ends between beats (a slice mid-beat stops there, not at
+ * the end of the beat).
  */
 function maskMini(spans, total, beats) {
   const steps = []
+  const on = (t0, t1) => spans.some(([s, e]) => s < t1 - 1e-9 && e > t0 + 1e-9)
+  const fits = (x, n) => Math.abs(x * n - Math.round(x * n)) < 1e-6
   for (let bar = 0; bar < total; bar++) {
-    const cells = Array.from({ length: beats }, (_, b) => {
-      const t0 = bar + b / beats
-      const t1 = bar + (b + 1) / beats
-      return spans.some(([s, e]) => s < t1 - 1e-9 && e > t0 + 1e-9) ? 1 : 0
-    })
+    // the coarsest split that every edge in this bar lands on: beats, else the finest needed
+    const edges = spans.flat().filter((t) => t > bar + 1e-9 && t < bar + 1 - 1e-9).map((t) => t - bar)
+    let n = beats
+    if (!edges.every((x) => fits(x, beats))) {
+      n = 192 // snapping is to 1/64 of a bar; 192 covers that in 3/4 too
+      for (let k = 1; k < 192; k++) if (edges.every((x) => fits(x, k))) { n = k; break }
+    }
+    const cells = Array.from({ length: n }, (_, b) => (on(bar + b / n, bar + (b + 1) / n) ? 1 : 0))
     steps.push(cells.every((c) => c === 1) ? '1' : cells.every((c) => c === 0) ? '0' : `[${cells.join(' ')}]`)
   }
   return `<${steps.join(' ')}>`
