@@ -1391,8 +1391,10 @@ const UNITS = {
     return {
       input,
       output: panner,
-      set({ gain, pan }) {
-        smooth(input.gain, gain)
+      // `xf` (0 dry … 1 wet) and `side` (a dry, b wet): one side of an equal-power crossfade
+      set({ gain, pan, xf, side }) {
+        const x = Math.min(1, Math.max(0, Number(xf)))
+        smooth(input.gain, xf == null ? gain : gain * (side === 'b' ? Math.sin(x * Math.PI / 2) : Math.cos(x * Math.PI / 2)))
         smooth(panner.pan, pan * 2 - 1)
       },
       dispose() { input.disconnect(); panner.disconnect() },

@@ -298,7 +298,8 @@ export const NODE_TYPES = {
       { key: 'pan', type: 'knob', label: 'pan', min: 0, max: 1, def: 0.5 },
     ],
     // a fader on the bus, like the mixer bus node's own (see stereo.js)
-    code: stereoCode('fader', (d) => ({ gain: d.gain, pan: d.pan })),
+    // `xf`/`side`: one side of an fx rack's dry/wet crossfade (rackMix)
+    code: stereoCode('fader', (d) => ({ gain: d.gain, pan: d.pan, ...(d.xf != null ? { xf: d.xf, side: d.side } : {}) })),
   },
   drive: {
     group: 'effect', cat: 'drive', hidden: true, label: 'drive', blurb: 'Distortion and bitcrush',
@@ -919,7 +920,7 @@ function stereoCode(kind, raw) {
       tail = `.orbit(${ctx.route.orbit})`
       notes = ctx.ownPath ? ctx.ownPath(x, 0, ctx.route.orbit) : x
     }
-    ctx.declare(ctx.route.orbit, ctx.nodeId, kind, params(d))
+    ctx.declare(ctx.route.orbit, d?.insertKey ?? ctx.nodeId, kind, params(d))
     return `${notes}${tail}`
   }
   // what it is on the bus, for anything that makes these units itself (instrument lanes)
@@ -1340,8 +1341,10 @@ export function lineOf(project, id) {
  */
 /**
  * An fx rack's mix knob, below all the way wet, is played as what you'd wire by hand: the
- * sound split into the rack and straight past it, both into an a/b mix (dry a, wet b) whose
- * knob is the rack's, automation and all. What the rack fed now comes from that mix.
+ * sound split into the rack and straight past it, each through a fader, both summed on a
+ * mixer bus. The two faders are one equal-power crossfade (stereo.js fader `xf`) under one
+ * insert key, the rack's id, so the app moves both at once as the knob is automated
+ * (automation.js APP_PARAMS). What the rack fed now comes from that bus.
  */
 function rackMix(nodes, edges, auto) {
   const racks = nodes.filter((n) => n.type === 'fxrack' && n.data?.bypass !== true && n.data?.mute !== true
@@ -1351,12 +1354,16 @@ function rackMix(nodes, edges, auto) {
   const extra = []
   let out = edges
   for (const r of racks) {
-    const id = `${r.id}mx`
-    mixOf.set(r.id, id)
-    extra.push({ id, type: 'blend', autoAs: r.id, x: r.x, y: r.y, data: { mix: r.data.mix ?? 1, name: r.data.name ?? 'fx rack mix' } })
-    out = out.map((e) => (e.source === r.id ? { ...e, source: id, sourceHandle: 'out' } : e))
-    for (const e of edges.filter((e) => e.target === r.id)) out.push({ ...e, target: id, targetHandle: 'in-0' })
-    out.push({ source: r.id, sourceHandle: 'out', target: id, targetHandle: 'in-1' })
+    const xf = r.data.mix ?? 1
+    const [dry, wet, sum] = [`${r.id}dry`, `${r.id}wet`, `${r.id}mx`]
+    mixOf.set(r.id, sum)
+    const fader = (id, side) => ({ id, type: 'level', x: r.x, y: r.y, data: { gain: 1, pan: 0.5, xf, side, insertKey: r.id, name: `${r.data.name ?? 'fx rack'} ${side === 'a' ? 'dry' : 'wet'}` } })
+    extra.push(fader(dry, 'a'), fader(wet, 'b'), { id: sum, type: 'bus', x: r.x, y: r.y, data: { name: `${r.data.name ?? 'fx rack'} mix`, vol: 1, pan: 0.5 } })
+    out = out.map((e) => (e.source === r.id ? { ...e, source: sum, sourceHandle: 'out' } : e))
+    for (const e of edges.filter((e) => e.target === r.id)) out.push({ ...e, target: dry, targetHandle: 'in' })
+    out.push({ source: r.id, sourceHandle: 'out', target: wet, targetHandle: 'in' })
+    out.push({ source: dry, sourceHandle: 'out', target: sum, targetHandle: 'in-0' })
+    out.push({ source: wet, sourceHandle: 'out', target: sum, targetHandle: 'in-1' })
   }
   return { nodes: [...nodes, ...extra], edges: out, mixOf }
 }
@@ -1528,7 +1535,7 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     // inside each clip (song.js)
     const songPart = song && spec.group === 'source' && node.type !== 'pattern' && !wires.length
     const nodeAuto = auto && songPart ? (target) => { const a = auto(target); return a && `\u0001${a}\u0001` } : auto
-    const autoOf = nodeAuto ? (key) => nodeAuto(`n:${node.autoAs ?? id}:${key}`) : null
+    const autoOf = nodeAuto ? (key) => nodeAuto(`n:${id}:${key}`) : null
     // Wiring an instrument's own port is a copy: it still goes out the main one as well,
     // because a wire shouldn't silently take a sound out of the mix. Taking it off the main
     // is a separate thing you ask for, instrument by instrument.

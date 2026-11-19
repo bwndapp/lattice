@@ -74,6 +74,7 @@ const APP_PARAMS = {
   distortion: { prefix: '', where: 'insert', keys: { drive: 'drive', tighten: 'tighten', tone: 'tone', bias: 'bias', mix: 'mix', out: 'out' } },
   pitch: { prefix: '', where: 'insert', keys: { semitones: 'semitones', fine: 'fine', grain: 'grain', mix: 'mix' } },
   freqshift: { prefix: '', where: 'insert', keys: { hz: 'hz', spread: 'spread', mix: 'mix' } },
+  fxrack: { prefix: '', where: 'insert', keys: { mix: 'xf' } }, // both faders of its crossfade (graph.js rackMix)
 }
 
 export function appParam(project, target) {
