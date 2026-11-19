@@ -45,6 +45,13 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, transport
   const graphRef = useRef(null)
   const svgRef = useRef(null)
   const dragRef = useRef(null)
+  // leaving the window mid-drag (alt-tab, a dialog) never sends the release: end it there
+  const upRef = useRef(null)
+  useEffect(() => {
+    const blur = () => { if (dragRef.current) upRef.current?.() }
+    window.addEventListener('blur', blur)
+    return () => window.removeEventListener('blur', blur)
+  }, [])
   const moveRef = useRef(null)
   const [width, setWidth] = useState(640)
   const [hover, setHover] = useState(null) // { x, y } in automation space, for the readout
@@ -306,6 +313,8 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, transport
     dragRef.current = { mode: 'move', base: next, group: [index], grab: index, created: true, px, py }
   }
   const onGraphMove = (e) => {
+    // the button came up where we didn't hear it (outside the window, say): the drag is over
+    if (dragRef.current && e.pointerType === 'mouse' && e.buttons === 0) return onGraphUp()
     const { px, py } = local(e)
     setHover({ x: toX(px), y: toY(py) })
     const d = dragRef.current
@@ -386,6 +395,8 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, transport
     }
     setDraft(null)
   }
+  upRef.current = onGraphUp
+
 
   /** A segment's shape: what the menu on its diamond sets (see automation.js SEGMENT_MODES). */
   const setMode = (i, mode) => commit(points.map((p, j) => {
@@ -543,6 +554,8 @@ export function AutomationEditor({ project, autoId, anchor, beats = 4, transport
         onPointerMove={onGraphMove}
         onPointerUp={onGraphUp}
         onPointerCancel={onGraphUp}
+        // the browser let go of the pointer without a release (a lost capture): end the drag
+        onLostPointerCapture={() => { if (dragRef.current) onGraphUp() }}
         onPointerLeave={() => { if (!dragRef.current) { setHover(null); setHot(null) } }}
         onContextMenu={(e) => e.preventDefault()}
       >
