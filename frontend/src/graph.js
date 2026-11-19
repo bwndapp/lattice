@@ -14,7 +14,7 @@
  */
 
 import { parse } from 'acorn'
-import { GRAIN_STEPS, VOWEL_MARKS, RING_MODES, RING_RATES, RING_SHAPES, RING_SOURCES, WOOK_FOLLOW, WOOK_RATES, WOOK_SHAPES, STEREO_ORBIT_BASE, beginInserts, commitInserts, declareBranch, declareInsert, declareQuiet, declareRoute, declareSide, declareSpeakers } from './stereo'
+import { GRAIN_STEPS, VOWEL_MARKS, REVERSE_LENGTHS, RING_MODES, RING_RATES, RING_SHAPES, RING_SOURCES, WOOK_FOLLOW, WOOK_RATES, WOOK_SHAPES, STEREO_ORBIT_BASE, beginInserts, commitInserts, declareBranch, declareInsert, declareQuiet, declareRoute, declareSide, declareSpeakers } from './stereo'
 import { abstractBuild, abstractNodeTypes, abstractOf, abstractParts, packState } from './abstract/index.js'
 import { DELAY_DEFAULTS, DELAY_DIVISIONS, GLOBAL_DELAY, GLOBAL_REVERB, REVERB_DEFAULTS, beginFx, commitFx, declareFx } from './fxbus.js'
 
@@ -429,6 +429,23 @@ export const NODE_TYPES = {
       { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 0.6 },
     ],
     code: stereoCode('grain', (d) => ({ size: d.size, density: d.density, position: d.position, spray: d.spray, pitch: d.pitch, pitchRand: d.pitchRand, steps: d.steps, glide: d.glide, chaos: d.chaos, shape: d.shape, reverse: d.reverse, spread: d.spread, freeze: d.freeze, feedback: d.feedback, mix: d.mix })),
+  },
+  reverse: {
+    group: 'effect', cat: 'texture', label: 'reverse', blurb: 'The sound backwards, as it goes: a chunk at a time in time with the song, each one swelling up to its beat',
+    inputs: 1,
+    params: [
+      { key: 'length', type: 'select', label: 'length', options: REVERSE_LENGTHS, def: '1/4' },
+      { key: 'fade', type: 'knob', label: 'fade', min: 0, max: 0.5, def: 0.1 },
+      { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 1 },
+      { key: 'out', type: 'knob', label: 'out', min: 0, max: 2, def: 1, fmt: 'gain' },
+    ],
+    code: (() => {
+      const pick = (d) => ({ length: d.length, fade: d.fade, mix: d.mix, out: d.out })
+      const base = stereoCode('reverse', pick)
+      const code = (d, xs, ctx) => stereoCode('reverse', (dd) => ({ ...pick(dd), cps: ctx?.cps }))(d, xs, ctx)
+      code.insert = base.insert
+      return code
+    })(),
   },
   ringmod: {
     group: 'effect', cat: 'pitch', label: 'ring mod', blurb: 'The sound times a carrier: metallic, bell-like and robotic in ring mode, beating in am, or chopped in time',
@@ -909,7 +926,7 @@ function stereoCode(kind, raw) {
 /** Reverb and delay: sends on each note, or inserts on a bus when the sound is on one (spaceOnBus). */
 const SPACE_TYPES = new Set(['reverb', 'delay', 'space'])
 const STEREO_TYPES = new Set(['haas', 'widener', 'utility', 'bus', 'eq3', 'saturator', 'distortion', 'clipper', 'softclip', 'compressor', 'limiter',
-  'filter', 'djfilter', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi', 'bitcrush', 'granulizer', 'wook', 'ringmod', 'pitch', 'freqshift'])
+  'filter', 'djfilter', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi', 'bitcrush', 'granulizer', 'wook', 'ringmod', 'reverse', 'pitch', 'freqshift'])
 
 /**
  * Nodes that are real audio on a bus rather than settings on each note: they work on
@@ -919,7 +936,7 @@ const STEREO_TYPES = new Set(['haas', 'widener', 'utility', 'bus', 'eq3', 'satur
 export const BUS_NODES = new Set([...STEREO_TYPES, 'reverb', 'delay'])
 
 /** Effects that can sit inside an fx rack: every plain effect node. */
-export const FX_UNITS = ['eq3', 'compressor', 'limiter', 'saturator', 'distortion', 'clipper', 'softclip', 'punch', 'haas', 'widener', 'utility', 'filter', 'djfilter', 'reverb', 'delay', 'space', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi', 'bitcrush', 'granulizer', 'wook', 'ringmod', 'pitch', 'freqshift']
+export const FX_UNITS = ['eq3', 'compressor', 'limiter', 'saturator', 'distortion', 'clipper', 'softclip', 'punch', 'haas', 'widener', 'utility', 'filter', 'djfilter', 'reverb', 'delay', 'space', 'level', 'drive', 'phaser', 'chorus', 'flanger', 'tremolo', 'vowel', 'lofi', 'bitcrush', 'granulizer', 'wook', 'ringmod', 'reverse', 'pitch', 'freqshift']
 
 /**
  * Effects an instrument's lane can stack: the ones that are real audio on a bus. Reverb and

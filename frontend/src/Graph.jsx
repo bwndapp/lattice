@@ -1203,6 +1203,7 @@ const SEARCH_WORDS = {
   lofi: 'coarse bitcrush downsample grit crush retro',
   granulizer: 'granular grain grains granulator cloud smear glitch stutter freeze texture scatter spray',
   ringmod: 'ring ringmod ring mod am amplitude modulation metallic bell robot dalek carrier',
+  reverse: 'reverse reverser backwards backward reversed swell rewind',
   blend: 'blend crossfade crossfader ab a/b mix morph between two dry wet split',
   wook: 'wook w00k flutter stutter chop gate tremolo trance gate dubstep bass riddim warble',
   bitcrush: 'crush bits 8bit lofi digital decimate downsample',

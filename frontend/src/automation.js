@@ -67,6 +67,7 @@ const APP_PARAMS = {
   vowel: { prefix: '', where: 'insert', keys: { x: 'x', y: 'y', size: 'size', reso: 'reso', mix: 'mix' } },
   lofi: { prefix: '', where: 'insert', keys: { coarse: 'coarse', mix: 'mix' } },
   granulizer: { prefix: '', where: 'insert', keys: { size: 'size', density: 'density', position: 'position', spray: 'spray', pitch: 'pitch', pitchRand: 'pitchRand', glide: 'glide', chaos: 'chaos', shape: 'shape', reverse: 'reverse', spread: 'spread', freeze: 'freeze', feedback: 'feedback', mix: 'mix' } },
+  reverse: { prefix: '', where: 'insert', keys: { fade: 'fade', mix: 'mix', out: 'out' } },
   ringmod: { prefix: '', where: 'insert', keys: { freq: 'freq', amount: 'amount', spread: 'spread', drift: 'drift', mix: 'mix', out: 'out' } },
   wook: { prefix: '', where: 'insert', keys: { hz: 'hz', width: 'width', smooth: 'smooth', chop: 'chop', warble: 'warble', filter: 'filter', spread: 'spread', swing: 'swing', rise: 'rise', mix: 'mix', out: 'out' } },
   bitcrush: { prefix: '', where: 'insert', keys: { bits: 'bits', rate: 'rate', mix: 'mix' } },

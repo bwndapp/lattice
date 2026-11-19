@@ -412,6 +412,75 @@ class RingModProcessor extends AudioWorkletProcessor {
 registerProcessor('lattice-ringmod', RingModProcessor)
 
 /*
+ * Reverse: the sound backwards, as it goes. Each chunk (a length in time with the song,
+ * starting on the beat) is recorded, then played backwards while the next is recorded, so it
+ * lags one chunk behind, and each chunk swells up to where it was hit: a cymbal or a vocal
+ * comes in reversed, landing on the next beat. Fade rounds each chunk's ends so the joins
+ * don't click. With no song playing it keeps its own time at the tempo it's given.
+ */
+const RV_RATE = [16, 8, 4, 2, 1, 6, 3] // chunks a bar: 1/16 1/8 1/4 1/2 1 bar, 1/8 t, 1/4 t
+class ReverseProcessor extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    const k = (name, def, min, max) => ({ name, defaultValue: def, minValue: min, maxValue: max, automationRate: 'k-rate' })
+    return [k('length', 2, 0, 6), k('fade', 0.1, 0, 0.5), k('mix', 1, 0, 1), k('out', 1, 0, 2), k('cps', 0.5625, 0.05, 4)]
+  }
+  constructor() {
+    super()
+    this.song = null
+    this.port.onmessage = (e) => { if (e.data && e.data.sync !== undefined) this.song = e.data.sync }
+    this.size = Math.ceil(sampleRate * 10) // room for a chunk of a bar at 40 bpm, twice over
+    this.tape = [new Float32Array(this.size), new Float32Array(this.size)]
+    this.w = 0 // samples written, ever
+    this.t = 0
+    this.chunk = null // the chunk being recorded: its number and where it started
+    this.prev = null // the one being played back: { start, len }
+  }
+  process(inputs, outputs, P) {
+    const input = inputs[0], out = outputs[0]
+    if (!out || !out.length) return true
+    const L = out[0], R = out[1] || out[0]
+    const n = L.length
+    if (!input || !input.length) { L.fill(0); if (R !== L) R.fill(0); return true }
+    const xl = input[0], xr = input[1] || input[0]
+    const v = (name) => P[name][0]
+    const cps = this.song ? this.song.cps : v('cps')
+    const per = RV_RATE[Math.round(v('length'))] || 2
+    const fade = v('fade'), mix = v('mix'), outG = v('out')
+    const dt = 1 / sampleRate
+    const s = this.song
+    const cycle0 = s ? s.cycle + (currentTime - s.at) * s.cps : this.t * cps
+    for (let i = 0; i < n; i++) {
+      const at = (cycle0 + i * dt * cps) * per
+      const num = Math.floor(at)
+      // a new chunk: the one just recorded is the one to play back now
+      if (!this.chunk || this.chunk.num !== num) {
+        if (this.chunk) this.prev = { start: this.chunk.start, len: Math.min(this.size >> 1, this.w - this.chunk.start) }
+        this.chunk = { num, start: this.w }
+      }
+      const wi = this.w % this.size
+      this.tape[0][wi] = xl[i]; this.tape[1][wi] = xr[i]
+      let wl = 0, wr = 0
+      const p = this.prev
+      if (p && p.len > 1) {
+        const j = this.w - this.chunk.start // how far into this chunk
+        if (j < p.len) {
+          const ri = (p.start + p.len - 1 - j) % this.size // backwards through the last one
+          const edge = Math.max(1, fade * p.len)
+          const g = Math.min(1, j / edge, (p.len - 1 - j) / edge)
+          wl = this.tape[0][ri] * g; wr = this.tape[1][ri] * g
+        }
+      }
+      this.w++
+      L[i] = (xl[i] * (1 - mix) + wl * mix) * outG
+      if (R !== L) R[i] = (xr[i] * (1 - mix) + wr * mix) * outG
+    }
+    this.t += n * dt
+    return true
+  }
+}
+registerProcessor('lattice-reverse', ReverseProcessor)
+
+/*
  * Sidechain, the ring-mod way (after Kilohearts' Ring Mod with a sidechain source): the bus is
  * multiplied by the trigger's own audio, sample by sample, so the dip is exactly as long and
  * as shaped as the kick that causes it, never late. Input 0 is the bus, input 1 the trigger.
@@ -1025,6 +1094,7 @@ export function setInsertParams(key, patch) {
 /** W00K's choices, as its node offers them (graph.js) and its worklet counts them. */
 /** Where each vowel sits on the vowel pad: [across (back … front), up (closed … open)]. */
 export const VOWEL_MARKS = { u: [0.08, 0.1], o: [0.2, 0.55], a: [0.5, 0.95], e: [0.78, 0.5], i: [0.94, 0.1] }
+export const REVERSE_LENGTHS = ['1/16', '1/8', '1/4', '1/2', '1 bar', '1/8 t', '1/4 t']
 export const RING_SOURCES = ['hz', 'tempo']
 export const RING_RATES = ['1/4', '1/8', '1/16', '1/32', '1/64', '1/4 t', '1/8 t', '1/16 t', '1/32 t']
 export const RING_SHAPES = ['sine', 'triangle', 'square', 'saw']
@@ -1487,6 +1557,18 @@ const UNITS = {
       swing: n(p.swing, 0, 0.5, 0),
       follow: pick(WOOK_FOLLOW, p.follow, 0),
       rise: n(p.rise, 0, 2, 0),
+      mix: n(p.mix, 0, 1, 1),
+      out: n(p.out, 0, 2, 1),
+      cps: n(p.cps, 0.05, 4, 0.5625),
+    }), { sync: true })
+  },
+
+  /** Reverse: the sound backwards, a chunk at a time, in time (see the worklet above). */
+  reverse(ac) {
+    const n = (v, lo, hi, def) => Math.min(hi, Math.max(lo, Number.isFinite(+v) ? +v : def))
+    return workletInsert(ac, 'lattice-reverse', (p) => ({
+      length: REVERSE_LENGTHS.includes(p.length) ? REVERSE_LENGTHS.indexOf(p.length) : 2, // 1/4 unless it says
+      fade: n(p.fade, 0, 0.5, 0.1),
       mix: n(p.mix, 0, 1, 1),
       out: n(p.out, 0, 2, 1),
       cps: n(p.cps, 0.05, 4, 0.5625),
