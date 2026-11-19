@@ -754,6 +754,35 @@ export const NODE_TYPES = {
       return parts.length === 1 ? parts[0] : `stack(${parts.join(', ')})`
     },
   },
+  blend: {
+    group: 'combine', label: 'a/b mix', blurb: 'A crossfader: two sounds in, one out, and one knob from all A, through both, to all B',
+    // two named inputs; each takes as many sounds as you wire in
+    inputs: ['a', 'b'],
+    params: [
+      { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 0.5 }, // 0 all a · 1 all b
+    ],
+    /*
+     * Equal power: the middle has both at about -3 dB each, so a crossfade doesn't dip. A
+     * sound that's its own notes is turned on each note (so the knob can follow automation);
+     * one already on a bus of its own (after a reverb on a bus, a sidechain) is turned where
+     * that bus plays into this one, as a mixer's fader is, at the knob's setting. Both land
+     * on one bus, as a mixer bus's channels do.
+     */
+    code: (d, xs, ctx) => {
+      if (!xs.length) return null
+      const isB = (i) => ctx?.slots?.[i] === 'in-1'
+      const mix = Math.min(1, Math.max(0, Number(d.mix ?? 0.5)))
+      const fixed = (i) => (isB(i) ? Math.sin(mix * Math.PI / 2) : Math.cos(mix * Math.PI / 2))
+      const turned = xs.map((x, i) => {
+        if (ctx?.inputOrbits?.[i] != null) return x // on a bus already: the fader below turns it
+        return fmapWith(x, ctx, d, ['mix'], (val) => `{ ...v, gain: (v.gain ?? 1) * Math.${isB(i) ? 'sin' : 'cos'}(Math.min(1, Math.max(0, ${val('mix')})) * Math.PI / 2) }`)
+      })
+      if (!ctx?.route) return turned.length === 1 ? turned[0] : `stack(${turned.join(', ')})`
+      // a mixer bus does the rest: one bus, each bused input at its fader
+      const chan = Object.fromEntries(xs.map((_, i) => [ctx.inputKeys?.[i], ctx?.inputOrbits?.[i] != null ? fixed(i) : 1]).filter(([k]) => k))
+      return NODE_TYPES.bus.code({ vol: 1, pan: 0.5, chan }, turned, ctx)
+    },
+  },
   stack: {
     group: 'combine', label: 'stack', blurb: 'Play inputs together',
     inputs: 'many',
