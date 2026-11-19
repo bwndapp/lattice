@@ -1551,3 +1551,8 @@ button:disabled { cursor: var(--dot); }
 .react-flow__handle.frame-pin.inner { opacity: 0; pointer-events: none; }
 .react-flow__edge.pin-wire { pointer-events: none; }
 .react-flow__edge.pin-wire path { opacity: 0.7; }
+
+/* an x/y pad on a node (the vowel's place) */
+.xy-pad { position: relative; width: 100%; min-width: 140px; aspect-ratio: 1.6; margin: 0.2rem 0 0.3rem; border: 1px solid var(--line); border-radius: 4px; background: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.03), transparent 70%), var(--sunk); cursor: crosshair; touch-action: none; grid-column: 1 / -1; }
+.xy-mark { position: absolute; transform: translate(-50%, -50%); font-size: 10px; font-weight: 700; color: var(--muted); pointer-events: none; }
+.xy-dot { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--acid); box-shadow: 0 0 0 3px rgba(228, 255, 26, 0.18); pointer-events: none; }

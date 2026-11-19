@@ -287,6 +287,38 @@ export function KitSelect({ node, param, value: given, onChange }) {
 }
 
 /** The controls for one parameter of a node. */
+/**
+ * Two knobs on one pad: drag anywhere on it and both move (the vowel effect's place, x across,
+ * y up). Marks show the named spots on it; the knobs underneath are the ones automation moves.
+ */
+function XYPad({ param, data, onChange }) {
+  const box = useRef(null)
+  const x = Number(data?.[param.xKey] ?? 0.5)
+  const y = Number(data?.[param.yKey] ?? 0.5)
+  const at = (e) => {
+    const r = box.current.getBoundingClientRect()
+    const cl = (v) => Math.round(Math.min(1, Math.max(0, v)) * 1000) / 1000
+    onChange({ [param.xKey]: cl((e.clientX - r.left) / r.width), [param.yKey]: cl(1 - (e.clientY - r.top) / r.height) })
+  }
+  return (
+    <div
+      ref={box}
+      className="xy-pad nodrag nowheel"
+      role="slider"
+      aria-label={param.label}
+      aria-valuetext={`${Math.round(x * 100)}, ${Math.round(y * 100)}`}
+      onPointerDown={(e) => { if (e.button !== 0) return; e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); at(e) }}
+      onPointerMove={(e) => { if (e.buttons & 1) at(e) }}
+      title={`${param.label}: drag to move · the knobs below automate it`}
+    >
+      {Object.entries(param.marks ?? {}).map(([name, [mx, my]]) => (
+        <span key={name} className="xy-mark" style={{ left: `${mx * 100}%`, top: `${(1 - my) * 100}%` }}>{name}</span>
+      ))}
+      <span className="xy-dot" style={{ left: `${x * 100}%`, top: `${(1 - y) * 100}%` }} />
+    </div>
+  )
+}
+
 function Param({ node, param, value: given, onChange, target: givenTarget }) {
   const ctx = useContext(Ctx)
   const value = given !== undefined ? given : node.data[param.key]
@@ -294,6 +326,15 @@ function Param({ node, param, value: given, onChange, target: givenTarget }) {
   const target = givenTarget !== undefined ? givenTarget : canAutomate(node.type, param.key) ? nodeTarget(node.id, param.key) : null
   const set = onChange ?? ((v) => ctx.updateNode(node.id, (d) => { d[param.key] = v }))
   switch (param.type) {
+    case 'xy':
+      // two knobs on one pad (the vowel's place): `value` is the data the two keys live in
+      return (
+        <XYPad
+          param={param}
+          data={given !== undefined ? given ?? {} : node.data}
+          onChange={onChange ?? ((v) => ctx.updateNode(node.id, (d) => { Object.assign(d, v) }))}
+        />
+      )
     case 'kit':
       return <KitSelect node={node} param={param} value={value} onChange={set} />
     case 'knob':
@@ -434,9 +475,9 @@ function FxRack({ node }) {
                     key={p.key}
                     node={node}
                     param={p}
-                    value={unit.data[p.key]}
+                    value={p.type === 'xy' ? unit.data : unit.data[p.key]}
                     target={canAutomate(unit.type, p.key) ? unitTarget(node.id, unit.id, p.key) : null}
-                    onChange={(v) => edit((c) => { const j = at(c, unit.id); if (j >= 0) c[j].data[p.key] = v })}
+                    onChange={(v) => edit((c) => { const j = at(c, unit.id); if (j >= 0) { if (p.type === 'xy') Object.assign(c[j].data, v); else c[j].data[p.key] = v } })}
                   />
                 ))}
               </div>

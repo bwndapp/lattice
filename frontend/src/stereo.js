@@ -1023,6 +1023,8 @@ export function setInsertParams(key, patch) {
  * and whatever was set while it was still loading is applied the moment it arrives.
  */
 /** W00K's choices, as its node offers them (graph.js) and its worklet counts them. */
+/** Where each vowel sits on the vowel pad: [across (back … front), up (closed … open)]. */
+export const VOWEL_MARKS = { u: [0.08, 0.1], o: [0.2, 0.55], a: [0.5, 0.95], e: [0.78, 0.5], i: [0.94, 0.1] }
 export const RING_SOURCES = ['hz', 'tempo']
 export const RING_RATES = ['1/4', '1/8', '1/16', '1/32', '1/64', '1/4 t', '1/8 t', '1/16 t', '1/32 t']
 export const RING_SHAPES = ['sine', 'triangle', 'square', 'saw']
@@ -1107,6 +1109,24 @@ function withMix(ac, kind, unit) {
     },
     dispose() { unit.dispose(); for (const n of [input, output, dry, wet]) n.disconnect() },
   }
+}
+
+/**
+ * The formants at a place (x, y) on the vowel pad: each vowel's, weighted by how near it is
+ * (inverse distance squared), frequencies blended in octaves, levels in dB. On a vowel's own
+ * mark it's exactly that vowel.
+ */
+export function vowelFormants(table, x, y) {
+  const near = Object.entries(VOWEL_MARKS).map(([v, [vx, vy]]) => ({ v, d2: (x - vx) ** 2 + (y - vy) ** 2 }))
+  const on = near.find((n) => n.d2 < 1e-6)
+  if (on) return table[on.v]
+  const w = near.map((n) => ({ v: n.v, w: 1 / n.d2 ** 1.5 }))
+  const total = w.reduce((s, n) => s + n.w, 0)
+  return [0, 1, 2].map((i) => {
+    let lf = 0, ll = 0
+    for (const n of w) { lf += (n.w / total) * Math.log2(table[n.v][i][0]); ll += (n.w / total) * Math.log2(Math.max(1e-4, table[n.v][i][1])) }
+    return [2 ** lf, 2 ** ll]
+  })
 }
 
 // a unit just built takes its settings at once; after that, knobs glide (no zipper noise)
@@ -1646,9 +1666,18 @@ const UNITS = {
     return {
       input,
       output,
-      set({ vowel }) {
-        const f = FORMANTS[vowel] ?? FORMANTS.a
-        bands.forEach(({ band, level }, i) => { smooth(band.frequency, f[i][0]); smooth(level.gain, f[i][1]) })
+      set({ vowel, x, y, size = 0, reso = 0.5 }) {
+        // a place on the pad (or, from an old track, a letter) → three formants, blended from the
+        // vowels nearest it (the nearer, the more), in octaves so the morph sounds even
+        const at = Number.isFinite(+x) && Number.isFinite(+y) ? [+x, +y] : VOWEL_MARKS[vowel] ?? VOWEL_MARKS.a
+        const f = vowelFormants(FORMANTS, at[0], at[1])
+        const shift = 2 ** ((Number(size) || 0) / 12)
+        const q = 0.5 + Math.min(1, Math.max(0, Number(reso))) * 1.5 // how sharp: soft … ringing
+        bands.forEach(({ band, level }, i) => {
+          smooth(band.frequency, Math.min(18000, f[i][0] * shift))
+          smooth(band.Q, [8, 10, 12][i] * q)
+          smooth(level.gain, f[i][1])
+        })
       },
       dispose() { for (const node of [input, output, ...bands.flatMap((b) => [b.band, b.level])]) node.disconnect() },
     }

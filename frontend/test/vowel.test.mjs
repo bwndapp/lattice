@@ -28,7 +28,7 @@ fs.writeFileSync(shim, [
 const src = (f) => JSON.stringify(path.join(here, '..', 'src', f))
 fs.writeFileSync(entry, [
   `export { normalizeProject, generateCode } from ${src('project.js')}`,
-  `export { NODE_TYPES, defaultData, laneFxParams } from ${src('graph.js')}`,
+  `export { NODE_TYPES, defaultData, laneFxParams, normalizeGraph } from ${src('graph.js')}`,
 ].join('\n'))
 execFileSync(path.join(here, '..', 'node_modules', '.bin', 'esbuild'), [
   entry, '--bundle', '--format=esm', '--platform=neutral', '--log-level=error',
@@ -86,6 +86,14 @@ const code = m.generateCode(patch('o'))
 ok('the patch keeps the vowel picked', patch('o').nodes.find((n) => n.id === 'v').data.vowel === 'o')
 ok('the vowel node is in the signal path, on a bus of its own', /const n_v = n_a\.orbit\(\d+\)/.test(code) && /out_in0: n_v/.test(code), code.split('\n').slice(-6).join(' | '))
 ok('switching the vowel changes the track', m.generateCode(patch('a')) !== code)
+
+// the pad: a place on it goes to the effect; an old track's letter comes in as its place
+{
+  const placed = run('vowel', { ...m.defaultData('vowel'), x: 0.3, y: 0.7, size: 3, reso: 0.8 }).declared[0]?.params
+  ok('the pad: its place goes to the effect', placed?.x === 0.3 && placed?.y === 0.7 && placed?.size === 3 && placed?.reso === 0.8, JSON.stringify(placed))
+  const old = m.normalizeGraph ? m.normalizeGraph({ nodes: [{ id: 'v', type: 'vowel', x: 0, y: 0, data: { vowel: 'i' } }], edges: [] }, []) : null
+  if (old) ok('an old track\'s "i" opens at i on the pad', old.nodes[0].data.x === 0.94 && old.nodes[0].data.y === 0.1, JSON.stringify(old.nodes[0].data))
+}
 
 console.log(fails ? `\n${fails} failing` : '\nall good')
 process.exit(fails ? 1 : 0)

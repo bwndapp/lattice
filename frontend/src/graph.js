@@ -14,11 +14,18 @@
  */
 
 import { parse } from 'acorn'
-import { GRAIN_STEPS, RING_MODES, RING_RATES, RING_SHAPES, RING_SOURCES, WOOK_FOLLOW, WOOK_RATES, WOOK_SHAPES, STEREO_ORBIT_BASE, beginInserts, commitInserts, declareBranch, declareInsert, declareQuiet, declareRoute, declareSide, declareSpeakers } from './stereo'
+import { GRAIN_STEPS, VOWEL_MARKS, RING_MODES, RING_RATES, RING_SHAPES, RING_SOURCES, WOOK_FOLLOW, WOOK_RATES, WOOK_SHAPES, STEREO_ORBIT_BASE, beginInserts, commitInserts, declareBranch, declareInsert, declareQuiet, declareRoute, declareSide, declareSpeakers } from './stereo'
 import { abstractBuild, abstractNodeTypes, abstractOf, abstractParts, packState } from './abstract/index.js'
 import { DELAY_DEFAULTS, DELAY_DIVISIONS, GLOBAL_DELAY, GLOBAL_REVERB, REVERB_DEFAULTS, beginFx, commitFx, declareFx } from './fxbus.js'
 
 const clampNum = (v, fallback, lo, hi) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : fallback)
+
+/** A vowel from before the pad: its letter, as a place on the pad (on load, once). */
+function vowelFromLetter(type, raw, data) {
+  if (type === 'vowel' && raw?.x === undefined && VOWEL_MARKS[raw?.vowel]) [data.x, data.y] = VOWEL_MARKS[raw.vowel]
+  return data
+}
+export { VOWEL_MARKS }
 const tidy = (v) => String(Math.round(Number(v) * 1000) / 1000)
 // text that lands inside a double-quoted mini-notation string
 const miniText = (s) => String(s ?? '').replace(/["\\\n\r`]/g, ' ').slice(0, 400).trim() || '~'
@@ -372,10 +379,22 @@ export const NODE_TYPES = {
     code: stereoCode('tremolo', (d) => ({ rate: d.rate, depth: d.depth })),
   },
   vowel: {
-    group: 'effect', cat: 'filter', label: 'vowel', blurb: 'Makes it sound like it says a vowel',
+    group: 'effect', cat: 'filter', label: 'vowel', blurb: 'Makes it sound like it says a vowel: drag round the pad to morph between them (u o a e i), or automate it',
     inputs: 1,
-    params: [{ key: 'vowel', type: 'select', label: 'vowel', options: ['a', 'e', 'i', 'o', 'u'], def: 'a' }],
-    code: stereoCode('vowel', (d) => ({ vowel: ['a', 'e', 'i', 'o', 'u'].includes(d.vowel) ? d.vowel : 'a' })),
+    params: [
+      // the pad moves both: across is back (u, o) to front (e, i), up is closed to open (a)
+      { key: 'pad', type: 'xy', label: 'vowel', xKey: 'x', yKey: 'y', marks: VOWEL_MARKS },
+      { key: 'x', type: 'knob', label: 'x', min: 0, max: 1, def: VOWEL_MARKS.a[0] },
+      { key: 'y', type: 'knob', label: 'y', min: 0, max: 1, def: VOWEL_MARKS.a[1] },
+      { key: 'size', type: 'knob', label: 'size', min: -12, max: 12, def: 0, unit: 'st', origin: 0 },
+      { key: 'reso', type: 'knob', label: 'reso', min: 0, max: 1, def: 0.5 },
+      { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 1 },
+      // what tracks from before the pad said: read once, as a place on it (normalizeGraph)
+      { key: 'vowel', type: 'select', label: 'vowel', options: ['a', 'e', 'i', 'o', 'u'], def: 'a', when: () => false },
+    ],
+    // its place on the pad; the letter too, which is what an old track's vowel comes as (the
+    // effect goes by the place when it has one, the letter when it doesn't)
+    code: stereoCode('vowel', (d) => ({ vowel: ['a', 'e', 'i', 'o', 'u'].includes(d.vowel) ? d.vowel : 'a', x: d.x, y: d.y, size: d.size, reso: d.reso })),
   },
   lofi: {
     group: 'effect', cat: 'texture', label: 'lo-fi', blurb: 'Lower sample rate, grittier',
@@ -1075,12 +1094,13 @@ export function normalizeGraph(raw, patterns) {
     if (!id || ids.has(id)) continue
     ids.add(id)
     const data = cleanData(n.type, n.data)
+    vowelFromLetter(n.type, n.data, data)
     if (n.type === 'fxrack') {
       const seen = new Set()
       data.chain = (Array.isArray(n.data?.chain) ? n.data.chain : [])
         .filter((u) => u && FX_UNITS.includes(u.type) && typeof u.id === 'string' && !seen.has(u.id) && seen.add(u.id))
         .slice(0, 16)
-        .map((u) => ({ id: u.id.replace(/\W/g, '').slice(0, 24) || 'fx', type: u.type, on: u.on !== false, data: cleanData(u.type, u.data) }))
+        .map((u) => ({ id: u.id.replace(/\W/g, '').slice(0, 24) || 'fx', type: u.type, on: u.on !== false, data: vowelFromLetter(u.type, u.data, cleanData(u.type, u.data)) }))
     }
     if (n.type === 'pattern') {
       data.patternId = patternIds.has(n.data?.patternId) ? n.data.patternId : [...patternIds][0] ?? null

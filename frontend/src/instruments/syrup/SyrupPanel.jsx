@@ -585,7 +585,7 @@ function LaneEffect({ ui, laneIndex, fx, index, count, drag }) {
       {open && (
         <div className="sy-fx-params">
           {!spec.params.length && <span className="sy-small-label">nothing to set</span>}
-          {spec.params.filter((def) => !def.when || def.when(fx.data ?? {})).map((def) => (def.type === 'select'
+          {spec.params.filter((def) => def.type !== 'xy' && (!def.when || def.when(fx.data ?? {}))).map((def) => (def.type === 'select'
             ? (
               <label key={def.key} className="sy-field">
                 <span className="sy-small-label">{def.label}</span>
