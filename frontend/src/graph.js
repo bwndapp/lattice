@@ -335,7 +335,10 @@ export const NODE_TYPES = {
   djfilter: {
     group: 'effect', cat: 'filter', label: 'dj filter', blurb: 'One knob: left darkens, right thins out',
     inputs: 1,
-    params: [{ key: 'djf', type: 'knob', label: 'sweep', min: 0, max: 1, def: 0.5 }],
+    params: [
+      { key: 'djf', type: 'knob', label: 'sweep', min: 0, max: 1, def: 0.5 },
+      { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 1 },
+    ],
     code: stereoCode('djfilter', (d) => ({ djf: d.djf })),
   },
   phaser: {
@@ -399,7 +402,10 @@ export const NODE_TYPES = {
   lofi: {
     group: 'effect', cat: 'texture', label: 'lo-fi', blurb: 'Lower sample rate, grittier',
     inputs: 1,
-    params: [{ key: 'coarse', type: 'int', label: 'grit', min: 1, max: 32, def: 6 }],
+    params: [
+      { key: 'coarse', type: 'int', label: 'grit', min: 1, max: 32, def: 6 },
+      { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 1 },
+    ],
     code: stereoCode('lofi', (d) => ({ coarse: d.coarse })),
   },
   granulizer: {
