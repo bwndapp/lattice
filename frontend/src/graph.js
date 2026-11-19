@@ -728,7 +728,10 @@ export const NODE_TYPES = {
   fxrack: {
     group: 'effect', cat: 'rack', label: 'fx rack', blurb: 'Several effects in one box, applied top to bottom',
     inputs: 1,
-    params: [],
+    // dry/wet for the whole chain: the patch plays it as a split into the rack and an a/b mix (rackMix)
+    params: [
+      { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 1 },
+    ],
     code: (d, [x], ctx) => {
       const chain = (d.chain ?? []).filter((u) => u.on && FX_UNITS.includes(u.type))
       return chain.reduce((acc, u) => {
@@ -1335,13 +1338,40 @@ export function lineOf(project, id) {
  * Code for the graph: one `const` per node that makes a pattern, in dependency order,
  * then one lane per wire into each output node. `solo` (a node id) plays only that node.
  */
+/**
+ * An fx rack's mix knob, below all the way wet, is played as what you'd wire by hand: the
+ * sound split into the rack and straight past it, both into an a/b mix (dry a, wet b) whose
+ * knob is the rack's, automation and all. What the rack fed now comes from that mix.
+ */
+function rackMix(nodes, edges, auto) {
+  const racks = nodes.filter((n) => n.type === 'fxrack' && n.data?.bypass !== true && n.data?.mute !== true
+    && ((n.data?.mix ?? 1) < 1 || (auto && auto(`n:${n.id}:mix`))) && edges.some((e) => e.target === n.id))
+  if (!racks.length) return { nodes, edges, mixOf: new Map() }
+  const mixOf = new Map()
+  const extra = []
+  let out = edges
+  for (const r of racks) {
+    const id = `${r.id}mx`
+    mixOf.set(r.id, id)
+    extra.push({ id, type: 'blend', autoAs: r.id, x: r.x, y: r.y, data: { mix: r.data.mix ?? 1, name: r.data.name ?? 'fx rack mix' } })
+    out = out.map((e) => (e.source === r.id ? { ...e, source: id, sourceHandle: 'out' } : e))
+    for (const e of edges.filter((e) => e.target === r.id)) out.push({ ...e, target: id, targetHandle: 'in-0' })
+    out.push({ source: r.id, sourceHandle: 'out', target: id, targetHandle: 'in-1' })
+  }
+  return { nodes: [...nodes, ...extra], edges: out, mixOf }
+}
+
 export function graphCode(project, { solo = null, song = null, audition = false, auto = null, laneSolo = null, lineSolo = null } = {}) {
-  const { nodes } = project
   // triggers carry rhythm, not sound: the patterns they fire make their own code (project.js)
   let edges = project.edges.filter((e) => !isTrigger(e))
   // soloing a line (alt + S): only its wires are followed, so nothing else is reached
   const line = lineSolo ? lineOf(project, lineSolo) : null
   if (line) edges = edges.filter((e) => line.edges.has(e))
+  const mixed = rackMix(project.nodes, edges, auto)
+  const { nodes } = mixed
+  edges = mixed.edges
+  // soloing a rack plays it as it's heard, its mix too
+  if (solo && mixed.mixOf.has(solo)) solo = mixed.mixOf.get(solo)
   const byId = new Map(nodes.map((n) => [n.id, n]))
   const patternIds = new Set(project.patterns.map((p) => p.id))
   const exprs = new Map() // id → variable name, or null when the node makes nothing
@@ -1498,7 +1528,7 @@ export function graphCode(project, { solo = null, song = null, audition = false,
     // inside each clip (song.js)
     const songPart = song && spec.group === 'source' && node.type !== 'pattern' && !wires.length
     const nodeAuto = auto && songPart ? (target) => { const a = auto(target); return a && `\u0001${a}\u0001` } : auto
-    const autoOf = nodeAuto ? (key) => nodeAuto(`n:${id}:${key}`) : null
+    const autoOf = nodeAuto ? (key) => nodeAuto(`n:${node.autoAs ?? id}:${key}`) : null
     // Wiring an instrument's own port is a copy: it still goes out the main one as well,
     // because a wire shouldn't silently take a sound out of the mix. Taking it off the main
     // is a separate thing you ask for, instrument by instrument.
