@@ -974,7 +974,7 @@ function wire(n, rack, inserts) {
     let unit = rack.units.get(i.key)
     if (unit && unit.kind !== i.kind) { unit.dispose(); rack.units.delete(i.key); unit = null }
     const fresh = !unit
-    if (!unit) { unit = UNITS[i.kind](getAudioContext()); unit.kind = i.kind; rack.units.set(i.key, unit) }
+    if (!unit) { unit = withMix(getAudioContext(), i.kind, UNITS[i.kind](getAudioContext())); unit.kind = i.kind; rack.units.set(i.key, unit) }
     // where automation has it now, if it's automated (paramEpoch.js): a new unit starts there,
     // and one already playing isn't sent back toward its set value by an edit
     const over = autoOverlay(i.key)
@@ -1077,6 +1077,35 @@ function workletInsert(ac, name, shape, { sync = false } = {}) {
       for (const audio of [input, output, node]) audio?.disconnect()
       node = null
     },
+  }
+}
+
+/*
+ * Units that don't blend dry and wet themselves get it here, all the same way: the sound
+ * goes round the unit as well as through it, and `mix` crossfades the two (parallel
+ * compression, parallel saturation, a filter only partly in). Units that have a mix of their
+ * own (distortion, chorus, the worklets…) aren't wrapped.
+ */
+const MIXED = new Set(['comp', 'shaper', 'filter', 'djfilter', 'phaser', 'vowel', 'lofi'])
+function withMix(ac, kind, unit) {
+  if (!unit || !MIXED.has(kind)) return unit
+  const input = new GainNode(ac, { channelCount: 2, channelCountMode: 'explicit', channelInterpretation: 'speakers' })
+  const output = new GainNode(ac)
+  const dry = new GainNode(ac, { gain: 0 })
+  const wet = new GainNode(ac, { gain: 1 })
+  input.connect(dry).connect(output)
+  input.connect(unit.input)
+  unit.output.connect(wet).connect(output)
+  return {
+    input,
+    output,
+    set(params) {
+      unit.set(params)
+      const mix = Math.min(1, Math.max(0, Number.isFinite(+params?.mix) ? +params.mix : 1))
+      glide(dry.gain, 1 - mix)
+      glide(wet.gain, mix)
+    },
+    dispose() { unit.dispose(); for (const n of [input, output, dry, wet]) n.disconnect() },
   }
 }
 
@@ -1939,7 +1968,7 @@ const UNITS = {
 export function makeInsert(kind, ac = getAudioContext()) {
   const make = UNITS[kind]
   if (!make) return null
-  const unit = make(ac)
+  const unit = withMix(ac, kind, make(ac))
   unit.kind = kind
   return unit
 }

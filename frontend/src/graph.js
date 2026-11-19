@@ -205,6 +205,7 @@ export const NODE_TYPES = {
       { key: 'lpf', type: 'knob', label: 'cutoff', min: 60, max: 20000, def: 2000, log: true, unit: 'hz' },
       { key: 'lpq', type: 'knob', label: 'reso', min: 0, max: 25, def: 4 },
       { key: 'hpf', type: 'knob', label: 'low cut', min: 20, max: 8000, def: 20, log: true, unit: 'hz' },
+      { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 1 },
     ],
     // on the bus, so filters along a line really do cascade (see stereo.js). An
     // instrument's own cutoff knob still belongs to its notes.
@@ -298,6 +299,7 @@ export const NODE_TYPES = {
     params: [
       { key: 'shape', type: 'knob', label: 'drive', min: 0, max: 0.9, def: 0.4 },
       { key: 'crush', type: 'knob', label: 'crush', min: 0, max: 1, def: 0 },
+      { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 1 },
     ],
     code: stereoCode('shaper', (d) => ({ shape: d.shape, crush: d.crush, out: 1, curve: 'scurve' })),
   },
@@ -335,6 +337,7 @@ export const NODE_TYPES = {
     params: [
       { key: 'rate', type: 'knob', label: 'rate', min: 0.1, max: 16, def: 2, log: true },
       { key: 'depth', type: 'knob', label: 'depth', min: 0, max: 1, def: 0.6 },
+      { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 1 },
     ],
     code: stereoCode('phaser', (d) => ({ rate: d.rate, depth: d.depth })),
   },
@@ -567,6 +570,7 @@ export const NODE_TYPES = {
       { key: 'drive', type: 'knob', label: 'drive', min: 0, max: 4, def: 1.2 },
       { key: 'character', type: 'select', label: 'character', options: ['warm', 'tape', 'tube', 'asym', 'harmonics', 'fold'], def: 'tape' },
       { key: 'out', type: 'knob', label: 'output', min: 0.05, max: 1, def: 0.8, fmt: 'gain' },
+      { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 1 },
     ],
     // on the summed bus, like a mixer insert (see stereo.js)
     code: stereoCode('shaper', (d) => ({ drive: d.drive, out: d.out, curve: SATURATION[d.character] ?? 'soft' })),
@@ -593,6 +597,7 @@ export const NODE_TYPES = {
     params: [
       { key: 'push', type: 'knob', label: 'push', min: 0, max: 3, def: 0.6 },
       { key: 'ceiling', type: 'knob', label: 'output', min: 0.1, max: 1, def: 0.9, fmt: 'gain' },
+      { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 1 },
     ],
     code: stereoCode('shaper', (d) => ({ drive: d.push, out: d.ceiling, curve: 'hard' })),
   },
@@ -603,6 +608,7 @@ export const NODE_TYPES = {
       { key: 'push', type: 'knob', label: 'push', min: 0, max: 3, def: 0.5 },
       { key: 'knee', type: 'select', label: 'knee', options: ['round', 'smooth', 'cubic'], def: 'round' },
       { key: 'ceiling', type: 'knob', label: 'output', min: 0.1, max: 1, def: 0.95, fmt: 'gain' },
+      { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 1 },
     ],
     code: stereoCode('shaper', (d) => ({ drive: d.push, out: d.ceiling, curve: KNEES[d.knee] ?? 'scurve' })),
   },
@@ -616,6 +622,7 @@ export const NODE_TYPES = {
       { key: 'release', type: 'knob', label: 'release', min: 0.02, max: 1, def: 0.15, log: true, unit: 's' },
       { key: 'knee', type: 'knob', label: 'knee', min: 0, max: 30, def: 6, unit: 'db' },
       { key: 'makeup', type: 'knob', label: 'makeup', min: 0, max: 18, def: 3, unit: 'db', origin: 0 },
+      { key: 'mix', type: 'knob', label: 'mix', min: 0, max: 1, def: 1 },
     ],
     // across the whole bus, so it hears the parts together (see stereo.js)
     code: stereoCode('comp', (d) => ({ threshold: d.threshold, ratio: d.ratio, knee: d.knee, attack: d.attack, release: d.release, makeup: d.makeup })),
@@ -826,7 +833,9 @@ function compileCodeNode(src) {
  * code puts the sound on a bus of its own, unless it's already on one, and the app
  * processes that bus.
  */
-function stereoCode(kind, params) {
+function stereoCode(kind, raw) {
+  // a node with a mix knob hands it on, whatever its own settings say (see stereo.js MIXED)
+  const params = (d) => { const p = raw(d); return d && d.mix != null && !('mix' in p) ? { ...p, mix: d.mix } : p }
   const code = (d, [x], ctx) => {
     if (!ctx?.route) return x
     let tail = ''
