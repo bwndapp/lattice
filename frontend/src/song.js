@@ -166,11 +166,15 @@ export function songParts(project, autos = project.song?.autos ?? []) {
     inPatch: true,
     trigger: triggerOnly(project, n.id),
   }))
-  const automations = autos.map((a) => ({
+  // originals, each followed by its variations
+  const autoOrder = autos.filter((a) => !a.parent).flatMap((a) => [a, ...autos.filter((v) => v.parent === a.id)])
+  const named = { ...project, song: { ...(project.song ?? {}), autos } }
+  const automations = autoOrder.map((a) => ({
     src: `${AUTO_PREFIX}${a.id}`,
     kind: 'auto',
     id: a.id,
-    name: autoName(project, a),
+    parent: a.parent ?? null,
+    name: autoName(named, a),
     bars: a.bars,
     target: a.target,
     inPatch: true,

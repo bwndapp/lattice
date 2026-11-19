@@ -10,7 +10,7 @@ import { pointerAt, pointerGone, selectionIs, useHolders } from './collab.js'
 import PeerCursors from './PeerCursors.jsx'
 import { useRollDock } from './rollDock.js'
 import { KnobMenu } from './KnobMenu.jsx'
-import { AUTO_PREFIX, addPoint, curveAt, movePoints, removePoints, resolveTarget, ripplePoints } from './automation.js'
+import { AUTO_PREFIX, addPoint, makeAutoVariation, curveAt, movePoints, removePoints, resolveTarget, ripplePoints } from './automation.js'
 import CodeBox from './CodeBox.jsx'
 import ConfirmDialog from './ConfirmDialog.jsx'
 import { KitSelect } from './Graph.jsx'
@@ -853,21 +853,23 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     if (mod && k === 'a') { done(); return setSelected(new Set(song.clips.map((c) => c.id))) }
     if (!mod && k === 'c') { done(); setTool((t) => (t === 'slice' ? 'pointer' : 'slice')); setSliceLine(null); return }
     if (!mod && k === 'u') {
-      // make unique (as in FL): each selected pattern clip gets its own variation to change
-      const picked = song.clips.filter((c) => selected.has(c.id) && c.src.startsWith('pattern:'))
+      // make unique (as in FL): each selected pattern or automation clip gets its own variation to change
+      const picked = song.clips.filter((c) => selected.has(c.id) && (c.src.startsWith('pattern:') || c.src.startsWith(AUTO_PREFIX)))
       if (!picked.length) return
       done()
       let last = null
       onUpdateProject((p) => {
-        const made = new Map() // one variation per pattern, shared by the clips picked from it
+        const made = new Map() // one variation per part, shared by the clips picked from it
         for (const c of p.song?.clips ?? []) {
           if (!picked.some((x) => x.id === c.id)) continue
-          const from = c.src.slice(8)
-          if (!made.has(from)) made.set(from, makeVariation(p, from))
-          if (made.get(from)) { c.src = `pattern:${made.get(from)}`; last = made.get(from) }
+          const isAuto = c.src.startsWith(AUTO_PREFIX)
+          if (!made.has(c.src)) made.set(c.src, isAuto ? makeAutoVariation(p, c.src.slice(AUTO_PREFIX.length)) : makeVariation(p, c.src.slice(8)))
+          const id = made.get(c.src)
+          if (id) { c.src = `${isAuto ? AUTO_PREFIX : 'pattern:'}${id}`; last = c.src }
         }
       })
-      if (last) { setActivePart(`pattern:${last}`); dock?.open(last, null, 'rack') }
+      if (last?.startsWith('pattern:')) { setActivePart(last); dock?.open(last.slice(8), null, 'rack') }
+      else if (last) setActivePart(last)
       return
     }
     if (!mod && k === 'v') { done(); setTool('pointer'); setSliceLine(null); return }
@@ -1124,9 +1126,18 @@ export default function Timeline({ project, onUpdateProject, transport, started 
         {part.kind === 'auto' && (
           <button
             type="button"
+            className="song-part-dup"
+            onClick={() => { let made = null; onUpdateProject((p) => { made = makeAutoVariation(p, part.id) }); if (made) setActivePart(`${AUTO_PREFIX}${made}`) }}
+            data-tip="Make a variation: another curve for the same knob, to draw freely; each clip plays its own"
+            aria-label={`Duplicate ${part.name} as a variation`}
+          >dup</button>
+        )}
+        {part.kind === 'auto' && (
+          <button
+            type="button"
             className="song-part-del"
             onClick={() => automation?.remove(part.id)}
-            title="Delete this automation and its clips (ctrl/cmd + Z brings it back)"
+            title={part.parent ? 'Delete this variation and its clips (ctrl/cmd + Z brings it back)' : 'Delete this automation, its variations and their clips (ctrl/cmd + Z brings it back)'}
             aria-label={`Delete ${part.name}`}
           >×</button>
         )}

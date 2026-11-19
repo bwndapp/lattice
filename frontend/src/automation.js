@@ -15,12 +15,16 @@
  *   y       where the knob points, 0 … 1 of its travel (so a log knob moves like the knob)
  *   c       the curve from this point to the next: 0 straight, up to ±1 bent
  *
+ * A variation (`parent`: the original's id) is another curve for the same knob, made by
+ * "make unique" on a clip: each clip plays its own automation's curve, and the knob
+ * follows whichever clip is playing (see `family`, MULTI_JS).
+ *
  * Inside a clip the knob follows the curve. Outside its clips it stays where the
  * automation last left it; before the first clip it starts where the first clip starts.
  * The code reads the curve at each note's start, so it plays anywhere Strudel runs.
  */
 import { NODE_TYPES } from './graph.js'
-import { PARAMS, paramValue } from './project.js'
+import { PARAMS, newId, paramValue } from './project.js'
 import { ENGINES, engineData, engineKnob } from './instruments/index.js'
 
 const num = (v, fallback, lo, hi) => (Number.isFinite(Number(v)) ? Math.min(hi, Math.max(lo, Number(v))) : fallback)
@@ -188,14 +192,27 @@ export function normalizeAutos(raw, project) {
   const out = []
   const seen = new Set()
   const targets = new Set()
-  for (const a of Array.isArray(raw) ? raw : []) {
-    if (!a || typeof a.id !== 'string' || typeof a.target !== 'string') continue
-    const id = a.id.replace(/\W/g, '').slice(0, 24)
+  const list = Array.isArray(raw) ? raw : []
+  const cleanId = (v) => (typeof v === 'string' ? v.replace(/\W/g, '').slice(0, 24) : '')
+  // the originals: one per knob, whatever order they come in
+  const roots = new Map() // id → target
+  for (const a of list) {
+    if (!a || a.parent || typeof a.id !== 'string' || typeof a.target !== 'string') continue
+    const id = cleanId(a.id)
     const target = a.target.replace(/[^\w:]/g, '').slice(0, 120)
-    // one automation per knob; a knob that's gone keeps its curve until the automation is deleted
-    if (!id || seen.has(id) || targets.has(target)) continue
+    if (id && !roots.has(id) && ![...roots.values()].includes(target)) roots.set(id, target)
+  }
+  for (const a of list) {
+    if (!a || typeof a.id !== 'string' || typeof a.target !== 'string') continue
+    const id = cleanId(a.id)
+    const target = a.target.replace(/[^\w:]/g, '').slice(0, 120)
+    // a variation: another curve for its original's knob
+    const parent = a.parent ? cleanId(a.parent) : null
+    if (parent && roots.get(parent) !== target) continue
+    // one automation per knob (and its variations); a knob that's gone keeps its curve until the automation is deleted
+    if (!id || seen.has(id) || (!parent && targets.has(target))) continue
     seen.add(id)
-    targets.add(target)
+    if (!parent) targets.add(target)
     const bars = snapTo(num(a.bars, 4, 1 / 4, 256), 1 / 64)
     const points = (Array.isArray(a.points) ? a.points : [])
       .filter((p) => p && Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.y)))
@@ -219,6 +236,7 @@ export function normalizeAutos(raw, project) {
     const found = resolveTarget(project, target)
     if (!points.length) points.push({ x: 0, y: found ? toPos(found.value, found.def) : 0.5 })
     const auto = { id, target, bars, points }
+    if (parent) auto.parent = parent
     if (typeof a.name === 'string' && a.name.trim()) auto.name = a.name.trim().slice(0, 40)
     out.push(auto)
     if (out.length >= MAX_AUTOS) break
@@ -229,6 +247,12 @@ export function normalizeAutos(raw, project) {
 /** The name an automation goes by: its own, or the knob's. */
 export function autoName(project, auto) {
   if (auto.name) return auto.name
+  // a variation: its original's name and its number in the family (2, 3, …)
+  if (auto.parent) {
+    const root = project.song?.autos?.find((a) => a.id === auto.parent)
+    const n = (project.song?.autos ?? []).filter((a) => a.parent === auto.parent).findIndex((a) => a.id === auto.id) + 2
+    if (root) return `${autoName(project, root)} ${n}`.slice(0, 60)
+  }
   const found = resolveTarget(project, auto.target)
   return found ? `${found.owner} · ${found.label}` : 'automation (knob gone)'
 }
@@ -306,6 +330,62 @@ export function pointRow(p) {
 // eslint-disable-next-line no-new-func
 const makeCurve = new Function(`return ${CURVE_JS}`)()
 
+/**
+ * Several curves for one knob (an automation and its variations): `parts` are
+ * [len, clips, pts], one per automation, as CURVE_JS takes them. At each moment the knob
+ * follows the automation whose clip is playing; between clips, the one that last played;
+ * before them all, the one that plays first.
+ */
+export const MULTI_JS = `(total, parts) => {
+  const make = ${CURVE_JS}
+  const curves = parts.map(([len, clips, pts]) => make(total, len, clips, pts))
+  const all = parts.flatMap(([, clips], i) => clips.map(([start, end]) => [start, end, i]))
+  const mod = (a, n) => ((a % n) + n) % n
+  return (time) => {
+    const t0 = Math.max(0, Number(time))
+    const t = total > 0 ? mod(t0, total) : t0
+    let pick = null
+    let last = null
+    let first = null
+    for (const c of all) {
+      if (t >= c[0] && t < c[1]) { pick = c; break }
+      if (c[1] <= t && (!last || c[1] >= last[1])) last = c
+      if (!first || c[0] < first[0]) first = c
+    }
+    const c = pick ?? last ?? first
+    return c ? curves[c[2]](time) : parts.length ? curves[0](time) : 0
+  }
+}`
+// eslint-disable-next-line no-new-func
+const makeMulti = new Function(`return ${MULTI_JS}`)()
+
+/**
+ * Make unique, for an automation: a copy of its curve, a variation of its original (same
+ * knob), placed after the family. It keeps the source's colour, if it had one picked. Returns the id.
+ */
+export function makeAutoVariation(p, autoId) {
+  const autos = p.song?.autos ?? []
+  const source = autos.find((a) => a.id === autoId)
+  if (!source || autos.length >= MAX_AUTOS) return null
+  const rootId = source.parent ?? source.id
+  const copy = JSON.parse(JSON.stringify(source))
+  copy.id = newId().replace(/\W/g, '').slice(0, 24)
+  copy.parent = rootId
+  delete copy.name
+  const at = Math.max(...autos.map((a, i) => (a.id === rootId || a.parent === rootId ? i : -1)))
+  autos.splice(at + 1, 0, copy)
+  const colors = p.song.colors ?? {}
+  const own = colors[`${AUTO_PREFIX}${source.id}`]
+  if (own) p.song.colors = { ...colors, [`${AUTO_PREFIX}${copy.id}`]: own }
+  return copy.id
+}
+
+/** An automation's family: its original, then the variations (each with its own curve and clips). */
+export function family(song, auto) {
+  const root = auto.parent ? song.autos?.find((a) => a.id === auto.parent) ?? auto : auto
+  return [root, ...(song.autos ?? []).filter((a) => a.parent === root.id)]
+}
+
 const SONG_ORDER = (a, b) => a.start - b.start
 
 /** The arguments of the curve for one automation in the song. */
@@ -323,15 +403,23 @@ function curveArgs(song, auto) {
 export function activeAutos(project) {
   const song = project.song
   if (!song?.on || !song.autos?.length) return []
-  return song.autos.filter((a) => song.clips.some((c) => c.src === `${AUTO_PREFIX}${a.id}`) && resolveTarget(project, a.target))
+  // one per knob: the original stands for its variations, and plays when any of them has a clip
+  return song.autos.filter((a) => !a.parent && family(song, a).some((f) => song.clips.some((c) => c.src === `${AUTO_PREFIX}${f.id}`)) && resolveTarget(project, a.target))
 }
 
 /** A function of song time (bars) → the knob's value, for showing knobs move. */
 export function autoValueFn(project, auto) {
   const found = resolveTarget(project, auto.target)
   if (!found) return null
-  const { total, len, clips, pts } = curveArgs(project.song, auto)
-  const y = makeCurve(total, len, clips, pts)
+  const fam = family(project.song, auto)
+  let y
+  if (fam.length > 1) {
+    const args = fam.map((a) => curveArgs(project.song, a))
+    y = makeMulti(args[0].total, args.map((a) => [a.len, a.clips, a.pts]))
+  } else {
+    const { total, len, clips, pts } = curveArgs(project.song, auto)
+    y = makeCurve(total, len, clips, pts)
+  }
   return (t) => fromPos(y(t), found.def)
 }
 
@@ -438,10 +526,21 @@ export function automationCode(project) {
     `const automate = (total, len, clips, pts, lo, hi, log) => { const y = (${CURVE_JS})(total, len, clips, pts); return signal((t) => { const v = y(t); return log ? lo * (hi / lo) ** v : lo + v * (hi - lo) }) }`,
   ]
   const names = new Map()
+  const list = (rows) => `[${rows.map((r) => `[${r.map(tidy).join(', ')}]`).join(', ')}]`
+  // a knob with variations: one curve per automation, the knob following the clip that plays
+  if (autos.some((a) => family(project.song, a).length > 1)) {
+    lines.push(`const automateAll = (total, parts, lo, hi, log) => { const y = (${MULTI_JS})(total, parts); return signal((t) => { const v = y(t); return log ? lo * (hi / lo) ** v : lo + v * (hi - lo) }) }`)
+  }
   for (const auto of autos) {
     const { def } = resolveTarget(project, auto.target)
+    const fam = family(project.song, auto)
+    if (fam.length > 1) {
+      const parts = fam.map((a) => { const c = curveArgs(project.song, a); return `[${tidy(c.len)}, ${list(c.clips)}, ${list(c.pts)}]` })
+      lines.push(`const ${autoVar(auto.id)} = automateAll(${tidy(curveArgs(project.song, auto).total)}, [${parts.join(', ')}], ${def.min}, ${def.max}, ${def.log ? 'true' : 'false'})`)
+      names.set(auto.target, autoVar(auto.id))
+      continue
+    }
     const { total, len, clips, pts } = curveArgs(project.song, auto)
-    const list = (rows) => `[${rows.map((r) => `[${r.map(tidy).join(', ')}]`).join(', ')}]`
     lines.push(`const ${autoVar(auto.id)} = automate(${tidy(total)}, ${tidy(len)}, ${list(clips)}, ${list(pts)}, ${def.min}, ${def.max}, ${def.log ? 'true' : 'false'})`)
     names.set(auto.target, autoVar(auto.id))
   }

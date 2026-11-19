@@ -836,7 +836,8 @@ export default function App() {
   const closeRoll = useCallback(() => setRoll(null), [])
   const automation = useMemo(() => {
     const autos = project?.song?.autos ?? []
-    const byTarget = new Map(autos.map((a) => [a.target, a]))
+    // a knob's automation is its original; variations are reached by id
+    const byTarget = new Map(autos.filter((a) => !a.parent).map((a) => [a.target, a]))
     return {
       automated: new Set(byTarget.keys()),
       /** A new automation for this knob, with a clip on the timeline, opened to draw. */
@@ -875,13 +876,15 @@ export default function App() {
       remove(target) {
         const auto = byTarget.get(target) ?? autos.find((a) => a.id === target)
         if (!auto) return
+        // an original takes its variations with it; a variation goes on its own
+        const doomed = new Set([auto.id, ...(auto.parent ? [] : autos.filter((a) => a.parent === auto.id).map((a) => a.id))])
         updateProject((p) => {
           if (!p.song) return
-          p.song.autos = (p.song.autos ?? []).filter((a) => a.id !== auto.id)
-          p.song.clips = p.song.clips.filter((c) => c.src !== `${AUTO_PREFIX}${auto.id}`)
-          if (p.song.colors) delete p.song.colors[`${AUTO_PREFIX}${auto.id}`]
+          p.song.autos = (p.song.autos ?? []).filter((a) => !doomed.has(a.id))
+          p.song.clips = p.song.clips.filter((c) => !(c.src.startsWith(AUTO_PREFIX) && doomed.has(c.src.slice(AUTO_PREFIX.length))))
+          if (p.song.colors) for (const id of doomed) delete p.song.colors[`${AUTO_PREFIX}${id}`]
         })
-        setAutoEditing((e) => (e?.id === auto.id ? null : e))
+        setAutoEditing((e) => (e && doomed.has(e.id) ? null : e))
         flash(`Automation removed · ctrl/cmd + Z brings it back`)
       },
       showTimeline() {
