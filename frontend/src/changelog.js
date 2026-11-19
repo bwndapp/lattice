@@ -24,6 +24,20 @@
  */
 export const NEWS = [
   {
+    id: '2026-11-19-1',
+    date: '2026-11-19',
+    version: '0.22.0',
+    title: 'Reverse, a crossfader, and a vowel you can move',
+    items: [
+      '**Reverse**: a new effect — the sound backwards as it goes, a chunk at a time in time with the song, swelling up to each beat',
+      '**a/b mix**: a crossfader — two sounds in, one knob from all a to all b, without a dip in the middle',
+      '**Vowel**: drag round a pad to morph between u o a e i, or automate it; size and reso too',
+      '**A mix knob** on the compressor, saturator, clippers, filters, drive, phaser and lo-fi: parallel processing anywhere',
+      '**Automation**: ripple editing (drag a point and the ones after it come along), the curve drawn exactly through its points',
+      '**Knobs**: the pointer stays where your hand is while you turn one',
+    ],
+  },
+  {
     id: '2026-11-18-4',
     date: '2026-11-18',
     version: '0.21.0',
