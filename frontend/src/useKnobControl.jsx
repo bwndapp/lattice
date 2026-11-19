@@ -127,26 +127,13 @@ function makeControl(opts, ref, setLive, setPeek, setTyping) {
   }
 
   // ── dragging ──
-  // The pointer is locked while dragging, so a long sweep doesn't stop at the edge of the
-  // screen, and comes back where the drag started; where a lock isn't allowed, it hides.
+  // The pointer stays visible and where your hand is: it used to be locked (or hidden) while
+  // dragging, but browsers hand a locked pointer back unreliably — it could turn up far from
+  // the knob, and the first moves after locking could jump. A whole sweep is ~150 px anyway.
   const hide = (d) => {
     if (d.hidden) return
     d.hidden = true
     document.body.classList.add('knob-hide-cursor')
-  }
-  const hold = (d) => {
-    const el = d.el
-    d.lockChange = () => {
-      if (document.pointerLockElement === el) d.locked = true
-      else if (d.locked && drag === d) endDrag() // Escape let go of the lock: the drag ends there
-    }
-    d.lockError = () => hide(d)
-    document.addEventListener('pointerlockchange', d.lockChange)
-    document.addEventListener('pointerlockerror', d.lockError)
-    try {
-      if (!el.requestPointerLock) hide(d)
-      else el.requestPointerLock()?.catch?.(() => hide(d))
-    } catch { hide(d) }
   }
   const unhold = (d) => {
     if (d.lockChange) {
@@ -163,7 +150,6 @@ function makeControl(opts, ref, setLive, setPeek, setTyping) {
     if (!d.moved) {
       if (!pastThreshold(d, d.vx, d.vy)) return // a click isn't a drag
       d.moved = true
-      if (d.mouse) hold(d)
     }
     const centre = opts.current.centre
     d.raw = dragTo(d, d.vx, d.vy, e.shiftKey, d.raw ?? d.from)
