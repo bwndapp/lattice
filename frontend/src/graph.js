@@ -1346,9 +1346,9 @@ export function lineOf(project, id) {
  * insert key, the rack's id, so the app moves both at once as the knob is automated
  * (automation.js APP_PARAMS). What the rack fed now comes from that bus.
  */
-function rackMix(nodes, edges, auto) {
+function rackMix(nodes, edges, moved) {
   const racks = nodes.filter((n) => n.type === 'fxrack' && n.data?.bypass !== true && n.data?.mute !== true
-    && ((n.data?.mix ?? 1) < 1 || (auto && auto(`n:${n.id}:mix`))) && edges.some((e) => e.target === n.id))
+    && ((n.data?.mix ?? 1) < 1 || moved.has(`n:${n.id}:mix`)) && edges.some((e) => e.target === n.id))
   if (!racks.length) return { nodes, edges, mixOf: new Map() }
   const mixOf = new Map()
   const extra = []
@@ -1368,13 +1368,14 @@ function rackMix(nodes, edges, auto) {
   return { nodes: [...nodes, ...extra], edges: out, mixOf }
 }
 
-export function graphCode(project, { solo = null, song = null, audition = false, auto = null, laneSolo = null, lineSolo = null } = {}) {
+// `moved`: the knobs automation turns, the app's own too (those aren't in `auto`, which is the code's)
+export function graphCode(project, { solo = null, song = null, audition = false, auto = null, moved = new Set(), laneSolo = null, lineSolo = null } = {}) {
   // triggers carry rhythm, not sound: the patterns they fire make their own code (project.js)
   let edges = project.edges.filter((e) => !isTrigger(e))
   // soloing a line (alt + S): only its wires are followed, so nothing else is reached
   const line = lineSolo ? lineOf(project, lineSolo) : null
   if (line) edges = edges.filter((e) => line.edges.has(e))
-  const mixed = rackMix(project.nodes, edges, auto)
+  const mixed = rackMix(project.nodes, edges, moved)
   const { nodes } = mixed
   edges = mixed.edges
   // soloing a rack plays it as it's heard, its mix too

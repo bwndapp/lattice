@@ -2,7 +2,7 @@ import { parse } from 'acorn'
 import { defaultData, demoGraph, graphCode, isTrigger, normalizeGraph, patternChanVar, patternVar, splitPatternIds, triggerOf } from './graph.js'
 import { abstractParts } from './abstract/index.js'
 import { normalizeSong, shiftedAuto, songActive, songExpr } from './song.js'
-import { automationCode, channelTarget } from './automation.js'
+import { activeAutos, automationCode, channelTarget } from './automation.js'
 import { GLOBAL_DELAY, GLOBAL_REVERB } from './fxbus.js'
 import { engineSound, normalizeEngine } from './instruments/index.js'
 import { declareEngines } from './instruments/host.js'
@@ -653,7 +653,8 @@ export function generateCode(project, { solo = null, laneSolo = null, lineSolo =
     lines.push(`const ${patternVar(pattern.id)} = ${value}`)
   }
   const patternSolo = typeof solo === 'string' && solo.startsWith('pattern:') && project.patterns.some((p) => `pattern:${p.id}` === solo)
-  const graph = graphCode(project, { solo: patternSolo ? null : solo, song, auto, laneSolo, lineSolo, audition })
+  const moved = new Set(activeAutos(project).map((a) => a.target))
+  const graph = graphCode(project, { solo: patternSolo ? null : solo, song, auto, moved, laneSolo, lineSolo, audition })
   lines.push('', ...graph.lines.map((l) => (l.startsWith('// ') ? `// ${commentText(l.slice(3))}` : l)))
   if (patternSolo) lines.push('', '// auditioning one pattern', ...graph.lanes.map((l) => `_${l.replace(/^_/, '')}`), `solo: ${patternVar(solo.slice(8))}`)
   else lines.push('', solo ? '// auditioning one node' : '// output', ...(graph.lanes.length ? graph.lanes : ['$: silence']))
