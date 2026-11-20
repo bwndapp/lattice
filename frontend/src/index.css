@@ -786,10 +786,14 @@ button.lcd-unit:hover { color: var(--acid); }
 .knob { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; width: 44px; }
 .knob svg { cursor: ns-resize; touch-action: none; display: block; }
 .knob svg:focus-visible { outline: 2px solid var(--acid); outline-offset: 1px; border-radius: 50%; }
-.knob-track { fill: none; stroke: var(--line); stroke-width: 4; stroke-linecap: butt; }
-.knob-value { fill: none; stroke: var(--muted); stroke-width: 4; }
+/* a ring the value runs round, a raised cap, and a pointer on the cap */
+.knob-track { fill: none; stroke: var(--sunk); stroke-width: 3; stroke-linecap: round; }
+.knob-value { fill: none; stroke: var(--muted); stroke-width: 3; stroke-linecap: round; }
 .knob.changed .knob-value { stroke: var(--acid); }
-.knob-hand { stroke: var(--paper); stroke-width: 2; }
+.knob-cap { fill: #1a1a1e; stroke: #0c0c0e; stroke-width: 1; }
+.knob-cap-top { fill: #33333a; stroke: #45454d; stroke-width: 0.75; }
+.knob-hand { stroke: var(--paper); stroke-width: 2; stroke-linecap: round; }
+.knob.changed .knob-hand { stroke: #fff; }
 /* one fixed line, whatever it says: a long label (or its value while turning) may lean into
    the gap beside the knob but never over the next one, and never pushes anything down */
 .knob-label {
@@ -1478,15 +1482,16 @@ html, body { overscroll-behavior: none; }
 ::placeholder { color: var(--dim); opacity: 1; }
 button:disabled { cursor: var(--dot); }
 /* states ease in rather than snap (steps are left out: they light up with the playhead) */
-:where(button:not(.step), .select, select, input, textarea, .knob-track, .knob-value) {
+:where(button:not(.step), .select, select, input, textarea, .knob-track, .knob-value, .knob-cap-top) {
   transition: color 0.12s ease, background-color 0.12s ease, border-color 0.12s ease, opacity 0.12s ease, stroke 0.12s ease, fill 0.12s ease;
 }
 /* a press you can feel */
 :where(.btn, .node-btn, .led, .fx-toggle):active:not(:disabled) { filter: brightness(0.85); }
 /* a knob lifts a little under the pointer, so you know which one a drag will take */
-.knob:hover .knob-track { stroke: #4a4a52; }
+.knob:hover .knob-track { stroke: #2a2a30; }
 .knob:hover .knob-value { stroke: var(--paper); }
 .knob.changed:hover .knob-value { stroke: var(--acid); }
+.knob:hover .knob-cap-top { fill: #3b3b43; stroke: #55555e; }
 /* menus, popovers and windows arrive instead of appearing */
 @keyframes finish-fade { from { opacity: 0; } }
 @keyframes finish-slide { from { opacity: 0; transform: translateX(14px); } }

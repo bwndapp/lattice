@@ -51,14 +51,17 @@ export default function Knob({ def, value, onChange, target = null }) {
 
   // arc from 225° (min) round to -45° (max)
   const angle = (a) => ((225 - a * 270) * Math.PI) / 180
-  const r = 13
-  const pt = (a) => [18 + r * Math.cos(angle(a)), 18 - r * Math.sin(angle(a))]
+  const r = 15 // the ring the value runs round
+  const at = (a, rad) => [18 + rad * Math.cos(angle(a)), 18 - rad * Math.sin(angle(a))]
+  const pt = (a) => at(a, r)
   const arc = (a0, a1) => {
     const [x0, y0] = pt(a0)
     const [x1, y1] = pt(a1)
     return `M ${x0} ${y0} A ${r} ${r} 0 ${a1 - a0 > 2 / 3 ? 1 : 0} 1 ${x1} ${y1}`
   }
-  const [hx, hy] = pt(pos)
+  // the pointer: a short line on the cap, from near its middle out to its rim
+  const [px0, py0] = at(pos, 3.5)
+  const [hx, hy] = at(pos, 9)
 
   return (
     <div
@@ -99,7 +102,9 @@ export default function Knob({ def, value, onChange, target = null }) {
         <circle cx="18" cy="18" r="21" className="knob-hit" />
         <path d={arc(0, 1)} className="knob-track" />
         {Math.abs(pos - origin) > 0.004 && <path d={pos > origin ? arc(origin, pos) : arc(pos, origin)} className="knob-value" />}
-        <line x1="18" y1="18" x2={hx} y2={hy} className="knob-hand" />
+        <circle cx="18" cy="18" r="11" className="knob-cap" />
+        <circle cx="18" cy="17.4" r="9.6" className="knob-cap-top" />
+        <line x1={px0} y1={py0} x2={hx} y2={hy} className="knob-hand" />
       </svg>
       <KnobTypeInput control={control} label={def.label} />
       <KnobReadout control={control} text={readoutText(shown, def)} />
