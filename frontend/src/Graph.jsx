@@ -48,21 +48,42 @@ const flowWanted = () => { try { return localStorage.getItem(FLOW_KEY) !== 'off'
  * The wire under a screen rectangle (or near a point), found by sampling each rendered
  * edge path. `skip` (a node id, or ids) leaves out wires touching those nodes.
  */
-function wireAt(box, skip = null) {
-  const skips = [].concat(skip ?? [])
-  for (const el of document.querySelectorAll('.graph-canvas .react-flow__edge')) {
+/**
+ * The drawn wires, sampled along their curves (in the wires' own space, so a pan or zoom
+ * doesn't spoil them). Sampling is the slow part — every wire, point by point — and a drag
+ * asked for it on every move, which made dragging a new node lag. While a drag lasts the
+ * wires keep their shape, so `cached` reuses one sampling for it (resetWireCache at the start).
+ */
+let wireCache = null
+export function resetWireCache() { wireCache = null }
+function sampledWires(cached) {
+  const els = document.querySelectorAll('.graph-canvas .react-flow__edge')
+  if (cached && wireCache && wireCache.count === els.length && performance.now() - wireCache.at < 3000) return wireCache.list
+  const list = []
+  for (const el of els) {
     const id = el.getAttribute('data-id') ?? el.dataset.id
-    const touches = el.dataset.touches?.split(' ') ?? []
-    if (!id || el.hasAttribute('data-closed') || skips.some((s) => touches.includes(s))) continue
     const path = el.querySelector('path.react-flow__edge-path')
-    const ctm = path?.getScreenCTM()
-    if (!path || !ctm) continue
+    if (!id || !path || el.hasAttribute('data-closed')) continue
     const length = path.getTotalLength()
-    for (let t = 0; t <= length; t += 10) {
-      const p = path.getPointAtLength(t)
-      const x = ctm.a * p.x + ctm.c * p.y + ctm.e
-      const y = ctm.b * p.x + ctm.d * p.y + ctm.f
-      if (x >= box.left && x <= box.right && y >= box.top && y <= box.bottom) return id
+    const pts = []
+    for (let t = 0; t <= length; t += 10) { const p = path.getPointAtLength(t); pts.push(p.x, p.y) }
+    list.push({ id, touches: el.dataset.touches?.split(' ') ?? [], pts })
+  }
+  if (cached) wireCache = { at: performance.now(), count: els.length, list }
+  return list
+}
+
+function wireAt(box, skip = null, { cached = false } = {}) {
+  const skips = [].concat(skip ?? [])
+  const ctm = document.querySelector('.graph-canvas path.react-flow__edge-path')?.getScreenCTM()
+  if (!ctm) return null
+  for (const w of sampledWires(cached)) {
+    if (skips.some((s) => w.touches.includes(s))) continue
+    const { pts } = w
+    for (let i = 0; i < pts.length; i += 2) {
+      const x = ctm.a * pts[i] + ctm.c * pts[i + 1] + ctm.e
+      const y = ctm.b * pts[i] + ctm.d * pts[i + 1] + ctm.f
+      if (x >= box.left && x <= box.right && y >= box.top && y <= box.bottom) return w.id
     }
   }
   return null
@@ -2401,6 +2422,7 @@ function Canvas({ project, onUpdateProject: updateProject, started, solo, onSolo
         <Palette onAdd={(type, pos, instrument) => addNode(type, pos, instrument)} unused={unused} onForget={forgetPart} />
         <div
           className={`graph-canvas ${lighting ? '' : 'flow-off'}`}
+          onDragEnter={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) resetWireCache() }} // a fresh sampling for this drag in
           onDragOver={(e) => {
             if (!e.dataTransfer.types.includes(NODE_MIME) && !e.dataTransfer.types.includes(INSTRUMENT_MIME) && !e.dataTransfer.types.includes(PART_MIME)) return
             e.preventDefault()
@@ -2408,7 +2430,7 @@ function Canvas({ project, onUpdateProject: updateProject, started, solo, onSolo
             // the node type isn't readable during dragover, so any node lights wires; the drop decides
             if (e.dataTransfer.types.includes(NODE_MIME)) {
               const r = 14
-              const wire = wireAt({ left: e.clientX - r, right: e.clientX + r, top: e.clientY - r, bottom: e.clientY + r })
+              const wire = wireAt({ left: e.clientX - r, right: e.clientX + r, top: e.clientY - r, bottom: e.clientY + r }, null, { cached: true })
               if (wire !== spliceTarget) setSpliceTarget(wire)
             }
           }}
@@ -2510,6 +2532,7 @@ function Canvas({ project, onUpdateProject: updateProject, started, solo, onSolo
             }}
             onPaneClick={() => setFrameSel(null)}
             onNodeDragStart={(e, node, dragged) => {
+              resetWireCache() // the wires as they are now, sampled once for this drag
               if (node.type !== 'frame') {
                 // where each dragged node lives: the innermost open frame it sits in
                 dragAlt.current = !!e?.altKey
@@ -2557,7 +2580,7 @@ function Canvas({ project, onUpdateProject: updateProject, started, solo, onSolo
                 return
               }
               const el = document.querySelector(`.graph-canvas .react-flow__node[data-id="${node.id}"]`)
-              const wire = el ? wireAt(el.getBoundingClientRect(), ids) : null
+              const wire = el ? wireAt(el.getBoundingClientRect(), ids, { cached: true }) : null
               if (wire !== spliceRef.current) { spliceRef.current = wire; setSpliceTarget(wire) }
             }}
             onNodeDragStop={(_, node, dragged) => {
