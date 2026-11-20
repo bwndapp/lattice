@@ -3,13 +3,17 @@
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 230px minmax(0, 1fr);
+  grid-template-columns: var(--parts-w, 230px) minmax(0, 1fr);
+  position: relative;
   background: var(--canvas);
   border-top: 1px solid var(--line);
 }
 
 /* parts */
 .song-parts { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; border-right: 1px solid var(--line); background: var(--panel); }
+/* the parts list's right edge: drag to make it wider or narrower */
+.song-parts-resize { position: absolute; top: 0; bottom: 0; left: calc(var(--parts-w, 230px) - 4px); width: 8px; cursor: col-resize; z-index: 8; }
+.song-parts-resize:hover, .song-parts-resize:focus-visible { background: linear-gradient(90deg, transparent 3px, var(--acid) 3px, var(--acid) 5px, transparent 5px); outline: none; }
 .song-parts-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.55rem 0.6rem 0.3rem; }
 .song-title { font-family: var(--display); font-weight: 900; font-stretch: 118%; font-size: 18px; letter-spacing: -0.01em; }
 .song-parts-hint { margin: 0; padding: 0 0.6rem 0.5rem; font-size: 10px; line-height: 1.45; color: var(--muted); }

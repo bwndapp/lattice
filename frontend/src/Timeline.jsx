@@ -93,6 +93,10 @@ function autoSketch(auto, ink) {
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`
 }
 
+const PARTS_W_KEY = 'lattice:song-parts:width'
+const PARTS_MIN = 160
+const PARTS_MAX = 520
+
 function readRows() {
   try { return clamp(Number(localStorage.getItem('lattice:song:rows')) || LANE_DEFAULT, MIN_LANE, MAX_LANE) } catch { return LANE_DEFAULT }
 }
@@ -173,6 +177,19 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const ppbRef = useRef(ppb)
   ppbRef.current = ppb
   const [laneH, setLaneH] = useState(readRows) // row height
+  // the parts list: drag its right edge to make it wider (long names) or narrower; kept
+  const [partsW, setPartsW] = useState(() => { try { return clamp(Number(localStorage.getItem(PARTS_W_KEY)) || 230, PARTS_MIN, PARTS_MAX) } catch { return 230 } })
+  useEffect(() => { try { localStorage.setItem(PARTS_W_KEY, String(Math.round(partsW))) } catch { /* private mode */ } }, [partsW])
+  const startPartsResize = (e) => {
+    e.preventDefault()
+    const x0 = e.clientX
+    const w0 = partsW
+    const move = (ev) => setPartsW(clamp(w0 + (ev.clientX - x0), PARTS_MIN, PARTS_MAX))
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); document.body.classList.remove('resizing-x') }
+    document.body.classList.add('resizing-x')
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
   const LANE_H = laneH
   const [selected, setSelected] = useState(() => new Set())
   // an automation curve being edited on the timeline itself: { id, points } while dragging
@@ -1211,7 +1228,22 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const panelNode = panel && project.nodes.find((n) => n.id === panel.nodeId)
 
   return (
-    <section className="song" aria-label="Song timeline" data-surface="song">
+    <section className="song" aria-label="Song timeline" data-surface="song" style={{ '--parts-w': `${partsW}px` }}>
+      <div
+        className="song-parts-resize"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize the parts list"
+        aria-valuenow={Math.round(partsW)}
+        tabIndex={0}
+        onPointerDown={startPartsResize}
+        onDoubleClick={() => setPartsW(230)}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowRight') setPartsW((w) => clamp(w + 20, PARTS_MIN, PARTS_MAX))
+          if (e.key === 'ArrowLeft') setPartsW((w) => clamp(w - 20, PARTS_MIN, PARTS_MAX))
+        }}
+        title="Drag to resize · double-click for the usual width"
+      />
       <aside className="song-parts" aria-label="Parts">
         <div className="song-parts-head">
           <span className="song-title">parts</span>
