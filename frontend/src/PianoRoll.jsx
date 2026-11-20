@@ -336,9 +336,21 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
 
   useEffect(() => { draw() }, [draw])
 
-  // playback cursor, and follow
+  // playback cursor, and follow. Scrolling or zooming away yourself holds follow off until
+  // the playhead comes back into view by itself — it used to yank the view straight back,
+  // so you couldn't look at the end of the roll while it played
+  const heldRef = useRef(false)
   useEffect(() => {
     let frame
+    let ours = null // the scroll position follow last set, to tell its own scrolls from yours
+    const el0 = scrollRef.current
+    const onScroll = () => {
+      const el = scrollRef.current
+      if (!el || (ours !== null && Math.abs(el.scrollLeft - ours) < 1)) return
+      ours = null
+      heldRef.current = true
+    }
+    el0?.addEventListener('scroll', onScroll, { passive: true })
     const tick = () => {
       const step = cursorRef?.current?.() ?? -1
       const el = scrollRef.current
@@ -349,15 +361,20 @@ export default function PianoRoll({ channel, pattern, beats, onChangeNotes, onPr
       if (el && step >= 0 && follow && !dragRef.current && !panRef.current) {
         const x = step * colW
         const visible = el.clientWidth - KEY_W
-        if (x < el.scrollLeft || x > el.scrollLeft + visible - colW) {
+        const inView = x >= el.scrollLeft && x <= el.scrollLeft + visible - colW
+        if (heldRef.current) { if (inView) heldRef.current = false }
+        else if (!inView) {
           el.scrollLeft = Math.max(0, x - colW)
+          ours = el.scrollLeft
         }
       }
       frame = requestAnimationFrame(tick)
     }
     tick()
-    return () => cancelAnimationFrame(frame)
+    return () => { cancelAnimationFrame(frame); el0?.removeEventListener('scroll', onScroll) }
   }, [cursorRef, colW, follow])
+  // turning follow on goes to the playhead now
+  useEffect(() => { if (follow) heldRef.current = false }, [follow])
 
   // ctrl/cmd + wheel zooms the steps around the pointer (non-passive so the page doesn't zoom)
   useEffect(() => {
