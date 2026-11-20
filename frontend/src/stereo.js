@@ -120,9 +120,23 @@ class GrainProcessor extends AudioWorkletProcessor {
     this.tape = [new Float32Array(this.size), new Float32Array(this.size)]
     this.at = 0
     this.next = 0 // samples until the next grain starts
-    this.grains = []
-    this.wet = [0, 0]
+    // Grains live in a fixed pool, reused: at a thousand a second, making a new object for
+    // each (and splicing it out after) kept the audio thread collecting garbage — a stall
+    // there is a gap in the sound. `count` of them are sounding, packed at the front.
+    const MAX = GrainProcessor.MAX
+    this.count = 0
+    this.pos = new Float64Array(MAX)
+    this.rate = new Float64Array(MAX)
+    this.slide = new Float64Array(MAX)
+    this.len = new Float64Array(MAX)
+    this.age = new Float64Array(MAX)
+    this.hard = new Float32Array(MAX)
+    this.edge = new Float32Array(MAX)
+    this.gl = new Float32Array(MAX)
+    this.gr = new Float32Array(MAX)
+    this.P = {}
   }
+  static get MAX() { return 96 }
   read(ch, pos) {
     const size = this.size
     let p = pos % size
@@ -134,7 +148,7 @@ class GrainProcessor extends AudioWorkletProcessor {
     return a + (b - a) * f
   }
   spawn(P) {
-    if (this.grains.length >= 96) return
+    if (this.count >= GrainProcessor.MAX) return
     const len = Math.max(16, Math.round(P.size * sampleRate))
     // a random pitch, snapped to semitones, fifths or octaves when asked: harmonic clouds
     let wobble = (Math.random() * 2 - 1) * P.pitchRand
@@ -155,15 +169,23 @@ class GrainProcessor extends AudioWorkletProcessor {
     // overlapping grains add up: each is turned down by how many were meant to sound with
     // it, fixed when it starts, so pulling density down mid-cloud doesn't spike
     const g = 1.41 / Math.sqrt(Math.min(96, Math.max(1, P.density * P.size)))
+    const k = this.count++
+    this.pos[k] = start
+    this.rate[k] = rate
+    this.slide[k] = slide
+    this.len[k] = len
+    this.age[k] = 0
+    this.hard[k] = P.shape
     // hard edges: a window that's flat but for a few samples at each end (clicks and crunch)
-    const edge = Math.max(2, Math.min(len / 2, 48))
-    this.grains.push({ pos: start, rate, slide, len, age: 0, hard: P.shape, edge, l: g * Math.cos(pan * Math.PI / 2), r: g * Math.sin(pan * Math.PI / 2) })
+    this.edge[k] = Math.max(2, Math.min(len / 2, 48))
+    this.gl[k] = g * Math.cos(pan * Math.PI / 2)
+    this.gr[k] = g * Math.sin(pan * Math.PI / 2)
   }
   process(inputs, outputs, params) {
     const input = inputs[0]
     const output = outputs[0]
     if (!output || !output.length) return true
-    const P = {}
+    const P = this.P
     for (const k in params) P[k] = params[k][0]
     const frozen = P.freeze >= 0.5
     const n = output[0].length
@@ -171,39 +193,59 @@ class GrainProcessor extends AudioWorkletProcessor {
     const inR = (input && (input[1] || input[0])) || null
     const every = sampleRate / Math.max(0.5, P.density)
     const fb = P.feedback
+    const m = P.mix
+    // all the way dry: no grains to make, the tape keeps recording so they're ready when it opens
+    const idle = m <= 0
+    if (idle) this.count = 0
+    const HANN = GrainProcessor.HANN
+    const H = HANN.length - 1
     for (let i = 0; i < n; i++) {
-      if (--this.next <= 0) { this.spawn(P); this.next += every * (1 + (Math.random() * 2 - 1) * P.chaos) }
       let wl = 0
       let wr = 0
-      for (let g = this.grains.length - 1; g >= 0; g--) {
-        const gr = this.grains[g]
-        let w = 0.5 - 0.5 * Math.cos((2 * Math.PI * gr.age) / gr.len) // a Hann window: no clicks at the ends
-        if (gr.hard > 0) w += (Math.min(1, gr.age / gr.edge, (gr.len - gr.age) / gr.edge) - w) * gr.hard
-        wl += this.read(0, gr.pos) * w * gr.l
-        wr += this.read(1, gr.pos) * w * gr.r
-        gr.pos += gr.rate
-        gr.rate *= gr.slide
-        if (++gr.age >= gr.len) this.grains.splice(g, 1)
+      if (!idle) {
+        if (--this.next <= 0) { this.spawn(P); this.next += every * (1 + (Math.random() * 2 - 1) * P.chaos) }
+        for (let g = this.count - 1; g >= 0; g--) {
+          const age = this.age[g]
+          const len = this.len[g]
+          let w = HANN[Math.round((age / len) * H)] // a Hann window: no clicks at the ends
+          const hard = this.hard[g]
+          if (hard > 0) { const e = this.edge[g]; w += (Math.min(1, age / e, (len - age) / e) - w) * hard }
+          const pos = this.pos[g]
+          wl += this.read(0, pos) * w * this.gl[g]
+          wr += this.read(1, pos) * w * this.gr[g]
+          this.pos[g] = pos + this.rate[g]
+          this.rate[g] *= this.slide[g]
+          if (age + 1 >= len) {
+            // done: the last one sounding takes its place
+            const last = --this.count
+            if (g !== last) {
+              this.pos[g] = this.pos[last]; this.rate[g] = this.rate[last]; this.slide[g] = this.slide[last]
+              this.len[g] = this.len[last]; this.age[g] = this.age[last]; this.hard[g] = this.hard[last]
+              this.edge[g] = this.edge[last]; this.gl[g] = this.gl[last]; this.gr[g] = this.gr[last]
+            }
+          } else this.age[g] = age + 1
+        }
+        // a soft ceiling: near-straight at normal levels, a swell rather than a blast when
+        // feedback and pitch piles grains onto each other
+        wl = Math.tanh(wl)
+        wr = Math.tanh(wr)
       }
-      // a soft ceiling: near-straight at normal levels, a swell rather than a blast when
-      // feedback and pitch piles grains onto each other
-      wl = Math.tanh(wl)
-      wr = Math.tanh(wr)
       const dl = inL ? inL[i] : 0
       const dr = inR ? inR[i] : 0
       if (!frozen) {
         // feedback goes back on the tape through a soft clip, so it swells instead of exploding
-        this.tape[0][this.at] = dl + Math.tanh(wl * fb)
-        this.tape[1][this.at] = dr + Math.tanh(wr * fb)
+        this.tape[0][this.at] = idle ? dl : dl + Math.tanh(wl * fb)
+        this.tape[1][this.at] = idle ? dr : dr + Math.tanh(wr * fb)
         this.at = (this.at + 1) % this.size
       }
-      const m = P.mix
       output[0][i] = dl * (1 - m) + wl * m
       if (output[1]) output[1][i] = dr * (1 - m) + wr * m
     }
     return true
   }
 }
+// the window, worked out once: a grain reads it instead of a cosine every sample
+GrainProcessor.HANN = (() => { const t = new Float32Array(4097); for (let i = 0; i < t.length; i++) t[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (t.length - 1)); return t })()
 registerProcessor('lattice-grain', GrainProcessor)
 
 /*
