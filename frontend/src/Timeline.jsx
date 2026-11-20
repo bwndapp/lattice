@@ -24,7 +24,7 @@ import { PICKS, colorFor, inkFor } from './clipColors.js'
  * (or right-drag across several) deletes; the slice tool (C) cuts clips in two; ctrl/cmd-click
  * or drag across empty rows to select several. Clicking the ruler moves the playhead,
  * dragging along it sets a loop. Ctrl/cmd + scroll zooms, middle-drag pans, ctrl/cmd +
- * middle-drag zooms both ways (sideways: wider bars, up and down: taller rows), alt + scroll
+ * middle-drag zooms both ways (left: wider bars, up: taller rows, eased), alt + scroll
  * sizes the rows.
  */
 const PART_MIME = 'application/x-lattice-part'
@@ -574,8 +574,8 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   // ── pointer: clips, empty rows, panning ──
   const onLanesDown = (e) => {
     if (e.button === 1 && (e.ctrlKey || e.metaKey)) {
-      // ctrl + middle-drag (as in FL): sideways stretches the bars, up and down the rows,
-      // around the spot where the drag started
+      // ctrl + middle-drag (as in FL): left zooms the bars in, right out; up makes the rows
+      // taller, down shorter — around the spot where the drag started, eased (onLanesMove)
       e.preventDefault()
       const box = scrollRef.current
       const rect = box.getBoundingClientRect()
@@ -684,15 +684,31 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const onLanesMove = (e) => {
     const pan = panRef.current
     if (pan?.zoom) {
+      // left (and up) zooms in, right (and down) out; the drag sets where it's heading and
+      // each frame eases toward it, so a jittery hand doesn't make a jittery zoom
       const box = scrollRef.current
-      const nextPpb = clamp(pan.ppb * Math.exp((e.clientX - pan.x) * 0.006), MIN_PPB, MAX_PPB)
-      const nextLane = clamp(pan.laneH * Math.exp((e.clientY - pan.y) * 0.006), MIN_LANE, MAX_LANE)
-      setPpb(nextPpb)
-      setLaneH(nextLane)
-      requestAnimationFrame(() => {
-        box.scrollLeft = Math.max(0, pan.bar * nextPpb - pan.ax + HEAD_W)
-        box.scrollTop = Math.max(0, pan.lane * nextLane + RULER_H - pan.ay)
-      })
+      pan.tp = clamp(pan.ppb * Math.exp(-(e.clientX - pan.x) * 0.005), MIN_PPB, MAX_PPB)
+      pan.tl = clamp(pan.laneH * Math.exp(-(e.clientY - pan.y) * 0.005), MIN_LANE, MAX_LANE)
+      if (!pan.raf) {
+        const step = () => {
+          const cp = pan.cp ?? pan.ppb
+          const cl = pan.cl ?? pan.laneH
+          const gp = Math.log(pan.tp / cp)
+          const gl = Math.log(pan.tl / cl)
+          const np = Math.abs(gp) < 0.002 ? pan.tp : cp * Math.exp(gp * 0.25)
+          const nl = Math.abs(gl) < 0.002 ? pan.tl : cl * Math.exp(gl * 0.25)
+          pan.cp = np
+          pan.cl = nl
+          ppbRef.current = np
+          pendingScroll.current = Math.max(0, pan.bar * np - pan.ax + HEAD_W)
+          setPpb(np)
+          setLaneH(nl)
+          requestAnimationFrame(() => { box.scrollTop = Math.max(0, pan.lane * nl + RULER_H - pan.ay) })
+          // done when it's arrived (it carries on to where the drag left it after you let go)
+          pan.raf = np === pan.tp && nl === pan.tl ? 0 : requestAnimationFrame(step)
+        }
+        pan.raf = requestAnimationFrame(step)
+      }
       return
     }
     if (pan) {
