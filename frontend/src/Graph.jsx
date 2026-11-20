@@ -150,13 +150,33 @@ function groupIntoRack(p, ids) {
     const last = order.at(-1).id
     if (incoming.some((e) => e.target !== first) || incoming.length > 1 || outgoing.some((e) => e.source !== last)) return null
   }
-  const chain = order.flatMap((n) => (n.type === 'fxrack'
-    ? (n.data.chain ?? []).map((u) => ({ ...JSON.parse(JSON.stringify(u)), id: `fx${newId().slice(-7)}` }))
-    : [{ id: `fx${newId().slice(-7)}`, type: n.type, on: true, data: JSON.parse(JSON.stringify(n.data ?? {})) }]))
-  if (chain.length > 16) return null
   const id = `fxrack${newId().slice(-5)}`
+  // automation follows its knob into the rack: old target prefix → the unit's new one
+  const moved = new Map()
+  const chain = order.flatMap((n) => {
+    if (n.type === 'fxrack') {
+      return (n.data.chain ?? []).map((u) => {
+        const unit = { ...JSON.parse(JSON.stringify(u)), id: `fx${newId().slice(-7)}` }
+        moved.set(`u:${n.id}:${u.id}:`, `u:${id}:${unit.id}:`)
+        return unit
+      })
+    }
+    const unit = { id: `fx${newId().slice(-7)}`, type: n.type, on: true, data: JSON.parse(JSON.stringify(n.data ?? {})) }
+    moved.set(`n:${n.id}:`, `u:${id}:${unit.id}:`)
+    return [unit]
+  })
+  if (chain.length > 16) return null
+  // a rack's own mix knob carries over too, when only one rack went in
+  const racks = order.filter((n) => n.type === 'fxrack')
+  if (racks.length === 1) moved.set(`n:${racks[0].id}:mix`, `n:${id}:mix`)
+  for (const a of p.song?.autos ?? []) {
+    for (const [from, to] of moved) {
+      if (from.endsWith(':') ? a.target.startsWith(from) : a.target === from) { a.target = to + a.target.slice(from.length); break }
+    }
+  }
   p.nodes = p.nodes.filter((n) => !group.has(n.id))
-  p.nodes.push({ id, type: 'fxrack', x: order[0].x, y: order[0].y, data: { ...defaultData('fxrack'), chain } })
+  const mix = racks.length === 1 && racks[0].data?.mix != null ? { mix: racks[0].data.mix } : {}
+  p.nodes.push({ id, type: 'fxrack', x: order[0].x, y: order[0].y, data: { ...defaultData('fxrack'), ...mix, chain } })
   p.edges = p.edges.filter((e) => !group.has(e.source) && !group.has(e.target))
   for (const e of incoming) p.edges.push({ source: e.source, sourceHandle: e.sourceHandle, target: id, targetHandle: 'in' })
   for (const e of outgoing) p.edges.push({ source: id, target: e.target, targetHandle: e.targetHandle })
