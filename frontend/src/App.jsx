@@ -417,6 +417,9 @@ export default function App() {
     editorRef.current = new StrudelMirror({
       defaultOutput: (hap, deadline, duration, cps, t) => {
         flowHit(hap) // the patch lights what's playing from here, rather than asking the song again (flow.js)
+        // a note log for chasing timing: localStorage.lattice_notes = '1' (a part's name to
+        // narrow it), then every note prints its song position, part and instrument
+        if (noteLog()) logNote(hap, transport, projectNow.current)
         const out = hap.withValue(routeVoice) // reverb & delay sends, and the tuning (fxbus.js)
         // the stream (stream.js): each sound, sent as it's heard
         const ac = getAudioContext()
@@ -2125,6 +2128,27 @@ function clockText(seconds, tenths = true) {
 }
 
 const POSITION_MODES = ['bars', 'time', 'length']
+
+/** The note log's filter, read now and then (see the output): '' when it's off. */
+let noteLogAt = 0
+let noteLogValue = ''
+function noteLog() {
+  const now = Date.now()
+  if (now - noteLogAt > 1000) { noteLogAt = now; try { noteLogValue = localStorage.getItem('lattice_notes') ?? '' } catch { noteLogValue = '' } }
+  return noteLogValue
+}
+function logNote(hap, transport, project) {
+  const v = hap.value ?? {}
+  const node = project?.nodes.find((n) => n.id === v._n)
+  const pattern = node?.type === 'pattern' ? project.patterns.find((x) => x.id === node.data?.patternId) : null
+  const chan = project?.patterns.flatMap((x) => x.channels).find((c) => c.id === v._c)
+  const part = pattern?.name ?? node?.data?.name ?? v._n ?? '?'
+  const filter = noteLog()
+  if (filter !== '1' && !String(part).toLowerCase().includes(filter.toLowerCase())) return
+  // the song position it lands on, and where the playhead is as it's scheduled
+  const at = Number(hap.whole?.begin) + (transport.k || 0)
+  console.log(`[note] ${formatBarBeat(at, transport.beats)} (${at.toFixed(3)}) ${part} › ${chan?.name ?? v._c ?? ''} ${v.note ?? v.s ?? ''} · playhead ${formatBarBeat(transport.position(), transport.beats)}`)
+}
 
 function Position({ transport, started, bpm, songBars }) {
   const inputRef = useRef(null)
