@@ -454,12 +454,15 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   // drawn (a layout effect), from where that bar was when the zoom began.
   const zoomAnim = useRef({ target: null, bar: 0, at: 0, raf: 0 })
   const pendingScroll = useRef(null)
+  const pendingScrollTop = useRef(null) // the same, for rows zooming
   useLayoutEffect(() => {
     const left = pendingScroll.current
-    if (left == null || !scrollRef.current) return
-    pendingScroll.current = null
-    scrollRef.current.scrollLeft = Math.max(0, left)
-  }, [ppb])
+    const top = pendingScrollTop.current
+    if (!scrollRef.current) return
+    // set in the same frame the new size is drawn: a frame later, and the clips smear
+    if (left != null) { pendingScroll.current = null; scrollRef.current.scrollLeft = Math.max(0, left) }
+    if (top != null) { pendingScrollTop.current = null; scrollRef.current.scrollTop = Math.max(0, top) }
+  }, [ppb, laneH])
   useEffect(() => () => cancelAnimationFrame(zoomAnim.current.raf), [])
   const zoomTo = useCallback((next, anchorClientX) => {
     const box = scrollRef.current
@@ -686,7 +689,6 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     if (pan?.zoom) {
       // left (and up) zooms in, right (and down) out; the drag sets where it's heading and
       // each frame eases toward it, so a jittery hand doesn't make a jittery zoom
-      const box = scrollRef.current
       pan.tp = clamp(pan.ppb * Math.exp(-(e.clientX - pan.x) * 0.005), MIN_PPB, MAX_PPB)
       pan.tl = clamp(pan.laneH * Math.exp(-(e.clientY - pan.y) * 0.005), MIN_LANE, MAX_LANE)
       if (!pan.raf) {
@@ -703,7 +705,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
           pendingScroll.current = Math.max(0, pan.bar * np - pan.ax + HEAD_W)
           setPpb(np)
           setLaneH(nl)
-          requestAnimationFrame(() => { box.scrollTop = Math.max(0, pan.lane * nl + RULER_H - pan.ay) })
+          pendingScrollTop.current = Math.max(0, pan.lane * nl + RULER_H - pan.ay)
           // done when it's arrived (it carries on to where the drag left it after you let go)
           pan.raf = np === pan.tp && nl === pan.tl ? 0 : requestAnimationFrame(step)
         }
