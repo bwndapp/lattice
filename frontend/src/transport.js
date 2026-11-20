@@ -59,6 +59,21 @@ export function createTransport() {
       return t.looping() ? t.loop.from + mod(s, t.loopLength()) : Math.max(0, s)
     },
 
+    /**
+     * The song position of the sound being made right now: what the audio thread is
+     * rendering at this instant. The scheduler's clock (`position`) runs ahead of it — notes
+     * are timed `latency` after the moment it reads, less one tick — so anything the app
+     * moves itself on the audio thread (automated bus effects, faders, tempo-synced
+     * effects) reads this one, or it lands that much before the notes it goes with.
+     */
+    soundPosition() {
+      if (!t.playing()) return t.start
+      const sch = t.scheduler
+      const lead = Math.max(0, (Number(sch.latency) || 0) - (Number(sch.clock?.duration) || 0)) * (Number(sch.cps) || 0)
+      const s = sch.now() + t.k - lead
+      return t.looping() ? t.loop.from + mod(s, t.loopLength()) : Math.max(0, s)
+    },
+
     /** Point k at song position p for scheduler time s. */
     aim(p, s) {
       t.k = t.looping() ? mod(p - t.loop.from - s, t.loopLength()) : p - s

@@ -902,7 +902,7 @@ export default function App() {
   // automated knobs turn with their curves while the song plays (autoDrive.js)
   const autoFns = useMemo(() => autoTargets(project), [project])
   // anything built from the code (a rack, a send, an instrument) starts where its curve is
-  useEffect(() => { setAutoSource(autoSource(autoFns, () => transport.position())) }, [autoFns, transport])
+  useEffect(() => { setAutoSource(autoSource(autoFns, () => transport.soundPosition())) }, [autoFns, transport])
   // a knob the app moves itself is heard the moment it turns, before the project catches up
   const projectNow = useRef(project)
   projectNow.current = project
@@ -919,7 +919,7 @@ export default function App() {
   autoFnsNow.current = autoFns
   useEffect(() => {
     if (!started || !autoFns.length) { autoLive.clear(); return }
-    const driver = autoDriver(autoFns, () => transport.position())
+    const driver = autoDriver(autoFns, () => transport.soundPosition()) // in step with the notes, not the playhead
     autoLive.set(driver.now())
     let raf = 0
     let last = 0
@@ -1062,7 +1062,7 @@ export default function App() {
     const tell = () => {
       if (!transport.playing()) { syncInserts(null); return syncEngines(null) }
       try {
-        const where = { at: getAudioContext().currentTime, cycle: transport.position(), cps: cpsRef.current }
+        const where = { at: getAudioContext().currentTime, cycle: transport.soundPosition(), cps: cpsRef.current }
         syncEngines(where)
         syncInserts(where) // W00K's flutter and wobble keep time too
       } catch { /* the audio engine isn't up yet */ }
