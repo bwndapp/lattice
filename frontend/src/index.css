@@ -1061,13 +1061,16 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
  * on the header at the top and on whatever runs full width at the bottom.
  */
 .gnode {
-  --node-radius: 3px;
+  --node-radius: 6px;
   width: 250px; font-size: 12px; color: var(--paper); cursor: var(--ring);
-  background: var(--panel);
+  /* a touch of light from above: the body shades a little toward its foot */
+  background: linear-gradient(180deg, #2f2f35 0%, var(--panel) 40%, #26262b 100%);
   border: 1px solid var(--line);
   border-radius: var(--node-radius);
-  box-shadow: none;
+  /* lifted off the canvas: still, so it costs nothing while the patch plays */
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 6px 16px -6px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.4);
 }
+.gnode:hover { border-color: #4a4a52; }
 .gnode > :last-child, .node-body > :last-child {
   border-end-start-radius: calc(var(--node-radius) - 1px);
   border-end-end-radius: calc(var(--node-radius) - 1px);
@@ -1076,13 +1079,16 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
 .gnode .nodrag, .gnode input, .gnode select, .gnode textarea, .gnode button { cursor: auto; }
 .gnode button, .gnode select { cursor: var(--ring); }
 .gnode .knob svg { cursor: ns-resize; }
-.gnode.selected { border-color: var(--acid); box-shadow: 0 0 0 1.5px var(--acid); }
+.gnode.selected { border-color: var(--acid); box-shadow: 0 0 0 1.5px var(--acid), 0 6px 16px -6px rgba(0, 0, 0, 0.55); }
 .gnode.soloing { outline: 2px dashed var(--acid); outline-offset: 4px; }
 /* a node's header brightens toward whatever colour is running through it */
 .gnode { --head-bg: var(--line); --head-ink: var(--paper); --head-lit: var(--glow, var(--acid)); }
 .node-head {
   display: flex; align-items: center; gap: 0.35rem; padding: 0.32rem 0.4rem 0.32rem 0.6rem;
-  cursor: var(--ring); background: var(--head-bg); color: var(--head-ink); border-bottom: 1px solid var(--line);
+  cursor: var(--ring); color: var(--head-ink); border-bottom: 1px solid var(--line);
+  /* its colour, with a soft sheen along the top edge */
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0) 55%, rgba(0, 0, 0, 0.08)), var(--head-bg);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
   border-start-start-radius: calc(var(--node-radius) - 1px);
   border-start-end-radius: calc(var(--node-radius) - 1px);
 }
@@ -1093,7 +1099,7 @@ body.resizing-x, body.resizing-x * { cursor: col-resize !important; user-select:
 }
 .g-transform { --head-bg: var(--paper); --head-ink: var(--ink); --head-lit: #ffffff; }
 .g-combine { --head-bg: var(--ink); }
-.g-combine .node-head { box-shadow: inset 0 -2px 0 var(--acid); }
+.g-combine .node-head { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 -2px 0 var(--acid); }
 .g-output { border: 2px solid var(--acid); --head-bg: var(--ink); --head-ink: var(--acid); }
 .g-output .node-head { border-start-start-radius: calc(var(--node-radius) - 2px); border-start-end-radius: calc(var(--node-radius) - 2px); }
 .node-kind { font-family: var(--display); font-weight: 900; font-stretch: 112%; font-size: 13px; }
@@ -1228,7 +1234,8 @@ button.chan-synth:hover span { color: var(--acid); }
 .node-inputs.named { margin: 0 -0.6rem; border-bottom: 1px solid var(--line); }
 .node-inputs.named .slot:last-child { border-bottom: 0; }
 .slot-role { font-size: 10px; color: var(--muted); width: 3.8rem; flex-shrink: 0; }
-.graph-canvas .port { width: 13px; height: 13px; border-radius: 50%; background: var(--canvas); border: 2px solid var(--acid); }
+.graph-canvas .port { width: 13px; height: 13px; border-radius: 50%; background: radial-gradient(circle at 50% 40%, #26262b, var(--canvas) 70%); border: 2px solid var(--acid); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5); transition: box-shadow 0.12s ease, background-color 0.12s ease; }
+.graph-canvas .port:hover { box-shadow: 0 0 0 4px color-mix(in srgb, var(--acid) 28%, transparent), 0 1px 3px rgba(0, 0, 0, 0.5); }
 .graph-canvas .port.free { border-color: var(--muted); border-style: dashed; }
 .graph-canvas .port:hover, .graph-canvas .react-flow__handle.connectingto { background: var(--acid); }
 .graph-tip {
