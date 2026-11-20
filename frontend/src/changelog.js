@@ -24,6 +24,22 @@
  */
 export const NEWS = [
   {
+    id: '2026-11-20-1',
+    date: '2026-11-20',
+    version: '0.23.0',
+    title: 'Freer clips, automation variations, and a rack-wide mix',
+    items: [
+      '**Clips, FL-style**: auto snap that follows the zoom, slide what plays inside a clip (ctrl/cmd + alt-drag), notes stop at the clip\'s end, edges land on any grid line',
+      '**Automation variations**: U (or dup) gives a clip its own curve for the same knob; each clip plays its own',
+      '**Fx rack mix**: one dry/wet knob for the whole rack, automatable',
+      '**Parts list**: drag its edge to resize; pick a part to see its clips lit up on the timeline, or a note when it has none',
+      '**Timeline zoom**: ctrl + middle-drag and alt + scroll glide instead of jump',
+      '**Piano roll**: scroll or zoom away while it plays without follow pulling you back',
+      '**Knobs and nodes**: a raised knob with a pointer; nodes with softer corners and a little depth; ports that stay grabbable zoomed out',
+      '**Patch lights**: a wire simply lights in its colour while sound comes down it',
+    ],
+  },
+  {
     id: '2026-11-19-1',
     date: '2026-11-19',
     version: '0.22.0',
