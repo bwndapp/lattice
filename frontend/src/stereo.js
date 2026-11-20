@@ -122,7 +122,7 @@ class GrainProcessor extends AudioWorkletProcessor {
     this.next = 0 // samples until the next grain starts
     // Grains live in a fixed pool, reused: at a thousand a second, making a new object for
     // each (and splicing it out after) kept the audio thread collecting garbage — a stall
-    // there is a gap in the sound. `count` of them are sounding, packed at the front.
+    // there is a gap in the sound. count of them are sounding, packed at the front.
     const MAX = GrainProcessor.MAX
     this.count = 0
     this.pos = new Float64Array(MAX)
