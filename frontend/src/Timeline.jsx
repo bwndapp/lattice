@@ -133,7 +133,7 @@ function firedSketch(project, patternId) {
 }
 
 export default function Timeline({ project, onUpdateProject, transport, started }) {
-  const song = project.song ?? { on: true, snap: 'bar', clips: [] }
+  const song = project.song ?? { on: true, snap: 'auto', clips: [] }
   const beats = Math.max(1, project.beats || 4)
   const parts = useMemo(() => songParts(project), [project])
   const partBySrc = useMemo(() => new Map(parts.map((p) => [p.src, p])), [parts])
@@ -350,7 +350,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   useEffect(() => { try { localStorage.setItem('lattice:song:zoom', String(ppb)); localStorage.setItem('lattice:song:rows', String(laneH)) } catch { /* storage unavailable */ } }, [ppb, laneH])
 
   const updateSong = useCallback((fn) => onUpdateProject((p) => {
-    p.song = p.song ?? { on: true, snap: 'bar', clips: [] }
+    p.song = p.song ?? { on: true, snap: 'auto', clips: [] }
     fn(p.song, p)
   }), [onUpdateProject])
 
@@ -415,7 +415,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
 
   const bars = Math.max(16, Math.ceil(length) + 8, Math.ceil((scrollRef.current?.clientWidth ?? 0) / ppb) + 1)
   const lanes = Math.max(8, Math.ceil((viewH - RULER_H) / LANE_H) + 4, ...clips.map((c) => c.lane + 3)) // a few spare rows below the view, so zooming rows can keep its spot
-  const step = snapStep(song.snap, beats)
+  const step = snapStep(song.snap, beats, ppb)
   // the finest grid lines: the snap's steps when it's finer than a beat, sixteenths once
   // zoomed in far enough to want them
   const subStep = step < 1 / beats ? step : 1 / (beats * 4)
@@ -681,6 +681,14 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       }
       let sel = selected
       const wasSelected = selected.has(id)
+      // ctrl/cmd + alt: slip — slide what plays inside the clip (and the rest of the
+      // selection, when it's in it) without moving the clip itself
+      if ((e.ctrlKey || e.metaKey) && e.altKey) {
+        const group = sel.has(id) ? song.clips.filter((c) => sel.has(c.id)) : [clip]
+        if (!sel.has(id)) setSelected(new Set([id]))
+        dragRef.current = { mode: 'slip', bar, group, moved: false }
+        return
+      }
       if (e.ctrlKey || e.metaKey) {
         sel = new Set(selected)
         sel.has(id) ? sel.delete(id) : sel.add(id)
@@ -790,6 +798,12 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       // `lift` is what the clips being carried are drawn by: off the canvas, above the rest
       if (d.copy) setDrag({ copy: true, lift: true, changes: {}, added: d.group.map((c) => ({ ...c, ...place(c), id: `__copy${c.id}` })) })
       else setDrag({ lift: true, changes: Object.fromEntries(d.group.map((c) => [c.id, place(c)])) })
+    } else if (d.mode === 'slip') {
+      // the music follows the pointer: drag right and it comes later inside the clip
+      const db = snap(bar - d.bar, false)
+      if (!db && !d.moved) return
+      d.moved = true
+      setDrag({ changes: Object.fromEntries(d.group.map((c) => [c.id, { offset: Math.round(((c.offset ?? 0) - db) * 64) / 64 }])) })
     } else if (d.mode === 'start' || d.mode === 'end') {
       // every selected clip stretches by as much as the one under the pointer
       const c = d.anchor
@@ -1314,7 +1328,8 @@ export default function Timeline({ project, onUpdateProject, transport, started 
           >{song.on ? 'song on' : 'song off'}</button>
           <label className="song-field">
             <span>snap</span>
-            <select className="select" value={song.snap} onChange={(e) => updateSong((s) => { s.snap = e.target.value })} aria-label="Snap clips to">
+            <select className="select" value={song.snap} onChange={(e) => updateSong((s) => { s.snap = e.target.value })} aria-label="Snap clips to" title="auto: the grid follows the zoom — bars zoomed out, sixteenths zoomed in (hold alt for none)">
+              <option value="auto">auto</option>
               <option value="bar">bar</option>
               <option value="beat">beat</option>
               <option value="1/8">1/8</option>
@@ -1332,7 +1347,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
           <span className="spacer" />
           {(() => {
             // one line, whatever room the bar has left; the whole of it on hover
-            const hint = !song.on && song.clips.length ? 'song off · the patch is looping, so the playhead waits at the cue · turn the song on to play the timeline' : tool === 'slice' ? 'click a clip to cut it · drag up or down to cut several · hold alt to cut off the grid · V or Esc to go back' : 'hold alt to leave the grid · shift-drag copies · U makes selected clips unique · C slices · right-click deletes · click or drag the ruler to move the playhead'
+            const hint = !song.on && song.clips.length ? 'song off · the patch is looping, so the playhead waits at the cue · turn the song on to play the timeline' : tool === 'slice' ? 'click a clip to cut it · drag up or down to cut several · hold alt to cut off the grid · V or Esc to go back' : 'hold alt to leave the grid · shift-drag copies · ctrl/cmd + alt-drag slides what plays inside a clip · U makes selected clips unique · C slices · right-click deletes · click or drag the ruler to move the playhead'
             return <span className="song-hint" title={hint}>{hint}</span>
           })()}
           <span className="song-zoom" role="group" aria-label="Zoom">

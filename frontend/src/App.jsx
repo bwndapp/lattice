@@ -859,7 +859,7 @@ export default function App() {
         const y = Math.round(toPos(found.value, found.def) * 10000) / 10000
         const hadSound = !!project.song?.clips.some((c) => !c.src.startsWith(AUTO_PREFIX))
         updateProject((p) => {
-          p.song = p.song ?? { on: true, snap: 'bar', clips: [] }
+          p.song = p.song ?? { on: true, snap: 'auto', clips: [] }
           p.song.autos = [...(p.song.autos ?? []), { id, target, bars, points: [{ x: 0, y }, { x: bars, y }] }]
           // a colour of its own: the first in the palette no other automation has yet
           const used = new Set(p.song.autos.filter((a) => a.id !== id).map((a) => colorFor(`${AUTO_PREFIX}${a.id}`, p.song.colors)))

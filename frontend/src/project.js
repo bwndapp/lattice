@@ -733,7 +733,7 @@ export function demoProject() {
   const clip = (id, src, lane, start, len) => ({ id, src, lane, start, len })
   const song = {
     on: true,
-    snap: 'bar',
+    snap: 'auto',
     // a short arrangement, so the timeline has something to show: pads all the way, drums
     // from bar 5, bass from bar 9, a fill in bar 16, and the pad filter opening over the intro
     lanes: [{ name: 'drums' }, { name: 'hats' }, { name: 'bass' }, { name: 'pads' }, { name: 'filter' }],
