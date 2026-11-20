@@ -422,3 +422,15 @@
 .clip.automation.auto-roomy .clip-name { line-height: 15px; }
 /* a point catches the pointer a little way round it, so it's grabbed rather than the clip */
 .auto-handle::before { content: ''; position: absolute; inset: -6px; border-radius: 50%; }
+
+/* the part picked in the list: its clips stand out, the rest step back */
+.song-lanes.picking .clip:not(.picked) { opacity: 0.35; }
+.clip.picked { outline: 2px solid var(--paper); outline-offset: 1px; z-index: 3; }
+/* …or, with no clips, a note over the timeline saying so */
+.song-pick-note {
+  position: absolute; top: 44px; left: calc(var(--parts-w, 230px) + 150px); z-index: 9;
+  display: flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.6rem;
+  font-size: 11.5px; color: var(--paper); background: var(--panel); border: 1px solid var(--clip, var(--line)); border-radius: 4px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); pointer-events: none;
+}
+.song-pick-note .song-swatch { width: 9px; height: 9px; border-radius: 2px; background: var(--clip); display: inline-block; }

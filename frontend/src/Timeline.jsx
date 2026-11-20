@@ -197,6 +197,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const autoDraftRef = useRef(null)
   autoDraftRef.current = autoDraft
   const [activePart, setActivePart] = useState(null) // src: empty-row drags draw this part
+  const [listPick, setListPick] = useState(null) // src picked in the parts list: its clips stand out
   const [drag, setDrag] = useState(null) // live preview while moving / stretching / drawing
   const [marquee, setMarquee] = useState(null)
   const [erasing, setErasing] = useState(false) // right button held: the pointer shows it deletes
@@ -298,6 +299,19 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const lastPress = useRef(null) // for double-clicks (pointer capture keeps dblclick off the clips)
   const [sliceLine, setSliceLine] = useState(null) // { bar, l0, l1 } where the slice tool would cut
   const scrollRef = useRef(null)
+  // the part picked in the list: its clips stand out on the timeline (the rest dim), and the
+  // view goes to the first of them when it's out of sight
+  const pickedHasClips = !!listPick && song.clips.some((c) => c.src === listPick)
+  const showPart = (src) => {
+    const box = scrollRef.current
+    const first = song.clips.filter((c) => c.src === src).sort((a, b) => a.start - b.start || a.lane - b.lane)[0]
+    if (!box || !first) return
+    const x = first.start * ppbRef.current
+    const y = first.lane * laneH
+    const inX = x >= box.scrollLeft && x <= box.scrollLeft + box.clientWidth - HEAD_W - 40
+    const inY = y >= box.scrollTop && y + laneH <= box.scrollTop + box.clientHeight - RULER_H
+    if (!inX || !inY) box.scrollTo({ left: inX ? box.scrollLeft : Math.max(0, x - 80), top: inY ? box.scrollTop : Math.max(0, y - laneH * 2), behavior: 'smooth' })
+  }
   const lanesRef = useRef(null)
   const playheadRef = useRef(null)
   const headRef = useRef(null) // the playhead's handle on the ruler
@@ -593,6 +607,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
 
   // ── pointer: clips, empty rows, panning ──
   const onLanesDown = (e) => {
+    setListPick(null) // working on the timeline: the list's highlight steps aside
     if (e.button === 1 && (e.ctrlKey || e.metaKey)) {
       // ctrl + middle-drag (as in FL): left zooms the bars in, right out; up makes the rows
       // taller, down shorter — around the spot where the drag started, eased (onLanesMove)
@@ -911,7 +926,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     if (k === 'escape') {
       if (tool !== 'pointer') { done(); setTool('pointer'); setSliceLine(null); return }
       // letting go of the selection doesn't use up the key: the same Esc closes the dock
-      setSelected(new Set()); setActivePart(null); return
+      setSelected(new Set()); setActivePart(null); setListPick(null); return
     }
     if (!chosen.length) return
     if (k === 'delete' || k === 'backspace') {
@@ -1096,7 +1111,12 @@ export default function Timeline({ project, onUpdateProject, transport, started 
             setGhost({ src: part.src, start: 0, lane: -1, len: part.bars })
           }}
           onDragEnd={() => setGhost(null)}
-          onClick={() => setActivePart((a) => (a === part.src ? null : part.src))}
+          onClick={() => {
+            const on = listPick !== part.src
+            setActivePart(on ? part.src : null)
+            setListPick(on ? part.src : null)
+            if (on) showPart(part.src)
+          }}
           onDoubleClick={(e) => openPart(part.src, { clientX: e.clientX + 60, clientY: e.clientY })}
           data-tip={`Drag onto the timeline, or select it and draw on an empty row. Double-click to ${part.kind === 'pattern' ? 'edit its instruments, steps and notes' : part.kind === 'auto' ? 'draw its curve' : 'change its settings'}.`}
         >
@@ -1244,6 +1264,14 @@ export default function Timeline({ project, onUpdateProject, transport, started 
         }}
         title="Drag to resize · double-click for the usual width"
       />
+      {listPick && !pickedHasClips && (() => {
+        const part = parts.find((x) => x.src === listPick)
+        return part ? (
+          <div className="song-pick-note" role="status" style={{ '--clip': colorFor(part.src, song.colors) }}>
+            <span className="song-swatch" aria-hidden /> <b>{part.name}</b> isn't on the timeline · drag it from the list to place it
+          </div>
+        ) : null
+      })()}
       <aside className="song-parts" aria-label="Parts">
         <div className="song-parts-head">
           <span className="song-title">parts</span>
@@ -1397,7 +1425,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
             </div>
             <div
               data-surface-own="timeline"
-              className={`song-lanes ${drag ? 'dragging' : ''} ${tool === 'slice' ? 'slicing' : ''} ${erasing ? 'erasing' : ''}`}
+              className={`song-lanes ${drag ? 'dragging' : ''} ${tool === 'slice' ? 'slicing' : ''} ${erasing ? 'erasing' : ''} ${pickedHasClips ? 'picking' : ''}`}
               ref={lanesRef}
               style={{ height: lanes * LANE_H, width: bars * ppb }}
               onPointerDown={onLanesDown}
@@ -1433,7 +1461,7 @@ export default function Timeline({ project, onUpdateProject, transport, started 
                   <div
                     key={c.id}
                     data-id={c.id}
-                    className={`clip ${LANE_H >= 30 && part.kind !== 'auto' ? 'roomy' : ''} ${part.kind === 'auto' ? `automation ${LANE_H >= 30 ? 'auto-roomy' : ''}` : ''} ${selected.has(c.id) ? 'selected' : ''} ${c.id.startsWith('__') ? 'preview' : ''} ${c.gone || vanishing?.has(c.id) ? 'gone' : ''} ${drag?.lift && (drag.changes?.[c.id] || c.id.startsWith('__copy')) ? 'lifted' : ''} ${arriving?.has(c.id) ? 'arriving' : ''} ${!song.on ? 'off' : ''} ${loose ? 'loose' : ''} ${peerClips.has(c.id) ? 'peer-held' : ''}`}
+                    className={`clip ${LANE_H >= 30 && part.kind !== 'auto' ? 'roomy' : ''} ${part.kind === 'auto' ? `automation ${LANE_H >= 30 ? 'auto-roomy' : ''}` : ''} ${selected.has(c.id) ? 'selected' : ''} ${c.id.startsWith('__') ? 'preview' : ''} ${c.gone || vanishing?.has(c.id) ? 'gone' : ''} ${drag?.lift && (drag.changes?.[c.id] || c.id.startsWith('__copy')) ? 'lifted' : ''} ${arriving?.has(c.id) ? 'arriving' : ''} ${!song.on ? 'off' : ''} ${loose ? 'loose' : ''} ${peerClips.has(c.id) ? 'peer-held' : ''} ${listPick && c.src === listPick ? 'picked' : ''}`}
                     style={{ left: c.start * ppb, top: c.lane * LANE_H + 3, width: Math.max(4, c.len * ppb - 1), height: LANE_H - 6, '--clip': colorFor(c.src, song.colors), '--clip-ink': inkFor(colorFor(c.src, song.colors)), ...(peerClips.get(c.id) ? { '--peer': peerClips.get(c.id).color } : {}) }}
                     title={`${part.name} · bar ${Math.floor(c.start) + 1}${c.start % 1 ? `.${Math.round((c.start % 1) * beats) + 1}` : ''} · ${Math.round(c.len * beats) / beats} bar${c.len === 1 ? '' : 's'}${loose ? (part.kind === 'auto' ? ' · its knob is gone, so this plays nothing' : ' · unused: nothing on the patch plays it, so this makes no sound · add it back from “unused” in the patcher’s add pane') : ''}`}
                   >
