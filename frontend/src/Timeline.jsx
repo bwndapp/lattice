@@ -789,7 +789,10 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     if (d.mode === 'move') {
       const minStart = Math.min(...d.group.map((c) => c.start))
       const minLane = Math.min(...d.group.map((c) => c.lane))
-      const db = Math.max(-minStart, snap(bar - d.bar, free))
+      // the grabbed clip's start lands on the grid (as in FL), the rest keep their distance:
+      // snapping the distance instead meant a drag shorter than half a step did nothing,
+      // and a clip off the grid never got back on it
+      const db = Math.max(-minStart, snap(d.anchor.start + (bar - d.bar), free) - d.anchor.start)
       const dl = Math.max(-minLane, lane - d.lane)
       if (!db && !dl && !d.moved) return
       d.moved = true
@@ -810,10 +813,9 @@ export default function Timeline({ project, onUpdateProject, transport, started 
       const min = leastLen(free)
       const changes = {}
       if (d.mode === 'end') {
-        const run = partBySrc.get(c.src)?.bars
+        // the end goes to any grid line (the part repeats as far as it's stretched)
         const want = clamp(snap(bar, free) - c.start, min, MAX_BARS - c.start)
-        // stretching it out repeats the part, so it stops on whole ones
-        const delta = (run && !free ? Math.max(1, Math.round(want / run)) * run : want) - c.len
+        const delta = want - c.len
         for (const x of d.group) changes[x.id] = { len: clamp(x.len + delta, min, MAX_BARS - x.start) }
       } else {
         const delta = clamp(snap(bar, free), 0, c.start + c.len - min) - c.start
