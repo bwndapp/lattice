@@ -22,6 +22,7 @@ let hits = [] // { at, end (cycles), key } — what's sounding, kept while it ri
 let frame = 0
 const els = new Map() // element id → the element, while it's on screen
 const lit = new Map() // element id → the light we last wrote there
+const live = new Map() // wire id → whether it's lit now (a class on it)
 const meters = new Map() // meter id → the last reading written there
 let colors = new Map() // source key → its colour as [r, g, b]
 
@@ -137,6 +138,8 @@ export function stopFlow() {
   }
   for (const { els: list } of meterCache.values()) for (const el of list) { el.style.removeProperty('--l'); el.style.removeProperty('--r'); el.classList.remove('over') }
   meterCache.clear()
+  for (const [id, on] of live) if (on) document.querySelector(`.graph-canvas .react-flow__edge[data-id="${CSS.escape(id)}"]`)?.classList.remove('live')
+  live.clear()
   els.clear()
   lit.clear()
   meters.clear()
@@ -221,38 +224,6 @@ function tick() {
   }
 
   /**
-   * How lit something is, and what colour: the brightest of the sources running through
-   * it sets how hard it glows, and they blend by how loud each one is, so two parts
-   * sharing a wire mix on their way to the output.
-   */
-  const paint = (el, id, keys, names) => {
-    let best = 0
-    let r = 0
-    let g = 0
-    let b = 0
-    let weight = 0
-    for (const k of keys) {
-      const on = level.get(k)
-      if (!on) continue
-      // how loud it is sets how much of the glow it gets and how much colour is left in it
-      const v = on.v * (FLOOR + (1 - FLOOR) * on.loud)
-      if (v > best) best = v
-      const c = colors.get(k)
-      if (!c) continue
-      const sat = on.loud ** 0.55
-      const grey = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
-      r += (grey + (c[0] - grey) * sat) * v
-      g += (grey + (c[1] - grey) * sat) * v
-      b += (grey + (c[2] - grey) * sat) * v
-      weight += v
-    }
-    // a slow curve: bright on the hit, then a long tail rather than a linear ramp down
-    const value = Math.round(Math.sqrt(best) / STEP) * STEP
-    const tone = (x) => Math.round(x / weight / 8) * 8 // in steps, so small shifts don't churn
-    write(el, id, value, weight ? `rgb(${tone(r)} ${tone(g)} ${tone(b)})` : '', names)
-  }
-
-  /**
    * The left and right of what a wire carries, for the meters on a mixer's rows. Panning
    * decides how much goes each way, at equal power, so a sound in the middle isn't quietly
    * louder than one hard left.
@@ -281,17 +252,16 @@ function tick() {
     }
   }
 
-  for (const [id, keys] of paths.nodes) {
-    const el = keys.length && elementFor(id, 'node')
-    if (el) paint(el, id, keys, NAMES.node)
-  }
+  // Just the wires, and just on or off: a wire takes its colour while sound comes down it.
+  // (It used to glow by how loud, blend colours, thicken and outline nodes, every frame —
+  // all that restyling cost more than it showed.) A class flips only when a wire changes.
   for (const [id, keys] of paths.edges) {
-    const el = keys.length && elementFor(id, 'edge')
-    if (el) paint(el, id, keys)
-    if (keys.length) stereo(id, keys)
-  }
-  for (const [id, keys] of paths.chans) {
-    const el = elementFor(id, 'flow')
-    if (el) paint(el, id, keys)
+    if (!keys.length) continue
+    const el = elementFor(id, 'edge')
+    if (el) {
+      const on = keys.some((k) => level.has(k))
+      if (live.get(id) !== on) { live.set(id, on); el.classList.toggle('live', on) }
+    }
+    stereo(id, keys)
   }
 }
