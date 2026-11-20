@@ -486,6 +486,8 @@ export default function Timeline({ project, onUpdateProject, transport, started 
   const zoomAnim = useRef({ target: null, bar: 0, at: 0, raf: 0 })
   const pendingScroll = useRef(null)
   const pendingScrollTop = useRef(null) // the same, for rows zooming
+  const rowZoom = useRef({ raf: 0, cur: 0, target: 0, lane: 0, y: 0 }) // alt + scroll, eased
+  useEffect(() => () => cancelAnimationFrame(rowZoom.current.raf), [])
   useLayoutEffect(() => {
     const left = pendingScroll.current
     const top = pendingScrollTop.current
@@ -527,13 +529,28 @@ export default function Timeline({ project, onUpdateProject, transport, started 
     const onWheel = (e) => {
       if (e.altKey && !(e.ctrlKey || e.metaKey)) {
         // alt + scroll: taller or shorter rows, keeping the row under the pointer there
+        // Eased like the bars' zoom: each notch moves where it's heading, and each frame
+        // goes a share of the way there, the scroll set in the same frame as the new height
         e.preventDefault()
         const rect = box.getBoundingClientRect()
         const y = e.clientY - rect.top
-        const laneUnder = (box.scrollTop + y - RULER_H) / laneH
-        const next = clamp(laneH * Math.exp(-(e.deltaY || e.deltaX) * 0.0022), MIN_LANE, MAX_LANE)
-        setLaneH(next)
-        requestAnimationFrame(() => { box.scrollTop = Math.max(0, laneUnder * next + RULER_H - y) })
+        const z = rowZoom.current
+        const cur = z.raf ? z.cur : laneH
+        // the row to hold still: found again only when the pointer has moved
+        if (!z.raf || Math.abs(z.y - y) > 2) z.lane = (box.scrollTop + y - RULER_H) / cur
+        z.y = y
+        z.target = clamp((z.raf ? z.target : laneH) * Math.exp(-(e.deltaY || e.deltaX) * 0.0022), MIN_LANE, MAX_LANE)
+        if (!z.raf) {
+          z.cur = laneH
+          const step = () => {
+            const gap = Math.log(z.target / z.cur)
+            z.cur = Math.abs(gap) < 0.003 ? z.target : z.cur * Math.exp(gap * 0.3)
+            pendingScrollTop.current = Math.max(0, z.lane * z.cur + RULER_H - z.y)
+            setLaneH(z.cur)
+            z.raf = z.cur === z.target ? 0 : requestAnimationFrame(step)
+          }
+          z.raf = requestAnimationFrame(step)
+        }
         return
       }
       if (!(e.ctrlKey || e.metaKey)) return
