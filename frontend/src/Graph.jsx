@@ -1,7 +1,7 @@
 import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Handle, NodeResizeControl, Position, SelectionMode, ViewportPortal,
-  applyNodeChanges, applyEdgeChanges, useNodesInitialized, useReactFlow, useUpdateNodeInternals, useViewport,
+  applyNodeChanges, applyEdgeChanges, useNodesInitialized, useReactFlow, useStore, useUpdateNodeInternals, useViewport,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { APPLY, BUS_NODES, CHANNEL_FADER, FX_CATS, FX_UNITS, GROUPS, MENU_SUBS, NODE_TYPES, channelGain, defaultData, effectsByCat, inputKey, inputsOf, isTrigger, lineOf, makeFxUnit, offMainOf, makesCycle, menuGroup, triggerOf } from './graph'
@@ -604,6 +604,25 @@ function RackSide({ node, onClose }) {
 }
 
 /** The other people's pointers, drawn in flow coordinates so they follow pan and zoom. */
+/**
+ * Ports keep a size you can hit when the patch is zoomed out: they scale back up against
+ * the zoom (to 2.5× at most), and stay as drawn from 80% zoom up. A CSS number on the
+ * canvas, so no node re-renders for it.
+ */
+function PortScale() {
+  const { zoom } = useViewport()
+  const k = Math.round(Math.min(2.5, Math.max(1, 0.8 / Math.max(zoom, 0.05))) * 20) / 20
+  const update = useUpdateNodeInternals()
+  const ids = useStore((st) => st.nodes.map((n) => n.id).join('|'))
+  useEffect(() => {
+    document.querySelector('.graph-canvas')?.style.setProperty('--port-k', String(k))
+    // wires end at a port's middle as React Flow measured it: measure again at the new size
+    if (ids) update(ids.split('|'))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [k])
+  return null
+}
+
 function PeerLayer() {
   const { zoom } = useViewport()
   return (
@@ -2621,6 +2640,7 @@ function Canvas({ project, onUpdateProject: updateProject, started, solo, onSolo
             defaultEdgeOptions={{ type: 'wire' }}
           >
             <PeerLayer />
+            <PortScale />
             <Background gap={24} size={1.2} color="#34342f" />
             <Controls showInteractive={false} />
             <MiniMap pannable zoomable nodeColor={(n) => (n.type === 'frame' ? 'rgba(163, 163, 154, 0.15)' : ({ source: '#8a7a5c', output: '#9a6a74', transform: '#6c7799', effect: '#5f8a84', mixing: '#5f8a84', combine: '#7d6c99' })[NODE_TYPES[project.nodes.find((x) => x.id === n.id)?.type]?.group] ?? '#6a6a6e')} maskColor="rgba(0,0,0,0.45)" />
