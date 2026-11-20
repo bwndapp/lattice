@@ -390,7 +390,9 @@ const SONG_ORDER = (a, b) => a.start - b.start
 
 /** The arguments of the curve for one automation in the song. */
 function curveArgs(song, auto) {
-  const total = Math.max(0, ...song.clips.map((c) => c.start + c.len))
+  // the song repeats on a whole bar, as its clips do (song.js songExpr): measured to the
+  // last clip's exact end, a curve drifted ahead of the music on every pass
+  const total = Math.max(1, Math.ceil(Math.max(0, ...song.clips.map((c) => c.start + c.len)) - 1e-9))
   const clips = song.clips
     .filter((c) => c.src === `${AUTO_PREFIX}${auto.id}`)
     .sort(SONG_ORDER)
