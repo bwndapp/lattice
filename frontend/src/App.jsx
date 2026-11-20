@@ -415,7 +415,10 @@ export default function App() {
   useEffect(() => {
     if (editorRef.current) return // StrictMode mounts twice in dev
     editorRef.current = new StrudelMirror({
-      defaultOutput: (hap, deadline, duration, cps, t) => {
+      defaultOutput: (hap, deadline, rawDuration, cps, t) => {
+        // a note stops where its clip ends (song.js clipCut)
+        const left = hap.value?._left
+        const duration = left > 0 ? Math.min(rawDuration, left / cps) : rawDuration
         flowHit(hap) // the patch lights what's playing from here, rather than asking the song again (flow.js)
         // a note log for chasing timing: localStorage.lattice_notes = '1' (a part's name to
         // narrow it), then every note prints its song position, part and instrument

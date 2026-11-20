@@ -22,6 +22,9 @@ import { activeAutos, appParam, autoValueFn } from './automation.js'
 import { getAutoSource, setAutoSource } from './paramEpoch.js'
 import { routeVoice, setFxParams, silenceFx } from './fxbus.js'
 import { prepareInserts, setInsertParams } from './stereo.js'
+
+/** A note's length, cut where its clip ends (song.js clipCut). */
+const cutDuration = (hap, cps) => { const left = hap.value?._left; const d = hap.duration / cps; return left > 0 ? Math.min(d, left / cps) : d }
 import { enginesNeedTicks, prepareInstruments, setEngineParams } from './instruments/host.js'
 import { ensureAudio, forgetAudio } from './audio'
 
@@ -134,12 +137,12 @@ export async function renderProject(project, { from = 0, to = 4, tail = 2, sampl
     const at = (hap.whole.begin.valueOf() - from) / cps
     const value = routeVoice(hapValue(hap))
     try {
-      await superdough(value, at, hap.duration / cps, cps, hap.whole.begin.valueOf())
+      await superdough(value, at, cutDuration(hap, cps), cps, hap.whole.begin.valueOf())
     } catch (err) {
       // the engine keeps a pool of audio nodes; one left over from the live context throws
       // when it's used here, and is dropped from the pool as it goes, so a second go works
       try {
-        await superdough(value, at, hap.duration / cps, cps, hap.whole.begin.valueOf())
+        await superdough(value, at, cutDuration(hap, cps), cps, hap.whole.begin.valueOf())
       } catch (again) {
         failed++
         firstError = firstError ?? again

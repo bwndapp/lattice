@@ -306,10 +306,20 @@ export function songExpr(project, src, at) {
   for (const [shift, spans] of byStart) {
     const expr = at(Number(shift), (name) => shiftedAuto(name, shift))
     if (!byExpr.has(expr)) byExpr.set(expr, [])
-    byExpr.get(expr).push(`p => p${Number(shift) ? `.late(${shift})` : ''}.mask("${maskMini(spans, total, beats)}")`)
+    byExpr.get(expr).push(`p => p${Number(shift) ? `.late(${shift})` : ''}.mask("${maskMini(spans, total, beats)}")${clipCut(spans, total)}`)
   }
   const parts = [...byExpr].map(([expr, layers]) => (layers.length === 1 ? `(${expr})${layers[0].slice(6)}` : `(${expr}).layer(${layers.join(', ')})`))
   return parts.length === 1 ? parts[0] : `stack(\n${parts.join(',\n')}\n)`
+}
+
+/**
+ * Notes stop at the end of their clip, as in FL: each note is marked with how much of its
+ * clip is left when it starts (`_left`, in bars), and the output cuts it there (App.jsx,
+ * exportAudio.js). A hit that rings by itself (a drum sample) still rings out.
+ */
+function clipCut(spans, total) {
+  const list = `[${spans.map(([a, b]) => `[${tidy(a)}, ${tidy(b)}]`).join(', ')}]`
+  return `.withHap((h) => { const t = ((+h.whole.begin % ${total}) + ${total}) % ${total}; const c = ${list}.find(([a, b]) => t >= a - 1e-9 && t < b); return c ? h.withValue((v) => ({ ...v, _left: c[1] - t })) : h })`
 }
 
 /** An automation's signal as read inside a copy of a part moved `shift` bars later. */
